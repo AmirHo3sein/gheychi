@@ -322,6 +322,29 @@ describe('Reviews — salon owner reply (e2e)', () => {
       .expect(404);
   });
 
+  it('rejects a reply to a review belonging to a different salon', async () => {
+    // Distinct from the "no salon at all" case above -- this exercises the
+    // service method's own salonId filter (findOneBy({ id, salonId })), the
+    // actual authorization boundary this task exists to enforce, not just
+    // SalonOwnerGuard's separate "caller has zero salons" 404 path.
+    const otherOwnerCookie = await loginAs(app, '09149990010');
+    await request(app.getHttpServer()).post('/api/salons').set('Cookie', otherOwnerCookie).send({
+      name: 'Other Owner Salon',
+      genderTarget: 'women',
+      address: 'Elsewhere St, No. 2',
+      city: 'Tehran',
+      lat: 35.7,
+      lng: 51.4,
+      capacity: 5,
+    });
+
+    await request(app.getHttpServer())
+      .patch(`/api/salons/mine/reviews/${reviewId}/reply`)
+      .set('Cookie', otherOwnerCookie)
+      .send({ reply: 'Trying to reply to a review that is not mine' })
+      .expect(404);
+  });
+
   it('rejects an empty reply', async () => {
     await request(app.getHttpServer())
       .patch(`/api/salons/mine/reviews/${reviewId}/reply`)
