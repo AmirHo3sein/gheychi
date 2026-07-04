@@ -97,6 +97,7 @@ git commit -m "chore: scaffold pnpm + turborepo monorepo"
 
 **Files:**
 - Create: `docker-compose.yml`
+- Create: `docker/postgres-init/00-postgis.sql`
 - Create: `docker/postgres-init/01-test-db.sql`
 - Create: `.env.example`
 
@@ -125,7 +126,17 @@ volumes:
   pgdata:
 ```
 
-- [ ] **Step 2: Create `docker/postgres-init/01-test-db.sql`**
+- [ ] **Step 2: Create `docker/postgres-init/00-postgis.sql` and `docker/postgres-init/01-test-db.sql`**
+
+Mounting a custom directory at `/docker-entrypoint-initdb.d` replaces the postgis image's own init scripts at that path (it doesn't merge with them), so the extension that image normally auto-creates has to be recreated explicitly here — otherwise `SELECT postgis_version()` fails against the dev database until the Task 4 migration runs.
+
+`docker/postgres-init/00-postgis.sql`:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS postgis;
+```
+
+`docker/postgres-init/01-test-db.sql`:
 
 ```sql
 CREATE DATABASE arayeshgah_test;
@@ -134,19 +145,21 @@ CREATE DATABASE arayeshgah_test;
 - [ ] **Step 3: Create `.env.example`**
 
 ```
-PORT=3000
+PORT=3002
 DB_HOST=localhost
-DB_PORT=5432
+DB_PORT=5434
 DB_USER=arayeshgah
 DB_PASS=arayeshgah
 DB_NAME=arayeshgah
 REDIS_HOST=localhost
-REDIS_PORT=6379
+REDIS_PORT=6381
 JWT_SECRET=dev-secret-change-me
 SMS_PROVIDER=console
 KAVENEGAR_API_KEY=
 KAVENEGAR_OTP_TEMPLATE=arayeshgah-otp
 ```
+
+**Port note:** this machine already runs other local projects on the usual 5432/6379/3000/3001, so Arayeshgah's dev stack uses 5434 (postgres), 6381 (redis), and 3002 (api) instead. Container-internal ports are unchanged (postgres still speaks 5432 inside its container, redis 6379) — only the host-side mapping in `docker-compose.yml` moved.
 
 - [ ] **Step 4: Start containers and verify**
 
@@ -159,7 +172,7 @@ Expected: a PostGIS version row; database list includes `arayeshgah` and `arayes
 - [ ] **Step 5: Commit**
 
 ```bash
-git add docker-compose.yml docker/postgres-init/01-test-db.sql .env.example
+git add docker-compose.yml docker/postgres-init/00-postgis.sql docker/postgres-init/01-test-db.sql .env.example
 git commit -m "chore: add docker compose for postgis + redis with test database"
 ```
 
@@ -282,19 +295,21 @@ git commit -m "chore: add docker compose for postgis + redis with test database"
 `apps/api/.env.test` (committed — contains no secrets):
 
 ```
-PORT=3001
+PORT=3003
 DB_HOST=localhost
-DB_PORT=5432
+DB_PORT=5434
 DB_USER=arayeshgah
 DB_PASS=arayeshgah
 DB_NAME=arayeshgah_test
 REDIS_HOST=localhost
-REDIS_PORT=6379
+REDIS_PORT=6381
 JWT_SECRET=test-secret
 SMS_PROVIDER=console
 KAVENEGAR_API_KEY=
 KAVENEGAR_OTP_TEMPLATE=arayeshgah-otp
 ```
+
+(Ports match the dev-stack remap noted in Task 2 — same postgres/redis containers, just a distinct `PORT` and `DB_NAME` for test isolation.)
 
 Also append to root `.gitignore` (the `!` line must come after `.env.*`):
 
