@@ -774,6 +774,10 @@ describe('OtpService', () => {
     service = new OtpService(redis as never);
   });
 
+  afterEach(async () => {
+    await redis.flushall();
+  });
+
   it('issues a 6-digit code stored under otp:{phone}', async () => {
     const code = await service.issue(phone);
     expect(code).toMatch(/^\d{6}$/);
@@ -806,6 +810,8 @@ describe('OtpService', () => {
   });
 });
 ```
+
+**Note on the `afterEach`:** the pinned `ioredis-mock@^8.9.0` (v6+ of that library) shares its in-memory store across every `new RedisMock()` instance connecting to the same default host:port — instances are no longer isolated by default, per the library's own documented v6 migration notes. Without a `flushall()` between tests, state from one test (e.g. rate-limit counters keyed by the shared `phone` constant) leaks into the next and produces spurious failures unrelated to `otp.service.ts`'s actual logic. The `afterEach` above is the library-recommended fix.
 
 - [ ] **Step 2: Run to verify failure**
 
