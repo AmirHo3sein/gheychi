@@ -6,6 +6,7 @@ import { CatalogModule } from './catalog/catalog.module';
 import { HealthController } from './health/health.controller';
 import { RedisModule } from './redis/redis.module';
 import { SalonsModule } from './salons/salons.module';
+import { SearchModule } from './search/search.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { SalonsModule } from './salons/salons.module';
     AuthModule,
     CatalogModule,
     SalonsModule,
+    SearchModule,
   ],
   controllers: [HealthController],
 })
