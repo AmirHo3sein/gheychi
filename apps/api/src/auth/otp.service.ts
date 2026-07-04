@@ -1,4 +1,5 @@
-import { HttpException, Inject, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { randomInt } from 'crypto';
 import Redis from 'ioredis';
 import { REDIS } from '../redis/redis.module';
 
@@ -12,13 +13,13 @@ export class OtpService {
   constructor(@Inject(REDIS) private readonly redis: Redis) {}
 
   async issue(phone: string): Promise<string> {
-    const rlKey = `rl:otp:${phone}`;
+    const rlKey = `otp:rl:${phone}`;
     const count = await this.redis.incr(rlKey);
     if (count === 1) await this.redis.expire(rlKey, RATE_WINDOW_SEC);
     if (count > RATE_LIMIT_MAX) {
-      throw new HttpException('Too many OTP requests', 429);
+      throw new HttpException('Too many OTP requests', HttpStatus.TOO_MANY_REQUESTS);
     }
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const code = randomInt(100000, 1000000).toString();
     await this.redis.set(`otp:${phone}`, code, 'EX', OTP_TTL_SEC);
     await this.redis.del(`otp:att:${phone}`);
     return code;
