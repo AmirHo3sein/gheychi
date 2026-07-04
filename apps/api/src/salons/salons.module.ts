@@ -6,10 +6,16 @@ import { Salon } from './salon.entity';
 import { SalonServicesController } from './salon-services.controller';
 import { SalonsController } from './salons.controller';
 import { SalonsService } from './salons.service';
+import { ScheduleController } from './schedule.controller';
+import { ScheduleException } from './schedule-exception.entity';
+import { WorkingHour } from './working-hour.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Salon, SalonService]), AuthModule],
-  controllers: [SalonServicesController, SalonsController],
+  imports: [
+    TypeOrmModule.forFeature([Salon, SalonService, WorkingHour, ScheduleException]),
+    AuthModule,
+  ],
+  controllers: [SalonServicesController, ScheduleController, SalonsController],
   providers: [SalonsService],
   exports: [SalonsService, TypeOrmModule],
 })
