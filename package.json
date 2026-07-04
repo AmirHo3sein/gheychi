@@ -1,0 +1,14 @@
+{
+  "name": "arayeshgah",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev:api": "turbo run dev --filter=@arayeshgah/api",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.0"
+  }
+}
