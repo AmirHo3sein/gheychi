@@ -2867,8 +2867,10 @@ docker compose up -d          # postgres (postgis) + redis
 cp .env.example apps/api/.env
 pnpm install
 pnpm --filter @arayeshgah/api migration:run
-pnpm dev:api                  # http://localhost:3000/api/health
+pnpm dev:api                  # http://localhost:3002/api/health
 ```
+
+(Ports are non-default on this machine — see the "Port note" in `docs/superpowers/plans/2026-07-04-plan-1-foundation-backend-core.md`'s Task 2 section if setting up fresh elsewhere and `.env.example`'s values need adjusting for local port conflicts.)
 
 ## Tests
 
