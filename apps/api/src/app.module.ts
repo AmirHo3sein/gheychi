@@ -8,6 +8,7 @@ import { CatalogModule } from './catalog/catalog.module';
 import { HealthController } from './health/health.controller';
 import { PlatformConfigModule } from './platform-config/platform-config.module';
 import { RedisModule } from './redis/redis.module';
+import { ReviewsModule } from './reviews/reviews.module';
 import { SalonsModule } from './salons/salons.module';
 import { SearchModule } from './search/search.module';
 
@@ -38,6 +39,7 @@ import { SearchModule } from './search/search.module';
     SalonsModule,
     BookingModule,
     SearchModule,
+    ReviewsModule,
   ],
   controllers: [HealthController],
 })
