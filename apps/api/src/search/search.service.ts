@@ -44,6 +44,8 @@ export class SearchService {
           WHERE ss2.salon_id = s.id AND ss2.category_id = $5 AND ss2.is_active))
       ORDER BY ${orderBy}
       LIMIT 50
+      -- MVP cap, no pagination yet. Revisit if a single search radius
+      -- can plausibly exceed 50 approved salons.
       `,
       [q.lng, q.lat, q.gender, radiusMeters, q.categoryId ?? null],
     );

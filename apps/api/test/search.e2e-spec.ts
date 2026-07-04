@@ -97,6 +97,25 @@ describe('Search (e2e)', () => {
     expect(res.body[0].slug).toBe('far-salon');
   });
 
+  it('defaults to distance ordering when sort is omitted, even if rating would reorder', async () => {
+    const ds = app.get(DataSource);
+    await ds.query(`UPDATE salons SET rating_avg = 5.0, rating_count = 50 WHERE slug = 'far-salon'`);
+    await ds.query(`UPDATE salons SET rating_avg = 1.0, rating_count = 1 WHERE slug = 'near-salon'`);
+    const res = await request(app.getHttpServer())
+      .get('/api/search')
+      .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women' })
+      .expect(200);
+    expect(res.body.map((s: { slug: string }) => s.slug)).toEqual(['near-salon', 'far-salon']);
+  });
+
+  it('returns an empty array when no salon has the requested category', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/search')
+      .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', categoryId: 8 })
+      .expect(200);
+    expect(res.body).toEqual([]);
+  });
+
   it('rejects a missing gender param', () =>
     request(app.getHttpServer())
       .get('/api/search')
