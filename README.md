@@ -27,3 +27,17 @@ pnpm dev:api                  # http://localhost:3002/api/health
 pnpm --filter @arayeshgah/api test        # unit
 pnpm --filter @arayeshgah/api test:e2e    # e2e (needs docker services)
 ```
+
+## Booking & payments (Plan 2)
+
+- `POST /api/bookings` — hold a slot + get a Zarinpal deposit payment URL (customer, authenticated)
+- `GET /api/salons/:salonId/availability?serviceId=...` — next 14 days of open slots (public)
+- `GET /api/payments/callback?Authority=...&Status=OK|NOK` — Zarinpal redirects here; returns JSON (no frontend to redirect to yet)
+- `GET /api/bookings/mine`, `GET /api/bookings/:id`, `POST /api/bookings/:id/cancel` — customer-facing
+- `GET /api/salons/mine/bookings`, `PATCH /api/salons/mine/bookings/:id` — provider-facing (mark completed/no_show)
+
+**Payments run against `MockPaymentGateway` by default** (`PAYMENT_GATEWAY=mock` in `.env`/`.env.test`) — no real Zarinpal account is needed for local dev or tests. To use the real gateway, set `PAYMENT_GATEWAY=zarinpal` and `ZARINPAL_MERCHANT_ID`, and **verify the exact API contract against Zarinpal's sandbox first** — see the note at the top of `docs/superpowers/plans/2026-07-04-plan-2-booking-payments.md`.
+
+Two background jobs run every 1 and 5 minutes respectively: expiring abandoned booking holds (`booking_hold_ttl_minutes`, seeded at 15) and reconciling payments whose Zarinpal callback never arrived (fixed 20-minute stale threshold). The 20-minute threshold is intentionally longer than the default hold TTL, so a genuinely-late-but-successful payment commonly finds its booking already expired by the time reconciliation runs — this is handled (the payment is still marked `paid`, the booking is not resurrected into a possibly-rebooked slot), not a bug, but the two numbers are tuned relative to each other and shouldn't be changed independently without re-checking that relationship.
+
+**No money actually moves automatically in this plan.** `refunded`/`paid`/`failed` on a `Payment` row are bookkeeping labels only — there is no real Zarinpal refund API call anywhere in the system. A `refunded` status means "the customer is owed a refund," not "a refund was issued." Similarly, the `logger.error(...)` lines marking a payment as needing manual review (orphaned authority, late payment on an expired booking, gateway failures) are plain application logs with no alerting/paging integration yet — someone has to know to look for them. Both are explicit, deliberate MVP scope cuts, not oversights; wiring up real refunds and log-based alerting are natural candidates for a future plan.
