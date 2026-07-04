@@ -465,4 +465,27 @@ describe('Reviews — admin moderation (e2e)', () => {
       .set('Cookie', adminCookie)
       .send({ status: 'rejected' })
       .expect(404));
+
+  it('preserves an existing salon reply through a reject-then-republish cycle', async () => {
+    await request(app.getHttpServer())
+      .patch(`/api/salons/mine/reviews/${reviewId}/reply`)
+      .set('Cookie', ownerCookie)
+      .send({ reply: 'Thanks for the feedback!' })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .patch(`/api/admin/reviews/${reviewId}`)
+      .set('Cookie', adminCookie)
+      .send({ status: 'rejected' })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .patch(`/api/admin/reviews/${reviewId}`)
+      .set('Cookie', adminCookie)
+      .send({ status: 'published' })
+      .expect(200);
+
+    const res = await request(app.getHttpServer()).get(`/api/salons/${salonId}/reviews`).expect(200);
+    expect(res.body[0].salonReply).toBe('Thanks for the feedback!');
+  });
 });
