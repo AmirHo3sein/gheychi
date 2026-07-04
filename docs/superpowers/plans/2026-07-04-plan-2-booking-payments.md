@@ -999,6 +999,51 @@ describe('computeAvailableSlots', () => {
     });
     expect(result).toEqual([]);
   });
+
+  it('returns an empty array instead of hanging when durationMin is zero or negative', () => {
+    const zero = computeAvailableSlots({
+      now: NOW,
+      days: 1,
+      durationMin: 0,
+      capacity: 1,
+      hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '12:00:00' }]]]),
+      closedDates: new Set(),
+      existingBookings: [],
+    });
+    expect(zero).toEqual([]);
+
+    const negative = computeAvailableSlots({
+      now: NOW,
+      days: 1,
+      durationMin: -30,
+      capacity: 1,
+      hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '12:00:00' }]]]),
+      closedDates: new Set(),
+      existingBookings: [],
+    });
+    expect(negative).toEqual([]);
+  });
+
+  it('returns slots in chronological order even when working-hour ranges are given out of order', () => {
+    const result = computeAvailableSlots({
+      now: NOW,
+      days: 1,
+      durationMin: 60,
+      capacity: 1,
+      hoursByWeekday: new Map([[1, [
+        { openTime: '15:00:00', closeTime: '17:00:00' },
+        { openTime: '09:00:00', closeTime: '11:00:00' },
+      ]]]),
+      closedDates: new Set(),
+      existingBookings: [],
+    });
+    expect(result[0].slots).toEqual([
+      '2026-08-03T09:00:00.000Z',
+      '2026-08-03T10:00:00.000Z',
+      '2026-08-03T15:00:00.000Z',
+      '2026-08-03T16:00:00.000Z',
+    ]);
+  });
 });
 ```
 
@@ -1049,8 +1094,26 @@ function combineDateAndMinutes(dateStr: string, minutesFromMidnight: number): Da
   return new Date(base.getTime() + minutesFromMidnight * 60_000);
 }
 
+/**
+ * All Date values in this module are naive wall-clock instants -- no real
+ * timezone conversion is ever applied. Iran has a fixed UTC+3:30 offset with
+ * no DST since 2022, so `now`/DB-derived working-hour times are expected to
+ * be passed consistently, as if UTC digits === Iran local-clock digits.
+ * Never introduce a real tz conversion in only one of the call sites that
+ * feed this function -- it would silently skew every open/close/past-time
+ * comparison here by the timezone difference.
+ */
 export function computeAvailableSlots(params: ComputeAvailabilityParams): DayAvailability[] {
   const { now, days, durationMin, capacity, hoursByWeekday, closedDates, existingBookings } = params;
+  // A zero or negative duration would make `cursorMin += durationMin` in the loop
+  // below never advance (or advance backwards while the `<=` bound only shrinks),
+  // producing an infinite synchronous loop that hangs the whole Node process --
+  // not just one request. This should never happen given upstream DTO validation,
+  // but this function is also fed durationMin read back from the database (a
+  // later task's AvailabilityService), which this function has no way to verify,
+  // so it guards itself rather than trusting every caller forever.
+  if (durationMin <= 0) return [];
+
   const results: DayAvailability[] = [];
 
   for (let dayOffset = 0; dayOffset < days; dayOffset++) {
@@ -1082,7 +1145,9 @@ export function computeAvailableSlots(params: ComputeAvailabilityParams): DayAva
       }
     }
 
-    if (daySlots.length > 0) results.push({ date: dateStr, slots: daySlots });
+    // Ranges aren't guaranteed to be given (or stored) in chronological order --
+    // sort so callers always get ascending start times regardless of input order.
+    if (daySlots.length > 0) results.push({ date: dateStr, slots: daySlots.sort() });
   }
 
   return results;
@@ -1092,7 +1157,7 @@ export function computeAvailableSlots(params: ComputeAvailabilityParams): DayAva
 - [ ] **Step 4: Run tests to verify pass**
 
 Run: `pnpm --filter @arayeshgah/api test -- availability.util`
-Expected: PASS (10 tests).
+Expected: PASS (12 tests — the zero/negative-duration and out-of-order-ranges cases were added after code review flagged an infinite-loop risk and an unguaranteed ordering gap).
 
 - [ ] **Step 5: Commit**
 
