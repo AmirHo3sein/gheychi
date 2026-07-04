@@ -2752,9 +2752,9 @@ git commit -m "feat(api): provider booking list and completed/no-show status upd
 
 - [ ] **Step 1: Add `cancel` to `BookingsService`**
 
-`BookingsService` needs `SalonsService` (to resolve `salon.ownerId` and check who's cancelling) and `PlatformConfigService` (already injected) for the cancellation window. Update the constructor and add the method.
+`BookingsService` already has the `Salon` repository injected (from Task 10) — no new constructor dependency is needed to resolve `salon.ownerId`. Update the imports and add the method.
 
-In `apps/api/src/booking/bookings.service.ts`, update the imports and constructor:
+In `apps/api/src/booking/bookings.service.ts`, update the imports:
 
 ```typescript
 import {
@@ -2763,25 +2763,10 @@ import {
 ```
 
 ```typescript
-  constructor(
-    @InjectRepository(Booking) private readonly bookings: Repository<Booking>,
-    @InjectRepository(Payment) private readonly payments: Repository<Payment>,
-    @InjectRepository(Salon) private readonly salons: Repository<Salon>,
-    @InjectRepository(SalonService) private readonly services: Repository<SalonService>,
-    private readonly dataSource: DataSource,
-    private readonly config: PlatformConfigService,
-    private readonly salonsService: SalonsService,
-    private readonly nestConfig: ConfigService,
-    @Inject(REDIS) private readonly redis: Redis,
-    @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
-  ) {}
+import { Booking, BookingStatus } from './booking.entity';
 ```
 
-Add this import alongside the others at the top of the file:
-
-```typescript
-import { SalonsService } from '../salons/salons.service';
-```
+(No constructor change is needed — the existing `@InjectRepository(Salon) private readonly salons: Repository<Salon>` from Task 10 covers salon lookups here too.)
 
 Append the method (after `listMine`, before the two provider-facing methods added in Task 12):
 
@@ -2790,12 +2775,12 @@ Append the method (after `listMine`, before the two provider-facing methods adde
   async cancel(bookingId: string, callerId: string): Promise<Booking> {
     const booking = await this.bookings.findOneBy({ id: bookingId });
     if (!booking) throw new NotFoundException('Booking not found');
-    const cancellableStatuses: string[] = ['pending_payment', 'confirmed'];
+    const cancellableStatuses: BookingStatus[] = ['pending_payment', 'confirmed'];
     if (!cancellableStatuses.includes(booking.status)) {
       throw new BadRequestException('Booking cannot be cancelled in its current state');
     }
 
-    const salon = await this.salonsService.findById(booking.salonId);
+    const salon = await this.salons.findOneBy({ id: booking.salonId });
     if (!salon) throw new NotFoundException('Salon not found');
 
     const isCustomer = booking.userId === callerId;
@@ -2816,7 +2801,24 @@ Append the method (after `listMine`, before the two provider-facing methods adde
     }
 
     await this.dataSource.transaction(async (em) => {
-      await em.update(Booking, { id: booking.id }, { status: newBookingStatus });
+      // Guard against a concurrent cancel() call on the same booking -- a
+      // genuinely plausible race, since the customer and the salon owner can
+      // both hit "cancel" around the same moment (or a client can retry).
+      // Without this, both transactions would read the same pre-cancellation
+      // status above, both pass the check, and whichever commits last would
+      // silently overwrite the other's outcome -- including making a caller's
+      // own HTTP response reflect a status/refund decision that isn't actually
+      // the one persisted. Conditioning the update on the status still being
+      // cancellable means only the winner's write lands; the loser gets
+      // affected=0 and a clear 409 instead of a misleading 200.
+      const result = await em.update(
+        Booking,
+        { id: booking.id, status: In(cancellableStatuses) },
+        { status: newBookingStatus },
+      );
+      if (!result.affected) {
+        throw new ConflictException('Booking status changed before this cancellation could be applied');
+      }
       // A pending_payment booking never had a captured payment -- nothing to refund
       // or forfeit, so its payment is simply marked failed. A confirmed booking's
       // deposit was genuinely captured; `refund` decides the payment's fate. Marking
@@ -2853,9 +2855,9 @@ Add the method to the class, after `findMine`:
   }
 ```
 
-- [ ] **Step 3: Wire `SalonsModule` already covers `SalonsService`**
+- [ ] **Step 3: No `booking.module.ts` change needed**
 
-`SalonsModule` is already imported by `BookingModule` (for repos) and exports `SalonsService` — no `booking.module.ts` change needed here; `BookingsService`'s new constructor dependency resolves automatically since `SalonsModule` is already in `BookingModule`'s `imports`.
+`cancel()` only uses repositories (`Salon`, `Booking`, `Payment`) and services (`PlatformConfigService`) already injected into `BookingsService` since Task 10 — no new module wiring required.
 
 - [ ] **Step 4: Write the e2e test** — `apps/api/test/booking-cancellation.e2e-spec.ts`
 
