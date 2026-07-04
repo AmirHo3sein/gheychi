@@ -219,7 +219,18 @@ export class BookingsService {
     // salon (no refund), and a completion's deposit is deducted from the in-salon total,
     // tracked outside this system for MVP. Neither calls a real payout/refund API; see
     // this plan's header note on why that's explicitly out of scope.
-    await this.bookings.update({ id: bookingId }, { status });
+    //
+    // Guard against a concurrent write on the same booking -- most notably cancel(),
+    // which can run at the same moment a provider marks a booking completed/no-show.
+    // Without this, an unconditional update could silently flip an already-cancelled-
+    // and-refunded booking's status back to completed/no_show if the two requests
+    // interleave. Conditioning on the status still being confirmed (the same pattern
+    // already used by cancel() and the payment callback) means only the winner's
+    // write lands; a losing concurrent call gets a clear 409 instead.
+    const result = await this.bookings.update({ id: bookingId, status: 'confirmed' }, { status });
+    if (!result.affected) {
+      throw new ConflictException('Booking status changed before this update could be applied');
+    }
     return (await this.bookings.findOneBy({ id: bookingId }))!;
   }
 }
