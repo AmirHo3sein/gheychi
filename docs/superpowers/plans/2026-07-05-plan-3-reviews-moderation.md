@@ -827,6 +827,29 @@ describe('Reviews — salon owner reply (e2e)', () => {
       .expect(404);
   });
 
+  it('rejects a reply to a review belonging to a different salon', async () => {
+    // Distinct from the "no salon at all" case above -- this exercises the
+    // service method's own salonId filter (findOneBy({ id, salonId })), the
+    // actual authorization boundary this task exists to enforce, not just
+    // SalonOwnerGuard's separate "caller has zero salons" 404 path.
+    const otherOwnerCookie = await loginAs(app, '09149990010');
+    await request(app.getHttpServer()).post('/api/salons').set('Cookie', otherOwnerCookie).send({
+      name: 'Other Owner Salon',
+      genderTarget: 'women',
+      address: 'Elsewhere St, No. 2',
+      city: 'Tehran',
+      lat: 35.7,
+      lng: 51.4,
+      capacity: 5,
+    });
+
+    await request(app.getHttpServer())
+      .patch(`/api/salons/mine/reviews/${reviewId}/reply`)
+      .set('Cookie', otherOwnerCookie)
+      .send({ reply: 'Trying to reply to a review that is not mine' })
+      .expect(404);
+  });
+
   it('rejects an empty reply', async () => {
     await request(app.getHttpServer())
       .patch(`/api/salons/mine/reviews/${reviewId}/reply`)
@@ -840,7 +863,7 @@ describe('Reviews — salon owner reply (e2e)', () => {
 - [ ] **Step 6: Run, verify pass**
 
 Run: `cd apps/api && npx jest --config test/jest-e2e.json --testPathPattern="reviews.e2e-spec" --runInBand`
-Expected: PASS (13 tests — 9 from Tasks 2-3 plus 4 new).
+Expected: PASS (14 tests — 9 from Tasks 2-3 plus 5 new. A cross-salon-scoping test was added after code review found the given tests only exercised SalonOwnerGuard's "no salon at all" 404 path, never the service method's own salonId filter -- the actual authorization boundary this task exists to enforce).
 
 - [ ] **Step 7: Commit**
 
@@ -1051,7 +1074,7 @@ describe('Reviews — admin moderation (e2e)', () => {
 - [ ] **Step 6: Run, verify pass**
 
 Run: `cd apps/api && npx jest --config test/jest-e2e.json --testPathPattern="reviews.e2e-spec" --runInBand`
-Expected: PASS (17 tests — 13 from Tasks 2-4 plus 4 new).
+Expected: PASS (18 tests — 14 from Tasks 2-4 plus 4 new).
 
 - [ ] **Step 7: Commit**
 
@@ -1070,7 +1093,7 @@ git commit -m "feat(api): admin review moderation with reactive publish/reject"
 - [ ] **Step 1: Run everything**
 
 Run: `pnpm --filter @arayeshgah/api test && pnpm --filter @arayeshgah/api test:e2e && pnpm build`
-Expected: all unit tests PASS (unchanged from Plan 2 — this plan adds no new unit-tested pure functions), all e2e suites PASS, build succeeds. Expected final e2e shape: the 15 suites from Plan 2 plus `reviews.e2e-spec.ts` (16 suites total, 63 + 17 = 80 tests).
+Expected: all unit tests PASS (unchanged from Plan 2 — this plan adds no new unit-tested pure functions), all e2e suites PASS, build succeeds. Expected final e2e shape: the 15 suites from Plan 2 plus `reviews.e2e-spec.ts` (16 suites total, 63 + 18 = 81 tests).
 
 - [ ] **Step 2: Update `README.md`**
 
