@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export class CreateReviewDto {
   @IsUUID()
@@ -20,4 +20,9 @@ export class SalonReplyDto {
   @MinLength(1)
   @MaxLength(2000)
   reply: string;
+}
+
+export class ModerateReviewDto {
+  @IsIn(['published', 'rejected'])
+  status: 'published' | 'rejected';
 }
