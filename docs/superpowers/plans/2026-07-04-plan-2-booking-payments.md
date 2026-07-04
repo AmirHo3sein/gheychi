@@ -780,7 +780,7 @@ import { calculateDeposit } from './deposit.util';
 
 describe('calculateDeposit', () => {
   it('takes the percentage of price when it exceeds the minimum', () => {
-    expect(calculateDeposit(800000, 20, 200000)).toBe(160000);
+    expect(calculateDeposit(2000000, 20, 200000)).toBe(400000);
   });
 
   it('falls back to the minimum when the percentage would be lower', () => {
@@ -1903,7 +1903,7 @@ describe('Bookings — create hold (e2e)', () => {
     const serviceRes = await request(app.getHttpServer())
       .post('/api/salons/mine/services')
       .set('Cookie', ownerCookie)
-      .send({ categoryId: 1, name: 'Cut', price: 500000, durationMin: 60 });
+      .send({ categoryId: 1, name: 'Cut', price: 2000000, durationMin: 60 });
     serviceId = serviceRes.body.id;
 
     const ds = app.get(DataSource);
@@ -1933,8 +1933,12 @@ describe('Bookings — create hold (e2e)', () => {
       .expect(201);
 
     expect(res.body.booking.status).toBe('pending_payment');
-    expect(res.body.booking.priceSnapshot).toBe(500000);
-    expect(res.body.booking.depositAmount).toBe(100000); // 20% of 500000
+    expect(res.body.booking.priceSnapshot).toBe(2000000);
+    // deposit_min_toman is seeded at 200000, so the price here (2000000) must be high
+    // enough that 20% of it (400000) genuinely exceeds the floor -- otherwise this
+    // test would silently only ever exercise the minimum-floor path, not the
+    // percentage path its own name claims to test.
+    expect(res.body.booking.depositAmount).toBe(400000); // 20% of 2000000
     expect(res.body.paymentUrl).toContain('Authority=MOCK-');
   });
 
