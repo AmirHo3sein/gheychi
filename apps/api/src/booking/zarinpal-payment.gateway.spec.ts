@@ -71,4 +71,25 @@ describe('ZarinpalGateway', () => {
     const gateway = new ZarinpalGateway('MERCHANT_ID');
     await expect(gateway.requestPayment(200000, 'x', 'https://x.com/cb')).rejects.toThrow('Zarinpal');
   });
+
+  it('throws when verify returns a non-ok HTTP status, even if the body looks like a decline', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ data: null, errors: [{ code: -1, message: 'internal error' }] }),
+    });
+    const gateway = new ZarinpalGateway('MERCHANT_ID');
+    await expect(gateway.verifyPayment('AUTH123', 200000)).rejects.toThrow('Zarinpal');
+  });
+
+  it('wraps a malformed (non-JSON) response into a thrown Zarinpal error instead of a raw SyntaxError', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => {
+        throw new SyntaxError('Unexpected token < in JSON');
+      },
+    });
+    const gateway = new ZarinpalGateway('MERCHANT_ID');
+    await expect(gateway.requestPayment(200000, 'x', 'https://x.com/cb')).rejects.toThrow('Zarinpal');
+  });
 });

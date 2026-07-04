@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PaymentGateway, PaymentRequestResult, PaymentVerifyResult } from './payment-gateway';
 
 const REQUEST_URL = 'https://payment.zarinpal.com/pg/v4/payment/request.json';
@@ -26,10 +26,13 @@ interface ZarinpalVerifyResponse {
  */
 @Injectable()
 export class ZarinpalGateway implements PaymentGateway {
+  private readonly logger = new Logger(ZarinpalGateway.name);
+
   constructor(private readonly merchantId: string) {}
 
   async requestPayment(amountToman: number, description: string, callbackUrl: string): Promise<PaymentRequestResult> {
     let res: Response;
+    let body: ZarinpalRequestResponse;
     try {
       res = await fetch(REQUEST_URL, {
         method: 'POST',
@@ -41,12 +44,18 @@ export class ZarinpalGateway implements PaymentGateway {
           description,
         }),
       });
+      // res.json() must stay inside this try -- a non-JSON body (e.g. an HTML
+      // error page from a WAF/proxy under load) would otherwise throw a raw,
+      // unwrapped SyntaxError instead of the intended "Zarinpal request failed" error.
+      body = (await res.json()) as ZarinpalRequestResponse;
     } catch (err) {
-      throw new Error(`Zarinpal request failed: ${err instanceof Error ? err.message : String(err)}`);
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Zarinpal request failed: ${message}`);
+      throw new Error(`Zarinpal request failed: ${message}`);
     }
-    const body = (await res.json()) as ZarinpalRequestResponse;
     if (!res.ok || body.data?.code !== 100) {
-      throw new Error(`Zarinpal request failed: ${JSON.stringify(body.errors ?? body.data)}`);
+      this.logger.error(`Zarinpal request failed: HTTP ${res.status} ${JSON.stringify(body.errors ?? body.data)}`);
+      throw new Error(`Zarinpal request failed: HTTP ${res.status} ${JSON.stringify(body.errors ?? body.data)}`);
     }
     return {
       authority: body.data.authority,
@@ -56,6 +65,7 @@ export class ZarinpalGateway implements PaymentGateway {
 
   async verifyPayment(authority: string, amountToman: number): Promise<PaymentVerifyResult> {
     let res: Response;
+    let body: ZarinpalVerifyResponse;
     try {
       res = await fetch(VERIFY_URL, {
         method: 'POST',
@@ -66,10 +76,21 @@ export class ZarinpalGateway implements PaymentGateway {
           authority,
         }),
       });
+      body = (await res.json()) as ZarinpalVerifyResponse;
     } catch (err) {
-      throw new Error(`Zarinpal verify failed: ${err instanceof Error ? err.message : String(err)}`);
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Zarinpal verify failed for authority ${authority}: ${message}`);
+      throw new Error(`Zarinpal verify failed: ${message}`);
     }
-    const body = (await res.json()) as ZarinpalVerifyResponse;
+    // Unlike a genuine decline (a non-100/101 code with a normal HTTP response),
+    // a non-ok HTTP status means Zarinpal's API itself failed (outage, rate limit,
+    // maintenance) -- that must throw, not silently collapse into {success: false},
+    // which would be indistinguishable from a real decline to the caller and could
+    // tell a customer their payment failed when the real problem was infrastructure.
+    if (!res.ok) {
+      this.logger.error(`Zarinpal verify returned HTTP ${res.status} for authority ${authority}: ${JSON.stringify(body.errors ?? body.data)}`);
+      throw new Error(`Zarinpal verify failed: HTTP ${res.status} ${JSON.stringify(body.errors ?? body.data)}`);
+    }
     if (body.data?.code === 100 || body.data?.code === 101) {
       return { success: true, refId: String(body.data.ref_id) };
     }
