@@ -35,4 +35,19 @@ export class KavenegarSmsProvider implements SmsProvider {
       throw new Error(`Kavenegar send failed: ${body?.return?.message ?? res.status}`);
     }
   }
+
+  async send(phone: string, message: string): Promise<void> {
+    const params = new URLSearchParams({ receptor: phone, message });
+    const url = `https://api.kavenegar.com/v1/${this.apiKey}/sms/send.json?${params}`;
+    let res: Response;
+    try {
+      res = await fetch(url);
+    } catch (err) {
+      throw new Error(`Kavenegar send failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const body = (await res.json()) as KavenegarResponse;
+    if (!res.ok || body?.return?.status !== 200) {
+      throw new Error(`Kavenegar send failed: ${body?.return?.message ?? res.status}`);
+    }
+  }
 }
