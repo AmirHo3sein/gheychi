@@ -1194,7 +1194,7 @@ export class AvailabilityQueryDto {
 ```typescript
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, MoreThan, Repository } from 'typeorm';
+import { In, LessThan, MoreThan, Repository } from 'typeorm';
 import { SalonService } from '../salons/salon-service.entity';
 import { ScheduleException } from '../salons/schedule-exception.entity';
 import { WorkingHour } from '../salons/working-hour.entity';
@@ -1221,27 +1221,26 @@ export class AvailabilityService {
     const service = await this.services.findOneBy({ id: serviceId, salonId, isActive: true });
     if (!service) throw new NotFoundException('Service not found');
 
-    const [hourRows, exceptionRows, existingBookingRows] = await Promise.all([
+    const windowEnd = new Date(now.getTime() + AVAILABILITY_WINDOW_DAYS * 24 * 60 * 60_000);
+
+    const [hourRows, exceptionRows, activeBookingRows] = await Promise.all([
       this.hours.find({ where: { salonId } }),
       this.exceptions.find({ where: { salonId, isClosed: true } }),
       this.bookings.find({
         where: {
           salonId,
-          status: 'confirmed' as const,
-          startsAt: LessThan(new Date(now.getTime() + AVAILABILITY_WINDOW_DAYS * 24 * 60 * 60_000)),
+          // Both statuses count against capacity -- a slot someone else is
+          // mid-checkout on must not be offered to a second customer, which is
+          // exactly what the design spec's "double booking is impossible" claim
+          // depends on. pending_payment rows older than the hold TTL are cleaned
+          // up by a later task's expiry job, so this can't accumulate stale
+          // holds indefinitely.
+          status: In(['confirmed', 'pending_payment']),
+          startsAt: LessThan(windowEnd),
           endsAt: MoreThan(now),
         },
       }),
     ]);
-
-    const pendingBookingRows = await this.bookings.find({
-      where: {
-        salonId,
-        status: 'pending_payment' as const,
-        startsAt: LessThan(new Date(now.getTime() + AVAILABILITY_WINDOW_DAYS * 24 * 60 * 60_000)),
-        endsAt: MoreThan(now),
-      },
-    });
 
     const hoursByWeekday = new Map<number, WorkingHourRange[]>();
     for (const h of hourRows) {
@@ -1257,7 +1256,7 @@ export class AvailabilityService {
       capacity: salon.capacity,
       hoursByWeekday,
       closedDates: new Set(exceptionRows.map((e) => e.date)),
-      existingBookings: [...existingBookingRows, ...pendingBookingRows].map((b) => ({
+      existingBookings: activeBookingRows.map((b) => ({
         startsAt: b.startsAt,
         endsAt: b.endsAt,
       })),
@@ -1266,14 +1265,12 @@ export class AvailabilityService {
 }
 ```
 
-(Both `confirmed` and `pending_payment` bookings count against capacity — a slot someone else is mid-checkout on must not be offered to a second customer, which is exactly what the design spec's "double booking is impossible" claim depends on. `pending_payment` rows older than the hold TTL are cleaned up by Task 14's expiry job, so this can't accumulate stale holds indefinitely.)
-
 - [ ] **Step 3: Controller + module** — new file `apps/api/src/booking/booking.module.ts` (this task only wires availability; Tasks 9-15 add to this same module)
 
 Create `apps/api/src/booking/availability.controller.ts`:
 
 ```typescript
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { AvailabilityService } from './availability.service';
 import { AvailabilityQueryDto } from './dto/booking.dto';
 
@@ -1282,11 +1279,13 @@ export class AvailabilityController {
   constructor(private readonly availability: AvailabilityService) {}
 
   @Get()
-  get(@Param('salonId') salonId: string, @Query() query: AvailabilityQueryDto) {
+  get(@Param('salonId', ParseUUIDPipe) salonId: string, @Query() query: AvailabilityQueryDto) {
     return this.availability.computeFor(salonId, query.serviceId);
   }
 }
 ```
+
+(`ParseUUIDPipe` matches the convention already used on `:id` params elsewhere in this codebase, e.g. `schedule.controller.ts`/`salon-services.controller.ts` — without it, a malformed `salonId` reaches `findOneBy` untransformed, Postgres raises `invalid input syntax for type uuid`, and with no global exception filter for `QueryFailedError` anywhere in this codebase, that surfaces as a raw 500 on this genuinely public, unauthenticated endpoint instead of a clean 400.)
 
 Create `apps/api/src/booking/booking.module.ts`:
 
@@ -1417,13 +1416,38 @@ describe('Availability (e2e)', () => {
       .expect(404);
     await ds.query(`UPDATE salons SET status = 'approved' WHERE id = $1`, [salonId]);
   });
+
+  it('excludes a slot with a pending_payment booking, not just confirmed ones', async () => {
+    const before = await request(app.getHttpServer())
+      .get(`/api/salons/${salonId}/availability`)
+      .query({ serviceId })
+      .expect(200);
+    const targetDate = before.body[0].date;
+    const targetSlot = before.body[0].slots[0];
+
+    const ds = app.get(DataSource);
+    const startsAt = new Date(targetSlot);
+    const endsAt = new Date(startsAt.getTime() + 60 * 60_000); // service duration is 60min
+    await ds.query(
+      `INSERT INTO bookings (user_id, salon_id, service_id, starts_at, ends_at, price_snapshot, deposit_amount, status)
+       SELECT id, $1, $2, $3, $4, 500000, 100000, 'pending_payment' FROM users LIMIT 1`,
+      [salonId, serviceId, startsAt.toISOString(), endsAt.toISOString()],
+    );
+
+    const after = await request(app.getHttpServer())
+      .get(`/api/salons/${salonId}/availability`)
+      .query({ serviceId })
+      .expect(200);
+    const afterDay = after.body.find((d: { date: string }) => d.date === targetDate);
+    expect(afterDay?.slots ?? []).not.toContain(targetSlot);
+  });
 });
 ```
 
 - [ ] **Step 5: Run, verify pass**
 
 Run: `pnpm --filter @arayeshgah/api test:e2e -- availability`
-Expected: PASS (4 tests).
+Expected: PASS (5 tests — the pending_payment-exclusion test was added after code review flagged that this load-bearing double-booking-prevention detail was unverified above the pure-function layer).
 
 - [ ] **Step 6: Commit**
 
