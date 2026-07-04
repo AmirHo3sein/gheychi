@@ -4,6 +4,8 @@ import { ConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
 import { PlatformConfigModule } from '../platform-config/platform-config.module';
 import { SalonsModule } from '../salons/salons.module';
+import { SmsModule } from '../sms/sms.module';
+import { UsersModule } from '../users/users.module';
 import { AvailabilityController } from './availability.controller';
 import { AvailabilityService } from './availability.service';
 import { Booking } from './booking.entity';
@@ -12,6 +14,8 @@ import { BookingsService } from './bookings.service';
 import { MockPaymentGateway } from './mock-payment.gateway';
 import { PAYMENT_GATEWAY } from './payment-gateway';
 import { Payment } from './payment.entity';
+import { PaymentsController } from './payments.controller';
+import { PaymentsService } from './payments.service';
 import { ZarinpalGateway } from './zarinpal-payment.gateway';
 
 @Module({
@@ -20,11 +24,14 @@ import { ZarinpalGateway } from './zarinpal-payment.gateway';
     SalonsModule,
     PlatformConfigModule,
     AuthModule,
+    SmsModule,
+    UsersModule,
   ],
-  controllers: [AvailabilityController, BookingsController],
+  controllers: [AvailabilityController, BookingsController, PaymentsController],
   providers: [
     AvailabilityService,
     BookingsService,
+    PaymentsService,
     {
       provide: PAYMENT_GATEWAY,
       inject: [ConfigService],
