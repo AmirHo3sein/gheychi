@@ -3518,7 +3518,9 @@ Add a new section after the existing "## Tests" section:
 
 **Payments run against `MockPaymentGateway` by default** (`PAYMENT_GATEWAY=mock` in `.env`/`.env.test`) — no real Zarinpal account is needed for local dev or tests. To use the real gateway, set `PAYMENT_GATEWAY=zarinpal` and `ZARINPAL_MERCHANT_ID`, and **verify the exact API contract against Zarinpal's sandbox first** — see the note at the top of `docs/superpowers/plans/2026-07-04-plan-2-booking-payments.md`.
 
-Two background jobs run every 1 and 5 minutes respectively: expiring abandoned booking holds, and reconciling payments whose Zarinpal callback never arrived.
+Two background jobs run every 1 and 5 minutes respectively: expiring abandoned booking holds (`booking_hold_ttl_minutes`, seeded at 15) and reconciling payments whose Zarinpal callback never arrived (fixed 20-minute stale threshold). The 20-minute threshold is intentionally longer than the default hold TTL, so a genuinely-late-but-successful payment commonly finds its booking already expired by the time reconciliation runs — this is handled (the payment is still marked `paid`, the booking is not resurrected into a possibly-rebooked slot), not a bug, but the two numbers are tuned relative to each other and shouldn't be changed independently without re-checking that relationship.
+
+**No money actually moves automatically in this plan.** `refunded`/`paid`/`failed` on a `Payment` row are bookkeeping labels only — there is no real Zarinpal refund API call anywhere in the system. A `refunded` status means "the customer is owed a refund," not "a refund was issued." Similarly, the `logger.error(...)` lines marking a payment as needing manual review (orphaned authority, late payment on an expired booking, gateway failures) are plain application logs with no alerting/paging integration yet — someone has to know to look for them. Both are explicit, deliberate MVP scope cuts, not oversights; wiring up real refunds and log-based alerting are natural candidates for a future plan.
 ```
 
 - [ ] **Step 3: Commit**
