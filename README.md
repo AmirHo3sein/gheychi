@@ -41,3 +41,16 @@ pnpm --filter @arayeshgah/api test:e2e    # e2e (needs docker services)
 Two background jobs run every 1 and 5 minutes respectively: expiring abandoned booking holds (`booking_hold_ttl_minutes`, seeded at 15) and reconciling payments whose Zarinpal callback never arrived (fixed 20-minute stale threshold). The 20-minute threshold is intentionally longer than the default hold TTL, so a genuinely-late-but-successful payment commonly finds its booking already expired by the time reconciliation runs — this is handled (the payment is still marked `paid`, the booking is not resurrected into a possibly-rebooked slot), not a bug, but the two numbers are tuned relative to each other and shouldn't be changed independently without re-checking that relationship.
 
 **No money actually moves automatically in this plan.** `refunded`/`paid`/`failed` on a `Payment` row are bookkeeping labels only — there is no real Zarinpal refund API call anywhere in the system. A `refunded` status means "the customer is owed a refund," not "a refund was issued." Similarly, the `logger.error(...)` lines marking a payment as needing manual review (orphaned authority, late payment on an expired booking, gateway failures) are plain application logs with no alerting/paging integration yet — someone has to know to look for them. Both are explicit, deliberate MVP scope cuts, not oversights; wiring up real refunds and log-based alerting are natural candidates for a future plan.
+
+## Reviews & moderation (Plan 3)
+
+- `POST /api/reviews` — leave a rating (1-5) + optional comment for one of your own completed bookings (customer, authenticated)
+- `GET /api/salons/:salonId/reviews` — published reviews for a salon, newest first (public)
+- `PATCH /api/salons/mine/reviews/:id/reply` — salon owner sets or updates their one reply to a review (provider, authenticated)
+- `PATCH /api/admin/reviews/:id` — admin sets a review's status to `published` or `rejected` (admin-only)
+
+**Reviews are verified-booking-only**, enforced at the database level by a UNIQUE index on `reviews.booking_id` — a booking can only be reviewed once, and only after the salon marks it `completed`.
+
+**Moderation is reactive, not pre-publish**: a review is `published` the instant it's created; there's no queue to clear before it's visible. An admin can later flip it to `rejected` (or back) if a report is upheld — how a report reaches an admin (support ticket, phone call) is outside this system for MVP, same as Zarinpal refund settlement in Plan 2.
+
+`salons.rating_avg`/`rating_count` are always recomputed from every currently-`published` review for that salon, in the same transaction as any status-changing write — never incremented/decremented in place — so a rejection (or reversal) immediately and correctly updates the salon's public rating. The recompute locks the salon row first (`SELECT ... FOR UPDATE`) before reading the aggregate, closing a lost-update race that a naive single-statement `UPDATE ... FROM (aggregate subquery)` would have under concurrent writes to the same salon's reviews.
