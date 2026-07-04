@@ -161,4 +161,49 @@ describe('computeAvailableSlots', () => {
     });
     expect(result).toEqual([]);
   });
+
+  it('returns an empty array instead of hanging when durationMin is zero or negative', () => {
+    const zero = computeAvailableSlots({
+      now: NOW,
+      days: 1,
+      durationMin: 0,
+      capacity: 1,
+      hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '12:00:00' }]]]),
+      closedDates: new Set(),
+      existingBookings: [],
+    });
+    expect(zero).toEqual([]);
+
+    const negative = computeAvailableSlots({
+      now: NOW,
+      days: 1,
+      durationMin: -30,
+      capacity: 1,
+      hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '12:00:00' }]]]),
+      closedDates: new Set(),
+      existingBookings: [],
+    });
+    expect(negative).toEqual([]);
+  });
+
+  it('returns slots in chronological order even when working-hour ranges are given out of order', () => {
+    const result = computeAvailableSlots({
+      now: NOW,
+      days: 1,
+      durationMin: 60,
+      capacity: 1,
+      hoursByWeekday: new Map([[1, [
+        { openTime: '15:00:00', closeTime: '17:00:00' },
+        { openTime: '09:00:00', closeTime: '11:00:00' },
+      ]]]),
+      closedDates: new Set(),
+      existingBookings: [],
+    });
+    expect(result[0].slots).toEqual([
+      '2026-08-03T09:00:00.000Z',
+      '2026-08-03T10:00:00.000Z',
+      '2026-08-03T15:00:00.000Z',
+      '2026-08-03T16:00:00.000Z',
+    ]);
+  });
 });
