@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuthModule } from './auth/auth.module';
 import { HealthController } from './health/health.controller';
 import { RedisModule } from './redis/redis.module';
 
@@ -24,6 +25,7 @@ import { RedisModule } from './redis/redis.module';
       }),
     }),
     RedisModule,
+    AuthModule,
   ],
   controllers: [HealthController],
 })
