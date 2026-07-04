@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { CatalogModule } from './catalog/catalog.module';
@@ -27,6 +28,7 @@ import { SearchModule } from './search/search.module';
         synchronize: false,
       }),
     }),
+    ScheduleModule.forRoot(),
     RedisModule,
     AuthModule,
     CatalogModule,
