@@ -55,6 +55,10 @@ export class ReviewsService {
     }
   }
 
+  findForSalon(salonId: string): Promise<Review[]> {
+    return this.reviews.find({ where: { salonId, status: 'published' }, order: { createdAt: 'DESC' } });
+  }
+
   private async recomputeSalonRating(em: EntityManager, salonId: string): Promise<void> {
     // Recomputed from source of truth every time (not incremented/decremented in
     // place) -- avoids float-drift bugs, and this exact same query handles a new
