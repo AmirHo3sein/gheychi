@@ -971,18 +971,19 @@ describe('computeAvailableSlots', () => {
 
   it('does not exclude past-today times on future days', () => {
     const result = computeAvailableSlots({
-      now: new Date('2026-08-03T23:00:00.000Z'),
+      now: new Date('2026-08-03T09:30:00.000Z'), // 09:30 on the Monday
       days: 2,
       durationMin: 60,
       capacity: 1,
       hoursByWeekday: new Map([
-        [1, [{ openTime: '09:00:00', closeTime: '10:00:00' }]],
-        [2, [{ openTime: '09:00:00', closeTime: '10:00:00' }]],
+        [1, [{ openTime: '09:00:00', closeTime: '11:00:00' }]], // Monday: 09:00 candidate is past, 10:00 remains
+        [2, [{ openTime: '09:00:00', closeTime: '10:00:00' }]], // Tuesday: a future day, its 09:00 must NOT be excluded
       ]),
       closedDates: new Set(),
       existingBookings: [],
     });
     expect(result).toHaveLength(2);
+    expect(result[0].slots).toEqual(['2026-08-03T10:00:00.000Z']);
     expect(result[1].slots).toEqual(['2026-08-04T09:00:00.000Z']);
   });
 
