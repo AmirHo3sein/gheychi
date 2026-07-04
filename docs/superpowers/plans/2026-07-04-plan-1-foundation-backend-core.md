@@ -969,6 +969,13 @@ Expected: FAIL — `Cannot find module './kavenegar-sms.provider'`.
 import { Injectable } from '@nestjs/common';
 import { SmsProvider } from './sms.provider';
 
+interface KavenegarResponse {
+  return?: {
+    status: number;
+    message?: string;
+  };
+}
+
 @Injectable()
 export class KavenegarSmsProvider implements SmsProvider {
   constructor(
@@ -984,13 +991,15 @@ export class KavenegarSmsProvider implements SmsProvider {
     });
     const url = `https://api.kavenegar.com/v1/${this.apiKey}/verify/lookup.json?${params}`;
     const res = await fetch(url);
-    const body = await res.json();
+    const body = (await res.json()) as KavenegarResponse;
     if (!res.ok || body?.return?.status !== 200) {
       throw new Error(`Kavenegar send failed: ${body?.return?.message ?? res.status}`);
     }
   }
 }
 ```
+
+**Note:** this project's `tsconfig.json` (`lib: ["ES2022"]`, no `dom`) makes `@types/node`'s `fetch`/`Response.json()` shim resolve to `Promise<{}>`, so the literal `body?.return?.status` access above doesn't type-check without a cast — hence the local `KavenegarResponse` interface and `as KavenegarResponse`. Behavior is identical; this only satisfies the type checker.
 
 - [ ] **Step 6: Run tests to verify pass**
 
