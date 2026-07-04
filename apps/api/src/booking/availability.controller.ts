@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { AvailabilityService } from './availability.service';
 import { AvailabilityQueryDto } from './dto/booking.dto';
 
@@ -7,7 +7,7 @@ export class AvailabilityController {
   constructor(private readonly availability: AvailabilityService) {}
 
   @Get()
-  get(@Param('salonId') salonId: string, @Query() query: AvailabilityQueryDto) {
+  get(@Param('salonId', ParseUUIDPipe) salonId: string, @Query() query: AvailabilityQueryDto) {
     return this.availability.computeFor(salonId, query.serviceId);
   }
 }

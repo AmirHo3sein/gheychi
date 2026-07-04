@@ -90,4 +90,29 @@ describe('Availability (e2e)', () => {
       .expect(404);
     await ds.query(`UPDATE salons SET status = 'approved' WHERE id = $1`, [salonId]);
   });
+
+  it('excludes a slot with a pending_payment booking, not just confirmed ones', async () => {
+    const before = await request(app.getHttpServer())
+      .get(`/api/salons/${salonId}/availability`)
+      .query({ serviceId })
+      .expect(200);
+    const targetDate = before.body[0].date;
+    const targetSlot = before.body[0].slots[0];
+
+    const ds = app.get(DataSource);
+    const startsAt = new Date(targetSlot);
+    const endsAt = new Date(startsAt.getTime() + 60 * 60_000); // service duration is 60min
+    await ds.query(
+      `INSERT INTO bookings (user_id, salon_id, service_id, starts_at, ends_at, price_snapshot, deposit_amount, status)
+       SELECT id, $1, $2, $3, $4, 500000, 100000, 'pending_payment' FROM users LIMIT 1`,
+      [salonId, serviceId, startsAt.toISOString(), endsAt.toISOString()],
+    );
+
+    const after = await request(app.getHttpServer())
+      .get(`/api/salons/${salonId}/availability`)
+      .query({ serviceId })
+      .expect(200);
+    const afterDay = after.body.find((d: { date: string }) => d.date === targetDate);
+    expect(afterDay?.slots ?? []).not.toContain(targetSlot);
+  });
 });

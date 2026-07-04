@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, MoreThan, Repository } from 'typeorm';
+import { In, LessThan, MoreThan, Repository } from 'typeorm';
 import { SalonService } from '../salons/salon-service.entity';
 import { ScheduleException } from '../salons/schedule-exception.entity';
 import { WorkingHour } from '../salons/working-hour.entity';
@@ -27,27 +27,20 @@ export class AvailabilityService {
     const service = await this.services.findOneBy({ id: serviceId, salonId, isActive: true });
     if (!service) throw new NotFoundException('Service not found');
 
-    const [hourRows, exceptionRows, existingBookingRows] = await Promise.all([
+    const windowEnd = new Date(now.getTime() + AVAILABILITY_WINDOW_DAYS * 24 * 60 * 60_000);
+
+    const [hourRows, exceptionRows, activeBookingRows] = await Promise.all([
       this.hours.find({ where: { salonId } }),
       this.exceptions.find({ where: { salonId, isClosed: true } }),
       this.bookings.find({
         where: {
           salonId,
-          status: 'confirmed' as const,
-          startsAt: LessThan(new Date(now.getTime() + AVAILABILITY_WINDOW_DAYS * 24 * 60 * 60_000)),
+          status: In(['confirmed', 'pending_payment']),
+          startsAt: LessThan(windowEnd),
           endsAt: MoreThan(now),
         },
       }),
     ]);
-
-    const pendingBookingRows = await this.bookings.find({
-      where: {
-        salonId,
-        status: 'pending_payment' as const,
-        startsAt: LessThan(new Date(now.getTime() + AVAILABILITY_WINDOW_DAYS * 24 * 60 * 60_000)),
-        endsAt: MoreThan(now),
-      },
-    });
 
     const hoursByWeekday = new Map<number, WorkingHourRange[]>();
     for (const h of hourRows) {
@@ -63,7 +56,7 @@ export class AvailabilityService {
       capacity: salon.capacity,
       hoursByWeekday,
       closedDates: new Set(exceptionRows.map((e) => e.date)),
-      existingBookings: [...existingBookingRows, ...pendingBookingRows].map((b) => ({
+      existingBookings: activeBookingRows.map((b) => ({
         startsAt: b.startsAt,
         endsAt: b.endsAt,
       })),
