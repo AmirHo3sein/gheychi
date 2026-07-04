@@ -69,7 +69,7 @@ arayeshgah/
 - **schedule_exceptions** — salon_id, date, is_closed (holidays / custom closures).
 - **bookings** — id (uuid), user_id, salon_id, service_id, starts_at, ends_at, price_snapshot, deposit_amount, status (`pending_payment`|`confirmed`|`completed`|`cancelled_by_user`|`cancelled_by_salon`|`no_show`).
 - **payments** — booking_id, amount, gateway (`zarinpal`), authority, ref_id, status (`initiated`|`paid`|`failed`|`refunded`).
-- **reviews** — booking_id (UNIQUE), salon_id, user_id, rating (1–5), comment, status (`pending`|`approved`|`rejected`), salon_reply.
+- **reviews** — booking_id (UNIQUE), salon_id, user_id, rating (1–5), comment, status (`published`|`rejected`), salon_reply. Reviews are created as `published` (moderation is reactive — see §7); admins set `rejected` on upheld reports.
 - **platform_config** — admin-editable tunables: deposit percent, deposit minimum, cancellation window hours, commission rate, booking hold TTL.
 
 ### Modeling decisions
@@ -78,7 +78,7 @@ arayeshgah/
 - **Staff-ready.** Phase 2 adds a `staff` table and `bookings.staff_id`; nothing else restructures.
 - **price_snapshot** on bookings isolates existing bookings from later price edits.
 - **reviews.booking_id UNIQUE** enforces verified-only reviews at the database level.
-- **rating_avg/rating_count** update in the same transaction as review approval so search never aggregates on the fly.
+- **rating_avg/rating_count** update in the same transaction as review creation (and re-compute on rejection) so search never aggregates on the fly.
 
 ## 4. Booking & Payment Flow
 
