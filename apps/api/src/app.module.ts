@@ -5,6 +5,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { HealthController } from './health/health.controller';
+import { PlatformConfigModule } from './platform-config/platform-config.module';
 import { RedisModule } from './redis/redis.module';
 import { SalonsModule } from './salons/salons.module';
 import { SearchModule } from './search/search.module';
@@ -30,6 +31,7 @@ import { SearchModule } from './search/search.module';
     }),
     ScheduleModule.forRoot(),
     RedisModule,
+    PlatformConfigModule,
     AuthModule,
     CatalogModule,
     SalonsModule,
