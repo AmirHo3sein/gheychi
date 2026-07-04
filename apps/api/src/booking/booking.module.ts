@@ -15,6 +15,7 @@ import { BookingsService } from './bookings.service';
 import { MockPaymentGateway } from './mock-payment.gateway';
 import { PAYMENT_GATEWAY } from './payment-gateway';
 import { Payment } from './payment.entity';
+import { PaymentReconciliationJob } from './payment-reconciliation.job';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 import { SalonBookingsController } from './salon-bookings.controller';
@@ -35,6 +36,7 @@ import { ZarinpalGateway } from './zarinpal-payment.gateway';
     BookingsService,
     PaymentsService,
     BookingExpiryJob,
+    PaymentReconciliationJob,
     {
       provide: PAYMENT_GATEWAY,
       inject: [ConfigService],
