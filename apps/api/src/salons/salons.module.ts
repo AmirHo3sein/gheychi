@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
+import { SalonOwnerGuard } from './salon-owner.guard';
 import { SalonService } from './salon-service.entity';
 import { Salon } from './salon.entity';
 import { SalonServicesController } from './salon-services.controller';
@@ -16,7 +17,7 @@ import { WorkingHour } from './working-hour.entity';
     AuthModule,
   ],
   controllers: [SalonServicesController, ScheduleController, SalonsController],
-  providers: [SalonsService],
-  exports: [SalonsService, TypeOrmModule],
+  providers: [SalonsService, SalonOwnerGuard],
+  exports: [SalonsService, SalonOwnerGuard, TypeOrmModule],
 })
 export class SalonsModule {}

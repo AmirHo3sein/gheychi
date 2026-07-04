@@ -55,4 +55,8 @@ export class SalonsService {
     if (!salon) throw new NotFoundException();
     return salon;
   }
+
+  findById(id: string): Promise<Salon | null> {
+    return this.repo.findOneBy({ id });
+  }
 }
