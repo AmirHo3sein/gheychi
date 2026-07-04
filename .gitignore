@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.output/
+.nuxt/
+.turbo/
+.env
+.env.*
+!.env.example
+.superpowers/
