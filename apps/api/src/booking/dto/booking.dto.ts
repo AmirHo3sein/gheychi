@@ -1,4 +1,4 @@
-import { IsISO8601, IsUUID } from 'class-validator';
+import { IsIn, IsISO8601, IsUUID } from 'class-validator';
 
 export class AvailabilityQueryDto {
   @IsUUID()
@@ -14,4 +14,9 @@ export class CreateBookingDto {
 
   @IsISO8601()
   startsAt: string;
+}
+
+export class UpdateBookingStatusDto {
+  @IsIn(['completed', 'no_show'])
+  status: 'completed' | 'no_show';
 }

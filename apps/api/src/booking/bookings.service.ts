@@ -142,4 +142,22 @@ export class BookingsService {
   listMine(userId: string): Promise<Booking[]> {
     return this.bookings.find({ where: { userId }, order: { startsAt: 'DESC' } });
   }
+
+  listForSalon(salonId: string): Promise<Booking[]> {
+    return this.bookings.find({ where: { salonId }, order: { startsAt: 'DESC' } });
+  }
+
+  async updateStatus(salonId: string, bookingId: string, status: 'completed' | 'no_show'): Promise<Booking> {
+    const booking = await this.bookings.findOneBy({ id: bookingId, salonId });
+    if (!booking) throw new NotFoundException('Booking not found');
+    if (booking.status !== 'confirmed') {
+      throw new BadRequestException('Only confirmed bookings can be marked completed or no-show');
+    }
+    // Both outcomes leave the payment `paid` -- a no-show forfeits the deposit to the
+    // salon (no refund), and a completion's deposit is deducted from the in-salon total,
+    // tracked outside this system for MVP. Neither calls a real payout/refund API; see
+    // this plan's header note on why that's explicitly out of scope.
+    await this.bookings.update({ id: bookingId }, { status });
+    return (await this.bookings.findOneBy({ id: bookingId }))!;
+  }
 }

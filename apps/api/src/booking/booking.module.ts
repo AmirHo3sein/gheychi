@@ -16,6 +16,7 @@ import { PAYMENT_GATEWAY } from './payment-gateway';
 import { Payment } from './payment.entity';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
+import { SalonBookingsController } from './salon-bookings.controller';
 import { ZarinpalGateway } from './zarinpal-payment.gateway';
 
 @Module({
@@ -27,7 +28,7 @@ import { ZarinpalGateway } from './zarinpal-payment.gateway';
     SmsModule,
     UsersModule,
   ],
-  controllers: [AvailabilityController, BookingsController, PaymentsController],
+  controllers: [AvailabilityController, BookingsController, PaymentsController, SalonBookingsController],
   providers: [
     AvailabilityService,
     BookingsService,
