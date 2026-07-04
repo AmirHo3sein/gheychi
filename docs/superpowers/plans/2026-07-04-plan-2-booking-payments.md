@@ -2570,7 +2570,18 @@ Append these two methods to the `BookingsService` class in `apps/api/src/booking
     // salon (no refund), and a completion's deposit is deducted from the in-salon total,
     // tracked outside this system for MVP. Neither calls a real payout/refund API; see
     // this plan's header note on why that's explicitly out of scope.
-    await this.bookings.update({ id: bookingId }, { status });
+    //
+    // Guard against a concurrent write on the same booking -- most notably cancel(),
+    // which can run at the same moment a provider marks a booking completed/no-show.
+    // Without this, an unconditional update could silently flip an already-cancelled-
+    // and-refunded booking's status back to completed/no_show if the two requests
+    // interleave. Conditioning on the status still being confirmed (the same pattern
+    // already used by cancel() and the payment callback) means only the winner's
+    // write lands; a losing concurrent call gets a clear 409 instead.
+    const result = await this.bookings.update({ id: bookingId, status: 'confirmed' }, { status });
+    if (!result.affected) {
+      throw new ConflictException('Booking status changed before this update could be applied');
+    }
     return (await this.bookings.findOneBy({ id: bookingId }))!;
   }
 ```
@@ -3534,7 +3545,7 @@ git commit -m "docs: document booking and payment endpoints from Plan 2"
 
 ## Self-Review
 
-**Spec coverage:** every numbered step of the design spec's section 4 (Booking & Payment Flow) has a task — availability (Tasks 7-8), hold with Redis lock + transaction (Task 10), deposit payment (Tasks 9-10), confirm via server-side verify (Task 11), notify via SMS (Task 11), complete/no-show (Task 12), expiry job (Task 14), reconciliation job (Task 15). The cancellation/refund table (spec section 4) is fully covered by Task 13's three branches. Reviews (spec section 4 step 6's "triggers the review prompt") are explicitly deferred to Plan 3, as agreed with the user before writing this plan.
+**Spec coverage:** every numbered step of the design spec's section 4 (Booking & Payment Flow) has a task — availability (Tasks 7-8), hold with Redis lock + transaction (Task 10), deposit payment (Tasks 9-10), confirm via server-side verify (Task 11), notify via SMS (Task 11), complete/no-show (Task 12), expiry job (Task 14), reconciliation job (Task 15). The cancellation/refund table (spec section 4) is fully covered by Task 13's three branches. Reviews (spec section 4 step 6's "triggers the review prompt") are explicitly deferred to Plan 3, as agreed with the user before writing this plan. **One additional deliberate scope cut, caught during the final whole-branch review and not previously called out explicitly**: spec section 4 step 5 also mentions a pre-appointment reminder SMS to the customer; this plan implements the confirmation-SMS half of that step (Task 11) but not a scheduled reminder job. No cron/scheduler code for this exists anywhere in the codebase. It's a natural, low-cost follow-up for a future plan (a new cron job querying bookings starting in N hours), not something silently missed -- flagging it here so it's tracked the same way Reviews' deferral is.
 
 **Placeholder scan:** no TBD/TODO markers; every code block is complete, runnable content, not a description of what to write.
 
