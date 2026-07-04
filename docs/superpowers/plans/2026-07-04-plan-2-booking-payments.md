@@ -3214,7 +3214,7 @@ git commit -m "feat(api): cron job to expire stale pending_payment holds"
 - [ ] **Step 1: The job** — `apps/api/src/booking/payment-reconciliation.job.ts`
 
 ```typescript
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, LessThan, Repository } from 'typeorm';
@@ -3226,6 +3226,8 @@ const STALE_AFTER_MINUTES = 20;
 
 @Injectable()
 export class PaymentReconciliationJob {
+  private readonly logger = new Logger(PaymentReconciliationJob.name);
+
   constructor(
     @InjectRepository(Payment) private readonly payments: Repository<Payment>,
     private readonly dataSource: DataSource,
@@ -3249,11 +3251,40 @@ export class PaymentReconciliationJob {
       const verify = await this.gateway.verifyPayment(payment.authority, payment.amount);
       await this.dataSource.transaction(async (em) => {
         if (verify.success) {
+          // The booking-hold TTL (15 min) is shorter than this job's stale
+          // threshold (20 min), so by the time a payment is old enough to land
+          // here, its booking has very likely ALREADY been expired by
+          // BookingExpiryJob -- this is the common case, not a rare race.
+          // Only resurrect a booking that's still genuinely pending_payment;
+          // if it already moved on (expired, or cancelled by either party),
+          // blindly flipping it back to confirmed would risk confirming a
+          // slot that may have since been rebooked by someone else. The
+          // payment still gets marked paid either way -- Zarinpal genuinely
+          // captured the money -- but a booking that already left
+          // pending_payment is logged for manual refund review instead of
+          // being silently resurrected.
+          const result = await em.update(
+            Booking,
+            { id: payment.bookingId, status: 'pending_payment' },
+            { status: 'confirmed' },
+          );
+          if (!result.affected) {
+            this.logger.error(
+              `Payment ${payment.id} (authority ${payment.authority}) was confirmed by Zarinpal after its booking ${payment.bookingId} already left pending_payment -- needs manual refund review`,
+            );
+          }
           await em.update(Payment, { id: payment.id }, { status: 'paid', refId: verify.refId });
-          await em.update(Booking, { id: payment.bookingId }, { status: 'confirmed' });
         } else {
+          // Same reasoning in reverse: only cancel a booking that's still
+          // pending_payment. If it already expired or was cancelled, there's
+          // nothing left to do to it -- the payment simply gets marked failed
+          // (Zarinpal never captured anything).
+          await em.update(
+            Booking,
+            { id: payment.bookingId, status: 'pending_payment' },
+            { status: 'cancelled_by_user' },
+          );
           await em.update(Payment, { id: payment.id }, { status: 'failed' });
-          await em.update(Booking, { id: payment.bookingId }, { status: 'cancelled_by_user' });
         }
       });
       reconciled++;
@@ -3403,13 +3434,43 @@ describe('Payment reconciliation job (e2e)', () => {
       .expect(200);
     expect(booking.body.status).toBe('pending_payment');
   });
+
+  it('does not resurrect an already-expired booking, but still marks the payment paid if Zarinpal confirms it', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/api/bookings')
+      .set('Cookie', customerCookie)
+      .send({ salonId, serviceId, startsAt: new Date(Date.now() + 96 * 60 * 60_000).toISOString() })
+      .expect(201);
+
+    const ds = app.get(DataSource);
+    // Simulate BookingExpiryJob having already run -- its 15-minute TTL is shorter
+    // than this job's 20-minute stale threshold, so this is the common production
+    // case, not a rare race, whenever a callback genuinely never arrives.
+    await ds.query(`UPDATE bookings SET status = 'expired' WHERE id = $1`, [created.body.booking.id]);
+    await ds.query(
+      `UPDATE payments SET created_at = now() - interval '25 minutes' WHERE booking_id = $1`,
+      [created.body.booking.id],
+    );
+
+    const reconciled = await job.run();
+    expect(reconciled).toBe(1);
+
+    const booking = await request(app.getHttpServer())
+      .get(`/api/bookings/${created.body.booking.id}`)
+      .set('Cookie', customerCookie)
+      .expect(200);
+    expect(booking.body.status).toBe('expired'); // not silently resurrected to confirmed
+
+    const [payment] = await ds.query('SELECT status FROM payments WHERE booking_id = $1', [created.body.booking.id]);
+    expect(payment.status).toBe('paid'); // Zarinpal genuinely captured the money -- flagged for manual review, not discarded
+  });
 });
 ```
 
 - [ ] **Step 4: Run, verify pass**
 
 Run: `pnpm --filter @arayeshgah/api test:e2e -- payment-reconciliation`
-Expected: PASS (3 tests).
+Expected: PASS (4 tests — a case was added after code review found that the TTL relationship between this job's 20-minute stale threshold and BookingExpiryJob's 15-minute hold TTL means a genuinely-late payment will commonly find its booking already expired, and the original unconditional Booking update would have silently resurrected it).
 
 - [ ] **Step 5: Commit**
 
