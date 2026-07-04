@@ -1069,6 +1069,7 @@ git commit -m "feat(api): add sms provider abstraction with console and kavenega
 - Create: `apps/api/src/auth/dto/auth.dto.ts`
 - Create: `apps/api/src/auth/auth.controller.ts`
 - Create: `apps/api/src/auth/auth.guard.ts`
+- Create: `apps/api/src/types/express.d.ts`
 - Create: `apps/api/src/auth/roles.decorator.ts`
 - Create: `apps/api/src/auth/roles.guard.ts`
 - Create: `apps/api/src/auth/auth.module.ts`
@@ -1255,6 +1256,22 @@ export class RolesGuard implements CanActivate {
     const { user } = context.switchToHttp().getRequest();
     if (!user || !required.includes(user.role)) throw new ForbiddenException();
     return true;
+  }
+}
+```
+
+- [ ] **Step 6b: Type the request's `user` field** — `apps/api/src/types/express.d.ts`
+
+The controller below reads `req.user` (populated by `AuthGuard`), but nothing in this repo augments Express's `Request` type with a `user` field, so `req.user as User` won't type-check without this file:
+
+```typescript
+import { User } from '../users/user.entity';
+
+declare global {
+  namespace Express {
+    interface Request {
+      user?: User;
+    }
   }
 }
 ```
