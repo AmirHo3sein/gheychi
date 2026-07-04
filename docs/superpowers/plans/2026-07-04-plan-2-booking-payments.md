@@ -2177,7 +2177,7 @@ git commit -m "feat(api): booking creation with redis lock, transactional capaci
 - [ ] **Step 1: `PaymentsService`** — `apps/api/src/booking/payments.service.ts`
 
 ```typescript
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { SMS_PROVIDER, SmsProvider } from '../sms/sms.provider';
@@ -2191,6 +2191,8 @@ export type CallbackOutcome = 'success' | 'failed' | 'already-confirmed';
 
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
+
   constructor(
     @InjectRepository(Payment) private readonly payments: Repository<Payment>,
     @InjectRepository(Booking) private readonly bookings: Repository<Booking>,
@@ -2217,18 +2219,64 @@ export class PaymentsService {
       return { status: 'failed', bookingId: payment.bookingId };
     }
 
-    const verify = await this.gateway.verifyPayment(authority, payment.amount);
+    let verify: { success: boolean; refId: string | null };
+    try {
+      verify = await this.gateway.verifyPayment(authority, payment.amount);
+    } catch (err) {
+      // Left at 'initiated' on gateway failure (network error, Zarinpal outage) --
+      // a later payment-reconciliation job re-verifies any 'initiated' payment
+      // past a cutoff and will correctly transition it once Zarinpal is
+      // reachable again (its own code 101 "already verified" makes a repeat
+      // verify call safe), so this is self-healing, not a stuck state. Logged
+      // so an unusually persistent outage is still visible to operators.
+      this.logger.error(
+        `Zarinpal verify threw for authority ${authority}, payment ${payment.id}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw err;
+    }
     if (!verify.success) {
       await this.markFailed(payment.id, payment.bookingId);
       return { status: 'failed', bookingId: payment.bookingId };
     }
 
-    await this.dataSource.transaction(async (em) => {
-      await em.update(Payment, { id: payment.id }, { status: 'paid', refId: verify.refId });
-      await em.update(Booking, { id: payment.bookingId }, { status: 'confirmed' });
-    });
+    // Zarinpal's callback is a browser redirect, not a server-issued webhook --
+    // a back-button + refresh, a double-tap on "return to merchant", or an
+    // in-app browser retry can genuinely deliver the same authority twice, with
+    // a live network round-trip to verifyPayment above in between the two
+    // calls' reads of payment.status. The conditional WHERE (status: 'initiated')
+    // below means only the call that actually performs the initiated->paid
+    // transition gets affected=1 and proceeds to notify; a losing concurrent
+    // call sees affected=0 and skips notifyConfirmed, since the winner already
+    // sent it -- this prevents a duplicate "booking confirmed" SMS without
+    // needing a distributed lock, just Postgres's own row-level atomicity.
+    const transitioned = await this.dataSource
+      .transaction(async (em) => {
+        const result = await em.update(
+          Payment,
+          { id: payment.id, status: 'initiated' },
+          { status: 'paid', refId: verify.refId },
+        );
+        if (!result.affected) return false;
+        await em.update(Booking, { id: payment.bookingId }, { status: 'confirmed' });
+        return true;
+      })
+      .catch((err) => {
+        // Zarinpal has already confirmed the charge at this point (verify.success
+        // was true) -- if persisting that here fails, the payment is left at
+        // 'initiated' even though Zarinpal genuinely captured the money. Same
+        // self-healing story as the gateway-throw case above: the reconciliation
+        // job re-verifies 'initiated' payments and will call verifyPayment
+        // again, which resolves this -- but log it, since a stuck payment here
+        // means a customer paid and doesn't yet see a confirmed booking.
+        this.logger.error(
+          `Failed to persist paid/confirmed state for authority ${authority}, payment ${payment.id}, booking ${payment.bookingId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        throw err;
+      });
 
-    await this.notifyConfirmed(payment.bookingId);
+    if (transitioned) {
+      await this.notifyConfirmed(payment.bookingId);
+    }
 
     return { status: 'success', bookingId: payment.bookingId };
   }
