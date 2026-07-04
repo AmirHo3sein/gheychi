@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
+import { BookingModule } from './booking/booking.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { HealthController } from './health/health.controller';
 import { PlatformConfigModule } from './platform-config/platform-config.module';
@@ -35,6 +36,7 @@ import { SearchModule } from './search/search.module';
     AuthModule,
     CatalogModule,
     SalonsModule,
+    BookingModule,
     SearchModule,
   ],
   controllers: [HealthController],
