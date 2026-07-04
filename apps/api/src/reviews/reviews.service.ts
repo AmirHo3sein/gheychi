@@ -57,20 +57,35 @@ export class ReviewsService {
 
   private async recomputeSalonRating(em: EntityManager, salonId: string): Promise<void> {
     // Recomputed from source of truth every time (not incremented/decremented in
-    // place) -- avoids float-drift and race-condition bugs, and this exact same
-    // query handles a new published review, an admin rejection, and an admin
-    // reversal with identical logic. Cheap at MVP scale (at most a few hundred
-    // reviews per salon).
-    await em.query(
-      `UPDATE salons
-       SET rating_avg = sub.avg_rating, rating_count = sub.review_count
-       FROM (
-         SELECT COALESCE(AVG(rating), 0)::numeric(3,2) AS avg_rating, COUNT(*)::int AS review_count
-         FROM reviews
-         WHERE salon_id = $1 AND status = 'published'
-       ) sub
-       WHERE salons.id = $1`,
+    // place) -- avoids float-drift bugs, and this exact same query handles a new
+    // published review, an admin rejection, and an admin reversal with identical
+    // logic. Cheap at MVP scale (at most a few hundred reviews per salon).
+    //
+    // Lock-then-read-then-write, NOT a single UPDATE...FROM(aggregate subquery).
+    // A plain single-statement UPDATE has a genuine lost-update race: if it blocks
+    // waiting for another concurrent recompute's lock on this same salon row,
+    // Postgres's read-committed re-check (documented at
+    // postgresql.org/docs/current/transaction-iso.html) only re-validates the
+    // WHERE clause against the newer row version -- it does NOT re-evaluate a
+    // FROM-subquery's aggregate over a *different* table (reviews). So the
+    // unblocked transaction would silently overwrite the winner's fresh aggregate
+    // with its own stale one, computed before the winner's review was ever
+    // committed -- undercounting a review that genuinely exists as 'published'.
+    // Locking the salon row FIRST, then reading the aggregate as a separate fresh
+    // query, forces any transaction that had to wait on the lock to compute its
+    // aggregate only after the lock is actually free (i.e. after the prior
+    // transaction committed), so it always reflects every review committed so far.
+    await em.query(`SELECT id FROM salons WHERE id = $1 FOR UPDATE`, [salonId]);
+    const [{ avg_rating, review_count }] = await em.query(
+      `SELECT COALESCE(AVG(rating), 0)::numeric(3,2) AS avg_rating, COUNT(*)::int AS review_count
+       FROM reviews
+       WHERE salon_id = $1 AND status = 'published'`,
       [salonId],
     );
+    await em.query(`UPDATE salons SET rating_avg = $2, rating_count = $3 WHERE id = $1`, [
+      salonId,
+      avg_rating,
+      review_count,
+    ]);
   }
 }
