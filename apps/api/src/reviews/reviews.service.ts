@@ -59,6 +59,13 @@ export class ReviewsService {
     return this.reviews.find({ where: { salonId, status: 'published' }, order: { createdAt: 'DESC' } });
   }
 
+  async addSalonReply(salonId: string, reviewId: string, reply: string): Promise<Review> {
+    const review = await this.reviews.findOneBy({ id: reviewId, salonId });
+    if (!review) throw new NotFoundException('Review not found');
+    await this.reviews.update({ id: reviewId }, { salonReply: reply, salonReplyAt: new Date() });
+    return (await this.reviews.findOneBy({ id: reviewId }))!;
+  }
+
   private async recomputeSalonRating(em: EntityManager, salonId: string): Promise<void> {
     // Recomputed from source of truth every time (not incremented/decremented in
     // place) -- avoids float-drift bugs, and this exact same query handles a new

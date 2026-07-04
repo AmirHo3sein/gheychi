@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export class CreateReviewDto {
   @IsUUID()
@@ -13,4 +13,11 @@ export class CreateReviewDto {
   @IsString()
   @MaxLength(2000)
   comment?: string;
+}
+
+export class SalonReplyDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(2000)
+  reply: string;
 }
