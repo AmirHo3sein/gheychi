@@ -112,7 +112,7 @@ services:
       POSTGRES_PASSWORD: arayeshgah
       POSTGRES_DB: arayeshgah
     ports:
-      - "5432:5432"
+      - "5544:5432"
     volumes:
       - ./docker/postgres-init:/docker-entrypoint-initdb.d
       - pgdata:/var/lib/postgresql/data
@@ -120,7 +120,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "6381:6379"
 
 volumes:
   pgdata:
@@ -147,7 +147,7 @@ CREATE DATABASE arayeshgah_test;
 ```
 PORT=3002
 DB_HOST=localhost
-DB_PORT=5434
+DB_PORT=5544
 DB_USER=arayeshgah
 DB_PASS=arayeshgah
 DB_NAME=arayeshgah
@@ -159,7 +159,11 @@ KAVENEGAR_API_KEY=
 KAVENEGAR_OTP_TEMPLATE=arayeshgah-otp
 ```
 
-**Port note:** this machine already runs other local projects on the usual 5432/6379/3000/3001, so Arayeshgah's dev stack uses 5434 (postgres), 6381 (redis), and 3002 (api) instead. Container-internal ports are unchanged (postgres still speaks 5432 inside its container, redis 6379) — only the host-side mapping in `docker-compose.yml` moved.
+**Port note:** this machine already runs other local projects on the usual 5432/6379/3000/3001, so Arayeshgah's dev stack uses 5544 (postgres), 6381 (redis), and 3002 (api) instead. Container-internal ports are unchanged (postgres still speaks 5432 inside its container, redis 6379) — only the host-side mapping in `docker-compose.yml` moved.
+
+**Note on the test database and postgis:** `00-postgis.sql` only creates the extension on the dev database (`arayeshgah`) — `arayeshgah_test` does not get it from the init scripts. This is intentional, not an oversight: Task 4's initial migration runs `CREATE EXTENSION IF NOT EXISTS postgis` itself, so the test database picks it up the first time migrations run against it.
+
+**Troubleshooting note:** repeatedly tearing down and recreating the same `docker compose` project (same project name) can leave Docker Desktop's WSL2 port-forwarding in a stuck state for one specific host port — `docker inspect` shows the binding as requested, a new container fails with "port is already allocated," yet the port is unreachable from the host. This is what forced the move off the originally-picked 5434 to 5544. If a host port you're using stops being reachable despite `docker compose ps` showing the container healthy, first try a different, never-before-used host port before assuming the compose file is misconfigured; a full Docker Desktop restart also clears it.
 
 - [ ] **Step 4: Start containers and verify**
 
@@ -297,7 +301,7 @@ git commit -m "chore: add docker compose for postgis + redis with test database"
 ```
 PORT=3003
 DB_HOST=localhost
-DB_PORT=5434
+DB_PORT=5544
 DB_USER=arayeshgah
 DB_PASS=arayeshgah
 DB_NAME=arayeshgah_test

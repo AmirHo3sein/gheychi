@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: arayeshgah
       POSTGRES_DB: arayeshgah
     ports:
-      - "5434:5432"
+      - "5544:5432"
     volumes:
       - ./docker/postgres-init:/docker-entrypoint-initdb.d
       - pgdata:/var/lib/postgresql/data
