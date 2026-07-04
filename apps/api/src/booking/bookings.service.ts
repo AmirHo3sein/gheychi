@@ -1,5 +1,5 @@
 import {
-  BadRequestException, ConflictException, Inject, Injectable, NotFoundException,
+  BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -19,6 +19,8 @@ const LOCK_TTL_MS = 5000;
 
 @Injectable()
 export class BookingsService {
+  private readonly logger = new Logger(BookingsService.name);
+
   constructor(
     @InjectRepository(Booking) private readonly bookings: Repository<Booking>,
     @InjectRepository(Payment) private readonly payments: Repository<Payment>,
@@ -111,7 +113,22 @@ export class BookingsService {
       `Booking deposit for ${salon.name}`,
       callbackUrl,
     );
-    await this.payments.update({ bookingId: booking.id }, { authority });
+    try {
+      await this.payments.update({ bookingId: booking.id }, { authority });
+    } catch (err) {
+      // Zarinpal already generated a real, chargeable authority at this point --
+      // if persisting it fails, a later callback carrying this exact authority
+      // has nothing to reconcile against (a later task looks bookings up by
+      // authority). This can't be recovered here without holding the request
+      // open for retries, so at minimum make it observable: log loudly with
+      // enough detail for manual reconciliation, then let the original error
+      // propagate as a 500 -- the customer never saw paymentUrl in this case,
+      // so no money can move through the orphaned session.
+      this.logger.error(
+        `Failed to persist Zarinpal authority ${authority} for booking ${booking.id}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw err;
+    }
 
     return { booking, paymentUrl };
   }
