@@ -2648,6 +2648,25 @@ describe('Search (e2e)', () => {
     expect(res.body[0].slug).toBe('far-salon');
   });
 
+  it('defaults to distance ordering when sort is omitted, even if rating would reorder', async () => {
+    const ds = app.get(DataSource);
+    await ds.query(`UPDATE salons SET rating_avg = 5.0, rating_count = 50 WHERE slug = 'far-salon'`);
+    await ds.query(`UPDATE salons SET rating_avg = 1.0, rating_count = 1 WHERE slug = 'near-salon'`);
+    const res = await request(app.getHttpServer())
+      .get('/api/search')
+      .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women' })
+      .expect(200);
+    expect(res.body.map((s: { slug: string }) => s.slug)).toEqual(['near-salon', 'far-salon']);
+  });
+
+  it('returns an empty array when no salon has the requested category', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/search')
+      .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', categoryId: 8 })
+      .expect(200);
+    expect(res.body).toEqual([]);
+  });
+
   it('rejects a missing gender param', () =>
     request(app.getHttpServer())
       .get('/api/search')
@@ -2743,6 +2762,8 @@ export class SearchService {
           WHERE ss2.salon_id = s.id AND ss2.category_id = $5 AND ss2.is_active))
       ORDER BY ${orderBy}
       LIMIT 50
+      -- MVP cap, no pagination yet. Revisit if a single search radius
+      -- can plausibly exceed 50 approved salons.
       `,
       [q.lng, q.lat, q.gender, radiusMeters, q.categoryId ?? null],
     );
@@ -2804,7 +2825,7 @@ Register `SearchModule` in `app.module.ts` imports.
 - [ ] **Step 5: Run tests to verify pass**
 
 Run: `pnpm --filter @arayeshgah/api test:e2e -- search`
-Expected: PASS (6 tests).
+Expected: PASS (8 tests — the default-sort-ordering and empty-category-match tests were added after code review flagged the coverage gap).
 
 - [ ] **Step 6: Commit**
 
