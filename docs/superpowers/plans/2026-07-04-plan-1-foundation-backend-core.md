@@ -1371,6 +1371,8 @@ Register in `app.module.ts` imports: add `AuthModule` after `RedisModule`.
 
 - [ ] **Step 9: Test login helper** — `apps/api/test/utils/auth-helper.ts`
 
+(Rate-limit key is `otp:rl:{phone}` — matches the `otp:rl:` naming from Task 6's code-review fix, not the original `rl:otp:` from Task 6's first draft.)
+
 ```typescript
 import { INestApplication } from '@nestjs/common';
 import Redis from 'ioredis';
@@ -1380,7 +1382,7 @@ import { REDIS } from '../../src/redis/redis.module';
 /** Full OTP login; returns the session cookie string for use with .set('Cookie', ...) */
 export async function loginAs(app: INestApplication, phone: string): Promise<string> {
   const redis = app.get<Redis>(REDIS);
-  await redis.del(`rl:otp:${phone}`);
+  await redis.del(`otp:rl:${phone}`);
   await request(app.getHttpServer()).post('/api/auth/request-otp').send({ phone }).expect(201);
   const code = await redis.get(`otp:${phone}`);
   const res = await request(app.getHttpServer())
@@ -1452,7 +1454,7 @@ describe('Auth (e2e)', () => {
   });
 
   it('completes the profile (name + gender)', async () => {
-    await redis.del(`rl:otp:${phone}`);
+    await redis.del(`otp:rl:${phone}`);
     const { loginAs } = await import('./utils/auth-helper');
     const cookie = await loginAs(app, phone);
     const res = await request(app.getHttpServer())
@@ -1468,7 +1470,7 @@ describe('Auth (e2e)', () => {
     request(app.getHttpServer()).get('/api/auth/me').expect(401));
 
   it('logout clears the cookie', async () => {
-    await redis.del(`rl:otp:${phone}`);
+    await redis.del(`otp:rl:${phone}`);
     const { loginAs } = await import('./utils/auth-helper');
     const cookie = await loginAs(app, phone);
     const res = await request(app.getHttpServer())
