@@ -955,6 +955,12 @@ describe('KavenegarSmsProvider', () => {
     const provider = new KavenegarSmsProvider('MY_KEY', 'my-template');
     await expect(provider.sendOtp('09121234567', '123456')).rejects.toThrow();
   });
+
+  it('normalizes a network-level fetch failure into the same error shape', async () => {
+    fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+    const provider = new KavenegarSmsProvider('MY_KEY', 'my-template');
+    await expect(provider.sendOtp('09121234567', '123456')).rejects.toThrow('Kavenegar send failed');
+  });
 });
 ```
 
@@ -989,8 +995,15 @@ export class KavenegarSmsProvider implements SmsProvider {
       token: code,
       template: this.otpTemplate,
     });
+    // URL embeds the OTP code and phone number as query params (matches Kavenegar's
+    // documented API) — must never be logged verbatim by request-logging middleware.
     const url = `https://api.kavenegar.com/v1/${this.apiKey}/verify/lookup.json?${params}`;
-    const res = await fetch(url);
+    let res: Response;
+    try {
+      res = await fetch(url);
+    } catch (err) {
+      throw new Error(`Kavenegar send failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
     const body = (await res.json()) as KavenegarResponse;
     if (!res.ok || body?.return?.status !== 200) {
       throw new Error(`Kavenegar send failed: ${body?.return?.message ?? res.status}`);
@@ -999,12 +1012,14 @@ export class KavenegarSmsProvider implements SmsProvider {
 }
 ```
 
-**Note:** this project's `tsconfig.json` (`lib: ["ES2022"]`, no `dom`) makes `@types/node`'s `fetch`/`Response.json()` shim resolve to `Promise<{}>`, so the literal `body?.return?.status` access above doesn't type-check without a cast — hence the local `KavenegarResponse` interface and `as KavenegarResponse`. Behavior is identical; this only satisfies the type checker.
+**Notes:**
+- This project's `tsconfig.json` (`lib: ["ES2022"]`, no `dom`) makes `@types/node`'s `fetch`/`Response.json()` shim resolve to `Promise<{}>`, so the literal `body?.return?.status` access above doesn't type-check without a cast — hence the local `KavenegarResponse` interface and `as KavenegarResponse`. Behavior is identical; this only satisfies the type checker.
+- The `try/catch` around `fetch` normalizes network-level failures (DNS, timeout, connection refused) into the same `Error('Kavenegar send failed: ...')` shape as API-level failures, so callers (Task 8's auth flow) only ever handle one error contract.
 
 - [ ] **Step 6: Run tests to verify pass**
 
 Run: `pnpm --filter @arayeshgah/api test -- kavenegar`
-Expected: PASS (2 tests).
+Expected: PASS (3 tests — the third, network-failure-normalization test, was added after code review flagged unhandled `fetch` rejections).
 
 - [ ] **Step 7: Wire the module** — `apps/api/src/sms/sms.module.ts` (config-driven selection)
 
@@ -1023,7 +1038,7 @@ import { SMS_PROVIDER } from './sms.provider';
       useFactory: (config: ConfigService) =>
         config.get('SMS_PROVIDER') === 'kavenegar'
           ? new KavenegarSmsProvider(
-              config.get('KAVENEGAR_API_KEY', ''),
+              config.getOrThrow('KAVENEGAR_API_KEY'),
               config.get('KAVENEGAR_OTP_TEMPLATE', 'arayeshgah-otp'),
             )
           : new ConsoleSmsProvider(),
@@ -1033,6 +1048,8 @@ import { SMS_PROVIDER } from './sms.provider';
 })
 export class SmsModule {}
 ```
+
+**Note:** uses `getOrThrow` (not `get(..., '')`) for the API key so a missing `KAVENEGAR_API_KEY` fails loudly at boot when `SMS_PROVIDER=kavenegar`, instead of silently constructing a broken provider that only fails per-request once real users hit it.
 
 - [ ] **Step 8: Commit**
 
