@@ -12,7 +12,7 @@ import { SMS_PROVIDER } from './sms.provider';
       useFactory: (config: ConfigService) =>
         config.get('SMS_PROVIDER') === 'kavenegar'
           ? new KavenegarSmsProvider(
-              config.get('KAVENEGAR_API_KEY', ''),
+              config.getOrThrow('KAVENEGAR_API_KEY'),
               config.get('KAVENEGAR_OTP_TEMPLATE', 'arayeshgah-otp'),
             )
           : new ConsoleSmsProvider(),

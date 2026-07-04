@@ -31,4 +31,10 @@ describe('KavenegarSmsProvider', () => {
     const provider = new KavenegarSmsProvider('MY_KEY', 'my-template');
     await expect(provider.sendOtp('09121234567', '123456')).rejects.toThrow();
   });
+
+  it('normalizes a network-level fetch failure into the same error shape', async () => {
+    fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+    const provider = new KavenegarSmsProvider('MY_KEY', 'my-template');
+    await expect(provider.sendOtp('09121234567', '123456')).rejects.toThrow('Kavenegar send failed');
+  });
 });
