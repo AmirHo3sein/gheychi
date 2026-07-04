@@ -1,17 +1,38 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
+import { AuthModule } from '../auth/auth.module';
+import { PlatformConfigModule } from '../platform-config/platform-config.module';
 import { SalonsModule } from '../salons/salons.module';
 import { AvailabilityController } from './availability.controller';
 import { AvailabilityService } from './availability.service';
 import { Booking } from './booking.entity';
+import { BookingsController } from './bookings.controller';
+import { BookingsService } from './bookings.service';
+import { MockPaymentGateway } from './mock-payment.gateway';
+import { PAYMENT_GATEWAY } from './payment-gateway';
 import { Payment } from './payment.entity';
+import { ZarinpalGateway } from './zarinpal-payment.gateway';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Booking, Payment]),
     SalonsModule,
+    PlatformConfigModule,
+    AuthModule,
   ],
-  controllers: [AvailabilityController],
-  providers: [AvailabilityService],
+  controllers: [AvailabilityController, BookingsController],
+  providers: [
+    AvailabilityService,
+    BookingsService,
+    {
+      provide: PAYMENT_GATEWAY,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =>
+        config.get('PAYMENT_GATEWAY') === 'zarinpal'
+          ? new ZarinpalGateway(config.getOrThrow('ZARINPAL_MERCHANT_ID'))
+          : new MockPaymentGateway(),
+    },
+  ],
 })
 export class BookingModule {}
