@@ -495,11 +495,11 @@ import { HealthController } from './health/health.controller';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         type: 'postgres',
-        host: config.get('DB_HOST'),
+        host: config.getOrThrow('DB_HOST'),
         port: +config.get('DB_PORT', 5432),
-        username: config.get('DB_USER'),
-        password: config.get('DB_PASS'),
-        database: config.get('DB_NAME'),
+        username: config.getOrThrow('DB_USER'),
+        password: config.getOrThrow('DB_PASS'),
+        database: config.getOrThrow('DB_NAME'),
         autoLoadEntities: true,
         synchronize: false,
       }),
@@ -1344,6 +1344,7 @@ export class AuthController {
   }
 
   @Post('logout')
+  @UseGuards(AuthGuard)
   @HttpCode(204)
   logout(@Res({ passthrough: true }) res: Response) {
     res.clearCookie(SESSION_COOKIE);
@@ -2898,3 +2899,16 @@ git commit -m "docs: add project readme with setup instructions"
 - All unit and e2e suites green.
 
 **Next plans:** Plan 2 (booking engine: availability computation, holds, Zarinpal deposits, reviews, SMS notifications) builds directly on `working_hours`, `schedule_exceptions`, `salon_services`, and `platform_config` created here.
+
+## Final whole-branch review — post-Task-14 polish (commit `4db9884`)
+
+After all 14 tasks passed individual review, a final holistic review across the whole branch caught two cross-cutting inconsistencies invisible to any single task's diff, both fixed immediately:
+
+- **DB config now fails fast at boot** (`app.module.ts`'s `TypeOrmModule.forRootAsync` uses `getOrThrow` for `DB_HOST`/`DB_USER`/`DB_PASS`/`DB_NAME`), matching the `JWT_SECRET`/`KAVENEGAR_API_KEY` convention established during Tasks 7-8. `data-source.ts` (CLI-only, different code path) and `redis.module.ts` (genuinely optional local-dev default) were deliberately left unchanged.
+- **`POST /auth/logout` now requires `AuthGuard`**, matching its sibling routes `me`/`updateProfile`. The existing e2e test already exercised the authenticated path, so no test changes were needed.
+
+**Explicitly deferred to Plan 2** (each is a real, scoped item — not silently dropped):
+1. **Global `QueryFailedError` → 4xx exception filter.** No global exception filter exists anywhere in the API. Four distinct unique/FK-constraint violations currently surface as raw 500s instead of clean 4xx responses: `working_hours (salon_id, weekday, open_time)`, `salons.owner_id`/`salons.slug`, `schedule_exceptions (salon_id, date)`, and `salon_services.category_id` FK. One filter fixes all four — Plan 2 should add it rather than four separate pre-checks.
+2. **Extract the `mySalonId(req)` "resolve caller's own salon" pattern** (currently duplicated verbatim in `salon-services.controller.ts` and `schedule.controller.ts`) into a shared decorator or base controller once Plan 2's booking endpoints need the same resolution a third time.
+3. **Add cross-tenant-isolation e2e tests** (provider B cannot touch provider A's service/hours/exception by guessing an ID) before Plan 2 adds money-adjacent booking/payment endpoints. The code is already correct (every mutation scopes by `{ id, salonId }`), but nothing tests the negative case explicitly.
+4. **`working_hours` has no overlap check** — two overlapping (non-identical) ranges on the same weekday can both be inserted. Only matters once Plan 2's availability computation assumes non-overlapping ranges.
