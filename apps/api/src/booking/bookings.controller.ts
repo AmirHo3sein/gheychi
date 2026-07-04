@@ -24,4 +24,9 @@ export class BookingsController {
   findMine(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
     return this.bookings.findMine((req.user as User).id, id);
   }
+
+  @Post(':id/cancel')
+  cancel(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
+    return this.bookings.cancel(id, (req.user as User).id);
+  }
 }

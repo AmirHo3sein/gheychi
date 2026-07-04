@@ -1,11 +1,12 @@
 import {
-  BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException,
+  BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import Redis from 'ioredis';
 import { DataSource, In, LessThan, MoreThan, Repository } from 'typeorm';
 import { REDIS } from '../redis/redis.module';
+import { SalonsService } from '../salons/salons.service';
 import { SalonService } from '../salons/salon-service.entity';
 import { Salon } from '../salons/salon.entity';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
@@ -28,6 +29,7 @@ export class BookingsService {
     @InjectRepository(SalonService) private readonly services: Repository<SalonService>,
     private readonly dataSource: DataSource,
     private readonly config: PlatformConfigService,
+    private readonly salonsService: SalonsService,
     private readonly nestConfig: ConfigService,
     @Inject(REDIS) private readonly redis: Redis,
     @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
@@ -141,6 +143,51 @@ export class BookingsService {
 
   listMine(userId: string): Promise<Booking[]> {
     return this.bookings.find({ where: { userId }, order: { startsAt: 'DESC' } });
+  }
+
+  async cancel(bookingId: string, callerId: string): Promise<Booking> {
+    const booking = await this.bookings.findOneBy({ id: bookingId });
+    if (!booking) throw new NotFoundException('Booking not found');
+    const cancellableStatuses: string[] = ['pending_payment', 'confirmed'];
+    if (!cancellableStatuses.includes(booking.status)) {
+      throw new BadRequestException('Booking cannot be cancelled in its current state');
+    }
+
+    const salon = await this.salonsService.findById(booking.salonId);
+    if (!salon) throw new NotFoundException('Salon not found');
+
+    const isCustomer = booking.userId === callerId;
+    const isOwner = salon.ownerId === callerId;
+    if (!isCustomer && !isOwner) throw new ForbiddenException('You cannot cancel this booking');
+
+    let newBookingStatus: 'cancelled_by_user' | 'cancelled_by_salon';
+    let refund: boolean;
+
+    if (isOwner) {
+      newBookingStatus = 'cancelled_by_salon';
+      refund = true;
+    } else {
+      const cancellationWindowHours = await this.config.getCancellationWindowHours();
+      const hoursUntilStart = (booking.startsAt.getTime() - Date.now()) / (1000 * 60 * 60);
+      newBookingStatus = 'cancelled_by_user';
+      refund = hoursUntilStart >= cancellationWindowHours;
+    }
+
+    await this.dataSource.transaction(async (em) => {
+      await em.update(Booking, { id: booking.id }, { status: newBookingStatus });
+      // A pending_payment booking never had a captured payment -- nothing to refund
+      // or forfeit, so its payment is simply marked failed. A confirmed booking's
+      // deposit was genuinely captured; `refund` decides the payment's fate. Marking
+      // `refunded` here only records our own intent -- no real Zarinpal refund API
+      // call is made (see this plan's header note on why that's out of scope).
+      if (booking.status === 'confirmed') {
+        await em.update(Payment, { bookingId: booking.id }, { status: refund ? 'refunded' : 'paid' });
+      } else {
+        await em.update(Payment, { bookingId: booking.id }, { status: 'failed' });
+      }
+    });
+
+    return (await this.bookings.findOneBy({ id: booking.id }))!;
   }
 
   listForSalon(salonId: string): Promise<Booking[]> {
