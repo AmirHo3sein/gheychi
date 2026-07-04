@@ -6,11 +6,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import Redis from 'ioredis';
 import { DataSource, In, LessThan, MoreThan, Repository } from 'typeorm';
 import { REDIS } from '../redis/redis.module';
-import { SalonsService } from '../salons/salons.service';
 import { SalonService } from '../salons/salon-service.entity';
 import { Salon } from '../salons/salon.entity';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
-import { Booking } from './booking.entity';
+import { Booking, BookingStatus } from './booking.entity';
 import { CreateBookingDto } from './dto/booking.dto';
 import { calculateDeposit } from './deposit.util';
 import { PAYMENT_GATEWAY, PaymentGateway } from './payment-gateway';
@@ -29,7 +28,6 @@ export class BookingsService {
     @InjectRepository(SalonService) private readonly services: Repository<SalonService>,
     private readonly dataSource: DataSource,
     private readonly config: PlatformConfigService,
-    private readonly salonsService: SalonsService,
     private readonly nestConfig: ConfigService,
     @Inject(REDIS) private readonly redis: Redis,
     @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
@@ -148,12 +146,12 @@ export class BookingsService {
   async cancel(bookingId: string, callerId: string): Promise<Booking> {
     const booking = await this.bookings.findOneBy({ id: bookingId });
     if (!booking) throw new NotFoundException('Booking not found');
-    const cancellableStatuses: string[] = ['pending_payment', 'confirmed'];
+    const cancellableStatuses: BookingStatus[] = ['pending_payment', 'confirmed'];
     if (!cancellableStatuses.includes(booking.status)) {
       throw new BadRequestException('Booking cannot be cancelled in its current state');
     }
 
-    const salon = await this.salonsService.findById(booking.salonId);
+    const salon = await this.salons.findOneBy({ id: booking.salonId });
     if (!salon) throw new NotFoundException('Salon not found');
 
     const isCustomer = booking.userId === callerId;
@@ -174,7 +172,24 @@ export class BookingsService {
     }
 
     await this.dataSource.transaction(async (em) => {
-      await em.update(Booking, { id: booking.id }, { status: newBookingStatus });
+      // Guard against a concurrent cancel() call on the same booking -- a
+      // genuinely plausible race, since the customer and the salon owner can
+      // both hit "cancel" around the same moment (or a client can retry).
+      // Without this, both transactions would read the same pre-cancellation
+      // status above, both pass the check, and whichever commits last would
+      // silently overwrite the other's outcome -- including making a caller's
+      // own HTTP response reflect a status/refund decision that isn't actually
+      // the one persisted. Conditioning the update on the status still being
+      // cancellable means only the winner's write lands; the loser gets
+      // affected=0 and a clear 409 instead of a misleading 200.
+      const result = await em.update(
+        Booking,
+        { id: booking.id, status: In(cancellableStatuses) },
+        { status: newBookingStatus },
+      );
+      if (!result.affected) {
+        throw new ConflictException('Booking status changed before this cancellation could be applied');
+      }
       // A pending_payment booking never had a captured payment -- nothing to refund
       // or forfeit, so its payment is simply marked failed. A confirmed booking's
       // deposit was genuinely captured; `refund` decides the payment's fate. Marking
