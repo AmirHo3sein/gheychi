@@ -638,6 +638,7 @@ export class BookingPaymentsSchema1751700000000 implements MigrationInterface {
       )`);
     await q.query(`CREATE UNIQUE INDEX payments_booking_uidx ON payments(booking_id)`);
     await q.query(`CREATE INDEX payments_authority_idx ON payments(authority)`);
+    await q.query(`CREATE INDEX payments_status_idx ON payments(status, created_at)`);
   }
 
   public async down(q: QueryRunner): Promise<void> {
@@ -648,6 +649,8 @@ export class BookingPaymentsSchema1751700000000 implements MigrationInterface {
 ```
 
 Note on the `bookings.status` enum: it's `'pending_payment' | 'confirmed' | 'completed' | 'cancelled_by_user' | 'cancelled_by_salon' | 'expired' | 'no_show'` — one more value (`'expired'`) than the original design spec's list, added because "the hold's 15-minute TTL ran out with no user action" is a genuinely distinct state from "the user actively cancelled," needed for correct observability (Task 14's expiry job sets it) and for `bookings.e2e-spec.ts` to assert on it precisely.
+
+Note on `payments_status_idx`: mirrors `bookings_status_idx`'s purpose — Task 15's reconciliation job runs every 5 minutes forever with `WHERE status = 'initiated' AND created_at < :cutoff`, the exact query shape `bookings_status_idx` already exists to serve for Task 14's expiry job. Without it, `payments` would be full-scanned on every reconciliation run as the table grows.
 
 - [ ] **Step 2: Run the migration against the dev DB**
 
@@ -1700,7 +1703,16 @@ export class BookingsService {
     }
     const endsAt = new Date(startsAt.getTime() + service.durationMin * 60_000);
 
-    const lockKey = `lock:booking:${dto.salonId}:${startsAt.toISOString()}`;
+    // Locked per-SALON, not per-exact-slot-instant. A salon offering services with
+    // different durations can produce two bookings with different startsAt values
+    // whose intervals still overlap (e.g. a 90-min booking at 09:00 and a 30-min
+    // booking at 09:30) -- a lock keyed on the exact instant wouldn't serialize
+    // those against each other, and under READ COMMITTED both transactions could
+    // read the same (incomplete) overlap count before either commits. Locking the
+    // whole salon means the entire check-then-insert critical section below is
+    // fully serialized per salon regardless of duration or capacity, which is what
+    // actually backs the "double booking is impossible" guarantee.
+    const lockKey = `lock:booking:${dto.salonId}`;
     const acquired = await this.redis.set(lockKey, '1', 'PX', LOCK_TTL_MS, 'NX');
     if (!acquired) throw new ConflictException('This slot is being booked by someone else, try again');
 
