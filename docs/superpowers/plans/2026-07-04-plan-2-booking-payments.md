@@ -1588,6 +1588,27 @@ describe('ZarinpalGateway', () => {
     const gateway = new ZarinpalGateway('MERCHANT_ID');
     await expect(gateway.requestPayment(200000, 'x', 'https://x.com/cb')).rejects.toThrow('Zarinpal');
   });
+
+  it('throws when verify returns a non-ok HTTP status, even if the body looks like a decline', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ data: null, errors: [{ code: -1, message: 'internal error' }] }),
+    });
+    const gateway = new ZarinpalGateway('MERCHANT_ID');
+    await expect(gateway.verifyPayment('AUTH123', 200000)).rejects.toThrow('Zarinpal');
+  });
+
+  it('wraps a malformed (non-JSON) response into a thrown Zarinpal error instead of a raw SyntaxError', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => {
+        throw new SyntaxError('Unexpected token < in JSON');
+      },
+    });
+    const gateway = new ZarinpalGateway('MERCHANT_ID');
+    await expect(gateway.requestPayment(200000, 'x', 'https://x.com/cb')).rejects.toThrow('Zarinpal');
+  });
 });
 ```
 
@@ -1599,7 +1620,7 @@ Expected: FAIL — `Cannot find module './zarinpal-payment.gateway'`.
 - [ ] **Step 5: Implement** — `apps/api/src/booking/zarinpal-payment.gateway.ts`
 
 ```typescript
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PaymentGateway, PaymentRequestResult, PaymentVerifyResult } from './payment-gateway';
 
 const REQUEST_URL = 'https://payment.zarinpal.com/pg/v4/payment/request.json';
@@ -1627,10 +1648,13 @@ interface ZarinpalVerifyResponse {
  */
 @Injectable()
 export class ZarinpalGateway implements PaymentGateway {
+  private readonly logger = new Logger(ZarinpalGateway.name);
+
   constructor(private readonly merchantId: string) {}
 
   async requestPayment(amountToman: number, description: string, callbackUrl: string): Promise<PaymentRequestResult> {
     let res: Response;
+    let body: ZarinpalRequestResponse;
     try {
       res = await fetch(REQUEST_URL, {
         method: 'POST',
@@ -1642,12 +1666,18 @@ export class ZarinpalGateway implements PaymentGateway {
           description,
         }),
       });
+      // res.json() must stay inside this try -- a non-JSON body (e.g. an HTML
+      // error page from a WAF/proxy under load) would otherwise throw a raw,
+      // unwrapped SyntaxError instead of the intended "Zarinpal request failed" error.
+      body = (await res.json()) as ZarinpalRequestResponse;
     } catch (err) {
-      throw new Error(`Zarinpal request failed: ${err instanceof Error ? err.message : String(err)}`);
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Zarinpal request failed: ${message}`);
+      throw new Error(`Zarinpal request failed: ${message}`);
     }
-    const body = (await res.json()) as ZarinpalRequestResponse;
     if (!res.ok || body.data?.code !== 100) {
-      throw new Error(`Zarinpal request failed: ${JSON.stringify(body.errors ?? body.data)}`);
+      this.logger.error(`Zarinpal request failed: HTTP ${res.status} ${JSON.stringify(body.errors ?? body.data)}`);
+      throw new Error(`Zarinpal request failed: HTTP ${res.status} ${JSON.stringify(body.errors ?? body.data)}`);
     }
     return {
       authority: body.data.authority,
@@ -1657,6 +1687,7 @@ export class ZarinpalGateway implements PaymentGateway {
 
   async verifyPayment(authority: string, amountToman: number): Promise<PaymentVerifyResult> {
     let res: Response;
+    let body: ZarinpalVerifyResponse;
     try {
       res = await fetch(VERIFY_URL, {
         method: 'POST',
@@ -1667,10 +1698,21 @@ export class ZarinpalGateway implements PaymentGateway {
           authority,
         }),
       });
+      body = (await res.json()) as ZarinpalVerifyResponse;
     } catch (err) {
-      throw new Error(`Zarinpal verify failed: ${err instanceof Error ? err.message : String(err)}`);
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Zarinpal verify failed for authority ${authority}: ${message}`);
+      throw new Error(`Zarinpal verify failed: ${message}`);
     }
-    const body = (await res.json()) as ZarinpalVerifyResponse;
+    // Unlike a genuine decline (a non-100/101 code with a normal HTTP response),
+    // a non-ok HTTP status means Zarinpal's API itself failed (outage, rate limit,
+    // maintenance) -- that must throw, not silently collapse into {success: false},
+    // which would be indistinguishable from a real decline to the caller and could
+    // tell a customer their payment failed when the real problem was infrastructure.
+    if (!res.ok) {
+      this.logger.error(`Zarinpal verify returned HTTP ${res.status} for authority ${authority}: ${JSON.stringify(body.errors ?? body.data)}`);
+      throw new Error(`Zarinpal verify failed: HTTP ${res.status} ${JSON.stringify(body.errors ?? body.data)}`);
+    }
     if (body.data?.code === 100 || body.data?.code === 101) {
       return { success: true, refId: String(body.data.ref_id) };
     }
@@ -1682,7 +1724,7 @@ export class ZarinpalGateway implements PaymentGateway {
 - [ ] **Step 6: Run tests to verify pass**
 
 Run: `pnpm --filter @arayeshgah/api test -- zarinpal-payment`
-Expected: PASS (6 tests).
+Expected: PASS (8 tests — 2 new cases were added after code review found that `verifyPayment` never checked `res.ok`, which would have collapsed "Zarinpal's API is down" and "payment declined" into the same {success: false} result, and that res.json() sat outside the try/catch, letting a malformed response leak a raw SyntaxError instead of a wrapped error).
 
 - [ ] **Step 7: Add new env vars** — append to `.env.example`:
 
