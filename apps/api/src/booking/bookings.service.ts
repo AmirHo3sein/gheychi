@@ -107,10 +107,18 @@ export class BookingsService {
       await this.redis.del(lockKey);
     }
 
+    const paymentUrl = await this.createPaymentSession(booking, salon.name, depositAmount);
+    return { booking, paymentUrl };
+  }
+
+  // Shared by createHold and retryPayment -- both need to obtain a fresh Zarinpal
+  // authority/paymentUrl for a booking's deposit and persist that authority against
+  // the booking's single Payment row so the callback can later reconcile it.
+  private async createPaymentSession(booking: Booking, salonName: string, depositAmount: number): Promise<string> {
     const callbackUrl = `${this.nestConfig.getOrThrow('APP_BASE_URL')}/api/payments/callback`;
     const { authority, paymentUrl } = await this.gateway.requestPayment(
       depositAmount,
-      `Booking deposit for ${salon.name}`,
+      `Booking deposit for ${salonName}`,
       callbackUrl,
     );
     try {
@@ -130,7 +138,21 @@ export class BookingsService {
       throw err;
     }
 
-    return { booking, paymentUrl };
+    return paymentUrl;
+  }
+
+  async retryPayment(userId: string, bookingId: string): Promise<{ paymentUrl: string }> {
+    const booking = await this.bookings.findOneBy({ id: bookingId, userId });
+    if (!booking) throw new NotFoundException('Booking not found');
+    if (booking.status !== 'pending_payment') {
+      throw new ConflictException('Booking is not awaiting payment');
+    }
+
+    const salon = await this.salons.findOneBy({ id: booking.salonId });
+    if (!salon) throw new NotFoundException('Salon not found');
+
+    const paymentUrl = await this.createPaymentSession(booking, salon.name, booking.depositAmount);
+    return { paymentUrl };
   }
 
   async findMine(userId: string, id: string): Promise<Booking> {

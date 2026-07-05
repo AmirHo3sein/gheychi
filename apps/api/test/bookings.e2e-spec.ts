@@ -125,4 +125,60 @@ describe('Bookings — create hold (e2e)', () => {
       .post('/api/bookings')
       .send({ salonId, serviceId, startsAt: futureIso(24) })
       .expect(401));
+
+  describe('POST /bookings/:id/retry-payment', () => {
+    it('returns a fresh paymentUrl for a pending_payment booking owned by the caller', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/api/bookings')
+        .set('Cookie', customerCookie)
+        .send({ salonId, serviceId, startsAt: futureIso(96) })
+        .expect(201);
+      const bookingId = created.body.booking.id;
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/bookings/${bookingId}/retry-payment`)
+        .set('Cookie', customerCookie)
+        .expect(200);
+
+      expect(res.body.paymentUrl).toContain('Authority=MOCK-');
+    });
+
+    it('returns 404 when the booking belongs to a different user', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/api/bookings')
+        .set('Cookie', customerCookie)
+        .send({ salonId, serviceId, startsAt: futureIso(120) })
+        .expect(201);
+      const bookingId = created.body.booking.id;
+
+      const otherCustomer = await loginAs(app, '09129990005');
+      await request(app.getHttpServer())
+        .post(`/api/bookings/${bookingId}/retry-payment`)
+        .set('Cookie', otherCustomer)
+        .expect(404);
+    });
+
+    it('returns 409 when the booking is already confirmed', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/api/bookings')
+        .set('Cookie', customerCookie)
+        .send({ salonId, serviceId, startsAt: futureIso(144) })
+        .expect(201);
+      const bookingId = created.body.booking.id;
+
+      const ds = app.get(DataSource);
+      await ds.query(`UPDATE bookings SET status = 'confirmed' WHERE id = $1`, [bookingId]);
+
+      await request(app.getHttpServer())
+        .post(`/api/bookings/${bookingId}/retry-payment`)
+        .set('Cookie', customerCookie)
+        .expect(409);
+    });
+
+    it('returns 404 for a nonexistent booking id', () =>
+      request(app.getHttpServer())
+        .post('/api/bookings/00000000-0000-0000-0000-000000000000/retry-payment')
+        .set('Cookie', customerCookie)
+        .expect(404));
+  });
 });

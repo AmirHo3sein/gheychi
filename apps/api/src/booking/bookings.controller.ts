@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { User } from '../users/user.entity';
@@ -28,5 +28,11 @@ export class BookingsController {
   @Post(':id/cancel')
   cancel(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
     return this.bookings.cancel(id, (req.user as User).id);
+  }
+
+  @Post(':id/retry-payment')
+  @HttpCode(200)
+  retryPayment(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
+    return this.bookings.retryPayment((req.user as User).id, id);
   }
 }
