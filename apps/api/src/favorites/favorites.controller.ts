@@ -3,9 +3,9 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
-import { QueryFailedError, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { AuthGuard } from '../auth/auth.guard';
-import { UNIQUE_VIOLATION } from '../common/postgres-error-codes';
+import { isUniqueViolation } from '../common/postgres-error-codes';
 import { Salon } from '../salons/salon.entity';
 import { User } from '../users/user.entity';
 import { Favorite } from './favorite.entity';
@@ -38,7 +38,7 @@ export class FavoritesController {
       // two truly concurrent POSTs can both pass the check above before either
       // inserts. Treat the resulting unique violation as the no-op it
       // semantically is, rather than letting it surface as an unhandled 500.
-      if (!(err instanceof QueryFailedError) || (err as unknown as { code?: string }).code !== UNIQUE_VIOLATION) {
+      if (!isUniqueViolation(err)) {
         throw err;
       }
     }

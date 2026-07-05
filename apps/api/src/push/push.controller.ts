@@ -1,9 +1,9 @@
 import { Body, Controller, Delete, HttpCode, Post, Req, UseGuards } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
-import { QueryFailedError, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { AuthGuard } from '../auth/auth.guard';
-import { UNIQUE_VIOLATION } from '../common/postgres-error-codes';
+import { isUniqueViolation } from '../common/postgres-error-codes';
 import { User } from '../users/user.entity';
 import { SubscribePushDto, UnsubscribePushDto } from './dto/push.dto';
 import { PushSubscription } from './push-subscription.entity';
@@ -31,7 +31,7 @@ export class PushController {
       // subscribe calls for the same brand-new endpoint can both pass the check
       // above before either inserts. Fall back to the update the loser "meant"
       // to do rather than letting it surface as an unhandled 500.
-      if (err instanceof QueryFailedError && (err as unknown as { code?: string }).code === UNIQUE_VIOLATION) {
+      if (isUniqueViolation(err)) {
         await this.subs.update({ endpoint: dto.endpoint }, { userId, p256dh: dto.p256dh, auth: dto.auth });
       } else {
         throw err;
@@ -42,7 +42,7 @@ export class PushController {
 
   @Delete('subscribe')
   @HttpCode(204)
-  async unsubscribe(@Body() dto: UnsubscribePushDto) {
-    await this.subs.delete({ endpoint: dto.endpoint });
+  async unsubscribe(@Req() req: Request, @Body() dto: UnsubscribePushDto) {
+    await this.subs.delete({ endpoint: dto.endpoint, userId: (req.user as User).id });
   }
 }

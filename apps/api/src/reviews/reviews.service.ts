@@ -1,8 +1,8 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Booking } from '../booking/booking.entity';
-import { UNIQUE_VIOLATION } from '../common/postgres-error-codes';
+import { isUniqueViolation } from '../common/postgres-error-codes';
 import { CreateReviewDto } from './dto/review.dto';
 import { Review } from './review.entity';
 
@@ -47,7 +47,7 @@ export class ReviewsService {
       // database level") -- a genuinely concurrent double-submit for the same
       // booking can still reach here, so translate that into the same clean
       // 409 rather than leaking a raw Postgres error.
-      if (err instanceof QueryFailedError && (err as unknown as { code?: string }).code === UNIQUE_VIOLATION) {
+      if (isUniqueViolation(err)) {
         throw new ConflictException('This booking has already been reviewed');
       }
       throw err;
