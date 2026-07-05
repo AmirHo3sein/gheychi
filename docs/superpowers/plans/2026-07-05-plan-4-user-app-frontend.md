@@ -1953,6 +1953,8 @@ git commit -m "feat(api): appointment reminders via SMS and push, closing Plan 2
 
 No TDD here — this is project scaffolding with no behavior to test yet. Verification is "the dev server boots and serves a page."
 
+**A genuine Windows environment issue, found and fixed during execution:** the dev server 500'd on every request with `Package import specifier "#vite-node" is not defined`. Root cause: this worktree's deep path combined with pnpm's default ~120-char virtual-store folder names (e.g. `@nuxt+vite-builder@4.4.8_@babel+plugin-syntax-jsx@7.29.7_...`) pushed `@nuxt/vite-builder`'s internal module paths past Windows' 260-character `MAX_PATH` limit, silently breaking Node's package-boundary lookup for a self-referencing import. Fixed with a repo-root `.npmrc` setting `virtual-store-dir-max-length=60` (a documented pnpm option for exactly this scenario) — cosmetic on Linux/macOS (CI, Docker), no effect on which package versions resolve (confirmed via an unchanged `pnpm-lock.yaml` diff for the existing `apps/api` package). If you're on Windows and hit this same `#vite-node`/`MAX_PATH`-shaped error, this `.npmrc` should already prevent it from this task onward — but if you're executing this plan fresh from an even deeper clone path, you may need to lower `virtual-store-dir-max-length` further.
+
 **Files:**
 - Create: `apps/user-app/package.json`
 - Create: `apps/user-app/nuxt.config.ts`
@@ -1961,6 +1963,7 @@ No TDD here — this is project scaffolding with no behavior to test yet. Verifi
 - Create: `apps/user-app/app/app.vue`
 - Create: `apps/user-app/.env.example`
 - Create: `apps/user-app/.gitignore`
+- Create: `.npmrc` (repo root — Windows `MAX_PATH` workaround, see above)
 - Modify: `package.json` (repo root)
 
 - [ ] **Step 1: Create the package manifest**
