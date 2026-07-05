@@ -49,6 +49,12 @@ export class Salon {
   @Column({ name: 'rating_count', type: 'int', default: 0 })
   ratingCount: number;
 
+  @Column({ name: 'is_featured', type: 'boolean', default: false })
+  isFeatured: boolean;
+
+  @Column({ name: 'featured_until', type: 'timestamptz', nullable: true })
+  featuredUntil: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 }
