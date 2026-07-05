@@ -56,7 +56,7 @@ describe('Reviews — creation (e2e)', () => {
       .send({ salonId, serviceId, startsAt: new Date(Date.now() + hoursFromNow * 60 * 60_000).toISOString() })
       .expect(201);
     const authority = new URL(created.body.paymentUrl).searchParams.get('Authority')!;
-    await request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'OK' }).expect(200);
+    await request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'OK' }).expect(302);
     await request(app.getHttpServer())
       .patch(`/api/salons/mine/bookings/${created.body.booking.id}`)
       .set('Cookie', ownerCookie)
@@ -199,7 +199,7 @@ describe('Reviews — public listing (e2e)', () => {
       .send({ salonId, serviceId, startsAt: new Date(Date.now() + hoursFromNow * 60 * 60_000).toISOString() })
       .expect(201);
     const authority = new URL(created.body.paymentUrl).searchParams.get('Authority')!;
-    await request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'OK' }).expect(200);
+    await request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'OK' }).expect(302);
     await request(app.getHttpServer())
       .patch(`/api/salons/mine/bookings/${created.body.booking.id}`)
       .set('Cookie', ownerCookie)
@@ -274,7 +274,7 @@ describe('Reviews — salon owner reply (e2e)', () => {
       .send({ salonId, serviceId, startsAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString() })
       .expect(201);
     const authority = new URL(created.body.paymentUrl).searchParams.get('Authority')!;
-    await request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'OK' }).expect(200);
+    await request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'OK' }).expect(302);
     await request(app.getHttpServer())
       .patch(`/api/salons/mine/bookings/${created.body.booking.id}`)
       .set('Cookie', ownerCookie)
@@ -401,7 +401,7 @@ describe('Reviews — admin moderation (e2e)', () => {
       .send({ salonId, serviceId, startsAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString() })
       .expect(201);
     const authority = new URL(created.body.paymentUrl).searchParams.get('Authority')!;
-    await request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'OK' }).expect(200);
+    await request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'OK' }).expect(302);
     await request(app.getHttpServer())
       .patch(`/api/salons/mine/bookings/${created.body.booking.id}`)
       .set('Cookie', ownerCookie)

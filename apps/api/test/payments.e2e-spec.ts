@@ -67,8 +67,8 @@ describe('Payments — callback (e2e)', () => {
     const res = await request(app.getHttpServer())
       .get('/api/payments/callback')
       .query({ Authority: authority, Status: 'OK' })
-      .expect(200);
-    expect(res.body.status).toBe('success');
+      .expect(302);
+    expect(res.headers.location).toBe(`http://localhost:3003/booking/callback?status=success&bookingId=${created.body.booking.id}`);
 
     const booking = await request(app.getHttpServer())
       .get(`/api/bookings/${created.body.booking.id}`)
@@ -77,7 +77,7 @@ describe('Payments — callback (e2e)', () => {
     expect(booking.body.status).toBe('confirmed');
   });
 
-  it('is idempotent — calling the callback again on an already-paid booking returns already-confirmed, not an error', async () => {
+  it('is idempotent — calling the callback again on an already-paid booking redirects with success, not an error', async () => {
     const created = await request(app.getHttpServer())
       .post('/api/bookings')
       .set('Cookie', customerCookie)
@@ -85,12 +85,12 @@ describe('Payments — callback (e2e)', () => {
       .expect(201);
     const authority = extractAuthority(created.body.paymentUrl);
 
-    await request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'OK' }).expect(200);
+    await request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'OK' }).expect(302);
     const second = await request(app.getHttpServer())
       .get('/api/payments/callback')
       .query({ Authority: authority, Status: 'OK' })
-      .expect(200);
-    expect(second.body.status).toBe('already-confirmed');
+      .expect(302);
+    expect(second.headers.location).toBe(`http://localhost:3003/booking/callback?status=success&bookingId=${created.body.booking.id}`);
   });
 
   it('cancels the booking when Zarinpal reports Status=NOK', async () => {
@@ -104,8 +104,8 @@ describe('Payments — callback (e2e)', () => {
     const res = await request(app.getHttpServer())
       .get('/api/payments/callback')
       .query({ Authority: authority, Status: 'NOK' })
-      .expect(200);
-    expect(res.body.status).toBe('failed');
+      .expect(302);
+    expect(res.headers.location).toBe(`http://localhost:3003/booking/callback?status=failed&bookingId=${created.body.booking.id}`);
 
     const booking = await request(app.getHttpServer())
       .get(`/api/bookings/${created.body.booking.id}`)
@@ -119,4 +119,34 @@ describe('Payments — callback (e2e)', () => {
       .get('/api/payments/callback')
       .query({ Authority: 'MOCK-doesnotexist', Status: 'OK' })
       .expect(404));
+
+  it('redirects to the frontend booking callback page on success', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/api/bookings')
+      .set('Cookie', customerCookie)
+      .send({ salonId, serviceId, startsAt: futureIso(96) })
+      .expect(201);
+    const authority = extractAuthority(created.body.paymentUrl);
+    const bookingId = created.body.booking.id;
+
+    const res = await request(app.getHttpServer())
+      .get(`/api/payments/callback?Authority=${authority}&Status=OK`)
+      .expect(302);
+    expect(res.headers.location).toBe(`http://localhost:3003/booking/callback?status=success&bookingId=${bookingId}`);
+  });
+
+  it('redirects to the frontend booking callback page on failure', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/api/bookings')
+      .set('Cookie', customerCookie)
+      .send({ salonId, serviceId, startsAt: futureIso(120) })
+      .expect(201);
+    const authority = extractAuthority(created.body.paymentUrl);
+    const bookingId = created.body.booking.id;
+
+    const res = await request(app.getHttpServer())
+      .get(`/api/payments/callback?Authority=${authority}&Status=NOK`)
+      .expect(302);
+    expect(res.headers.location).toBe(`http://localhost:3003/booking/callback?status=failed&bookingId=${bookingId}`);
+  });
 });

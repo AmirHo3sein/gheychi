@@ -56,7 +56,7 @@ describe('Booking cancellation policy (e2e)', () => {
       .send({ salonId, serviceId, startsAt: new Date(Date.now() + hoursFromNow * 60 * 60_000).toISOString() })
       .expect(201);
     const authority = new URL(created.body.paymentUrl).searchParams.get('Authority')!;
-    await request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'OK' }).expect(200);
+    await request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'OK' }).expect(302);
     const ds = app.get(DataSource);
     const [payment] = await ds.query('SELECT id FROM payments WHERE booking_id = $1', [created.body.booking.id]);
     return { bookingId: created.body.booking.id, paymentId: payment.id };

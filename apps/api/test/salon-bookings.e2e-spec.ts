@@ -51,7 +51,7 @@ describe('Salon-side booking management (e2e)', () => {
       .expect(201);
     confirmedBookingId = created.body.booking.id;
     const authority = new URL(created.body.paymentUrl).searchParams.get('Authority')!;
-    await request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'OK' }).expect(200);
+    await request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'OK' }).expect(302);
   });
 
   afterAll(async () => {
