@@ -4,6 +4,8 @@
 /* Manual light/dark toggle instead of the OS-only default (see useTheme.ts, Task 12) */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* static: prevents Tailwind from tree-shaking these color tokens before any
+   component references them yet (they're consumed starting in a later task) */
 @theme static {
   --font-sans: 'Vazirmatn Variable', ui-sans-serif, system-ui, sans-serif;
 
