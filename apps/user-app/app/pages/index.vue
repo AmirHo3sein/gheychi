@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { CITY_CENTERS } from '../utils/city-centers'
 import { toSearchGender } from '../utils/gender-map'
+import { geoJsonToLatLng } from '../utils/geo'
 import type { SearchResult } from '../utils/types'
 
 const session = useSessionStore()
@@ -61,12 +62,15 @@ watch([selectedCategoryId, sort], loadSalons)
 
 async function loadCoordsForMap() {
   const missing = salons.value.filter((s) => !salonCoords.value[s.id])
+  // N+1-shaped: one request per visible salon. Accepted tradeoff at today's scale
+  // (a handful of search results per page) -- revisit (e.g. a batched endpoint) if
+  // result-set sizes grow.
   const results = await Promise.all(
     missing.map((s) => apiFetch<{ location: { coordinates: [number, number] } }>(`/salons/${s.slug}`, { silent: true })),
   )
   for (let i = 0; i < missing.length; i++) {
     const data = results[i].data
-    if (data) salonCoords.value[missing[i].id] = { lat: data.location.coordinates[1], lng: data.location.coordinates[0] }
+    if (data) salonCoords.value[missing[i].id] = geoJsonToLatLng(data.location.coordinates)
   }
 }
 
