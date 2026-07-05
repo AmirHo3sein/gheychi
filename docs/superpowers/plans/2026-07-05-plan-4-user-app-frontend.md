@@ -835,27 +835,28 @@ export class SalonPhoto {
 
 - [ ] **Step 4: Implement the public content controller**
 
+**Corrected during code review (execution):** the first version looked up the salon directly via an injected `Repository<Salon>`, duplicating the exact `{slug, status: 'approved'}` visibility rule that `SalonsService.findPublicBySlug` already encodes. The version below delegates to that service instead, so "what makes a salon publicly visible" has one definition, not two.
+
 ```typescript
-import { Controller, Get, NotFoundException, Param } from '@nestjs/common';
+import { Controller, Get, Param } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Salon } from './salon.entity';
 import { SalonService } from './salon-service.entity';
 import { SalonPhoto } from './salon-photo.entity';
+import { SalonsService } from './salons.service';
 import { WorkingHour } from './working-hour.entity';
 
 @Controller('salons/:slug')
 export class PublicSalonContentController {
   constructor(
-    @InjectRepository(Salon) private readonly salons: Repository<Salon>,
+    private readonly salonsService: SalonsService,
     @InjectRepository(SalonService) private readonly services: Repository<SalonService>,
     @InjectRepository(WorkingHour) private readonly hours: Repository<WorkingHour>,
     @InjectRepository(SalonPhoto) private readonly photos: Repository<SalonPhoto>,
   ) {}
 
   private async requireSalonId(slug: string): Promise<string> {
-    const salon = await this.salons.findOneBy({ slug, status: 'approved' });
-    if (!salon) throw new NotFoundException('Salon not found');
+    const salon = await this.salonsService.findPublicBySlug(slug);
     return salon.id;
   }
 
@@ -883,7 +884,7 @@ Note the route path is `salons/:slug` (not `salons/:slug/...` per method) so Nes
 
 - [ ] **Step 5: Register the entity and controller**
 
-In `apps/api/src/salons/salons.module.ts`: add `SalonPhoto` to the `TypeOrmModule.forFeature([...])` array, and `PublicSalonContentController` to `controllers`. Read the file first to match its existing style.
+In `apps/api/src/salons/salons.module.ts`: add `SalonPhoto` to the `TypeOrmModule.forFeature([...])` array, and `PublicSalonContentController` to `controllers`, **after** `SalonServicesController` and `ScheduleController` in that array (both own literal `salons/mine/...`-shaped routes at the same path depth as this controller's `salons/:slug/...` routes — NestJS/Express matches by registration order, not specificity, so registering this controller earlier would silently shadow those literal routes). Add a short comment above its entry recording this constraint, since nothing else about the file signals it. Read the file first to match its existing style.
 
 - [ ] **Step 6: Run the test to verify it passes**
 
