@@ -426,6 +426,8 @@ Expected: FAIL — `isFeatured` is `undefined` in the response, ordering doesn't
 
 - [ ] **Step 5: Implement the boost in `SearchService`**
 
+**Corrected during code review (execution):** the first version of this cap logic demoted an over-cap featured salon's `isFeatured` flag to `false` but left it in its original SQL-ordered position — still ranked ahead of closer/higher-rated non-featured salons. That defeats the point of the cap. The version below merges demoted overflow entries back into the non-featured tail by the same sort key, so an over-cap salon lands exactly where it would have ranked if it had never been featured.
+
 Replace the body of `apps/api/src/search/search.service.ts`:
 
 ```typescript
@@ -456,7 +458,8 @@ export class SearchService {
 
   async search(q: SearchQueryDto): Promise<SearchResult[]> {
     const radiusMeters = (q.radiusKm ?? 5) * 1000;
-    const secondarySort = q.sort === 'rating' ? 's.rating_avg DESC, distance_km ASC' : 'distance_km ASC';
+    const sortByRating = q.sort === 'rating';
+    const secondarySort = sortByRating ? 's.rating_avg DESC, distance_km ASC' : 'distance_km ASC';
 
     const rows = await this.dataSource.query(
       `
@@ -499,15 +502,46 @@ export class SearchService {
       isFeatured: r.is_featured as boolean,
     }));
 
-    // The query already orders featured salons first; enforce the display cap here so a
-    // salon count under the cap (or the SQL boolean cast) can never accidentally leak more
-    // than FEATURED_CAP badged results, regardless of how many salons are actually featured.
+    // The query already orders featured salons first (each group internally sorted by
+    // secondarySort); enforce the display cap here so no more than FEATURED_CAP results
+    // ever carry the featured boost/badge. Salons past the cap must NOT simply keep their
+    // spot in the featured block -- they have to fall back to wherever they'd rank among
+    // the non-featured results, or the cap does nothing to bound how far an over-featured
+    // catalog can distort results. Since both the kept-featured and non-featured slices are
+    // already sorted by secondarySort, demoted overflow entries can be merged into the
+    // non-featured tail with a simple sorted merge instead of a full re-sort.
+    const compare = (a: SearchResult, b: SearchResult): number => {
+      if (sortByRating && a.ratingAvg !== b.ratingAvg) return b.ratingAvg - a.ratingAvg;
+      return a.distanceKm - b.distanceKm;
+    };
+
+    const featuredKept: SearchResult[] = [];
+    const overflow: SearchResult[] = [];
+    const nonFeatured: SearchResult[] = [];
     let featuredSeen = 0;
-    return mapped.map((r) => {
-      if (!r.isFeatured) return r;
+    for (const r of mapped) {
+      if (!r.isFeatured) {
+        nonFeatured.push(r);
+        continue;
+      }
       featuredSeen += 1;
-      return featuredSeen <= FEATURED_CAP ? r : { ...r, isFeatured: false };
-    });
+      if (featuredSeen <= FEATURED_CAP) {
+        featuredKept.push(r);
+      } else {
+        overflow.push({ ...r, isFeatured: false });
+      }
+    }
+
+    const merged: SearchResult[] = [];
+    let i = 0;
+    let j = 0;
+    while (i < overflow.length && j < nonFeatured.length) {
+      merged.push(compare(overflow[i], nonFeatured[j]) <= 0 ? overflow[i++] : nonFeatured[j++]);
+    }
+    while (i < overflow.length) merged.push(overflow[i++]);
+    while (j < nonFeatured.length) merged.push(nonFeatured[j++]);
+
+    return [...featuredKept, ...merged];
   }
 }
 ```
@@ -644,14 +678,17 @@ export class AdminSalonsController {
 
   @Patch(':id/featured')
   async setFeatured(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SetFeaturedDto) {
-    await this.salons.update(
+    const result = await this.salons.update(
       { id },
       { isFeatured: dto.isFeatured, featuredUntil: dto.featuredUntil ? new Date(dto.featuredUntil) : null },
     );
+    if (!result.affected) throw new NotFoundException();
     return this.salons.findOneBy({ id });
   }
 }
 ```
+
+(`NotFoundException` needs adding to the `@nestjs/common` import line above — corrected during code review: `ParseUUIDPipe` only validates format, so a well-formed but non-existent salon ID originally fell through to a silent `200` with a `null` body, unlike every other write path in this module.)
 
 - [ ] **Step 10: Register the controller**
 
