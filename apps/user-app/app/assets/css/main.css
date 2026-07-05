@@ -1,0 +1,30 @@
+@import "tailwindcss";
+@import "@fontsource-variable/vazirmatn/wght.css";
+
+/* Manual light/dark toggle instead of the OS-only default (see useTheme.ts, Task 12) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: 'Vazirmatn Variable', ui-sans-serif, system-ui, sans-serif;
+
+  /* Light mode -- "Teal Trust" */
+  --color-surface: #F4FBFA;
+  --color-surface-card: #FFFFFF;
+  --color-text: #0B4F4A;
+  --color-accent: #0EA89B;
+  --color-ad: #FF7A45;
+}
+
+.dark {
+  --color-surface: #151217;
+  --color-surface-card: #211D24;
+  --color-text: #F5F0F2;
+  --color-accent: #7A3FF2;
+  --color-ad: #F24F8D;
+}
+
+html, body {
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+}
