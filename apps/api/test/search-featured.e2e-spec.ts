@@ -15,7 +15,13 @@ describe('Search — featured salon boost (e2e)', () => {
     await app.close();
   });
 
-  async function seedApprovedSalon(name: string, lng: number, lat: number, featured: boolean) {
+  async function seedApprovedSalon(
+    name: string,
+    lng: number,
+    lat: number,
+    featured: boolean,
+    featuredUntil: string | null = null,
+  ) {
     const ds = testDataSource();
     await ds.initialize();
     const [{ id: ownerId }] = await ds.query(
@@ -24,11 +30,11 @@ describe('Search — featured salon boost (e2e)', () => {
     );
     const slug = name.toLowerCase().replace(/\s+/g, '-') + '-' + Math.random().toString(36).slice(2, 7);
     const [{ id }] = await ds.query(
-      `INSERT INTO salons (owner_id, name, slug, gender_target, status, address, city, location, is_featured)
+      `INSERT INTO salons (owner_id, name, slug, gender_target, status, address, city, location, is_featured, featured_until)
        VALUES ($1, $2, $3, 'women', 'approved', 'test address', 'Tehran',
-         ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography, $6)
+         ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography, $6, $7)
        RETURNING id`,
-      [ownerId, name, slug, lng, lat, featured],
+      [ownerId, name, slug, lng, lat, featured, featuredUntil],
     );
     await ds.destroy();
     return id as string;
@@ -77,5 +83,26 @@ describe('Search — featured salon boost (e2e)', () => {
       .expect(200);
 
     expect(res.body.find((r: { name: string }) => r.name === 'Mens Featured')).toBeUndefined();
+  });
+
+  it('does not boost or badge a featured salon whose featured_until has already passed', async () => {
+    const lng = 51.42, lat = 35.72;
+    const expiredUntil = new Date(Date.now() - 60_000).toISOString(); // 1 minute in the past
+    const closerNonFeatured = await seedApprovedSalon('Closer Non-Featured (expiry test)', lng + 0.0001, lat, false);
+    const expiredFeatured = await seedApprovedSalon('Expired Featured', lng + 0.0002, lat, true, expiredUntil);
+
+    const res = await request(app.getHttpServer())
+      .get('/api/search')
+      .query({ lat, lng, gender: 'women', radiusKm: 5 })
+      .expect(200);
+
+    const expired = res.body.find((r: { id: string }) => r.id === expiredFeatured);
+    expect(expired).toBeDefined();
+    expect(expired.isFeatured).toBe(false);
+
+    const nonFeaturedIdx = res.body.findIndex((r: { id: string }) => r.id === closerNonFeatured);
+    const expiredIdx = res.body.findIndex((r: { id: string }) => r.id === expiredFeatured);
+    // with the boost gone, plain distance ordering applies: the closer salon comes first
+    expect(nonFeaturedIdx).toBeLessThan(expiredIdx);
   });
 });

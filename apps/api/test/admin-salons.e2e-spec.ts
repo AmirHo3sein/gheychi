@@ -51,6 +51,28 @@ describe('Admin — featured salon toggle (e2e)', () => {
     expect(res.body.find((s: { id: string }) => s.id === salonId)).toBeDefined();
   });
 
+  it('excludes salons that are not approved', async () => {
+    const ds = testDataSource();
+    await ds.initialize();
+    const [{ id: ownerId }] = await ds.query(
+      `INSERT INTO users (phone, role) VALUES ('09120000004', 'provider') RETURNING id`,
+    );
+    const [{ id: pendingId }] = await ds.query(
+      `INSERT INTO salons (owner_id, name, slug, gender_target, status, address, city, location)
+       VALUES ($1, 'Pending Salon', 'pending-salon-admin', 'women', 'pending', 'addr', 'Tehran',
+         ST_SetSRID(ST_MakePoint(51.4, 35.7), 4326)::geography)
+       RETURNING id`,
+      [ownerId],
+    );
+    await ds.destroy();
+
+    const res = await request(app.getHttpServer())
+      .get('/api/admin/salons')
+      .set('Cookie', adminCookie)
+      .expect(200);
+    expect(res.body.find((s: { id: string }) => s.id === pendingId)).toBeUndefined();
+  });
+
   it('toggles a salon to featured with an expiry', async () => {
     const featuredUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     await request(app.getHttpServer())
