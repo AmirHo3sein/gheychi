@@ -3530,22 +3530,19 @@ git commit -m "feat(user-app): SlotPicker component for the booking flow"
 
 **A gap found while writing this task:** the confirm sheet is supposed to show the deposit amount and cancellation policy before the user commits (per the original design spec §5), but `platform_config` (where `deposit_percent`, `deposit_min_toman`, `cancellation_window_hours` actually live) has never had a public read endpoint — only `PlatformConfigService`, consumed internally by the booking module. Hardcoding "20%" in the frontend would silently drift from the real admin-configured value the moment an admin changes it via direct DB update. This task adds one small public endpoint for exactly the three values the confirm sheet needs, before building the page that needs them.
 
+**⚠️ File collision, confirmed against the actual repo:** `apps/api/test/platform-config.e2e-spec.ts` **already exists** (from an earlier plan) with a passing `describe('PlatformConfigService (e2e)', ...)` block testing the service directly. Read it before touching it — this task **appends** a second `describe` block to that file, it does not replace it. Overwriting it would silently delete existing, currently-passing test coverage.
+
 **Files:**
 - Create: `apps/api/src/platform-config/platform-config.controller.ts`
 - Modify: `apps/api/src/platform-config/platform-config.module.ts`
-- Test: `apps/api/test/platform-config.e2e-spec.ts`
+- Modify: `apps/api/test/platform-config.e2e-spec.ts` (existing file — append a new `describe` block, do not replace its contents)
 - Create: `apps/user-app/app/pages/booking/[slug]/[serviceId].vue`
 
 - [ ] **Step 1: Write the failing backend e2e test**
 
-Create `apps/api/test/platform-config.e2e-spec.ts`:
+Read `apps/api/test/platform-config.e2e-spec.ts` first. Append this new `describe` block after the existing one (same file, same imports already present — `request` from `supertest` isn't currently imported there, so add it):
 
 ```typescript
-import { INestApplication } from '@nestjs/common';
-import request from 'supertest';
-import { createTestApp } from './utils/test-app';
-import { resetDatabase } from './utils/db';
-
 describe('Platform config — public booking terms (e2e)', () => {
   let app: INestApplication;
 
