@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
+import { PushService } from '../src/push/push.service';
 import { loginAs } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
@@ -10,6 +11,8 @@ describe('Payments — callback (e2e)', () => {
   let customerCookie: string;
   let salonId: string;
   let serviceId: string;
+  let customerId: string;
+  let ownerId: string;
 
   beforeAll(async () => {
     await resetDatabase();
@@ -42,6 +45,11 @@ describe('Payments — callback (e2e)', () => {
     );
 
     customerCookie = await loginAs(app, '09121010006');
+
+    const ownerRow = await ds.query(`SELECT id FROM users WHERE phone = $1`, ['09129990005']);
+    ownerId = ownerRow[0].id;
+    const customerRow = await ds.query(`SELECT id FROM users WHERE phone = $1`, ['09121010006']);
+    customerId = customerRow[0].id;
   });
 
   afterAll(async () => {
@@ -75,6 +83,25 @@ describe('Payments — callback (e2e)', () => {
       .set('Cookie', customerCookie)
       .expect(200);
     expect(booking.body.status).toBe('confirmed');
+  });
+
+  it('sends a push notification to the customer and salon owner on confirmation, alongside SMS', async () => {
+    const pushService = app.get(PushService);
+    const sendToUserSpy = jest.spyOn(pushService, 'sendToUser');
+
+    const created = await request(app.getHttpServer())
+      .post('/api/bookings')
+      .set('Cookie', customerCookie)
+      .send({ salonId, serviceId, startsAt: futureIso(36) })
+      .expect(201);
+    const authority = extractAuthority(created.body.paymentUrl);
+
+    await request(app.getHttpServer())
+      .get(`/api/payments/callback?Authority=${authority}&Status=OK`)
+      .expect(302);
+
+    expect(sendToUserSpy).toHaveBeenCalledWith(customerId, expect.objectContaining({ title: expect.any(String) }));
+    expect(sendToUserSpy).toHaveBeenCalledWith(ownerId, expect.objectContaining({ title: expect.any(String) }));
   });
 
   it('is idempotent — calling the callback again on an already-paid booking redirects with success, not an error', async () => {

@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
 import { PlatformConfigModule } from '../platform-config/platform-config.module';
+import { PushModule } from '../push/push.module';
 import { SalonsModule } from '../salons/salons.module';
 import { SmsModule } from '../sms/sms.module';
 import { UsersModule } from '../users/users.module';
@@ -28,6 +29,7 @@ import { ZarinpalGateway } from './zarinpal-payment.gateway';
     PlatformConfigModule,
     AuthModule,
     SmsModule,
+    PushModule,
     UsersModule,
   ],
   controllers: [AvailabilityController, BookingsController, PaymentsController, SalonBookingsController],

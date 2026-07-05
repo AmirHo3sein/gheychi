@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
+import { PushService } from '../push/push.service';
 import { SMS_PROVIDER, SmsProvider } from '../sms/sms.provider';
 import { SalonsService } from '../salons/salons.service';
 import { UsersService } from '../users/users.service';
@@ -22,6 +23,7 @@ export class PaymentsService {
     private readonly usersService: UsersService,
     @Inject(SMS_PROVIDER) private readonly sms: SmsProvider,
     @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
+    private readonly push: PushService,
   ) {}
 
   async handleCallback(authority: string, status: string): Promise<{ status: CallbackOutcome; bookingId: string }> {
@@ -120,13 +122,22 @@ export class PaymentsService {
     ]);
     const when = booking.startsAt.toISOString();
 
-    // SMS failures never roll back a confirmed booking (per the design spec's error-handling
-    // section) -- this is a best-effort notification, not a queued-with-retry system yet.
+    // SMS/push failures never roll back a confirmed booking (per the design spec's
+    // error-handling section) -- these are best-effort notifications, not a queued-with-retry
+    // system yet.
     if (customer) {
       await this.sms.send(customer.phone, `Booking confirmed at ${salon.name}, ${when}. Address: ${salon.address}`).catch(() => {});
+      await this.push.sendToUser(customer.id, {
+        title: 'Booking confirmed',
+        body: `${salon.name} — ${when}`,
+      });
     }
     if (owner) {
       await this.sms.send(owner.phone, `New booking at ${salon.name} for ${when}`).catch(() => {});
+      await this.push.sendToUser(owner.id, {
+        title: 'New booking',
+        body: `${salon.name} — ${when}`,
+      });
     }
   }
 }
