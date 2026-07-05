@@ -11,8 +11,8 @@ const categories = ref<{ id: number; name: string; icon: string }[]>([])
 const salons = ref<SearchResult[]>([])
 const selectedCategoryId = ref<number | null>(null)
 const sort = ref<'distance' | 'rating'>('distance')
-const coords = ref<{ lat: number; lng: number }>({ lat: CITY_CENTERS[0].lat, lng: CITY_CENTERS[0].lng })
-const selectedCity = ref(CITY_CENTERS[0].name)
+const coords = ref<{ lat: number; lng: number }>({ lat: CITY_CENTERS[0]!.lat, lng: CITY_CENTERS[0]!.lng })
+const selectedCity = ref(CITY_CENTERS[0]!.name)
 const loading = ref(true)
 const view = ref<'list' | 'map'>('list')
 const salonCoords = ref<Record<string, { lat: number; lng: number }>>({})
@@ -69,8 +69,8 @@ async function loadCoordsForMap() {
     missing.map((s) => apiFetch<{ location: { coordinates: [number, number] } }>(`/salons/${s.slug}`, { silent: true })),
   )
   for (let i = 0; i < missing.length; i++) {
-    const data = results[i].data
-    if (data) salonCoords.value[missing[i].id] = geoJsonToLatLng(data.location.coordinates)
+    const data = results[i]!.data
+    if (data) salonCoords.value[missing[i]!.id] = geoJsonToLatLng(data.location.coordinates)
   }
 }
 
@@ -81,7 +81,7 @@ watch(view, (v) => {
 
 <template>
   <div class="p-4 space-y-4">
-    <select :value="selectedCity" class="rounded-lg border p-2 text-sm" @change="(e) => selectCity(CITY_CENTERS.find((c) => c.name === (e.target as HTMLSelectElement).value)!)">
+    <select :value="selectedCity" class="rounded-lg border p-2 text-sm" @change="(e: Event) => selectCity(CITY_CENTERS.find((c) => c.name === (e.target as HTMLSelectElement).value)!)">
       <option v-for="city in CITY_CENTERS" :key="city.name" :value="city.name">{{ city.name }}</option>
     </select>
 

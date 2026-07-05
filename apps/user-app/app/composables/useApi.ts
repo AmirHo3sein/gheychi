@@ -35,7 +35,7 @@ export function useApi() {
       const data = await $fetch<T>(path, {
         baseURL: config.public.apiBase,
         method: options.method ?? 'GET',
-        body: options.body,
+        body: options.body as Record<string, unknown> | undefined,
         query: options.query,
         credentials: 'include',
         headers,

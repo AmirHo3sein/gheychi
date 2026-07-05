@@ -5,7 +5,7 @@ const operationsGenerator = createOperationsGenerator({
 })
 
 export default defineProvider({
-  getImage(src, { modifiers } = {}) {
+  getImage(src, { modifiers }) {
     const operations = operationsGenerator(modifiers)
     return { url: operations ? `${src}?${operations}` : src }
   },
