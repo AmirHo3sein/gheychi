@@ -1,11 +1,13 @@
-# Plan 4 — User App Frontend (Nuxt 3 PWA)
+# Plan 4 — User App Frontend (Nuxt 4 PWA)
 
 **Date:** 2026-07-05
 **Status:** Approved design (brainstorming complete)
 
+> **Correction (during plan-writing):** this doc and the original marketplace spec both say "Nuxt 3." Nuxt 3 reaches end-of-life this same month (July 2026); Nuxt 4 has been the stable release for a while. "Nuxt 3" here was shorthand for "Nuxt," not a deliberate version pin — the implementation plan builds on Nuxt 4. Nothing else in this design changes.
+
 ## 1. Product Summary
 
-The customer-facing app for Arayeshgah: discovery, salon profiles, booking, and account management, built as the Nuxt 3 SSR PWA described in the original marketplace design (`2026-07-04-arayeshgah-marketplace-design.md` §5). This plan also introduces two things not in the original MVP scope: an **admin-controlled "featured salon" ad placement**, and **push notifications** (closing Plan 2's undelivered SMS-reminder gap along the way).
+The customer-facing app for Arayeshgah: discovery, salon profiles, booking, and account management, built as the Nuxt SSR PWA described in the original marketplace design (`2026-07-04-arayeshgah-marketplace-design.md` §5). This plan also introduces two things not in the original MVP scope: an **admin-controlled "featured salon" ad placement**, and **push notifications** (closing Plan 2's undelivered SMS-reminder gap along the way).
 
 Nothing in the API has a consumer yet — Plans 1–3 are backend-only. This plan ships the first real UI.
 
