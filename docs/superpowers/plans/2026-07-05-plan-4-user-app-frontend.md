@@ -2942,14 +2942,19 @@ git commit -m "feat(user-app): app shell with header, layouts, and no-flash them
 
 ## Task 13: Home page — categories, search, `SalonCard` with the Ad badge
 
+**A real bug caught during manual verification, confirmed live against the running API:** `SessionUser.gender` (`'female'|'male'`, the user's own identity) and `/search`'s required `gender` query param (`'women'|'men'`, the salon's target-clientele vocabulary) are different fields with different vocabularies — passing the session value straight through 400s (`gender must be one of the following values: women, men`), which would have broken the primary success path for every logged-in user. Fixed with a small mapping utility, `toSearchGender()`, unit-tested rather than left as an unverified inline computed (this codebase's established pattern for pure logic, matching `route-guard.ts`). A `SearchResult` interface was also extracted to a shared file, since Task 14 (next) needs the identical shape for a third consumer.
+
 **Files:**
 - Create: `apps/user-app/app/providers/arvancloud.ts`
 - Modify: `apps/user-app/nuxt.config.ts`
 - Modify: `apps/user-app/package.json`
 - Create: `apps/user-app/app/utils/city-centers.ts`
+- Create: `apps/user-app/app/utils/types.ts` (shared `SearchResult` interface)
+- Create: `apps/user-app/app/utils/gender-map.ts` (`toSearchGender()`)
 - Create: `apps/user-app/app/components/salon/SalonCard.vue`
 - Create: `apps/user-app/app/pages/index.vue`
 - Test: `apps/user-app/test/nuxt/SalonCard.spec.ts`
+- Test: `apps/user-app/test/unit/gender-map.spec.ts`
 
 - [ ] **Step 1: Install `@nuxt/image`**
 
@@ -3052,25 +3057,31 @@ export const CITY_CENTERS: CityCenter[] = [
 
 Save as `apps/user-app/app/utils/city-centers.ts`.
 
-- [ ] **Step 7: Implement `SalonCard.vue`**
+- [ ] **Step 7: Create the shared `SearchResult` type, then implement `SalonCard.vue`**
+
+Create `apps/user-app/app/utils/types.ts` first — this shape is used by `SalonCard.vue`, the Home page (Step 9), and Task 14's map component, so it's a named interface from the start rather than an inline object literal copy-pasted across three files:
+
+```typescript
+export interface SearchResult {
+  id: string
+  name: string
+  slug: string
+  city: string
+  address: string
+  ratingAvg: number
+  ratingCount: number
+  distanceKm: number
+  minPrice: number | null
+  coverPhoto: string | null
+  isFeatured: boolean
+}
+```
 
 ```vue
 <script setup lang="ts">
-defineProps<{
-  salon: {
-    id: string
-    name: string
-    slug: string
-    city: string
-    address: string
-    ratingAvg: number
-    ratingCount: number
-    distanceKm: number
-    minPrice: number | null
-    coverPhoto: string | null
-    isFeatured: boolean
-  }
-}>()
+import type { SearchResult } from '../../utils/types'
+
+defineProps<{ salon: SearchResult }>()
 </script>
 
 <template>
@@ -3109,19 +3120,37 @@ Save as `apps/user-app/app/components/salon/SalonCard.vue`. `start-2` (a logical
 Run: `pnpm --filter @arayeshgah/user-app test`
 Expected: PASS
 
-- [ ] **Step 9: Implement the Home page**
+- [ ] **Step 9: Create the gender-mapping utility, then implement the Home page**
+
+First, create `apps/user-app/app/utils/gender-map.ts`. `SessionUser.gender` (`'female'|'male'`, the user's own identity) and `/search`'s required `gender` query param (`'women'|'men'`, the salon's target-clientele vocabulary) are different fields — passing the session value straight through gets a 400 from the backend, confirmed live. Map one to the other explicitly, as a tested utility rather than an unverified inline computed, matching the `route-guard.ts`/`route-guard.spec.ts` pattern already established in this app:
+
+```typescript
+// The user's own gender identity ('female'/'male') and a salon's target clientele
+// ('women'/'men', the vocabulary /search's `gender` param expects) are different
+// fields with different vocabularies -- map one to the other rather than passing
+// session.user.gender straight through, which /search would reject with a 400.
+export function toSearchGender(gender: 'female' | 'male' | null | undefined): 'women' | 'men' | undefined {
+  if (gender === 'female') return 'women'
+  if (gender === 'male') return 'men'
+  return undefined
+}
+```
+
+Add `apps/user-app/test/unit/gender-map.spec.ts` covering all three branches (`female`→`women`, `male`→`men`, `null`/`undefined`→`undefined`).
+
+Now the Home page:
 
 ```vue
 <script setup lang="ts">
 import { CITY_CENTERS } from '../utils/city-centers'
+import { toSearchGender } from '../utils/gender-map'
+import type { SearchResult } from '../utils/types'
 
 const session = useSessionStore()
 const { apiFetch } = useApi()
 
 const categories = ref<{ id: number; name: string; icon: string }[]>([])
-const salons = ref<
-  { id: string; name: string; slug: string; city: string; address: string; ratingAvg: number; ratingCount: number; distanceKm: number; minPrice: number | null; coverPhoto: string | null; isFeatured: boolean }[]
->([])
+const salons = ref<SearchResult[]>([])
 const selectedCategoryId = ref<number | null>(null)
 const sort = ref<'distance' | 'rating'>('distance')
 const coords = ref<{ lat: number; lng: number }>({ lat: CITY_CENTERS[0].lat, lng: CITY_CENTERS[0].lng })
@@ -3135,11 +3164,11 @@ function selectCity(city: (typeof CITY_CENTERS)[number]) {
 
 async function loadSalons() {
   loading.value = true
-  const { data } = await apiFetch<typeof salons.value>('/search', {
+  const { data } = await apiFetch<SearchResult[]>('/search', {
     query: {
       lat: coords.value.lat,
       lng: coords.value.lng,
-      gender: session.user?.gender,
+      gender: toSearchGender(session.user?.gender),
       categoryId: selectedCategoryId.value ?? undefined,
       sort: sort.value,
     },
@@ -3215,7 +3244,7 @@ Run `pnpm dev:api` and `pnpm dev:user-app`. Seed at least one `approved` salon w
 - [ ] **Step 11: Commit**
 
 ```bash
-git add apps/user-app/app/providers apps/user-app/app/utils/city-centers.ts apps/user-app/app/components/salon/SalonCard.vue apps/user-app/app/pages/index.vue apps/user-app/nuxt.config.ts apps/user-app/package.json apps/user-app/test/nuxt/SalonCard.spec.ts
+git add apps/user-app/app/providers apps/user-app/app/utils/city-centers.ts apps/user-app/app/utils/types.ts apps/user-app/app/utils/gender-map.ts apps/user-app/app/components/salon/SalonCard.vue apps/user-app/app/pages/index.vue apps/user-app/nuxt.config.ts apps/user-app/package.json apps/user-app/test/nuxt/SalonCard.spec.ts apps/user-app/test/unit/gender-map.spec.ts
 git commit -m "feat(user-app): home page with category filters and the sponsored-card ad slot"
 ```
 
