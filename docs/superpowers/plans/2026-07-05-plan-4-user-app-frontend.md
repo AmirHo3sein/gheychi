@@ -2140,6 +2140,8 @@ Run: `pnpm --filter @arayeshgah/user-app add tailwindcss @tailwindcss/vite @font
 
 Create `apps/user-app/app/assets/css/main.css`:
 
+**Corrected during code review (execution):** Tailwind v4's `@theme { }` block only emits a declared custom property into the compiled `:root` if it's actually referenced somewhere in scanned CSS/templates — a tree-shaking behavior similar to v3's JIT purging. The `html, body { }` rule below references `--color-surface`/`--color-text` directly, so those two survived; `--color-surface-card`, `--color-accent`, and `--color-ad` are not referenced by anything until a later task's components use them, so plain `@theme` silently dropped all three from the light-mode output — they'd only "work" once `.dark` was toggled on, since that block is hand-authored CSS outside `@theme` and immune to the pruning. `@theme static` (confirmed against Tailwind's own docs) forces full emission regardless of usage; it's the fix in the snippet below.
+
 ```css
 @import "tailwindcss";
 @import "@fontsource-variable/vazirmatn/wght.css";
@@ -2147,7 +2149,9 @@ Create `apps/user-app/app/assets/css/main.css`:
 /* Manual light/dark toggle instead of the OS-only default (see useTheme.ts, Task 12) */
 @custom-variant dark (&:where(.dark, .dark *));
 
-@theme {
+/* static: prevents Tailwind from tree-shaking these color tokens before any
+   component references them yet (they're consumed starting in a later task) */
+@theme static {
   --font-sans: 'Vazirmatn Variable', ui-sans-serif, system-ui, sans-serif;
 
   /* Light mode -- "Teal Trust" */
@@ -2173,7 +2177,7 @@ html, body {
 }
 ```
 
-Note: `--color-*` variables are plain CSS custom properties (not Tailwind `@theme` color tokens generating utility classes) because their values must swap between light and dark via the `.dark` class selector — Tailwind's `@theme` block itself is static at build time. Components reference them via arbitrary-value utilities (e.g. `bg-(--color-surface)`) or plain inline `style` bindings; `--font-sans` is a real theme token since it doesn't vary by mode and Tailwind's `font-sans` utility should pick it up.
+Note: because these `--color-*` variables sit inside a `--color-*`-namespaced `@theme` block, Tailwind v4 also auto-generates matching utilities (e.g. `bg-surface`, `text-accent`) alongside the arbitrary-value syntax (`bg-(--color-surface)`) — both resolve to the same CSS variable and both correctly follow the `.dark` override, so either is safe to use; this plan's own later tasks consistently use the arbitrary-value form. `--font-sans` is a real theme token since it doesn't vary by mode and Tailwind's `font-sans` utility picks it up directly.
 
 - [ ] **Step 3: Wire the Vite plugin and CSS into `nuxt.config.ts`**
 
