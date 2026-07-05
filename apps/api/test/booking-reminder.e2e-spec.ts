@@ -83,6 +83,17 @@ describe('Booking reminder job (e2e)', () => {
     expect(pushSpy).not.toHaveBeenCalledWith(customerId, expect.anything());
   });
 
+  it('does not remind a booking that has already started', async () => {
+    const job = app.get(BookingReminderJob);
+    const pushService = app.get(PushService);
+    const pushSpy = jest.spyOn(pushService, 'sendToUser').mockClear();
+
+    const { customerId } = await seedConfirmedBooking(-1); // started 1 hour ago
+
+    await job.run();
+    expect(pushSpy).not.toHaveBeenCalledWith(customerId, expect.anything());
+  });
+
   it('never reminds the same booking twice', async () => {
     const job = app.get(BookingReminderJob);
     await seedConfirmedBooking(2, new Date()); // already reminded

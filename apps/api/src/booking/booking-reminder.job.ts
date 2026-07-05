@@ -49,22 +49,39 @@ export class BookingReminderJob {
       );
       if (!claim.affected) continue;
 
-      const salon = await this.salonsService.findById(booking.salonId);
-      if (!salon) continue;
-      const customer = await this.usersService.findById(booking.userId);
-      if (!customer) continue;
+      try {
+        const salon = await this.salonsService.findById(booking.salonId);
+        if (!salon) {
+          this.logger.warn(`Booking ${booking.id} claimed for reminder but salon ${booking.salonId} was not found`);
+          continue;
+        }
+        const customer = await this.usersService.findById(booking.userId);
+        if (!customer) {
+          this.logger.warn(`Booking ${booking.id} claimed for reminder but user ${booking.userId} was not found`);
+          continue;
+        }
 
-      const when = booking.startsAt.toISOString();
-      await this.sms
-        .send(customer.phone, `Reminder: your appointment at ${salon.name} is at ${when}. Address: ${salon.address}`)
-        .catch(() => {});
-      await this.push
-        .sendToUser(customer.id, {
-          title: 'Upcoming appointment',
-          body: `${salon.name} — ${when}`,
-        })
-        .catch(() => {});
-      remindedCount += 1;
+        const when = booking.startsAt.toISOString();
+        await this.sms
+          .send(customer.phone, `Reminder: your appointment at ${salon.name} is at ${when}. Address: ${salon.address}`)
+          .catch(() => {});
+        await this.push
+          .sendToUser(customer.id, {
+            title: 'Upcoming appointment',
+            body: `${salon.name} — ${when}`,
+          })
+          .catch(() => {});
+        remindedCount += 1;
+      } catch (err) {
+        // A single booking's lookup/notification failing (transient DB error, etc.) must not
+        // abort processing of the rest of this tick's batch -- same reasoning as
+        // PaymentReconciliationJob's per-item try/catch. The booking was already claimed
+        // (remindedAt set) above, so it won't be retried on the next tick; log loudly so an
+        // operator can follow up manually.
+        this.logger.error(
+          `Failed to send reminder for booking ${booking.id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
 
     if (remindedCount > 0) this.logger.log(`Sent ${remindedCount} appointment reminder(s)`);
