@@ -4,7 +4,7 @@
 /* Manual light/dark toggle instead of the OS-only default (see useTheme.ts, Task 12) */
 @custom-variant dark (&:where(.dark, .dark *));
 
-@theme {
+@theme static {
   --font-sans: 'Vazirmatn Variable', ui-sans-serif, system-ui, sans-serif;
 
   /* Light mode -- "Teal Trust" */
