@@ -43,6 +43,9 @@ export class Booking {
   @Column({ type: 'varchar', default: 'pending_payment' })
   status: BookingStatus;
 
+  @Column({ name: 'reminded_at', type: 'timestamptz', nullable: true })
+  remindedAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 }

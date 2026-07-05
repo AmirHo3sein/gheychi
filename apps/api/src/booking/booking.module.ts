@@ -11,6 +11,7 @@ import { AvailabilityController } from './availability.controller';
 import { AvailabilityService } from './availability.service';
 import { Booking } from './booking.entity';
 import { BookingExpiryJob } from './booking-expiry.job';
+import { BookingReminderJob } from './booking-reminder.job';
 import { BookingsController } from './bookings.controller';
 import { BookingsService } from './bookings.service';
 import { MockPaymentGateway } from './mock-payment.gateway';
@@ -38,6 +39,7 @@ import { ZarinpalGateway } from './zarinpal-payment.gateway';
     BookingsService,
     PaymentsService,
     BookingExpiryJob,
+    BookingReminderJob,
     PaymentReconciliationJob,
     {
       provide: PAYMENT_GATEWAY,

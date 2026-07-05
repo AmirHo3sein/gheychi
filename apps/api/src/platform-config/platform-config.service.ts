@@ -34,4 +34,8 @@ export class PlatformConfigService {
   getBookingHoldTtlMinutes(): Promise<number> {
     return this.getNumber('booking_hold_ttl_minutes');
   }
+
+  getReminderLeadHours(): Promise<number> {
+    return this.getNumber('reminder_lead_hours');
+  }
 }
