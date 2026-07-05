@@ -1991,7 +1991,7 @@ No TDD here — this is project scaffolding with no behavior to test yet. Verifi
   "devDependencies": {
     "@nuxt/test-utils": "^3.15.0",
     "@vue/test-utils": "^2.4.6",
-    "vitest": "^2.1.8",
+    "vitest": "^3.2.6",
     "happy-dom": "^15.11.0",
     "playwright-core": "^1.49.0",
     "typescript": "^5.7.0"
@@ -2236,7 +2236,7 @@ This is the piece every later page/component depends on, so it gets real TDD. Th
 
 **Corrected during code review (execution):** the first version of `useToast` held its `toasts` array in a module-level `ref`, which is a Node-process-wide singleton, not a per-request one. Under SSR (on by default, and this app never disables it), that meant one request's error toast could leak into a concurrent request's rendered response — a real bug, not theoretical, since concurrent requests are the normal case for any traffic at all. Fixed with Nuxt's `useState`, which is request-scoped by design and behaves identically to a `ref` after hydration. The `nextId` module-level counter had the same scoping smell (lower stakes — cosmetic id collisions, not a data leak) and was replaced with a non-shared id source. Two smaller fixes also landed: a doc comment on `ApiError.status`'s `0` sentinel (network/DNS/timeout failure, not a real HTTP status), and moving the test's `vi.stubGlobal('$fetch', ...)` into `beforeEach`/`afterEach` so it doesn't rely on Vitest's default per-file isolation to avoid leaking across future spec files.
 
-**Environment note also discovered during this task's execution:** the `vitest.config.ts` written in Task 8 uses `test.projects`, which requires Vitest 3.x — but Task 8/9 pinned `vitest@^2.1.8`, under which the "nuxt" test project silently never activated at all (any Nuxt-environment test would have errored on `#imports`). This task bumped `vitest` to `^3.2.6` in `apps/user-app/package.json`; if you're executing this plan from scratch and Task 8's snippet still shows `vitest@^2.1.8`, use `^3.2.6` (or newer 3.x) instead — the plan's Task 8 section is left as originally written for historical accuracy, but this is the actual, necessary version.
+**Environment note also discovered during this task's execution:** the `vitest.config.ts` written in Task 8 uses `test.projects`, which requires Vitest 3.x — but Task 8 originally pinned `vitest@^2.1.8`, under which the "nuxt" test project silently never activated at all (any Nuxt-environment test would have errored on `#imports`). This was invisible until this task wrote the first real Nuxt-environment test. Task 8's package.json snippet (above, earlier in this document) has already been corrected to `vitest@^3.2.6` to reflect this — if you executed Task 8 before this correction landed, bump `vitest` in `apps/user-app/package.json` before continuing.
 
 **Files:**
 - Create: `apps/user-app/app/composables/useToast.ts`
