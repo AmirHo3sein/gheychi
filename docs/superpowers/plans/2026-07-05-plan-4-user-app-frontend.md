@@ -3665,6 +3665,8 @@ git commit -m "feat(user-app): SSR salon profile page with SEO metadata and favo
 
 This is exactly the kind of component the original design spec calls out by name for testing (§9: "component tests only where logic is nontrivial (slot picker, booking status states)") — real TDD here.
 
+**Corrected during code review (execution):** the version below adds a `loading` ref and surfaces `apiFetch`'s `error` separately from a genuinely-empty calendar. Without it, `days` starts `[]` and the "نوبت خالی" (no availability) message renders unconditionally until the fetch resolves — on every single load, not just as a rare edge case — and a real network/backend failure would render the identical message as a salon that legitimately has no open slots. Both matter more here than in most components, since this is the one place a user is actively trying to complete a purchase. Also use `daysWithSlots` as a named `computed` (not an inline `.filter()` in the `v-for`) and a named `selectDate()` handler (not inline `@click` logic) — both already correct in the version below.
+
 **Files:**
 - Create: `apps/user-app/app/utils/slot-format.ts`
 - Create: `apps/user-app/app/components/booking/SlotPicker.vue`
@@ -3798,31 +3800,43 @@ const emit = defineEmits<{ select: [iso: string] }>()
 const { apiFetch } = useApi()
 const days = ref<DayAvailability[]>([])
 const selectedDate = ref<string | null>(null)
+const loading = ref(true)
+const hasError = ref(false)
 
 onMounted(async () => {
-  const { data } = await apiFetch<DayAvailability[]>(`/salons/${props.salonId}/availability`, {
+  loading.value = true
+  const { data, error } = await apiFetch<DayAvailability[]>(`/salons/${props.salonId}/availability`, {
     query: { serviceId: props.serviceId },
     silent: true,
   })
+  hasError.value = !!error
   days.value = data ?? []
   selectedDate.value = pickDefaultDate(days.value)
+  loading.value = false
 })
 
+const daysWithSlots = computed(() => days.value.filter((d) => d.slots.length > 0))
 const slotsForSelectedDate = computed(() => days.value.find((d) => d.date === selectedDate.value)?.slots ?? [])
-const hasAnySlots = computed(() => days.value.some((d) => d.slots.length > 0))
+const hasAnySlots = computed(() => daysWithSlots.value.length > 0)
+
+function selectDate(date: string) {
+  selectedDate.value = date
+}
 </script>
 
 <template>
-  <div v-if="!hasAnySlots" class="text-sm text-center py-6">نوبت خالی — این سالن در ۱۴ روز آینده نوبت آزاد ندارد</div>
+  <div v-if="loading" class="py-6 text-center text-sm">در حال بارگذاری...</div>
+  <div v-else-if="hasError" class="py-6 text-center text-sm">مشکلی پیش آمد، دوباره تلاش کنید</div>
+  <div v-else-if="!hasAnySlots" class="py-6 text-center text-sm">نوبت خالی — این سالن در ۱۴ روز آینده نوبت آزاد ندارد</div>
   <div v-else class="space-y-3">
     <div class="flex gap-2 overflow-x-auto">
       <button
-        v-for="day in days.filter((d) => d.slots.length > 0)"
+        v-for="day in daysWithSlots"
         :key="day.date"
         type="button"
         class="whitespace-nowrap rounded-full px-3 py-1 text-sm"
         :class="selectedDate === day.date ? 'bg-(--color-accent) text-white' : 'bg-(--color-surface-card)'"
-        @click="selectedDate = day.date"
+        @click="selectDate(day.date)"
       >
         {{ formatDateLabel(day.date) }}
       </button>
