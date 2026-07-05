@@ -2234,6 +2234,10 @@ git commit -m "feat(user-app): Tailwind v4, Vazirmatn font, light/dark design to
 
 This is the piece every later page/component depends on, so it gets real TDD. The core problem it solves: on the server, Nuxt's `$fetch` does **not** automatically forward the browser's cookies to a separate API origin — the incoming request's `Cookie` header has to be read and re-attached by hand, or every SSR-fetched page (home, salon profile) would render as logged-out.
 
+**Corrected during code review (execution):** the first version of `useToast` held its `toasts` array in a module-level `ref`, which is a Node-process-wide singleton, not a per-request one. Under SSR (on by default, and this app never disables it), that meant one request's error toast could leak into a concurrent request's rendered response — a real bug, not theoretical, since concurrent requests are the normal case for any traffic at all. Fixed with Nuxt's `useState`, which is request-scoped by design and behaves identically to a `ref` after hydration. The `nextId` module-level counter had the same scoping smell (lower stakes — cosmetic id collisions, not a data leak) and was replaced with a non-shared id source. Two smaller fixes also landed: a doc comment on `ApiError.status`'s `0` sentinel (network/DNS/timeout failure, not a real HTTP status), and moving the test's `vi.stubGlobal('$fetch', ...)` into `beforeEach`/`afterEach` so it doesn't rely on Vitest's default per-file isolation to avoid leaking across future spec files.
+
+**Environment note also discovered during this task's execution:** the `vitest.config.ts` written in Task 8 uses `test.projects`, which requires Vitest 3.x — but Task 8/9 pinned `vitest@^2.1.8`, under which the "nuxt" test project silently never activated at all (any Nuxt-environment test would have errored on `#imports`). This task bumped `vitest` to `^3.2.6` in `apps/user-app/package.json`; if you're executing this plan from scratch and Task 8's snippet still shows `vitest@^2.1.8`, use `^3.2.6` (or newer 3.x) instead — the plan's Task 8 section is left as originally written for historical accuracy, but this is the actual, necessary version.
+
 **Files:**
 - Create: `apps/user-app/app/composables/useToast.ts`
 - Create: `apps/user-app/app/components/layout/ToastStack.vue`
@@ -2243,26 +2247,40 @@ This is the piece every later page/component depends on, so it gets real TDD. Th
 
 - [ ] **Step 1: Write the failing test**
 
-Create `apps/user-app/test/nuxt/useApi.spec.ts`:
+Create `apps/user-app/test/nuxt/useApi.spec.ts`. Two mocking details below only became apparent once actually run against this Nuxt/`@nuxt/test-utils` version (documented inline in the test itself): `$fetch` is a real `globalThis` binding set by a build-time plugin, not a tracked auto-import, so `mockNuxtImport('$fetch', ...)` can't target it — `vi.stubGlobal` is the correct approach; and `mockNuxtImport(...)` compiles to a hoisted `vi.mock`, so any mock function it references must come from `vi.hoisted()`, not a plain `const` (which would be accessed before initialization once Vitest hoists the mock above it).
 
 ```typescript
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mockNuxtImport } from '@nuxt/test-utils/runtime'
 
+// `$fetch` is exposed by Nuxt as a real `globalThis` binding (set up by a build-time
+// plugin), not as an unimport-tracked auto-import -- so `mockNuxtImport` can't target
+// it (it only knows about names in the live unimport registry, and errors with
+// "Cannot find import ... to mock" for anything else). `vi.stubGlobal` is the
+// documented way to stub it instead.
 const fetchMock = vi.fn()
-mockNuxtImport('$fetch', () => {
-  const fn = (...args: unknown[]) => fetchMock(...args)
-  fn.create = () => fn
-  return fn
+const fetchStub = Object.assign((...args: unknown[]) => fetchMock(...args), {
+  create: () => fetchStub,
 })
 
-const navigateToMock = vi.fn()
+// `mockNuxtImport` compiles to a hoisted `vi.mock` call, so the mock it returns must
+// come from `vi.hoisted` -- a plain `const` here would be accessed before its
+// initialization once vitest lifts the mock above this file's other statements.
+const { navigateToMock } = vi.hoisted(() => ({ navigateToMock: vi.fn() }))
 mockNuxtImport('navigateTo', () => navigateToMock)
 
 describe('useApi', () => {
   beforeEach(() => {
     fetchMock.mockReset()
     navigateToMock.mockReset()
+    // Re-stub before every test (and undo it in afterEach below) rather than stubbing
+    // once at module scope, so this file doesn't rely on Vitest's default per-file
+    // isolation to keep the global stub from leaking across tests/files.
+    vi.stubGlobal('$fetch', fetchStub)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it('returns { data } on success', async () => {
@@ -2313,12 +2331,18 @@ export interface Toast {
   message: string
 }
 
-const toasts = ref<Toast[]>([])
-let nextId = 1
-
 export function useToast() {
+  // A module-level ref would be a single Node-process-wide singleton -- under SSR that
+  // means one request's error toast could leak into a concurrent request's response.
+  // useState is Nuxt's request-scoped equivalent (backed by nuxtApp.payload.state), so
+  // each request/client gets its own array, while still behaving like a ref after hydration.
+  const toasts = useState<Toast[]>('toasts', () => [])
+
   function push(message: string) {
-    const id = nextId++
+    // Avoids a shared module-level counter, which would have the same cross-request
+    // scoping issue as a module-level `toasts` ref (harmless here since it only
+    // affects id uniqueness, but not worth reintroducing).
+    const id = Date.now() + Math.random()
     toasts.value.push({ id, message })
     setTimeout(() => {
       toasts.value = toasts.value.filter((t) => t.id !== id)
@@ -2329,7 +2353,7 @@ export function useToast() {
 }
 ```
 
-Save as `apps/user-app/app/composables/useToast.ts`. Module-level `toasts`/`nextId` (rather than inside the returned function) make this a singleton shared across every call site, same intent as the Pinia session store but without needing a full store for one array.
+Save as `apps/user-app/app/composables/useToast.ts`.
 
 - [ ] **Step 4: Implement `ToastStack.vue`**
 
@@ -2357,6 +2381,7 @@ Save as `apps/user-app/app/components/layout/ToastStack.vue`.
 
 ```typescript
 export interface ApiError {
+  /** 0 means a network/DNS/timeout failure with no HTTP response at all, not a real status code */
   status: number
   message: string
 }
