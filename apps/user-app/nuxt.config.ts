@@ -8,12 +8,20 @@ export default defineNuxtConfig({
   // the app across the microtask boundary and throws "useNuxtApp called outside of a
   // plugin/hook/setup function".
   experimental: { asyncContext: true },
-  modules: ['@pinia/nuxt', '@nuxt/test-utils/module'],
+  modules: ['@pinia/nuxt', '@nuxt/test-utils/module', '@nuxt/image'],
   css: ['~/assets/css/main.css'],
   // Nested components/<dir>/*.vue would otherwise auto-register with a directory-name
   // prefix (e.g. <LayoutAppHeader>); disabling it lets AppHeader/ThemeToggle/ToastStack
   // resolve under their own component names as used throughout templates.
   components: [{ path: '~/components', pathPrefix: false }],
+  image: {
+    providers: {
+      arvancloud: {
+        name: 'arvancloud',
+        provider: '~/providers/arvancloud.ts',
+      },
+    },
+  },
   vite: {
     plugins: [tailwindcss()],
   },

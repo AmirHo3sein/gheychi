@@ -1,0 +1,45 @@
+<script setup lang="ts">
+defineProps<{
+  salon: {
+    id: string
+    name: string
+    slug: string
+    city: string
+    address: string
+    ratingAvg: number
+    ratingCount: number
+    distanceKm: number
+    minPrice: number | null
+    coverPhoto: string | null
+    isFeatured: boolean
+  }
+}>()
+</script>
+
+<template>
+  <NuxtLink :to="`/salons/${salon.slug}`" class="relative flex gap-3 rounded-xl bg-(--color-surface-card) p-3">
+    <span
+      v-if="salon.isFeatured"
+      data-testid="ad-badge"
+      class="absolute top-2 start-2 rounded-md bg-(--color-ad) px-1.5 py-0.5 text-[0.65rem] font-bold text-white"
+    >
+      تبلیغ
+    </span>
+    <NuxtImg
+      v-if="salon.coverPhoto"
+      provider="arvancloud"
+      :src="salon.coverPhoto"
+      width="80"
+      height="80"
+      loading="lazy"
+      class="h-20 w-20 flex-shrink-0 rounded-lg object-cover"
+      :alt="salon.name"
+    />
+    <div v-else class="h-20 w-20 flex-shrink-0 rounded-lg bg-(--color-surface)" />
+    <div class="flex-1 text-sm">
+      <h3 class="font-bold">{{ salon.name }}</h3>
+      <p>⭐ {{ salon.ratingAvg.toFixed(1) }} ({{ salon.ratingCount }}) · {{ salon.distanceKm.toFixed(1) }} کیلومتر</p>
+      <p v-if="salon.minPrice">از {{ salon.minPrice.toLocaleString('fa-IR') }} تومان</p>
+    </div>
+  </NuxtLink>
+</template>
