@@ -24,6 +24,10 @@ import { WorkingHour } from './working-hour.entity';
     ScheduleController,
     SalonsController,
     AdminSalonsController,
+    // PublicSalonContentController owns wildcard routes shaped `salons/:slug/...` (e.g. services, hours).
+    // NestJS/Express matches routes in registration order, not by specificity, so it MUST stay registered
+    // after any controller with a literal `salons/mine/...`-shaped route of the same depth (currently
+    // SalonServicesController and ScheduleController) or it will silently shadow them.
     PublicSalonContentController,
   ],
   providers: [SalonsService, SalonOwnerGuard],
