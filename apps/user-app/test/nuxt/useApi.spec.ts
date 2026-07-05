@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mockNuxtImport } from '@nuxt/test-utils/runtime'
 
 // `$fetch` is exposed by Nuxt as a real `globalThis` binding (set up by a build-time
@@ -10,7 +10,6 @@ const fetchMock = vi.fn()
 const fetchStub = Object.assign((...args: unknown[]) => fetchMock(...args), {
   create: () => fetchStub,
 })
-vi.stubGlobal('$fetch', fetchStub)
 
 // `mockNuxtImport` compiles to a hoisted `vi.mock` call, so the mock it returns must
 // come from `vi.hoisted` -- a plain `const` here would be accessed before its
@@ -22,6 +21,14 @@ describe('useApi', () => {
   beforeEach(() => {
     fetchMock.mockReset()
     navigateToMock.mockReset()
+    // Re-stub before every test (and undo it in afterEach below) rather than stubbing
+    // once at module scope, so this file doesn't rely on Vitest's default per-file
+    // isolation to keep the global stub from leaking across tests/files.
+    vi.stubGlobal('$fetch', fetchStub)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it('returns { data } on success', async () => {

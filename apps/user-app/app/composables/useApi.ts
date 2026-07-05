@@ -1,4 +1,5 @@
 export interface ApiError {
+  /** 0 means a network/DNS/timeout failure with no HTTP response at all, not a real status code */
   status: number
   message: string
 }
