@@ -1985,8 +1985,8 @@ No TDD here — this is project scaffolding with no behavior to test yet. Verifi
   },
   "dependencies": {
     "nuxt": "^4.4.0",
-    "pinia": "^2.3.0",
-    "@pinia/nuxt": "^0.9.0"
+    "pinia": "^3.0.4",
+    "@pinia/nuxt": "^0.11.3"
   },
   "devDependencies": {
     "@nuxt/test-utils": "^3.15.0",
@@ -2473,12 +2473,22 @@ git commit -m "feat(user-app): SSR-safe API client with cookie forwarding, 401 r
 
 **Design decision made here (not fully spelled out in either design doc):** salon profile pages must stay reachable by an unauthenticated visitor (that's the entire point of their SEO investment — a Googler lands there with no session). Everything else (`/`, `/bookings/*`, `/profile`, `/admin/*`, the booking flow) requires a session, matching the original spec's "Login → Home" sequencing. Route middleware treats `/login` and `/salons/*` as public and gates everything else.
 
+**Three real bugs found and fixed during code review (execution) — the middleware section below shows the corrected version:**
+
+1. **Infinite redirect loop on `/login` itself.** The first version only probed `/auth/me` on private routes, but `useApi`'s 401 handling unconditionally redirects to `/login` regardless of `silent` — so visiting `/login` anonymously (where no probe should even run) still hit an edge case that self-looped. Root cause and fix (below) needed `useApi.ts` to gain an opt-out for its automatic 401 redirect.
+2. **`navigateTo` called from inside nested async middleware threw "composable called outside a plugin/hook/setup"** during SSR, because Node's async context doesn't survive an `await` boundary by default. Fixed with `experimental.asyncContext: true` in `nuxt.config.ts` (not in this task's original file list, but required).
+3. **Once fix #1 was narrowed to "only probe on private routes," a logged-in visitor landing on a public page (`/salons/:slug`, or `/login` itself) never got their session hydrated** — `session.isLoggedIn` stayed `false` even with a valid cookie, which would have made Task 12's header render as logged-out for logged-in users on the app's own SEO entry point. Fixed by always probing (public and private), using the new `redirectOn401: false` option so an anonymous visitor to a public page still isn't force-redirected.
+
+A separate, pre-existing (not introduced by this task) bug was also found and fixed: Nuxt's internal HTML error-page rendering crashed (`obj.hasOwnProperty is not a function`) on any 404/500 once the Pinia session store had state, caused by a `pinia@^2.3.0`/`@pinia/nuxt@^0.9.0`/Nuxt 4 version-compatibility gap from Task 8's original scaffold. Fixed by bumping to `pinia@^3.0.4`/`@pinia/nuxt@^0.11.3` (Task 8's package.json snippet, earlier in this document, has already been corrected to reflect this) — Pinia's own 3.0.2 changelog fixes this exact crash.
+
 **Files:**
 - Create: `apps/user-app/app/utils/route-guard.ts`
 - Create: `apps/user-app/app/stores/session.ts`
 - Create: `apps/user-app/app/middleware/auth.global.ts`
 - Create: `apps/user-app/app/pages/login.vue`
+- Modify: `apps/user-app/nuxt.config.ts` (`experimental.asyncContext: true`)
 - Test: `apps/user-app/test/unit/route-guard.spec.ts`
+- Test: `apps/user-app/test/nuxt/auth.global.spec.ts` (middleware's actual routing/redirect behavior — the pure `isPublicRoute` test alone wouldn't have caught any of the three bugs above, since all three lived in the middleware's integration behavior)
 
 - [ ] **Step 1: Write the failing test for the route-guard logic**
 
@@ -2563,9 +2573,36 @@ export const useSessionStore = defineStore('session', {
 })
 ```
 
-- [ ] **Step 6: Create the global auth middleware**
+- [ ] **Step 6: Add `experimental.asyncContext`, extend `useApi` with a redirect opt-out, then create the global auth middleware**
+
+First, in `apps/user-app/nuxt.config.ts`, add `experimental: { asyncContext: true }` to the config object. Without it, `navigateTo()` called from inside a composable invoked from inside this async middleware throws "composable called outside a plugin/hook/setup" during SSR — Node's async context tracking doesn't survive an `await` boundary by default.
+
+Then extend `useApi.ts` (from Task 10) with an opt-out for its automatic 401 redirect — needed because this middleware must probe `/auth/me` on *every* route (including public ones, so a logged-in visitor's session still hydrates there) without letting an anonymous visitor's 401 force them off a public page:
 
 ```typescript
+interface ApiFetchOptions {
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+  body?: unknown
+  query?: Record<string, unknown>
+  silent?: boolean
+  /** Set to false to suppress the automatic redirect-to-/login on a 401 (defaults to true). */
+  redirectOn401?: boolean
+}
+```
+
+```typescript
+      if (status === 401) {
+        if (options.redirectOn401 !== false) {
+          await navigateTo('/login')
+        }
+        return { data: null, error: apiError }
+      }
+```
+
+Now the middleware:
+
+```typescript
+import type { SessionUser } from '../stores/session'
 import { isPublicRoute } from '../utils/route-guard'
 
 export default defineNuxtRouteMiddleware(async (to) => {
@@ -2573,10 +2610,12 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
   if (!session.checked) {
     const { apiFetch } = useApi()
-    const { data } = await apiFetch<{ id: string; phone: string; name: string | null; gender: 'female' | 'male' | null; role: 'customer' | 'provider' | 'admin' }>(
-      '/auth/me',
-      { silent: true },
-    )
+    // Always probe, even on public routes: a logged-in visitor landing on a public page
+    // (e.g. /salons/:slug from search, or /login itself) still needs session.user
+    // hydrated so the UI reflects that they're logged in. redirectOn401: false stops
+    // apiFetch's own 401 handling from force-redirecting an anonymous visitor away from
+    // a public page -- the explicit check below is the single place that decides that.
+    const { data } = await apiFetch<SessionUser>('/auth/me', { silent: true, redirectOn401: false })
     session.setUser(data)
   }
 
@@ -2586,7 +2625,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
 })
 ```
 
-Save as `apps/user-app/app/middleware/auth.global.ts` — the `.global.ts` suffix makes Nuxt run it on every route automatically, no per-page `definePageMeta` needed.
+Save as `apps/user-app/app/middleware/auth.global.ts` — the `.global.ts` suffix makes Nuxt run it on every route automatically, no per-page `definePageMeta` needed. Note `apiFetch<SessionUser>` imports the type from the session store (Step 5) rather than re-declaring the user shape inline — do the same in `login.vue` (Step 7) wherever it types the `user` object from `/auth/verify-otp`/`/auth/profile` responses.
 
 - [ ] **Step 7: Create the login page**
 
@@ -2682,16 +2721,20 @@ async function completeProfile() {
 </template>
 ```
 
-Save as `apps/user-app/app/pages/login.vue`.
+Save as `apps/user-app/app/pages/login.vue`. Import `SessionUser` from `~/stores/session` wherever this file types a `user` object, rather than redeclaring the shape inline.
 
-- [ ] **Step 8: Manual verification**
+- [ ] **Step 8: Test the middleware's actual routing behavior**
 
-Run: `pnpm dev:api` (separate terminal) and `pnpm dev:user-app`. Visit `http://localhost:3003/` — expect a redirect to `/login` (no session yet). Request an OTP for a real phone number; since `SMS_PROVIDER=console` in dev, read the code from the API server's console log instead of an actual SMS. Complete the flow and confirm landing on `/` (which will currently 404 or render blank — the Home page itself is built in Task 13; confirming the redirect and cookie exchange work is the goal here, not a finished home screen).
+The pure `isPublicRoute` test from Step 1 doesn't exercise anything in `auth.global.ts` itself — and this file is where all three of this task's real bugs lived. Create `apps/user-app/test/nuxt/auth.global.spec.ts`, reusing the `mockNuxtImport`/`vi.stubGlobal` pattern from `useApi.spec.ts` (Task 10) to invoke the middleware's default export directly against a mocked route, covering: a public route still probes but never redirects even on a 401; a private route with no session redirects to `/login` exactly once; a private route with `session.checked` already `true` neither re-probes nor redirects.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 9: Manual verification**
+
+Run: `pnpm dev:api` (separate terminal) and `pnpm dev:user-app`. Visit `http://localhost:3003/` — expect a redirect to `/login` (no session yet). Request an OTP for a real phone number; since `SMS_PROVIDER=console` in dev, read the code from the API server's console log instead of an actual SMS. Complete the flow and confirm landing on `/` (which will currently 404 or render blank — the Home page itself is built in Task 13; confirming the redirect and cookie exchange work is the goal here, not a finished home screen). Also confirm: an unmatched route (e.g. `/does-not-exist`) renders a clean 404, not a 500 (this is the Pinia-version-bump fix from earlier in this task — if you see `obj.hasOwnProperty is not a function`, the `pinia`/`@pinia/nuxt` versions in `package.json` need checking).
+
+- [ ] **Step 10: Commit**
 
 ```bash
-git add apps/user-app/app/utils/route-guard.ts apps/user-app/app/stores/session.ts apps/user-app/app/middleware/auth.global.ts apps/user-app/app/pages/login.vue apps/user-app/test/unit/route-guard.spec.ts
+git add apps/user-app/app/utils/route-guard.ts apps/user-app/app/stores/session.ts apps/user-app/app/middleware/auth.global.ts apps/user-app/app/pages/login.vue apps/user-app/app/composables/useApi.ts apps/user-app/nuxt.config.ts apps/user-app/package.json apps/user-app/test/unit/route-guard.spec.ts apps/user-app/test/nuxt/auth.global.spec.ts apps/user-app/test/nuxt/useApi.spec.ts
 git commit -m "feat(user-app): phone+OTP login, session store, route auth guard"
 ```
 
