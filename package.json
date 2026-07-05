@@ -4,6 +4,7 @@
   "packageManager": "pnpm@9.15.0",
   "scripts": {
     "dev:api": "turbo run dev --filter=@arayeshgah/api",
+    "dev:user-app": "turbo run dev --filter=@arayeshgah/user-app",
     "build": "turbo run build",
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e"
