@@ -1124,6 +1124,8 @@ git commit -m "feat(api): saved salons (favorites)"
 
 ## Task 5: Backend — push notification infrastructure
 
+**Corrected during code review (execution):** three fixes landed after the initial implementation, folded into the snippets below: (1) `subscribe()` needed the same concurrent-request race handling Task 4 added for favorites — two simultaneous subscribes for a brand-new endpoint could otherwise hit the `endpoint` UNIQUE constraint as an unhandled 500; (2) with this now the *third* copy of the same `QueryFailedError`/unique-violation check (after `reviews.service.ts` and `favorites.controller.ts`), it was hoisted into a shared `isUniqueViolation()` helper in `apps/api/src/common/postgres-error-codes.ts`, and those two earlier call sites were refactored to use it too; (3) `p256dh`/`auth` needed `@MaxLength(255)` to match their column width (every other bounded-column DTO field in this codebase enforces this), and `unsubscribe()` needed to scope its delete by the caller's `userId`, not just the endpoint.
+
 **Files:**
 - Create: `apps/api/src/migrations/1752000000000-push-and-reminders.ts`
 - Create: `apps/api/src/push/push-subscription.entity.ts`
@@ -1134,6 +1136,9 @@ git commit -m "feat(api): saved salons (favorites)"
 - Create: `apps/api/src/push/push.controller.ts`
 - Create: `apps/api/src/push/dto/push.dto.ts`
 - Create: `apps/api/src/push/push.module.ts`
+- Modify: `apps/api/src/common/postgres-error-codes.ts` (add `isUniqueViolation()` helper)
+- Modify: `apps/api/src/favorites/favorites.controller.ts` (use the new helper instead of its own inline check)
+- Modify: `apps/api/src/reviews/reviews.service.ts` (same)
 - Modify: `apps/api/src/app.module.ts`
 - Modify: `apps/api/package.json` (add `web-push` dependency)
 - Modify: `.env.example`
@@ -1361,17 +1366,21 @@ export class WebPushProvider implements PushProvider {
 
 - [ ] **Step 6: Create the DTO**
 
+`p256dh`/`auth` get `@MaxLength(255)` to match the column width defined in Step 2's migration — every other free-text DTO field in this codebase that maps to a bounded column enforces a matching bound (see `auth.dto.ts`, `review.dto.ts`), otherwise an oversized value sails past validation and surfaces as an unhandled 500 from Postgres instead of a clean 400.
+
 ```typescript
-import { IsString, IsUrl } from 'class-validator';
+import { IsString, IsUrl, MaxLength } from 'class-validator';
 
 export class SubscribePushDto {
   @IsUrl({ require_tld: false })
   endpoint: string;
 
   @IsString()
+  @MaxLength(255)
   p256dh: string;
 
   @IsString()
+  @MaxLength(255)
   auth: string;
 }
 
@@ -1406,7 +1415,24 @@ export class PushService {
 }
 ```
 
-- [ ] **Step 8: Create the controller**
+- [ ] **Step 8: Add `isUniqueViolation()` to the shared error-codes module, then create the controller**
+
+First, extend `apps/api/src/common/postgres-error-codes.ts` (created in Task 4) with a helper — this is now the third place that needs the same `QueryFailedError`/unique-violation check (after `reviews.service.ts` and `favorites.controller.ts`), so it's worth a real function instead of a third copy of the inline cast:
+
+```typescript
+import { QueryFailedError } from 'typeorm';
+
+/** Postgres error codes referenced when translating `QueryFailedError`s into clean HTTP responses. */
+export const UNIQUE_VIOLATION = '23505';
+
+export function isUniqueViolation(err: unknown): boolean {
+  return err instanceof QueryFailedError && (err as unknown as { code?: string }).code === UNIQUE_VIOLATION;
+}
+```
+
+Update `apps/api/src/favorites/favorites.controller.ts` and `apps/api/src/reviews/reviews.service.ts` to call `isUniqueViolation(err)` instead of their own inline `err instanceof QueryFailedError && ...` check, and drop their now-unused `QueryFailedError`/`UNIQUE_VIOLATION` imports where no longer directly referenced.
+
+Then the controller — same idempotent-upsert shape as before, but the insert path is wrapped to handle the same concurrent-request race Task 4 handled for favorites (two simultaneous subscribes for a brand-new endpoint can both pass the `findOneBy` check before either inserts, and the second would hit the `endpoint` UNIQUE constraint), and `unsubscribe()` scopes its delete by the caller's `userId` in addition to the endpoint (the endpoint alone is an unguessable but still bearer-style value — scoping by the authenticated caller is cheap defense-in-depth):
 
 ```typescript
 import { Body, Controller, Delete, HttpCode, Post, Req, UseGuards } from '@nestjs/common';
@@ -1414,6 +1440,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
 import { Repository } from 'typeorm';
 import { AuthGuard } from '../auth/auth.guard';
+import { isUniqueViolation } from '../common/postgres-error-codes';
 import { User } from '../users/user.entity';
 import { SubscribePushDto, UnsubscribePushDto } from './dto/push.dto';
 import { PushSubscription } from './push-subscription.entity';
@@ -1431,16 +1458,27 @@ export class PushController {
     const existing = await this.subs.findOneBy({ endpoint: dto.endpoint });
     if (existing) {
       await this.subs.update({ endpoint: dto.endpoint }, { userId, p256dh: dto.p256dh, auth: dto.auth });
-    } else {
+      return { ok: true };
+    }
+    try {
       await this.subs.save(this.subs.create({ userId, ...dto }));
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        // Lost the race to a concurrent subscribe for the same endpoint -- the loser's
+        // payload may carry fresher keys than what's already there, so update rather
+        // than silently no-op (unlike the favorites case, which has no payload to update).
+        await this.subs.update({ endpoint: dto.endpoint }, { userId, p256dh: dto.p256dh, auth: dto.auth });
+      } else {
+        throw err;
+      }
     }
     return { ok: true };
   }
 
   @Delete('subscribe')
   @HttpCode(204)
-  async unsubscribe(@Body() dto: UnsubscribePushDto) {
-    await this.subs.delete({ endpoint: dto.endpoint });
+  async unsubscribe(@Req() req: Request, @Body() dto: UnsubscribePushDto) {
+    await this.subs.delete({ endpoint: dto.endpoint, userId: (req.user as User).id });
   }
 }
 ```
