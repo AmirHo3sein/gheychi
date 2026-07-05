@@ -5,6 +5,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { BookingModule } from './booking/booking.module';
 import { CatalogModule } from './catalog/catalog.module';
+import { FavoritesModule } from './favorites/favorites.module';
 import { HealthController } from './health/health.controller';
 import { PlatformConfigModule } from './platform-config/platform-config.module';
 import { RedisModule } from './redis/redis.module';
@@ -40,6 +41,7 @@ import { SearchModule } from './search/search.module';
     BookingModule,
     SearchModule,
     ReviewsModule,
+    FavoritesModule,
   ],
   controllers: [HealthController],
 })
