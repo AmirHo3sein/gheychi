@@ -13,6 +13,8 @@ const sort = ref<'distance' | 'rating'>('distance')
 const coords = ref<{ lat: number; lng: number }>({ lat: CITY_CENTERS[0].lat, lng: CITY_CENTERS[0].lng })
 const selectedCity = ref(CITY_CENTERS[0].name)
 const loading = ref(true)
+const view = ref<'list' | 'map'>('list')
+const salonCoords = ref<Record<string, { lat: number; lng: number }>>({})
 
 const searchGender = computed(() => toSearchGender(session.user?.gender))
 
@@ -56,6 +58,21 @@ onMounted(async () => {
 })
 
 watch([selectedCategoryId, sort], loadSalons)
+
+async function loadCoordsForMap() {
+  const missing = salons.value.filter((s) => !salonCoords.value[s.id])
+  const results = await Promise.all(
+    missing.map((s) => apiFetch<{ location: { coordinates: [number, number] } }>(`/salons/${s.slug}`, { silent: true })),
+  )
+  for (let i = 0; i < missing.length; i++) {
+    const data = results[i].data
+    if (data) salonCoords.value[missing[i].id] = { lat: data.location.coordinates[1], lng: data.location.coordinates[0] }
+  }
+}
+
+watch(view, (v) => {
+  if (v === 'map') loadCoordsForMap()
+})
 </script>
 
 <template>
@@ -85,10 +102,18 @@ watch([selectedCategoryId, sort], loadSalons)
       </button>
     </div>
 
-    <p v-if="loading" class="text-sm text-center">در حال بارگذاری...</p>
-    <p v-else-if="!salons.length" class="text-sm text-center">سالنی در این منطقه پیدا نشد</p>
-    <div v-else class="space-y-3">
-      <SalonCard v-for="salon in salons" :key="salon.id" :salon="salon" />
+    <div class="flex gap-2">
+      <button type="button" class="rounded-full px-3 py-1 text-sm" :class="view === 'list' ? 'bg-(--color-accent) text-white' : 'bg-(--color-surface-card)'" @click="view = 'list'">لیست</button>
+      <button type="button" class="rounded-full px-3 py-1 text-sm" :class="view === 'map' ? 'bg-(--color-accent) text-white' : 'bg-(--color-surface-card)'" @click="view = 'map'">نقشه</button>
     </div>
+
+    <SalonMap v-if="view === 'map'" :salons="salons" :center="coords" :salon-coords="salonCoords" />
+    <template v-else>
+      <p v-if="loading" class="text-sm text-center">در حال بارگذاری...</p>
+      <p v-else-if="!salons.length" class="text-sm text-center">سالنی در این منطقه پیدا نشد</p>
+      <div v-else class="space-y-3">
+        <SalonCard v-for="salon in salons" :key="salon.id" :salon="salon" />
+      </div>
+    </template>
   </div>
 </template>

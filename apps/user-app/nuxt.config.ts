@@ -28,6 +28,7 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       apiBase: process.env.NUXT_PUBLIC_API_BASE ?? 'http://localhost:3002/api',
+      neshanApiKey: process.env.NUXT_PUBLIC_NESHAN_API_KEY ?? '',
     },
   },
   app: {
