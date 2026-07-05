@@ -57,4 +57,12 @@ describe('Favorites (e2e)', () => {
     const res = await request(app.getHttpServer()).get('/api/favorites').set('Cookie', cookie).expect(200);
     expect(res.body).toEqual([]);
   });
+
+  it('no-ops when deleting a favorite that was never added', async () => {
+    const neverFavorited = '00000000-0000-0000-0000-000000000000';
+    await request(app.getHttpServer())
+      .delete(`/api/salons/${neverFavorited}/favorite`)
+      .set('Cookie', cookie)
+      .expect(204);
+  });
 });

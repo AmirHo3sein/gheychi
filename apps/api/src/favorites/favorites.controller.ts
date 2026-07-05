@@ -3,11 +3,13 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { AuthGuard } from '../auth/auth.guard';
 import { Salon } from '../salons/salon.entity';
 import { User } from '../users/user.entity';
 import { Favorite } from './favorite.entity';
+
+const UNIQUE_VIOLATION = '23505';
 
 @Controller()
 @UseGuards(AuthGuard)
@@ -28,7 +30,19 @@ export class FavoritesController {
   async add(@Req() req: Request, @Param('id', ParseUUIDPipe) salonId: string) {
     const userId = (req.user as User).id;
     const existing = await this.favorites.findOneBy({ userId, salonId });
-    if (!existing) await this.favorites.save(this.favorites.create({ userId, salonId }));
+    if (existing) return { ok: true };
+    try {
+      await this.favorites.save(this.favorites.create({ userId, salonId }));
+    } catch (err) {
+      // The pre-check above handles the common case, but the composite
+      // (user_id, salon_id) PRIMARY KEY is the actual source of truth --
+      // two truly concurrent POSTs can both pass the check above before either
+      // inserts. Treat the resulting unique violation as the no-op it
+      // semantically is, rather than letting it surface as an unhandled 500.
+      if (!(err instanceof QueryFailedError) || (err as unknown as { code?: string }).code !== UNIQUE_VIOLATION) {
+        throw err;
+      }
+    }
     return { ok: true };
   }
 
