@@ -1679,6 +1679,8 @@ git commit -m "feat(api): send push notifications alongside SMS on booking confi
 
 Closes the reminder gap left open in Plan 2. The `reminded_at` column and `reminder_lead_hours` config key were already added by Task 5's migration.
 
+**Corrected during code review (execution):** the original job loop had no per-item error isolation and no logging on a silently-skipped reminder. `PaymentReconciliationJob` (this same directory) already established the right pattern for exactly this class of scheduled-job problem — wrap each item's work in try/catch so one failure doesn't abort the rest of the tick's batch, and log loudly when a claimed item can't actually be completed. Step 5 below folds both in, and a 4th e2e test now covers the "booking already started" skip branch, which had no coverage before.
+
 **Files:**
 - Modify: `apps/api/src/platform-config/platform-config.service.ts`
 - Modify: `apps/api/src/booking/booking.entity.ts`
@@ -1806,6 +1808,17 @@ describe('Booking reminder job (e2e)', () => {
     expect(remindedCount).toBe(0);
     expect(pushSpy).not.toHaveBeenCalled();
   });
+
+  it('does not remind a booking that has already started', async () => {
+    const job = app.get(BookingReminderJob);
+    const pushService = app.get(PushService);
+    const pushSpy = jest.spyOn(pushService, 'sendToUser').mockClear();
+
+    const { customerId } = await seedConfirmedBooking(-1); // started an hour ago, never reminded
+
+    await job.run();
+    expect(pushSpy).not.toHaveBeenCalledWith(customerId, expect.anything());
+  });
 });
 ```
 
@@ -1868,20 +1881,39 @@ export class BookingReminderJob {
       );
       if (!claim.affected) continue;
 
-      const salon = await this.salonsService.findById(booking.salonId);
-      if (!salon) continue;
-      const customer = await this.usersService.findById(booking.userId);
-      if (!customer) continue;
+      try {
+        const salon = await this.salonsService.findById(booking.salonId);
+        if (!salon) {
+          this.logger.warn(`Booking ${booking.id} claimed for reminder but salon ${booking.salonId} was not found`);
+          continue;
+        }
+        const customer = await this.usersService.findById(booking.userId);
+        if (!customer) {
+          this.logger.warn(`Booking ${booking.id} claimed for reminder but user ${booking.userId} was not found`);
+          continue;
+        }
 
-      const when = booking.startsAt.toISOString();
-      await this.sms
-        .send(customer.phone, `Reminder: your appointment at ${salon.name} is at ${when}. Address: ${salon.address}`)
-        .catch(() => {});
-      await this.push.sendToUser(customer.id, {
-        title: 'Upcoming appointment',
-        body: `${salon.name} — ${when}`,
-      });
-      remindedCount += 1;
+        const when = booking.startsAt.toISOString();
+        await this.sms
+          .send(customer.phone, `Reminder: your appointment at ${salon.name} is at ${when}. Address: ${salon.address}`)
+          .catch(() => {});
+        await this.push
+          .sendToUser(customer.id, {
+            title: 'Upcoming appointment',
+            body: `${salon.name} — ${when}`,
+          })
+          .catch(() => {});
+        remindedCount += 1;
+      } catch (err) {
+        // A single booking's lookup/notification failing (transient DB error, etc.) must not
+        // abort processing of the rest of this tick's batch -- same reasoning as
+        // PaymentReconciliationJob's per-item try/catch. The booking was already claimed
+        // (remindedAt set) above, so it won't be retried on the next tick; log loudly so an
+        // operator can follow up manually.
+        this.logger.error(
+          `Failed to send reminder for booking ${booking.id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
 
     if (remindedCount > 0) this.logger.log(`Sent ${remindedCount} appointment reminder(s)`);
