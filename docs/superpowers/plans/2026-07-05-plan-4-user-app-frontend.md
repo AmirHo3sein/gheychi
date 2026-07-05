@@ -2744,6 +2744,8 @@ git commit -m "feat(user-app): phone+OTP login, session store, route auth guard"
 
 **Approach for no-flash dark mode:** the theme preference is stored in a cookie (`useCookie`, SSR + client synced) rather than `localStorage`, and a small blocking inline script in `<head>` applies the `dark` class before the body paints. `localStorage` alone would cause a visible flash on every load (server has no way to read it), and using only `prefers-color-scheme` media queries would prevent a manual override — this combines both, matching the design spec's "OS-aware with a manual override toggle."
 
+**Two hard Nuxt 4 requirements discovered during execution, both confirmed by temporarily removing each and observing the failure:** (1) `app.vue` must wrap `<NuxtPage />` in `<NuxtLayout>`, or `definePageMeta({ layout: ... })` has no effect at all — `default.vue`/`bare.vue` would be dead files, silently rendering every page with no layout applied. (2) `nuxt.config.ts` needs `components: [{ path: '~/components', pathPrefix: false }]` — Nuxt's default behavior prefixes nested-folder components by directory name, so `components/layout/AppHeader.vue` auto-registers as `<LayoutAppHeader>`, not `<AppHeader>` as every template in this task (and this plan) uses. This also retroactively fixes a **pre-existing, previously-silent bug from Task 10**: `<ToastStack />` (already in `components/layout/`) never actually resolved before this fix — confirmed via a `[Vue warn]: Failed to resolve component: ToastStack` that only surfaces once you go looking for it.
+
 **Files:**
 - Create: `apps/user-app/app/composables/useTheme.ts`
 - Create: `apps/user-app/app/components/layout/ThemeToggle.vue`
@@ -2751,21 +2753,31 @@ git commit -m "feat(user-app): phone+OTP login, session store, route auth guard"
 - Create: `apps/user-app/app/layouts/default.vue`
 - Create: `apps/user-app/app/layouts/bare.vue`
 - Modify: `apps/user-app/app/pages/login.vue`
-- Modify: `apps/user-app/nuxt.config.ts`
+- Modify: `apps/user-app/app/app.vue` (wrap `<NuxtPage />` in `<NuxtLayout>`)
+- Modify: `apps/user-app/nuxt.config.ts` (anti-flash script, and `components.pathPrefix: false`)
 
 No TDD — this is presentational/browser-API-driven UI (theme application touches `document`/`matchMedia` directly, which the project's own testing philosophy excludes from required component tests: "component tests only where logic is nontrivial" per the original design spec §9, and there's no nontrivial branching logic here beyond what `route-guard.spec.ts` already covers for a similar pattern in Task 11). Verification is manual via the browser.
 
-- [ ] **Step 1: Add the anti-flash inline script to `nuxt.config.ts`**
-
-Add an `app.head.script` entry (alongside the existing `htmlAttrs`):
+- [ ] **Step 1: Add the anti-flash inline script and `components.pathPrefix: false` to `nuxt.config.ts`**
 
 ```typescript
+import tailwindcss from '@tailwindcss/vite'
+
 export default defineNuxtConfig({
   compatibilityDate: '2026-07-05',
   modules: ['@pinia/nuxt', '@nuxt/test-utils/module'],
   css: ['~/assets/css/main.css'],
+  // Without this, Nuxt's default nested-folder naming registers e.g.
+  // components/layout/AppHeader.vue as <LayoutAppHeader>, not <AppHeader> as used
+  // throughout this app -- confirmed by removing it and watching every nested component
+  // (including Task 10's <ToastStack />, which had been silently broken since that task)
+  // fail to resolve.
+  components: [{ path: '~/components', pathPrefix: false }],
   vite: {
     plugins: [tailwindcss()],
+  },
+  experimental: {
+    asyncContext: true,
   },
   runtimeConfig: {
     public: {
@@ -2785,7 +2797,17 @@ export default defineNuxtConfig({
 })
 ```
 
-(Remember to re-add `import tailwindcss from '@tailwindcss/vite'` at the top — this file already has it from Task 9; this diff only adds the `script` array under `app.head`.)
+Also update `apps/user-app/app/app.vue` to wrap `<NuxtPage />` in `<NuxtLayout>` — without this, `definePageMeta({ layout: ... })` has no effect at all (confirmed by removing it and watching `default.vue`/`bare.vue` both become dead code, every page rendering with no layout applied regardless of what it declares):
+
+```vue
+<template>
+  <NuxtRouteAnnouncer />
+  <NuxtLayout>
+    <NuxtPage />
+  </NuxtLayout>
+  <ToastStack />
+</template>
+```
 
 - [ ] **Step 2: Implement `useTheme`**
 
@@ -2797,6 +2819,9 @@ export function useTheme() {
 
   function apply() {
     if (import.meta.server) return
+    // Keep this dark-mode decision rule in sync with the inline anti-flash script
+    // registered in nuxt.config.ts (app.head.script) -- that script duplicates this
+    // logic to apply the class before first paint, before Vue/this composable exists.
     const isDark =
       preference.value === 'dark' ||
       (preference.value === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
@@ -2812,19 +2837,24 @@ export function useTheme() {
 }
 ```
 
-Save as `apps/user-app/app/composables/useTheme.ts`. `apply()` is also called from `ThemeToggle.vue`'s mount hook (Step 3) to sync the class if the inline script and the cookie ever disagree (e.g. the cookie was just changed on another tab).
+Save as `apps/user-app/app/composables/useTheme.ts`.
 
 - [ ] **Step 3: Implement `ThemeToggle.vue`**
 
 ```vue
 <script setup lang="ts">
-const { preference, setPreference } = useTheme()
+const { preference, setPreference, apply } = useTheme()
 
 const options: { value: 'light' | 'dark' | 'system'; label: string }[] = [
   { value: 'light', label: '☀️' },
   { value: 'dark', label: '🌙' },
   { value: 'system', label: '💻' },
 ]
+
+// Re-sync the .dark class against the current cookie on mount: the inline anti-flash
+// script only runs once at initial page load, so if the theme cookie changed since then
+// (e.g. set in another tab) this catches the drift without requiring a reload.
+onMounted(() => apply())
 </script>
 
 <template>
@@ -2904,7 +2934,7 @@ Run: `pnpm dev:user-app`, visit `http://localhost:3003/login` — bare layout, n
 - [ ] **Step 8: Commit**
 
 ```bash
-git add apps/user-app/app/composables/useTheme.ts apps/user-app/app/components/layout apps/user-app/app/layouts apps/user-app/app/pages/login.vue apps/user-app/nuxt.config.ts
+git add apps/user-app/app/composables/useTheme.ts apps/user-app/app/components/layout apps/user-app/app/layouts apps/user-app/app/pages/login.vue apps/user-app/app/app.vue apps/user-app/nuxt.config.ts
 git commit -m "feat(user-app): app shell with header, layouts, and no-flash theme toggle"
 ```
 
