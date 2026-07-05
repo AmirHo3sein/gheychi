@@ -1608,7 +1608,9 @@ import { PushService } from '../push/push.service';
   ) {}
 ```
 
-Update `notifyConfirmed` to send push in parallel with SMS:
+Update `notifyConfirmed` to send push alongside SMS:
+
+**Corrected during code review (execution):** the first version assumed `PushService.sendToUser` never throws, but it only swallows failures from the actual push send — its own `this.subs.find(...)` repository read is unguarded. Left uncaught, that exception would propagate through `handleCallback` and turn a *successful, already-confirmed* payment into an unhandled 500 for the customer's browser instead of the expected redirect — exactly the failure mode the surrounding comment says this code must avoid. The version below also runs the customer/owner branches concurrently (`Promise.all`) instead of sequentially, since doubling the sequential I/O in a response the browser is waiting on had no benefit, and extracts the repeated SMS+push pairing into `notifyOne`.
 
 ```typescript
   private async notifyConfirmed(bookingId: string): Promise<void> {
@@ -1624,25 +1626,31 @@ Update `notifyConfirmed` to send push in parallel with SMS:
 
     // SMS/push failures never roll back a confirmed booking (per the design spec's
     // error-handling section) -- these are best-effort notifications, not a queued-with-retry
-    // system yet.
-    if (customer) {
-      await this.sms.send(customer.phone, `Booking confirmed at ${salon.name}, ${when}. Address: ${salon.address}`).catch(() => {});
-      await this.push.sendToUser(customer.id, {
-        title: 'Booking confirmed',
-        body: `${salon.name} — ${when}`,
-      });
-    }
-    if (owner) {
-      await this.sms.send(owner.phone, `New booking at ${salon.name} for ${when}`).catch(() => {});
-      await this.push.sendToUser(owner.id, {
-        title: 'New booking',
-        body: `${salon.name} — ${when}`,
-      });
-    }
+    // system yet. The customer and owner notifications are independent of each other, so they
+    // run concurrently to avoid stacking their latency onto the payment-callback response.
+    await Promise.all([
+      customer
+        ? this.notifyOne(customer, `Booking confirmed at ${salon.name}, ${when}. Address: ${salon.address}`, {
+            title: 'Booking confirmed',
+            body: `${salon.name} — ${when}`,
+          })
+        : Promise.resolve(),
+      owner
+        ? this.notifyOne(owner, `New booking at ${salon.name} for ${when}`, {
+            title: 'New booking',
+            body: `${salon.name} — ${when}`,
+          })
+        : Promise.resolve(),
+    ]);
+  }
+
+  private async notifyOne(user: User, smsBody: string, push: { title: string; body: string }): Promise<void> {
+    await this.sms.send(user.phone, smsBody).catch(() => {});
+    await this.push.sendToUser(user.id, push).catch(() => {});
   }
 ```
 
-(`PushService.sendToUser` already swallows per-device failures internally — see Task 5 — so no extra `.catch()` is needed here.)
+(Add `import { User } from '../users/user.entity';` if not already present in this file.)
 
 - [ ] **Step 4: Wire `PushModule` into `BookingModule`**
 
