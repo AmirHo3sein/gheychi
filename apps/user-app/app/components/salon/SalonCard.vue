@@ -1,18 +1,8 @@
 <script setup lang="ts">
+import type { SearchResult } from '../../utils/types'
+
 defineProps<{
-  salon: {
-    id: string
-    name: string
-    slug: string
-    city: string
-    address: string
-    ratingAvg: number
-    ratingCount: number
-    distanceKm: number
-    minPrice: number | null
-    coverPhoto: string | null
-    isFeatured: boolean
-  }
+  salon: SearchResult
 }>()
 </script>
 

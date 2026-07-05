@@ -1,28 +1,20 @@
 <script setup lang="ts">
 import { CITY_CENTERS } from '../utils/city-centers'
+import { toSearchGender } from '../utils/gender-map'
+import type { SearchResult } from '../utils/types'
 
 const session = useSessionStore()
 const { apiFetch } = useApi()
 
 const categories = ref<{ id: number; name: string; icon: string }[]>([])
-const salons = ref<
-  { id: string; name: string; slug: string; city: string; address: string; ratingAvg: number; ratingCount: number; distanceKm: number; minPrice: number | null; coverPhoto: string | null; isFeatured: boolean }[]
->([])
+const salons = ref<SearchResult[]>([])
 const selectedCategoryId = ref<number | null>(null)
 const sort = ref<'distance' | 'rating'>('distance')
 const coords = ref<{ lat: number; lng: number }>({ lat: CITY_CENTERS[0].lat, lng: CITY_CENTERS[0].lng })
 const selectedCity = ref(CITY_CENTERS[0].name)
 const loading = ref(true)
 
-// The user's own gender identity ('female'/'male') and a salon's target clientele
-// ('women'/'men', the vocabulary /search's `gender` param expects) are different
-// fields with different vocabularies -- map one to the other rather than passing
-// session.user.gender straight through, which /search would reject with a 400.
-const searchGender = computed<'women' | 'men' | undefined>(() => {
-  if (session.user?.gender === 'female') return 'women'
-  if (session.user?.gender === 'male') return 'men'
-  return undefined
-})
+const searchGender = computed(() => toSearchGender(session.user?.gender))
 
 function selectCity(city: (typeof CITY_CENTERS)[number]) {
   selectedCity.value = city.name
@@ -31,7 +23,7 @@ function selectCity(city: (typeof CITY_CENTERS)[number]) {
 
 async function loadSalons() {
   loading.value = true
-  const { data } = await apiFetch<typeof salons.value>('/search', {
+  const { data } = await apiFetch<SearchResult[]>('/search', {
     query: {
       lat: coords.value.lat,
       lng: coords.value.lng,
