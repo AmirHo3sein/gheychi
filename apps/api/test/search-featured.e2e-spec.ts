@@ -105,4 +105,32 @@ describe('Search — featured salon boost (e2e)', () => {
     // with the boost gone, plain distance ordering applies: the closer salon comes first
     expect(nonFeaturedIdx).toBeLessThan(expiredIdx);
   });
+
+  it('reinserts an over-cap featured salon by distance instead of leaving it ranked ahead of closer salons', async () => {
+    const lng = 51.44, lat = 35.73;
+    const closestNonFeatured = await seedApprovedSalon('Closest Non-Featured (cap-rank test)', lng + 0.0001, lat, false);
+    const featured1 = await seedApprovedSalon('Cap Rank Featured One', lng + 0.01, lat, true);
+    const featured2 = await seedApprovedSalon('Cap Rank Featured Two', lng + 0.011, lat, true);
+    const overCapFeatured = await seedApprovedSalon('Cap Rank Featured Three (over cap)', lng + 0.012, lat, true);
+
+    const res = await request(app.getHttpServer())
+      .get('/api/search')
+      .query({ lat, lng, gender: 'women', radiusKm: 5 })
+      .expect(200);
+
+    const overCapEntry = res.body.find((r: { id: string }) => r.id === overCapFeatured);
+    expect(overCapEntry.isFeatured).toBe(false);
+
+    const closestIdx = res.body.findIndex((r: { id: string }) => r.id === closestNonFeatured);
+    const overCapIdx = res.body.findIndex((r: { id: string }) => r.id === overCapFeatured);
+    const featured1Idx = res.body.findIndex((r: { id: string }) => r.id === featured1);
+    const featured2Idx = res.body.findIndex((r: { id: string }) => r.id === featured2);
+
+    // the two capped-featured salons keep their boosted top spots...
+    expect(featured1Idx).toBeLessThan(closestIdx);
+    expect(featured2Idx).toBeLessThan(closestIdx);
+    // ...but the over-cap salon must be re-ranked by distance, landing behind the
+    // much-closer non-featured salon rather than keeping its unearned featured slot.
+    expect(closestIdx).toBeLessThan(overCapIdx);
+  });
 });

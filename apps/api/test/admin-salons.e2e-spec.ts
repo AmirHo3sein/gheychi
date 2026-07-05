@@ -87,5 +87,15 @@ describe('Admin — featured salon toggle (e2e)', () => {
       .expect(200);
     const updated = res.body.find((s: { id: string }) => s.id === salonId);
     expect(updated.isFeatured).toBe(true);
+    expect(updated.featuredUntil).toBe(featuredUntil);
+  });
+
+  it('returns 404 for a well-formed but unknown salon id', async () => {
+    const unknownId = '00000000-0000-0000-0000-000000000000';
+    await request(app.getHttpServer())
+      .patch(`/api/admin/salons/${unknownId}/featured`)
+      .set('Cookie', adminCookie)
+      .send({ isFeatured: true })
+      .expect(404);
   });
 });

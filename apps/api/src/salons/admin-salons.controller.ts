@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Patch, UseGuards } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuthGuard } from '../auth/auth.guard';
@@ -24,10 +24,11 @@ export class AdminSalonsController {
 
   @Patch(':id/featured')
   async setFeatured(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SetFeaturedDto) {
-    await this.salons.update(
+    const result = await this.salons.update(
       { id },
       { isFeatured: dto.isFeatured, featuredUntil: dto.featuredUntil ? new Date(dto.featuredUntil) : null },
     );
+    if (!result.affected) throw new NotFoundException();
     return this.salons.findOneBy({ id });
   }
 }
