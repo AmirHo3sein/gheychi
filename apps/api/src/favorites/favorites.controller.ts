@@ -5,11 +5,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
 import { QueryFailedError, Repository } from 'typeorm';
 import { AuthGuard } from '../auth/auth.guard';
+import { UNIQUE_VIOLATION } from '../common/postgres-error-codes';
 import { Salon } from '../salons/salon.entity';
 import { User } from '../users/user.entity';
 import { Favorite } from './favorite.entity';
-
-const UNIQUE_VIOLATION = '23505';
 
 @Controller()
 @UseGuards(AuthGuard)

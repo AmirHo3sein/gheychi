@@ -2,10 +2,9 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
 import { Booking } from '../booking/booking.entity';
+import { UNIQUE_VIOLATION } from '../common/postgres-error-codes';
 import { CreateReviewDto } from './dto/review.dto';
 import { Review } from './review.entity';
-
-const UNIQUE_VIOLATION = '23505';
 
 @Injectable()
 export class ReviewsService {
