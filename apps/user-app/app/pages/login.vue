@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { SessionUser } from '~/stores/session'
 
+definePageMeta({ layout: 'bare' })
+
 const { apiFetch } = useApi()
 const session = useSessionStore()
 
