@@ -7,14 +7,19 @@ const emit = defineEmits<{ select: [iso: string] }>()
 const { apiFetch } = useApi()
 const days = ref<DayAvailability[]>([])
 const selectedDate = ref<string | null>(null)
+const loading = ref(true)
+const hasError = ref(false)
 
 onMounted(async () => {
-  const { data } = await apiFetch<DayAvailability[]>(`/salons/${props.salonId}/availability`, {
+  loading.value = true
+  const { data, error } = await apiFetch<DayAvailability[]>(`/salons/${props.salonId}/availability`, {
     query: { serviceId: props.serviceId },
     silent: true,
   })
+  hasError.value = !!error
   days.value = data ?? []
   selectedDate.value = pickDefaultDate(days.value)
+  loading.value = false
 })
 
 const daysWithSlots = computed(() => days.value.filter((d) => d.slots.length > 0))
@@ -27,7 +32,9 @@ function selectDate(date: string) {
 </script>
 
 <template>
-  <div v-if="!hasAnySlots" class="py-6 text-center text-sm">نوبت خالی — این سالن در ۱۴ روز آینده نوبت آزاد ندارد</div>
+  <div v-if="loading" class="py-6 text-center text-sm">در حال بارگذاری...</div>
+  <div v-else-if="hasError" class="py-6 text-center text-sm">مشکلی پیش آمد، دوباره تلاش کنید</div>
+  <div v-else-if="!hasAnySlots" class="py-6 text-center text-sm">نوبت خالی — این سالن در ۱۴ روز آینده نوبت آزاد ندارد</div>
   <div v-else class="space-y-3">
     <div class="flex gap-2 overflow-x-auto">
       <button
