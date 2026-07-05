@@ -911,10 +911,14 @@ git commit -m "feat(api): public read endpoints for a salon's services, hours, a
 - Create: `apps/api/src/favorites/favorite.entity.ts`
 - Create: `apps/api/src/favorites/favorites.controller.ts`
 - Create: `apps/api/src/favorites/favorites.module.ts`
+- Create: `apps/api/src/common/postgres-error-codes.ts`
 - Modify: `apps/api/src/app.module.ts`
+- Modify: `apps/api/src/reviews/reviews.service.ts` (pure refactor — see the note on Step 4 below)
 - Test: `apps/api/test/favorites.e2e-spec.ts`
 
 The `salon_favorites` table was already created in Task 2's migration (`1751900000000-featured-and-favorites.ts`) — no new migration needed here.
+
+**Corrected during code review (execution):** the original controller's `POST` handler used a plain check-then-insert with no protection against a genuine concurrent double-favorite (two simultaneous requests can both pass the existence check before either inserts, and the second hits the composite-PK unique violation as an unhandled 500). Step 4 below fixes this using the exact same pattern already established in `apps/api/src/reviews/reviews.service.ts` for the identical class of problem — catch the Postgres unique-violation error code and treat it as the no-op it semantically is. Since that error code was about to be defined in two places, it's hoisted into a small shared `apps/api/src/common/postgres-error-codes.ts` module that both files import, rather than staying duplicated.
 
 - [ ] **Step 1: Write the failing e2e test**
 
@@ -980,6 +984,13 @@ describe('Favorites (e2e)', () => {
     const res = await request(app.getHttpServer()).get('/api/favorites').set('Cookie', cookie).expect(200);
     expect(res.body).toEqual([]);
   });
+
+  it('no-ops when deleting a favorite that was never added', async () => {
+    await request(app.getHttpServer())
+      .delete('/api/salons/00000000-0000-0000-0000-000000000000/favorite')
+      .set('Cookie', cookie)
+      .expect(204);
+  });
 });
 ```
 
@@ -1006,7 +1017,16 @@ export class Favorite {
 }
 ```
 
-- [ ] **Step 4: Implement the controller**
+- [ ] **Step 4: Create the shared Postgres error-code constant, then the controller**
+
+First, create `apps/api/src/common/postgres-error-codes.ts` (this is the first file under `common/` in this codebase — create the directory):
+
+```typescript
+/** Postgres error codes referenced when translating `QueryFailedError`s into clean HTTP responses. */
+export const UNIQUE_VIOLATION = '23505';
+```
+
+Then update `apps/api/src/reviews/reviews.service.ts`: remove its own local `const UNIQUE_VIOLATION = '23505';` and instead `import { UNIQUE_VIOLATION } from '../common/postgres-error-codes';`. This is a pure refactor of an already-shipped file — same behavior, single source of truth for the error code, since the controller below is about to need the exact same constant.
 
 ```typescript
 import {
@@ -1014,8 +1034,9 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { AuthGuard } from '../auth/auth.guard';
+import { UNIQUE_VIOLATION } from '../common/postgres-error-codes';
 import { Salon } from '../salons/salon.entity';
 import { User } from '../users/user.entity';
 import { Favorite } from './favorite.entity';
@@ -1039,7 +1060,19 @@ export class FavoritesController {
   async add(@Req() req: Request, @Param('id', ParseUUIDPipe) salonId: string) {
     const userId = (req.user as User).id;
     const existing = await this.favorites.findOneBy({ userId, salonId });
-    if (!existing) await this.favorites.save(this.favorites.create({ userId, salonId }));
+    if (existing) return { ok: true };
+    try {
+      await this.favorites.save(this.favorites.create({ userId, salonId }));
+    } catch (err) {
+      // The pre-check above handles the common case, but the composite
+      // (user_id, salon_id) PRIMARY KEY is the actual source of truth --
+      // two truly concurrent POSTs can both pass the check above before either
+      // inserts. Treat the resulting unique violation as the no-op it
+      // semantically is, rather than letting it surface as an unhandled 500.
+      if (!(err instanceof QueryFailedError) || (err as unknown as { code?: string }).code !== UNIQUE_VIOLATION) {
+        throw err;
+      }
+    }
     return { ok: true };
   }
 
