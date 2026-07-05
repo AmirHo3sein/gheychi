@@ -1994,7 +1994,8 @@ No TDD here — this is project scaffolding with no behavior to test yet. Verifi
     "vitest": "^3.2.6",
     "happy-dom": "^15.11.0",
     "playwright-core": "^1.49.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vue-tsc": "^3.3.6"
   }
 }
 ```
@@ -3461,6 +3462,8 @@ git commit -m "feat(user-app): map view toggle using Neshan tiles via Leaflet"
 ## Task 15: Salon profile page (SSR, SEO, gallery, reviews, favorite toggle)
 
 **A cross-endpoint inconsistency to route around, not fix here:** Task 3's public content endpoints (`/salons/:slug/services`, `/hours`, `/photos`) all key off the **slug**. Plan 3's existing reviews endpoint (`GET /salons/:salonId/reviews`, built in an earlier plan) keys off the salon's **UUID** and enforces it with `ParseUUIDPipe` — passing a slug there 400s. Rewriting that endpoint isn't this plan's job (it already has its own e2e coverage from Plan 3); this task just fetches the salon by slug first, then uses its resolved `id` for the reviews call.
+
+**Repo-wide infra fix that landed alongside this task, not specific to it:** `nuxt typecheck` had been silently a no-op since Task 8 (missing `vue-tsc` devDependency) — flagged by six separate tasks' code reviews (9, 10, 12, 13, 14, 15) before finally being fixed here. Task 8's `package.json` snippet earlier in this document already reflects the fix (`vue-tsc@^3.3.6` added). Running it for the first time surfaced 8 pre-existing type errors, all in earlier tasks' files (`useApi.ts`, `index.vue`, `arvancloud.ts`) — all trivial, type-only fixes (non-null assertions on structurally-guaranteed array/index accesses, one explicit event-handler param type, one narrowed `body` cast, and dropping a default parameter value that `@nuxt/image`'s own type contract makes redundant) with zero runtime behavior change, confirmed by the full test suite still passing unchanged. `nuxt typecheck` now runs clean.
 
 **Files:**
 - Create: `apps/user-app/app/components/salon/SalonGallery.vue`
