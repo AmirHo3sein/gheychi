@@ -14,6 +14,8 @@ interface ApiFetchOptions {
   body?: unknown
   query?: Record<string, unknown>
   silent?: boolean
+  /** Set to false to suppress the automatic redirect-to-/login on a 401 (defaults to true). */
+  redirectOn401?: boolean
 }
 
 export function useApi() {
@@ -45,7 +47,9 @@ export function useApi() {
       const apiError: ApiError = { status, message }
 
       if (status === 401) {
-        await navigateTo('/login')
+        if (options.redirectOn401 !== false) {
+          await navigateTo('/login')
+        }
         return { data: null, error: apiError }
       }
 

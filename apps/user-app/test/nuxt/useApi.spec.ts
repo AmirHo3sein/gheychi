@@ -54,6 +54,15 @@ describe('useApi', () => {
     expect(navigateToMock).toHaveBeenCalledWith('/login')
   })
 
+  it('on a 401 with redirectOn401: false, does not redirect but still returns the error', async () => {
+    fetchMock.mockRejectedValue({ response: { status: 401 } })
+    const { apiFetch } = useApi()
+    const result = await apiFetch('/auth/me', { silent: true, redirectOn401: false })
+    expect(navigateToMock).not.toHaveBeenCalled()
+    expect(result.data).toBeNull()
+    expect(result.error?.status).toBe(401)
+  })
+
   it('on a non-401 error without silent mode, pushes a toast and still returns the error', async () => {
     fetchMock.mockRejectedValue({ response: { status: 500 }, statusMessage: 'Server error' })
     const { apiFetch } = useApi()

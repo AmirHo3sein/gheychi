@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { SessionUser } from '~/stores/session'
+
 const { apiFetch } = useApi()
 const session = useSessionStore()
 
@@ -22,7 +24,7 @@ async function requestOtp() {
 async function verifyOtp() {
   submitting.value = true
   formError.value = ''
-  const { data, error } = await apiFetch<{ user: { id: string; phone: string; name: string | null; gender: 'female' | 'male' | null; role: 'customer' | 'provider' | 'admin' }; isNewUser: boolean }>(
+  const { data, error } = await apiFetch<{ user: SessionUser; isNewUser: boolean }>(
     '/auth/verify-otp',
     { method: 'POST', body: { phone: phone.value, code: code.value }, silent: true },
   )
@@ -39,7 +41,7 @@ async function verifyOtp() {
 
 async function completeProfile() {
   submitting.value = true
-  const { data, error } = await apiFetch<{ id: string; phone: string; name: string | null; gender: 'female' | 'male' | null; role: 'customer' | 'provider' | 'admin' }>(
+  const { data, error } = await apiFetch<SessionUser>(
     '/auth/profile',
     { method: 'PATCH', body: { name: name.value, gender: gender.value } },
   )
