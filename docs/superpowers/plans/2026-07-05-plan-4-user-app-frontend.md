@@ -4536,6 +4536,8 @@ git commit -m "feat(user-app): my bookings list with cancel, payment retry, and 
 
 ## Task 20: PWA — manifest, installability, service worker with push handling
 
+**Corrected during code review (execution):** two real bugs surfaced by manual verification, both independently reproduced (reverted, confirmed the original failure, restored) during review — (1) `srcDir: 'app'` below double-resolves to `app/app/sw.ts` under Nuxt 4's own default `srcDir: 'app'` (vite-plugin-pwa's `srcDir` is relative to Vite's root, which Nuxt 4 already points at `app/`) — fixed to `srcDir: '.'`; (2) `@vite-pwa/nuxt`'s auto-registration wires the service worker but never injects `<link rel="manifest">` into the page — that requires an explicit `<VitePwaManifest />` component, added to `apps/user-app/app/app.vue` alongside the existing `<NuxtRouteAnnouncer />`/`<ToastStack />` singletons from Task 12. Also hardened `sw.ts`'s `push` listener with a try/catch around `event.data.json()` — a malformed/truncated payload would otherwise throw uncaught before `event.waitUntil()`, silently dropping that notification (and browsers can throttle/revoke a subscription that doesn't reliably result in a shown notification).
+
 Uses the `injectManifest` strategy (not the default `generateSW`) specifically because the service worker needs a custom `push` event listener to show system notifications — `generateSW` only generates a precaching worker with no room for custom event handlers, confirmed against `vite-pwa-org.netlify.app`'s own injectManifest guide.
 
 **⚠️ Real icon assets required:** this task references `/pwa-192.png` and `/pwa-512.png` in the manifest. These are binary design assets this plan cannot produce — before this task is considered done, real PNG icons derived from the final brand mark (the light-mode "Teal Trust" identity, per the design spec) must be placed at `apps/user-app/public/pwa-192.png` and `pwa-512.png`. Until then, installability will work with a broken/placeholder icon, which is a known, visible gap — not a silent one.
@@ -4543,6 +4545,7 @@ Uses the `injectManifest` strategy (not the default `generateSW`) specifically b
 **Files:**
 - Modify: `apps/user-app/package.json`
 - Modify: `apps/user-app/nuxt.config.ts`
+- Modify: `apps/user-app/app/app.vue` (adds `<VitePwaManifest />` — see correction note above)
 - Create: `apps/user-app/app/sw.ts`
 - Create: `apps/user-app/public/pwa-192.png` (design asset — see warning above)
 - Create: `apps/user-app/public/pwa-512.png` (design asset — see warning above)
@@ -4561,7 +4564,9 @@ Add to `apps/user-app/nuxt.config.ts`:
   modules: ['@pinia/nuxt', '@nuxt/test-utils/module', '@nuxt/image', '@vite-pwa/nuxt'],
   pwa: {
     strategies: 'injectManifest',
-    srcDir: 'app',
+    // Relative to Vite's root, which Nuxt 4 already points at app/ (its own default
+    // srcDir) -- 'app' here would double-resolve to app/app/sw.ts and fail the build.
+    srcDir: '.',
     filename: 'sw.ts',
     registerType: 'autoUpdate',
     manifest: {
@@ -4593,7 +4598,15 @@ precacheAndRoute(self.__WB_MANIFEST)
 
 self.addEventListener('push', (event) => {
   if (!event.data) return
-  const payload = event.data.json() as { title: string; body: string }
+  let payload: { title: string; body: string }
+  try {
+    payload = event.data.json()
+  } catch {
+    // A malformed/truncated payload would otherwise throw here, uncaught, before
+    // event.waitUntil() -- silently dropping the notification. Browsers can throttle
+    // or revoke a subscription that doesn't reliably result in a shown notification.
+    payload = { title: 'اعلان جدید', body: '' }
+  }
   event.waitUntil(
     self.registration.showNotification(payload.title, {
       body: payload.body,
@@ -4608,7 +4621,22 @@ self.addEventListener('notificationclick', (event) => {
 })
 ```
 
-Save as `apps/user-app/app/sw.ts`. This is the exact shape the payload arrives in — it matches `PushPayload` (`{ title, body }`) from the backend's `push.provider.ts` (Task 5), sent as `JSON.stringify(payload)` in `WebPushProvider.send`.
+Save as `apps/user-app/app/sw.ts`. This is the exact shape the payload arrives in on the happy path — it matches `PushPayload` (`{ title, body }`) from the backend's `push.provider.ts` (Task 5), sent as `JSON.stringify(payload)` in `WebPushProvider.send`.
+
+- [ ] **Step 3b: Add `<VitePwaManifest />` so the manifest is actually linked**
+
+`@vite-pwa/nuxt`'s auto-registration wires up the service worker but does not inject `<link rel="manifest">` into the page — that requires this component explicitly. Add it to `apps/user-app/app/app.vue` alongside the existing `<NuxtRouteAnnouncer />`/`<ToastStack />` top-level singletons from Task 12:
+
+```vue
+<template>
+  <VitePwaManifest />
+  <NuxtRouteAnnouncer />
+  <NuxtLayout>
+    <NuxtPage />
+  </NuxtLayout>
+  <ToastStack />
+</template>
+```
 
 - [ ] **Step 4: Add the placeholder-but-flagged icon files**
 
@@ -4622,7 +4650,7 @@ Open the preview URL in Chrome DevTools → Application → Manifest: confirm th
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/user-app/package.json apps/user-app/nuxt.config.ts apps/user-app/app/sw.ts apps/user-app/public/pwa-192.png apps/user-app/public/pwa-512.png
+git add apps/user-app/package.json apps/user-app/nuxt.config.ts apps/user-app/app/app.vue apps/user-app/app/sw.ts apps/user-app/public/pwa-192.png apps/user-app/public/pwa-512.png
 git commit -m "feat(user-app): installable PWA with a custom push-handling service worker"
 ```
 
