@@ -109,10 +109,10 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
     <section>
       <h2 class="font-bold mb-2">خدمات</h2>
       <ul class="space-y-2">
-        <li v-for="service in page!.services" :key="service.id" class="flex justify-between rounded-lg bg-(--color-surface-card) p-3 text-sm">
-          <span>{{ service.name }} ({{ service.durationMin }} دقیقه)</span>
-          <NuxtLink :to="`/booking/${slug}/${service.id}`" class="font-bold text-(--color-accent)">
-            {{ service.price.toLocaleString('fa-IR') }} تومان
+        <li v-for="service in page!.services" :key="service.id">
+          <NuxtLink :to="`/booking/${slug}/${service.id}`" class="flex justify-between rounded-lg bg-(--color-surface-card) p-3 text-sm">
+            <span>{{ service.name }} ({{ service.durationMin }} دقیقه)</span>
+            <span class="font-bold text-(--color-accent)">{{ service.price.toLocaleString('fa-IR') }} تومان</span>
           </NuxtLink>
         </li>
       </ul>
