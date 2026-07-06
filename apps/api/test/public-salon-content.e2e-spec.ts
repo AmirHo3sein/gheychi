@@ -7,6 +7,7 @@ describe('Public salon content (e2e)', () => {
   let app: INestApplication;
   let slug: string;
   let salonId: string;
+  let pendingSlug: string;
 
   beforeAll(async () => {
     await resetDatabase();
@@ -26,6 +27,16 @@ describe('Public salon content (e2e)', () => {
       [ownerId, slug],
     );
     salonId = id;
+    const [{ id: pendingOwnerId }] = await ds.query(
+      `INSERT INTO users (phone, role) VALUES ('09130000002', 'provider') RETURNING id`,
+    );
+    pendingSlug = 'pending-test-salon';
+    await ds.query(
+      `INSERT INTO salons (owner_id, name, slug, gender_target, status, address, city, location)
+       VALUES ($1, 'Pending Test Salon', $2, 'women', 'pending', 'addr', 'Tehran',
+         ST_SetSRID(ST_MakePoint(51.4, 35.7), 4326)::geography)`,
+      [pendingOwnerId, pendingSlug],
+    );
     const [{ id: categoryId }] = await ds.query(`SELECT id FROM service_categories LIMIT 1`);
     await ds.query(
       `INSERT INTO salon_services (salon_id, category_id, name, price, duration_min, is_active)
@@ -77,5 +88,10 @@ describe('Public salon content (e2e)', () => {
   it('lists all approved salon slugs for the sitemap, unfiltered by location', async () => {
     const res = await request(app.getHttpServer()).get('/api/sitemap/salon-slugs').expect(200);
     expect(res.body).toContain(slug);
+  });
+
+  it('excludes non-approved salons from the sitemap', async () => {
+    const res = await request(app.getHttpServer()).get('/api/sitemap/salon-slugs').expect(200);
+    expect(res.body).not.toContain(pendingSlug);
   });
 });
