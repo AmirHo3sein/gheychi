@@ -5146,13 +5146,25 @@ git commit -m "feat(user-app): bare-bones admin page for toggling featured salon
 
 ## Task 24: Whole-system Playwright e2e + final verification
 
+**Corrected during code review (execution):** this task's first real run through the full happy path surfaced several genuine issues, all confirmed by reproducing the failure, applying a fix, and re-running until stable:
+1. **A real product bug, found by the e2e test itself:** `salons/[slug].vue`'s service row only wrapped the price in the booking `<NuxtLink>` — the service name (what the happy-path test clicks, and what a real user would naturally try) was outside the link and did nothing. Fixed by moving the whole row's content inside the link (committed separately, `9f209e5`).
+2. **`webServer`'s 30s readiness timeout was too short for a genuinely cold `nest start --watch`/Vite dev-server compile** — measured ~78s on the machine this ran on. Bumped both entries to 120s.
+3. **The most important fix:** a plain `page.goto('/login')` doesn't wait for Nuxt's client-side hydration to attach the login form's `@submit.prevent` handler on a cold Vite dev server. A click landing in that gap falls through to a native (non-JS) form submit — confirmed by instrumenting `request`/`response`/`requestfailed` events during debugging, which showed a wave of aborted module fetches (Vite's dependency pre-bundling triggering a full reload on first real page load) and zero `request-otp` calls. Fixed by adding `await page.waitForLoadState('networkidle')` immediately after every `page.goto('/login')`, in both spec files below.
+4. Spec files are named with numeric prefixes (`01-happy-path.spec.ts`, `02-admin-featured-badge.spec.ts`), not the bare names below — `workers: 1` (added, see below) correctly serializes execution, but Playwright's default alphabetical file-discovery order would otherwise run `admin-featured-badge` before `happy-path` (a < h), breaking the account-reuse dependency between them.
+5. `playwright.config.ts` also adds `workers: 1` (not shown in the plan's Step 3 snippet) — `fullyParallel: false` (the default) only serializes tests *within* a file, not *across* files, and the two spec files below share a phone number's OTP key in Redis, so concurrent execution races.
+6. A minimal `apps/user-app/e2e/package.json` (`{"type": "commonjs"}`) was added to resolve a module-resolution conflict between the e2e directory and the rest of the Nuxt app's ESM-first setup (`ioredis`'s circular CJS requires hit a real Node.js assertion error when loaded through Playwright's ESM bridge).
+7. `global-setup.ts` also flushes Redis (`redis.flushdb()`), not just Postgres — `OtpService` rate-limits OTP requests per phone (max 3/hour), so re-running this suite within the same hour against the same fixed phone numbers deterministically trips that limiter, failing with a misleading "invalid phone" error unrelated to any real regression.
+8. `turbo.json`'s `build` task only tracked `dist/**` (the API's output dir) — added `.output/**` (Nuxt's) so the frontend's build output is correctly tracked for caching too.
+9. `.gitignore` gained `.nuxtrc` (recurring untracked-file noise across nearly every prior task), `test-results/`, `playwright-report/`, `blob-report/` (Playwright's own output directories).
+
 The original marketplace design spec (§9) called for "Playwright happy path (search → book → pay → review) against a seeded dev environment" from the very start — this is the first plan with a frontend to actually run that path against, so this task builds it, then runs everything.
 
 **Files:**
 - Create: `apps/user-app/playwright.config.ts`
 - Create: `apps/user-app/e2e/global-setup.ts`
-- Create: `apps/user-app/e2e/happy-path.spec.ts`
-- Create: `apps/user-app/e2e/admin-featured-badge.spec.ts`
+- Create: `apps/user-app/e2e/01-happy-path.spec.ts`
+- Create: `apps/user-app/e2e/02-admin-featured-badge.spec.ts`
+- Create: `apps/user-app/e2e/package.json` (`{"type": "commonjs"}` — see correction note above)
 - Modify: `apps/user-app/package.json`
 
 - [ ] **Step 1: Install Playwright**
@@ -5167,6 +5179,7 @@ Run: `pnpm --filter @arayeshgah/user-app exec playwright install chromium`
 import { Client } from 'pg'
 import { execSync } from 'node:child_process'
 import path from 'node:path'
+import Redis from 'ioredis'
 
 export default async function globalSetup() {
   const client = new Client({
@@ -5179,6 +5192,15 @@ export default async function globalSetup() {
   await client.connect()
   await client.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;')
   await client.end()
+
+  // OtpService rate-limits OTP requests per phone (max 3/hour, see otp.service.ts) via a
+  // Redis key that outlives this Postgres reset. Without flushing Redis too, re-running
+  // this suite (a local retry, or two CI runs within the same hour) reuses the same fixed
+  // phone numbers and deterministically trips that limiter on the second run, failing with
+  // a misleading "invalid phone" form error that has nothing to do with an actual regression.
+  const redis = new Redis({ host: process.env.REDIS_HOST ?? 'localhost', port: Number(process.env.REDIS_PORT ?? 6381) })
+  await redis.flushdb()
+  await redis.quit()
 
   execSync('pnpm --filter @arayeshgah/api migration:run', {
     cwd: path.resolve(__dirname, '../../..'),
@@ -5229,25 +5251,38 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   testDir: './e2e',
   globalSetup: './e2e/global-setup.ts',
+  // `fullyParallel: false` (the default, left unset) only serializes tests *within* a
+  // single file -- separate spec files still run concurrently by default.
+  // admin-featured-badge.spec.ts reuses happy-path.spec.ts's customer account/OTP flow,
+  // and both hit the same phone number's OTP key in Redis, so running them concurrently
+  // races: one file's successful verify-otp deletes the shared Redis key before the other
+  // reads its own code. workers: 1 forces spec files to run one at a time.
+  workers: 1,
   use: { baseURL: 'http://localhost:3003' },
   webServer: [
     {
       command: 'pnpm --filter @arayeshgah/api dev',
       url: 'http://localhost:3002/api/health',
       reuseExistingServer: !process.env.CI,
-      timeout: 30_000,
+      // Measured cold-start (nest start --watch, first ts-node compile) at ~78s on this
+      // machine -- the original 30s was tuned for a warm cache and flaked on a genuinely
+      // cold boot.
+      timeout: 120_000,
     },
     {
       command: 'pnpm --filter @arayeshgah/user-app dev',
       url: 'http://localhost:3003',
       reuseExistingServer: !process.env.CI,
-      timeout: 30_000,
+      // Same reasoning as the api entry above.
+      timeout: 120_000,
     },
   ],
 })
 ```
 
-Save as `apps/user-app/playwright.config.ts`. Both dev servers (not production builds) — this suite is about the integration path working end to end, not a production-parity check (Task 25's build step already covers that separately).
+Save as `apps/user-app/playwright.config.ts`. Both dev servers (not production builds) — this suite is about the integration path working end to end, not a production-parity check (Step 6's `pnpm build` already covers that separately).
+
+Also create `apps/user-app/e2e/package.json` with `{"type": "commonjs"}` — the rest of the Nuxt app is ESM (`"type": "module"`, required by Nuxt), which makes Playwright load `e2e/*.ts` as ESM too; `ioredis`'s circular CJS `require`s then hit a real Node.js bug when synchronously required through the ESM bridge. Scoping this one directory back to CommonJS avoids it.
 
 - [ ] **Step 4: Write the happy-path spec**
 
@@ -5262,14 +5297,30 @@ test('search, view salon, book, pay, land on confirmation', async ({ page }) => 
   const redis = new Redis({ host: process.env.REDIS_HOST ?? 'localhost', port: Number(process.env.REDIS_PORT ?? 6381) })
 
   await page.goto('/login')
+  // On a cold `nuxt dev` process (what webServer always spawns), the SSR-rendered /login
+  // HTML can be painted before Vue finishes hydrating and attaching the form's
+  // @submit.prevent handler. A click that lands in that gap falls through to the native
+  // HTML form submit (a full-page GET reload), never calling fetch at all -- confirmed by
+  // instrumenting request/response/requestfailed events during debugging, which showed a
+  // reload's worth of aborted module fetches and zero request-otp calls. Waiting for the
+  // network to settle after navigation gives hydration's module fetches time to finish
+  // before the first interaction.
+  await page.waitForLoadState('networkidle')
   await page.getByPlaceholder('09xxxxxxxxx').fill(phone)
   await page.getByRole('button', { name: 'دریافت کد' }).click()
+
+  // .click() only dispatches the click -- it does not wait for the async request-otp
+  // fetch it triggers to resolve. Wait for the UI to actually advance to the code step
+  // (which only happens after that fetch succeeds) before assuming Redis has been written,
+  // or this races the network call and intermittently reads a stale/missing key.
+  const codeInput = page.getByPlaceholder('کد ۶ رقمی')
+  await expect(codeInput).toBeVisible()
 
   const code = await redis.get(`otp:${phone}`)
   await redis.quit()
   if (!code) throw new Error('OTP was not found in Redis -- did SMS_PROVIDER/OtpService change?')
 
-  await page.getByPlaceholder('کد ۶ رقمی').fill(code)
+  await codeInput.fill(code)
   await page.getByRole('button', { name: 'تایید' }).click()
 
   await page.getByPlaceholder('نام').fill('کاربر تست')
@@ -5292,7 +5343,7 @@ test('search, view salon, book, pay, land on confirmation', async ({ page }) => 
 })
 ```
 
-Save as `apps/user-app/e2e/happy-path.spec.ts`. Add `ioredis` to `apps/user-app`'s devDependencies alongside `pg` (Step 1) — same driver `apps/api` already uses, so no new library to vet.
+Save as `apps/user-app/e2e/01-happy-path.spec.ts` (numbered prefix — see correction note above). Add `ioredis` to `apps/user-app`'s devDependencies alongside `pg` (Step 1) — same driver `apps/api` already uses, so no new library to vet.
 
 - [ ] **Step 5: Write the admin-featured-badge spec**
 
@@ -5317,21 +5368,32 @@ test('a salon flagged featured by an admin shows the Ad badge on Home', async ({
   const redis = new Redis({ host: process.env.REDIS_HOST ?? 'localhost', port: Number(process.env.REDIS_PORT ?? 6381) })
 
   await page.goto('/login')
+  // See the matching comment in 01-happy-path.spec.ts: on a cold dev server, a click can
+  // land before Vue hydration attaches the form handler, falling through to a native
+  // (non-JS) form submit. Give hydration's module fetches a chance to settle first.
+  await page.waitForLoadState('networkidle')
   await page.getByPlaceholder('09xxxxxxxxx').fill(phone)
   await page.getByRole('button', { name: 'دریافت کد' }).click()
+
+  // .click() only dispatches the click -- it does not wait for the async request-otp
+  // fetch it triggers to resolve. Wait for the UI to actually advance to the code step
+  // (which only happens after that fetch succeeds) before assuming Redis has been written,
+  // or this races the network call and intermittently reads a stale/missing key.
+  const codeInput = page.getByPlaceholder('کد ۶ رقمی')
+  await expect(codeInput).toBeVisible()
 
   const code = await redis.get(`otp:${phone}`)
   await redis.quit()
   if (!code) throw new Error('OTP was not found in Redis -- did SMS_PROVIDER/OtpService change?')
 
-  await page.getByPlaceholder('کد ۶ رقمی').fill(code)
+  await codeInput.fill(code)
   await page.getByRole('button', { name: 'تایید' }).click()
 
   await expect(page.getByTestId('ad-badge')).toBeVisible()
 })
 ```
 
-Save as `apps/user-app/e2e/admin-featured-badge.spec.ts`. This test depends on `happy-path.spec.ts` having already run in the same session (reuses that seeded customer account) — Playwright runs spec files within a project serially by default, but confirm `fullyParallel` is not enabled in `playwright.config.ts` (it isn't, in the Step 3 config above) before relying on this ordering.
+Save as `apps/user-app/e2e/02-admin-featured-badge.spec.ts` (numbered prefix — see correction note above). This test depends on `01-happy-path.spec.ts` having already run in the same session (reuses that seeded customer account) — `workers: 1` plus the numeric filename prefixes (both added, see correction note above) guarantee this ordering; the plan's original reliance on default alphabetical file discovery would have run this file first.
 
 - [ ] **Step 6: Add the Playwright script and run everything**
 
@@ -5353,7 +5415,7 @@ Expected: every command exits 0. `pnpm build` (the root Turbo task, building bot
 - [ ] **Step 7: Commit**
 
 ```bash
-git add apps/user-app/playwright.config.ts apps/user-app/e2e apps/user-app/package.json
+git add apps/user-app/playwright.config.ts apps/user-app/e2e apps/user-app/package.json turbo.json .gitignore apps/user-app/app/pages/salons/\[slug\].vue
 git commit -m "test(user-app): Playwright happy-path and admin-featured-badge e2e coverage"
 ```
 
