@@ -5028,6 +5028,8 @@ git commit -m "feat(user-app): dynamic sitemap, robots.txt, and default SEO meta
 
 ## Task 23: Admin featured-toggle page
 
+**Corrected during code review (execution):** the Step 2 template's inline `document.getElementById(...)` expression (inside a `v-for`-scoped click handler with a template literal and an `as` cast) fails `nuxt typecheck` — vue-tsc resolves `document` against the component instance type rather than the DOM global in that specific inline-expression shape. Fixed by relocating the identical logic into a named `onToggleClick(salon)` function in `<script setup>` — same `getElementById` call, same cast, same `.value` read, just called from `@click="onToggleClick(salon)"` instead of inline. This preserves every intentional simplification below (still no per-row `ref`/`v-model`, still bare-bones) and is purely a relocation, not a design change.
+
 Deliberately unstyled/functional-only, per this plan's design spec — it exists to make the ad-placement feature usable before the real admin-panel (a separate future plan) exists, not to preview that project's design.
 
 **Files:**
@@ -5078,6 +5080,15 @@ async function toggle(salon: AdminSalon, featuredUntilInput: string) {
   savingId.value = null
   await load()
 }
+
+// Relocated out of the template (see correction note above) -- vue-tsc resolves `document`
+// against the component instance type, not the DOM global, inside a v-for-scoped inline
+// click expression combining a template literal and an `as` cast. Same DOM read, same cast,
+// just called from a named handler instead of inline.
+function onToggleClick(salon: AdminSalon) {
+  const input = document.getElementById(`until-${salon.id}`) as HTMLInputElement
+  toggle(salon, input.value)
+}
 </script>
 
 <template>
@@ -5106,7 +5117,7 @@ async function toggle(salon: AdminSalon, featuredUntilInput: string) {
               type="button"
               :disabled="savingId === salon.id"
               class="rounded bg-(--color-accent) text-white px-2 py-1"
-              @click="toggle(salon, (document.getElementById(`until-${salon.id}`) as HTMLInputElement).value)"
+              @click="onToggleClick(salon)"
             >
               {{ salon.isFeatured ? 'حذف از ویژه' : 'افزودن به ویژه' }}
             </button>
