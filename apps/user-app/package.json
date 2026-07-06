@@ -10,6 +10,7 @@
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
@@ -24,9 +25,12 @@
   },
   "devDependencies": {
     "@nuxt/test-utils": "^3.15.0",
+    "@playwright/test": "^1.61.1",
     "@vite-pwa/nuxt": "^1.1.1",
     "@vue/test-utils": "^2.4.6",
     "happy-dom": "^15.11.0",
+    "ioredis": "^5.6.0",
+    "pg": "^8.13.0",
     "playwright-core": "^1.49.0",
     "typescript": "^5.7.0",
     "vitest": "^3.2.6",

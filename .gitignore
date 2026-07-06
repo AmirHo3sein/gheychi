@@ -2,6 +2,7 @@ node_modules/
 dist/
 .output/
 .nuxt/
+.nuxtrc
 .turbo/
 .env
 .env.*
@@ -9,3 +10,6 @@ dist/
 !.env.test
 .superpowers/
 .worktrees/
+test-results/
+playwright-report/
+blob-report/
