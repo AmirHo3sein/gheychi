@@ -17,35 +17,72 @@ export function usePushSubscription() {
   const { apiFetch } = useApi()
   const config = useRuntimeConfig()
   const isSubscribed = ref(false)
-  const supported = import.meta.client && 'serviceWorker' in navigator && 'PushManager' in window
+  // Deviates from the plan's `import.meta.client && 'serviceWorker' in navigator && ...`
+  // computed once at setup time: that expression is a build-time-constant `false` in the
+  // server bundle (`import.meta.client` is statically false there), so this page -- which
+  // is server-rendered, unlike a route with `ssr: false` -- would render the `v-if` toggle
+  // section as absent during SSR and then have it pop in after client hydration flips
+  // `supported` to `true`, a genuine hydration mismatch. `index.vue`'s
+  // `import.meta.client && navigator.geolocation` check already avoids this by only ever
+  // running inside `onMounted` (a client-only hook). Composables invoked synchronously from
+  // a component's `<script setup>` (as `profile.vue` does here, before any `await`) may
+  // call lifecycle hooks themselves, so detection is deferred into this composable's own
+  // `onMounted` and exposed as a ref instead of a plain boolean.
+  const supported = ref(false)
+
+  onMounted(() => {
+    supported.value = 'serviceWorker' in navigator && 'PushManager' in window
+  })
 
   async function refreshStatus() {
-    if (!supported) return
+    if (!supported.value) return
     const reg = await navigator.serviceWorker.ready
     const sub = await reg.pushManager.getSubscription()
     isSubscribed.value = !!sub
   }
 
   async function subscribe() {
-    if (!supported) return
+    if (!supported.value) return
     const reg = await navigator.serviceWorker.ready
     const permission = await Notification.requestPermission()
     if (permission !== 'granted') return
 
-    const sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(config.public.vapidPublicKey),
-    })
+    let sub: PushSubscription
+    try {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(config.public.vapidPublicKey),
+      })
+    } catch {
+      // A misconfigured/empty vapidPublicKey (a real production-config mistake, not just
+      // a hypothetical) makes the browser reject subscribe() with a DOMException before
+      // apiFetch is ever reached -- without this, the toggle click would silently do
+      // nothing after the permission prompt, with no feedback at all.
+      useToast().push('فعال‌سازی اعلان‌ها با خطا مواجه شد')
+      return
+    }
+
     const json = sub.toJSON()
-    await apiFetch('/push/subscribe', {
+    // Not passed `silent: true`: apiFetch already shows its own toast on a non-401
+    // failure here, so no need to raise a second one below -- only the browser-side
+    // rollback is this function's own responsibility.
+    const { error } = await apiFetch('/push/subscribe', {
       method: 'POST',
       body: { endpoint: json.endpoint, p256dh: json.keys?.p256dh, auth: json.keys?.auth },
     })
+    if (error) {
+      // Without this rollback, the browser-side subscription would exist with no
+      // matching backend record, and refreshStatus() -- which only ever asks the
+      // browser's own pushManager.getSubscription() -- would report "subscribed"
+      // forever, leaving the user stuck believing notifications work.
+      await sub.unsubscribe()
+      return
+    }
     isSubscribed.value = true
   }
 
   async function unsubscribe() {
-    if (!supported) return
+    if (!supported.value) return
     const reg = await navigator.serviceWorker.ready
     const sub = await reg.pushManager.getSubscription()
     if (sub) {
