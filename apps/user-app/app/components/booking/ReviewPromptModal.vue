@@ -10,10 +10,12 @@ const alreadyReviewed = ref(false)
 
 async function submit() {
   submitting.value = true
+  // Not silent: any non-409 failure (500, network drop, validation error) should get the
+  // same generic toast-on-error that retryPayment/cancelBooking already get for free in
+  // bookings/index.vue -- only the 409 "already reviewed" case gets its own UI below.
   const { error } = await apiFetch('/reviews', {
     method: 'POST',
     body: { bookingId: props.bookingId, rating: rating.value, comment: comment.value || undefined },
-    silent: true,
   })
   submitting.value = false
   if (error?.status === 409) {
@@ -36,7 +38,13 @@ async function submit() {
           </button>
         </div>
         <textarea v-model="comment" placeholder="نظر شما (اختیاری)" class="w-full rounded-lg border p-2 text-sm" rows="3" />
-        <button type="button" :disabled="submitting" class="w-full rounded-lg bg-(--color-accent) text-white p-2 font-semibold" @click="submit">
+        <button
+          type="button"
+          data-testid="submit-review-button"
+          :disabled="submitting"
+          class="w-full rounded-lg bg-(--color-accent) text-white p-2 font-semibold"
+          @click="submit"
+        >
           ثبت نظر
         </button>
       </template>
