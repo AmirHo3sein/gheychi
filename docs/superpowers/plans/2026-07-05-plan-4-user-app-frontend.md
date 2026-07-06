@@ -4658,10 +4658,13 @@ git commit -m "feat(user-app): installable PWA with a custom push-handling servi
 
 ## Task 21: Profile page — account info, saved salons, push opt-in
 
+**Corrected during code review (execution):** three fixes to `usePushSubscription` below — (1) `urlBase64ToUint8Array`'s `Uint8Array.from(...)` fails `nuxt typecheck` on this project's TS/DOM lib version (`Uint8Array<ArrayBufferLike>` not assignable to `BufferSource`); fixed via `new Uint8Array(length)` + a fill loop, byte-for-byte identical output. (2) `subscribe()` set `isSubscribed.value = true` unconditionally even when the backend `POST /push/subscribe` failed, permanently desyncing the UI from a browser-side-only subscription with no self-healing path (`refreshStatus()` only asks the browser, which would report "subscribed" forever) — fixed by checking the response's `error` and rolling back via `sub.unsubscribe()` on failure. Also added a try/catch around `reg.pushManager.subscribe(...)` itself, since a misconfigured/empty `vapidPublicKey` makes the browser reject it before `apiFetch` is ever reached, otherwise leaving the toggle click with zero feedback. (3) `supported`'s original `import.meta.client && ...` expression is a build-time-constant `false` in the server bundle, causing a genuine SSR/hydration mismatch on the `v-if="pushSupported"` section since this page is server-rendered — fixed by deferring detection into the composable's own `onMounted` and exposing it as a `ref`, mirroring `index.vue`'s existing `import.meta.client && navigator.geolocation` pattern.
+
 Depends on Task 20's service worker already being registered (`navigator.serviceWorker.ready` never resolves without one) — that ordering is why PWA setup came first.
 
 **Files:**
 - Create: `apps/user-app/app/composables/usePushSubscription.ts`
+- Test: `apps/user-app/test/nuxt/usePushSubscription.spec.ts`
 - Create: `apps/user-app/app/pages/profile.vue`
 - Modify: `apps/user-app/nuxt.config.ts`
 - Modify: `.env.example` (repo root) and `apps/user-app/.env.example`
@@ -4687,46 +4690,76 @@ Add `NUXT_PUBLIC_VAPID_PUBLIC_KEY=` to both `.env.example` files.
 - [ ] **Step 2: Implement `usePushSubscription`**
 
 ```typescript
-function urlBase64ToUint8Array(base64: string): Uint8Array {
+function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   const padding = '='.repeat((4 - (base64.length % 4)) % 4)
   const normalized = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/')
   const raw = atob(normalized)
-  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)))
+  const output = new Uint8Array(raw.length)
+  for (let i = 0; i < raw.length; i++) output[i] = raw.charCodeAt(i)
+  return output
 }
 
 export function usePushSubscription() {
   const { apiFetch } = useApi()
   const config = useRuntimeConfig()
   const isSubscribed = ref(false)
-  const supported = import.meta.client && 'serviceWorker' in navigator && 'PushManager' in window
+  // A composable invoked synchronously from a component's <script setup> (as profile.vue
+  // does here) may call lifecycle hooks itself -- detection is deferred into this
+  // composable's own onMounted rather than a plain boolean computed at setup time, since
+  // `import.meta.client` is a build-time-constant `false` in the server bundle and this
+  // page IS server-rendered; a plain boolean would cause a genuine hydration mismatch on
+  // the v-if="pushSupported" section.
+  const supported = ref(false)
+
+  onMounted(() => {
+    supported.value = 'serviceWorker' in navigator && 'PushManager' in window
+  })
 
   async function refreshStatus() {
-    if (!supported) return
+    if (!supported.value) return
     const reg = await navigator.serviceWorker.ready
     const sub = await reg.pushManager.getSubscription()
     isSubscribed.value = !!sub
   }
 
   async function subscribe() {
-    if (!supported) return
+    if (!supported.value) return
     const reg = await navigator.serviceWorker.ready
     const permission = await Notification.requestPermission()
     if (permission !== 'granted') return
 
-    const sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(config.public.vapidPublicKey),
-    })
+    let sub: PushSubscription
+    try {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(config.public.vapidPublicKey),
+      })
+    } catch {
+      // A misconfigured/empty vapidPublicKey makes the browser reject subscribe() with a
+      // DOMException before apiFetch is ever reached -- without this, the toggle click
+      // would silently do nothing after the permission prompt.
+      useToast().push('فعال‌سازی اعلان‌ها با خطا مواجه شد')
+      return
+    }
+
     const json = sub.toJSON()
-    await apiFetch('/push/subscribe', {
+    const { error } = await apiFetch('/push/subscribe', {
       method: 'POST',
       body: { endpoint: json.endpoint, p256dh: json.keys?.p256dh, auth: json.keys?.auth },
     })
+    if (error) {
+      // Without this rollback, the browser-side subscription would exist with no
+      // matching backend record, and refreshStatus() -- which only ever asks the
+      // browser's own pushManager.getSubscription() -- would report "subscribed"
+      // forever, leaving the user stuck believing notifications work.
+      await sub.unsubscribe()
+      return
+    }
     isSubscribed.value = true
   }
 
   async function unsubscribe() {
-    if (!supported) return
+    if (!supported.value) return
     const reg = await navigator.serviceWorker.ready
     const sub = await reg.pushManager.getSubscription()
     if (sub) {
@@ -4740,7 +4773,7 @@ export function usePushSubscription() {
 }
 ```
 
-Save as `apps/user-app/app/composables/usePushSubscription.ts`. Permission is requested from `subscribe()`, triggered by an explicit toggle click on the profile page (Step 3) — never on page load — per this plan's design spec §4 ("after a meaningful action, not on page load — avoids the dismiss-and-never-ask-again trap").
+Save as `apps/user-app/app/composables/usePushSubscription.ts`. Add `apps/user-app/test/nuxt/usePushSubscription.spec.ts` covering the unsupported-browser no-op, a backend-POST-failure rollback, and a success case. Permission is requested from `subscribe()`, triggered by an explicit toggle click on the profile page (Step 3) — never on page load — per this plan's design spec §4 ("after a meaningful action, not on page load — avoids the dismiss-and-never-ask-again trap").
 
 - [ ] **Step 3: Implement the profile page**
 
@@ -4826,7 +4859,7 @@ Run a production build+preview (Task 20's dev-server caveat still applies — pu
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/user-app/app/composables/usePushSubscription.ts apps/user-app/app/pages/profile.vue apps/user-app/nuxt.config.ts .env.example apps/user-app/.env.example
+git add apps/user-app/app/composables/usePushSubscription.ts apps/user-app/test/nuxt/usePushSubscription.spec.ts apps/user-app/app/pages/profile.vue apps/user-app/nuxt.config.ts .env.example apps/user-app/.env.example
 git commit -m "feat(user-app): profile page with saved salons and push notification opt-in"
 ```
 
