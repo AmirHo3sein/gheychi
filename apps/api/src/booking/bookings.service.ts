@@ -155,14 +155,16 @@ export class BookingsService {
     return { paymentUrl };
   }
 
-  async findMine(userId: string, id: string): Promise<Booking> {
+  async findMine(userId: string, id: string): Promise<Booking & { salonName: string; serviceName: string }> {
     const booking = await this.bookings.findOneBy({ id, userId });
     if (!booking) throw new NotFoundException('Booking not found');
-    return booking;
+    const [withNames] = await this.attachNames([booking]);
+    return withNames;
   }
 
-  listMine(userId: string): Promise<Booking[]> {
-    return this.bookings.find({ where: { userId }, order: { startsAt: 'DESC' } });
+  async listMine(userId: string): Promise<Array<Booking & { salonName: string; serviceName: string }>> {
+    const bookings = await this.bookings.find({ where: { userId }, order: { startsAt: 'DESC' } });
+    return this.attachNames(bookings);
   }
 
   async cancel(bookingId: string, callerId: string): Promise<Booking> {
@@ -225,6 +227,23 @@ export class BookingsService {
     });
 
     return (await this.bookings.findOneBy({ id: booking.id }))!;
+  }
+
+  private async attachNames(bookings: Booking[]): Promise<Array<Booking & { salonName: string; serviceName: string }>> {
+    if (bookings.length === 0) return [];
+    const salonIds = [...new Set(bookings.map((b) => b.salonId))];
+    const serviceIds = [...new Set(bookings.map((b) => b.serviceId))];
+    const [salonRows, serviceRows] = await Promise.all([
+      this.salons.find({ where: { id: In(salonIds) } }),
+      this.services.find({ where: { id: In(serviceIds) } }),
+    ]);
+    const salonNameById = new Map(salonRows.map((s) => [s.id, s.name]));
+    const serviceNameById = new Map(serviceRows.map((s) => [s.id, s.name]));
+    return bookings.map((b) => ({
+      ...b,
+      salonName: salonNameById.get(b.salonId) ?? 'Unknown salon',
+      serviceName: serviceNameById.get(b.serviceId) ?? 'Unknown service',
+    }));
   }
 
   listForSalon(salonId: string): Promise<Booking[]> {

@@ -100,6 +100,15 @@ describe('Bookings — create hold (e2e)', () => {
     expect(res.body.length).toBeGreaterThanOrEqual(2);
   });
 
+  it('includes the salon and service names in the list response', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/bookings/mine')
+      .set('Cookie', customerCookie)
+      .expect(200);
+    expect(res.body[0]).toHaveProperty('salonName');
+    expect(res.body[0]).toHaveProperty('serviceName');
+  });
+
   it('fetches a single booking by id, scoped to the caller', async () => {
     const created = await request(app.getHttpServer())
       .post('/api/bookings')
