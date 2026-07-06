@@ -8,7 +8,7 @@ export default defineNuxtConfig({
   // the app across the microtask boundary and throws "useNuxtApp called outside of a
   // plugin/hook/setup function".
   experimental: { asyncContext: true },
-  modules: ['@pinia/nuxt', '@nuxt/test-utils/module', '@nuxt/image'],
+  modules: ['@pinia/nuxt', '@nuxt/test-utils/module', '@nuxt/image', '@vite-pwa/nuxt'],
   css: ['~/assets/css/main.css'],
   // Nested components/<dir>/*.vue would otherwise auto-register with a directory-name
   // prefix (e.g. <LayoutAppHeader>); disabling it lets AppHeader/ThemeToggle/ToastStack
@@ -29,6 +29,31 @@ export default defineNuxtConfig({
     public: {
       apiBase: process.env.NUXT_PUBLIC_API_BASE ?? 'http://localhost:3002/api',
       neshanApiKey: process.env.NUXT_PUBLIC_NESHAN_API_KEY ?? '',
+    },
+  },
+  pwa: {
+    strategies: 'injectManifest',
+    // Nuxt 4's default `srcDir` is already `app/`, and Nuxt configures Vite's `root` to
+    // that directory -- vite-plugin-pwa resolves its own `srcDir` option relative to that
+    // same Vite root. Setting this to `'app'` (as a literal path segment) would therefore
+    // double-resolve to `app/app/sw.ts`, which does not exist. `'.'` correctly resolves to
+    // `app/sw.ts`.
+    srcDir: '.',
+    filename: 'sw.ts',
+    registerType: 'autoUpdate',
+    manifest: {
+      name: 'آرایشگاه',
+      short_name: 'آرایشگاه',
+      description: 'رزرو آنلاین نوبت سالن‌های زیبایی',
+      lang: 'fa',
+      dir: 'rtl',
+      theme_color: '#0EA89B',
+      background_color: '#F4FBFA',
+      display: 'standalone',
+      icons: [
+        { src: '/pwa-192.png', sizes: '192x192', type: 'image/png' },
+        { src: '/pwa-512.png', sizes: '512x512', type: 'image/png' },
+      ],
     },
   },
   app: {
