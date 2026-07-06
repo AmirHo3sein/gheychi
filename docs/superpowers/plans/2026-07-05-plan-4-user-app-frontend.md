@@ -4235,12 +4235,15 @@ git commit -m "feat(user-app): payment callback landing page"
 
 ## Task 19: My bookings, cancel, retry banner, review prompt
 
+**Corrected during code review (execution):** `ReviewPromptModal`'s `/reviews` POST below originally passed `silent: true`, which suppresses `useApi`'s built-in toast-on-error — meaning any non-409 failure (a genuine 500, a network drop) left the modal open with zero visible feedback, worse than the app's own default behavior. `retryPayment`/`cancelBooking` on the My Bookings page don't opt out of that toast, so this was an inconsistency, not a deliberate choice. Fixed by dropping `silent: true` (the 409 "already reviewed" branch is unaffected and still shows its own message); a toast now also fires for 409, an acceptable side effect. Covered by a new `ReviewPromptModal.spec.ts` (success/409/500 cases).
+
 **One more gap found while writing this task:** `GET /bookings/mine` and `GET /bookings/:id` return the bare `Booking` row — `salonId`/`serviceId` only, no names. A bookings list showing nothing but UUIDs isn't usable. `BookingsService` already injects both the `Salon` and `SalonService` repositories (used elsewhere in the same file), so this is a same-file, additive enrichment — no new dependencies, and the existing e2e assertions on these two routes only check array length / individual field presence, never exact deep equality, so adding fields is safe.
 
 **Files:**
 - Modify: `apps/api/src/booking/bookings.service.ts`
 - Test: `apps/api/test/bookings.e2e-spec.ts` (existing file — add assertions)
 - Create: `apps/user-app/app/components/booking/ReviewPromptModal.vue`
+- Test: `apps/user-app/test/nuxt/ReviewPromptModal.spec.ts`
 - Create: `apps/user-app/app/pages/bookings/index.vue`
 - Create: `apps/user-app/app/pages/bookings/[id].vue`
 
@@ -4335,10 +4338,12 @@ const alreadyReviewed = ref(false)
 
 async function submit() {
   submitting.value = true
+  // Not silent: any non-409 failure (500, network drop, validation error) should get the
+  // same generic toast-on-error that retryPayment/cancelBooking already get for free in
+  // bookings/index.vue -- only the 409 "already reviewed" case gets its own UI below.
   const { error } = await apiFetch('/reviews', {
     method: 'POST',
     body: { bookingId: props.bookingId, rating: rating.value, comment: comment.value || undefined },
-    silent: true,
   })
   submitting.value = false
   if (error?.status === 409) {
@@ -4361,7 +4366,13 @@ async function submit() {
           </button>
         </div>
         <textarea v-model="comment" placeholder="نظر شما (اختیاری)" class="w-full rounded-lg border p-2 text-sm" rows="3" />
-        <button type="button" :disabled="submitting" class="w-full rounded-lg bg-(--color-accent) text-white p-2 font-semibold" @click="submit">
+        <button
+          type="button"
+          data-testid="submit-review-button"
+          :disabled="submitting"
+          class="w-full rounded-lg bg-(--color-accent) text-white p-2 font-semibold"
+          @click="submit"
+        >
           ثبت نظر
         </button>
       </template>
@@ -4371,7 +4382,7 @@ async function submit() {
 </template>
 ```
 
-Save as `apps/user-app/app/components/booking/ReviewPromptModal.vue`.
+Save as `apps/user-app/app/components/booking/ReviewPromptModal.vue`. Add `apps/user-app/test/nuxt/ReviewPromptModal.spec.ts` (matching the established `$fetch`-stub mocking pattern) covering three cases: success emits `submitted`; a 409 shows the "already reviewed" message and doesn't emit; a 500 pushes a toast (not silently dropped) and doesn't emit or show the already-reviewed text.
 
 - [ ] **Step 8: Implement the My Bookings list page**
 
@@ -4517,7 +4528,7 @@ With bookings in a mix of states (seed a couple more directly via SQL, or walk t
 - [ ] **Step 11: Commit**
 
 ```bash
-git add apps/user-app/app/components/booking/ReviewPromptModal.vue apps/user-app/app/pages/bookings
+git add apps/user-app/app/components/booking/ReviewPromptModal.vue apps/user-app/test/nuxt/ReviewPromptModal.spec.ts apps/user-app/app/pages/bookings
 git commit -m "feat(user-app): my bookings list with cancel, payment retry, and review prompt"
 ```
 
