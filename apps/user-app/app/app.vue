@@ -1,3 +1,10 @@
+<script setup lang="ts">
+useSeoMeta({
+  titleTemplate: (title) => (title ? `${title} | آرایشگاه` : 'آرایشگاه — رزرو آنلاین نوبت سالن زیبایی'),
+  ogSiteName: 'آرایشگاه',
+})
+</script>
+
 <template>
   <NuxtRouteAnnouncer />
   <!--

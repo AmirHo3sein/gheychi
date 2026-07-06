@@ -8,7 +8,13 @@ export default defineNuxtConfig({
   // the app across the microtask boundary and throws "useNuxtApp called outside of a
   // plugin/hook/setup function".
   experimental: { asyncContext: true },
-  modules: ['@pinia/nuxt', '@nuxt/test-utils/module', '@nuxt/image', '@vite-pwa/nuxt'],
+  modules: ['@pinia/nuxt', '@nuxt/test-utils/module', '@nuxt/image', '@vite-pwa/nuxt', '@nuxtjs/sitemap'],
+  site: {
+    url: process.env.NUXT_PUBLIC_SITE_URL ?? 'http://localhost:3003',
+  },
+  sitemap: {
+    sources: ['/api/__sitemap__/urls'],
+  },
   css: ['~/assets/css/main.css'],
   // Nested components/<dir>/*.vue would otherwise auto-register with a directory-name
   // prefix (e.g. <LayoutAppHeader>); disabling it lets AppHeader/ThemeToggle/ToastStack

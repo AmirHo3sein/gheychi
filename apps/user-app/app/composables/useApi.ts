@@ -32,7 +32,7 @@ export function useApi() {
     }
 
     try {
-      const data = await $fetch<T>(path, {
+      const data = await $fetch<T, string>(path, {
         baseURL: config.public.apiBase,
         method: options.method ?? 'GET',
         body: options.body as Record<string, unknown> | undefined,
