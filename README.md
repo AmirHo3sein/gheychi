@@ -5,9 +5,9 @@ Salon discovery & booking marketplace (Iran). Spec: `docs/superpowers/specs/2026
 ## Structure
 
 - `apps/api` — NestJS modular monolith (PostgreSQL + PostGIS, Redis)
-- `apps/user-app` — Nuxt 3 PWA (Plan 3)
-- `apps/provider-panel` — Vue 3 SPA (Plan 4)
-- `apps/admin-panel` — Vue 3 SPA (Plan 5)
+- `apps/user-app` — Nuxt 4, mobile-first PWA (Plan 4)
+- `apps/provider-panel` — Vue 3 SPA (future plan, not yet started)
+- `apps/admin-panel` — Vue 3 SPA (future plan, not yet started)
 
 ## Getting started
 
@@ -18,6 +18,13 @@ pnpm install
 pnpm --filter @arayeshgah/api migration:run
 pnpm dev:api                  # http://localhost:3002/api/health
 ```
+
+```bash
+cp apps/user-app/.env.example apps/user-app/.env   # set NUXT_PUBLIC_NESHAN_API_KEY and NUXT_PUBLIC_VAPID_PUBLIC_KEY for map/push features
+pnpm dev:user-app                                   # http://localhost:3003
+```
+
+`NUXT_PUBLIC_VAPID_PUBLIC_KEY` must be the public half of the same keypair as the API's `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` (`.env.example` at the repo root) — generate one pair with `npx web-push generate-vapid-keys` and split the two halves between the two `.env` files. Map and push both degrade gracefully without real keys (map view fails silently back to list view; push subscribe UI just won't do anything meaningful) — neither blocks the rest of the app.
 
 (Ports are non-default on this machine — see the "Port note" in `docs/superpowers/plans/2026-07-04-plan-1-foundation-backend-core.md`'s Task 2 section if setting up fresh elsewhere and `.env.example`'s values need adjusting for local port conflicts.)
 
@@ -54,3 +61,18 @@ Two background jobs run every 1 and 5 minutes respectively: expiring abandoned b
 **Moderation is reactive, not pre-publish**: a review is `published` the instant it's created; there's no queue to clear before it's visible. An admin can later flip it to `rejected` (or back) if a report is upheld — how a report reaches an admin (support ticket, phone call) is outside this system for MVP, same as Zarinpal refund settlement in Plan 2.
 
 `salons.rating_avg`/`rating_count` are always recomputed from every currently-`published` review for that salon, in the same transaction as any status-changing write — never incremented/decremented in place — so a rejection (or reversal) immediately and correctly updates the salon's public rating. The recompute locks the salon row first (`SELECT ... FOR UPDATE`) before reading the aggregate, closing a lost-update race that a naive single-statement `UPDATE ... FROM (aggregate subquery)` would have under concurrent writes to the same salon's reviews.
+
+## User app (Plan 4)
+
+The first real UI: a Nuxt 4 SSR PWA covering login, discovery, salon profiles, booking, my bookings, and profile — plus an admin-controlled "featured salon" placement and push/SMS appointment notifications. Full design: `docs/superpowers/specs/2026-07-05-plan-4-user-app-frontend-design.md`.
+
+**New public (unauthenticated) surface, specifically for SEO:** salon profile pages (`/salons/:slug`) are the one part of this app reachable without logging in — they're SSR-rendered with JSON-LD/OG metadata as Google landing pages, matching the original marketplace spec's intent. Every other route requires a session.
+
+**Featured salons ("تبلیغ" / Ad badge):** `PATCH /api/admin/salons/:id/featured` (admin-only) flags a salon as featured with an optional expiry. Featured, still-approved, still-filter-matching salons are boosted to the top of `/api/search` results (capped at 2 per query) and rendered with a distinct badge — this can never bypass the gender/city/category filters every other result already goes through. There's no self-serve payment flow yet; an admin sets the flag directly (via the bare-bones `/admin/featured` page in the frontend, or the API) until a real admin-panel and pricing model exist.
+
+**Push notifications, and closing Plan 2's reminder gap:** booking confirmations now send a push notification alongside the existing SMS, and a new scheduled job (`booking-reminder.job.ts`, same pattern as the existing hold-expiry/reconciliation jobs) sends both an SMS and a push reminder a configurable number of hours (`platform_config.reminder_lead_hours`, seeded at 3) before each confirmed appointment — Plan 2 shipped without this.
+
+**Known gaps carried forward, not fixed by this plan:**
+- `salon_photos` has a public read endpoint now, but still no upload path anywhere in the system — galleries stay empty until provider-panel (a future plan) ships photo management.
+- The admin `/admin/featured` page and the two admin salon endpoints it calls are intentionally minimal — there's still no salon-approval workflow (`pending` → `approved`) anywhere in the API; that remains a future admin-panel concern, same as before this plan.
+- Blog/content-marketing SEO is a separate, not-yet-started Plan 5 — this plan only covers the salon-profile side of SEO.
