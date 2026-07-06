@@ -39,7 +39,7 @@ pnpm --filter @arayeshgah/api test:e2e    # e2e (needs docker services)
 
 - `POST /api/bookings` — hold a slot + get a Zarinpal deposit payment URL (customer, authenticated)
 - `GET /api/salons/:salonId/availability?serviceId=...` — next 14 days of open slots (public)
-- `GET /api/payments/callback?Authority=...&Status=OK|NOK` — Zarinpal redirects here; returns JSON (no frontend to redirect to yet)
+- `GET /api/payments/callback?Authority=...&Status=OK|NOK` — Zarinpal redirects here; the API 302s onward to `/booking/callback?status=...&bookingId=...` on the frontend (Plan 4's `apps/user-app/app/pages/booking/callback.vue`), which renders the success/failure confirmation
 - `GET /api/bookings/mine`, `GET /api/bookings/:id`, `POST /api/bookings/:id/cancel` — customer-facing
 - `GET /api/salons/mine/bookings`, `PATCH /api/salons/mine/bookings/:id` — provider-facing (mark completed/no_show)
 
