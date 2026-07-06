@@ -4867,16 +4867,20 @@ git commit -m "feat(user-app): profile page with saved salons and push notificat
 
 ## Task 22: SEO — sitemap, robots.txt, default meta
 
+**Corrected during code review (execution):** the Step 10 `app.vue` snippet below predates Tasks 12/20 and, if followed literally, would have deleted the `<NuxtLayout>` wrap (Task 12 — a hard Nuxt 4 requirement for `definePageMeta({layout})` to have any effect) and `<VitePwaManifest />` (Task 20 — required for the manifest `<link>` to ever appear). Only the new `<script setup>` block is new; the existing template is untouched. Also, the plan's `server/api/__sitemap__/urls.ts` snippet imports `defineSitemapEventHandler` from `'#imports'`, which fails `nuxt typecheck` in this repo's non-composite `vue-tsc` setup (`#imports` resolves to the app-side auto-import map here, not the server-side one) — fixed by importing `defineEventHandler` from `h3` directly (confirmed via the installed package's own source: `defineSitemapEventHandler` literally *is* `defineEventHandler`, just narrowed to a return type). Separately, merely installing `@nuxtjs/sitemap` broke `useApi.ts`'s `$fetch<T>(path, ...)` type inference (it registers its own typed Nitro routes returning bare `string`, widening `$fetch`'s unspecified second type parameter across every known route) — fixed via `$fetch<T, string>(path, ...)`, a type-level-only change (verified safe: `apiFetch` always targets the separate backend origin, never this app's own local Nitro routes, so this was never providing real typo-protection to begin with). Also added a negative-case test confirming non-approved salons are excluded from the sitemap.
+
 No existing endpoint lists every approved salon slug (search requires a location; `/admin/salons` requires admin auth) — the sitemap needs exactly that, unfiltered by location, so this task adds one small public endpoint for it first.
 
 **Files:**
 - Create: `apps/api/src/salons/sitemap-salons.controller.ts`
 - Modify: `apps/api/src/salons/salons.module.ts`
-- Test: `apps/api/test/public-salon-content.e2e-spec.ts` (existing file — add a test)
+- Test: `apps/api/test/public-salon-content.e2e-spec.ts` (existing file — add two tests: approved slug present, non-approved slug absent)
 - Modify: `apps/user-app/package.json`
 - Modify: `apps/user-app/nuxt.config.ts`
+- Modify: `apps/user-app/app/composables/useApi.ts` (`$fetch<T>` → `$fetch<T, string>` — see correction note above)
 - Create: `apps/user-app/server/api/__sitemap__/urls.ts`
 - Create: `apps/user-app/public/robots.txt`
+- Modify: `apps/user-app/app/app.vue` (adds only a `useSeoMeta` script block — the existing template, including Task 12's `<NuxtLayout>` and Task 20's `<VitePwaManifest />`, must not be touched)
 
 - [ ] **Step 1: Write the failing backend test**
 
@@ -4953,7 +4957,12 @@ Add to `apps/user-app/nuxt.config.ts`:
 
 ```typescript
 import type { SitemapUrlInput } from '#sitemap/types'
-import { defineSitemapEventHandler } from '#imports'
+// Not '#imports' -- in this repo's non-composite vue-tsc setup, '#imports' resolves to the
+// app-side auto-import map (not the server-side one used by defineSitemapEventHandler),
+// which fails nuxt typecheck. defineSitemapEventHandler literally is h3's own
+// defineEventHandler, just narrowed to a SitemapUrlInput[] return type, so this is
+// behaviorally identical.
+import { defineEventHandler as defineSitemapEventHandler } from 'h3'
 
 export default defineSitemapEventHandler(async () => {
   const config = useRuntimeConfig()
@@ -5011,7 +5020,7 @@ Run a production build+preview. Visit `/sitemap.xml` and confirm it lists every 
 - [ ] **Step 12: Commit**
 
 ```bash
-git add apps/user-app/package.json apps/user-app/nuxt.config.ts apps/user-app/server apps/user-app/public/robots.txt apps/user-app/app/app.vue
+git add apps/user-app/package.json apps/user-app/nuxt.config.ts apps/user-app/app/composables/useApi.ts apps/user-app/server apps/user-app/public/robots.txt apps/user-app/app/app.vue
 git commit -m "feat(user-app): dynamic sitemap, robots.txt, and default SEO meta"
 ```
 
