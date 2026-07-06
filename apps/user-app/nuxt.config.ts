@@ -29,6 +29,7 @@ export default defineNuxtConfig({
     public: {
       apiBase: process.env.NUXT_PUBLIC_API_BASE ?? 'http://localhost:3002/api',
       neshanApiKey: process.env.NUXT_PUBLIC_NESHAN_API_KEY ?? '',
+      vapidPublicKey: process.env.NUXT_PUBLIC_VAPID_PUBLIC_KEY ?? '',
     },
   },
   pwa: {
