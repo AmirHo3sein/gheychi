@@ -4083,6 +4083,10 @@ git commit -m "feat(user-app): booking confirm sheet with accurate deposit terms
 
 **Another gap found while writing this task:** the original design spec says "pending payments surface as a retry banner" (§5), but there was never a backend way to resume one — the Zarinpal `paymentUrl` is only ever returned once, from the initial `POST /bookings` response, and `payments.booking_id` is unique (one payment row per booking), so a retry can't just insert a second payment row either. This task adds a `POST /bookings/:id/retry-payment` endpoint that updates the *existing* payment row with a fresh gateway authority, mirroring the tail end of `BookingsService.createHold()`.
 
+**Corrected during code review (execution):** two backend deviations from the snippets below, both genuine improvements kept as shipped — (1) `retryPayment()` splits "not found/not yours" (404, via a single ownership-scoped `findOneBy({id, userId})`, no existence leak) from "wrong state" (409, a field read on the already-fetched row — zero extra round trips), rather than the snippet's single collapsed 404; (2) the payment-session-creation logic (gateway call + persisting the authority) was extracted into a shared `createPaymentSession()` private method reused by both `createHold()` and `retryPayment()`, not duplicated inline as shown below. The e2e tests reflect `409` for the wrong-state case accordingly. Separately, the frontend callback page went through a real detour during execution — an initial version incorrectly added a retry button directly on this page — before being corrected back to the passive design below; see the note after the frontend snippet.
+
+**Known gap surfaced during review, deferred to Task 19:** a customer whose payment is genuinely *declined* (not abandoned) lands on this same callback page with their booking already `cancelled_by_user` (see `PaymentsService.markFailed`) — `retryPayment()` correctly refuses them (409, not `pending_payment`), and this page has no way to route them back into a fresh booking attempt (the callback redirect doesn't carry the salon slug). Today this is a genuine dead end for that one case. Worth revisiting once Task 19 exists — either by having the callback redirect also carry the salon slug so this page can add a "try again" link, or by handling it entirely within Task 19's own surface.
+
 **Files:**
 - Modify: `apps/api/src/booking/bookings.service.ts`
 - Modify: `apps/api/src/booking/bookings.controller.ts`
@@ -4213,6 +4217,8 @@ const bookingId = route.query.bookingId as string
 ```
 
 Save as `apps/user-app/app/pages/booking/callback.vue`. It deliberately does not re-fetch or re-verify anything against the API — `PaymentsService.handleCallback` (Task 1) already did the one authoritative server-side verification before issuing this redirect; this page just reflects that outcome and links onward. The actual "retry banner" UI that calls `POST /bookings/:id/retry-payment` lives on the My Bookings page (Task 19), where a `pending_payment` booking is something the user browses to intentionally, not something reachable mid-flow here.
+
+**Confirmed during execution:** a first attempt put a retry button directly on this page instead — a task-briefing error, not a deliberate design change — and was reverted back to the passive version above once caught. No test file was added for this page, matching the precedent already set by `login.vue`/`index.vue` (async/stateful logic gets tests; inert query-param-driven display text doesn't) rather than every page needing one.
 
 - [ ] **Step 9: Manual verification**
 
