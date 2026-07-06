@@ -73,4 +73,9 @@ describe('Public salon content (e2e)', () => {
     await request(app.getHttpServer()).get('/api/salons/does-not-exist/hours').expect(404);
     await request(app.getHttpServer()).get('/api/salons/does-not-exist/photos').expect(404);
   });
+
+  it('lists all approved salon slugs for the sitemap, unfiltered by location', async () => {
+    const res = await request(app.getHttpServer()).get('/api/sitemap/salon-slugs').expect(200);
+    expect(res.body).toContain(slug);
+  });
 });

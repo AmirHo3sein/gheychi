@@ -12,6 +12,7 @@ import { SalonsController } from './salons.controller';
 import { SalonsService } from './salons.service';
 import { ScheduleController } from './schedule.controller';
 import { ScheduleException } from './schedule-exception.entity';
+import { SitemapSalonsController } from './sitemap-salons.controller';
 import { WorkingHour } from './working-hour.entity';
 
 @Module({
@@ -24,6 +25,7 @@ import { WorkingHour } from './working-hour.entity';
     ScheduleController,
     SalonsController,
     AdminSalonsController,
+    SitemapSalonsController,
     // PublicSalonContentController owns wildcard routes shaped `salons/:slug/...` (e.g. services, hours).
     // NestJS/Express matches routes in registration order, not by specificity, so it MUST stay registered
     // after any controller with a literal `salons/mine/...`-shaped route of the same depth (currently
