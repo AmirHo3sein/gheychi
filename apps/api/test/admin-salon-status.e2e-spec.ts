@@ -43,6 +43,26 @@ describe('Admin salon status transitions (e2e)', () => {
     expect(res.body.rejectionReason).toBeNull();
   });
 
+  it('approves a pending salon with an explicit empty-string reason', async () => {
+    const res = await request(app.getHttpServer())
+      .patch(`/api/admin/salons/${salonId}/status`)
+      .set('Cookie', adminCookie)
+      .send({ status: 'approved', reason: '' })
+      .expect(200);
+    expect(res.body.status).toBe('approved');
+    expect(res.body.rejectionReason).toBeNull();
+  });
+
+  it('approves a pending salon with a null reason', async () => {
+    const res = await request(app.getHttpServer())
+      .patch(`/api/admin/salons/${salonId}/status`)
+      .set('Cookie', adminCookie)
+      .send({ status: 'approved', reason: null })
+      .expect(200);
+    expect(res.body.status).toBe('approved');
+    expect(res.body.rejectionReason).toBeNull();
+  });
+
   it('rejects a pending salon and stores the reason', async () => {
     const res = await request(app.getHttpServer())
       .patch(`/api/admin/salons/${salonId}/status`)
