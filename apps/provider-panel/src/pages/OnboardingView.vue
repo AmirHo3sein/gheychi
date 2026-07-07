@@ -31,6 +31,8 @@ const isSalonInfoValid = computed(
     form.salonInfo.genderTarget !== '' &&
     form.salonInfo.city.trim().length > 0 &&
     form.salonInfo.address.trim().length > 0 &&
+    form.salonInfo.capacity >= 1 &&
+    form.salonInfo.capacity <= 50 &&
     form.salonInfo.lat !== null &&
     form.salonInfo.lng !== null,
 )

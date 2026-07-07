@@ -32,6 +32,7 @@ function onPin(pos: { lat: number; lng: number }) {
     <input v-model="model.address" data-testid="address" placeholder="آدرس" class="w-full rounded-lg border p-3" />
     <input
       v-model.number="model.capacity"
+      data-testid="capacity"
       type="number"
       min="1"
       max="50"

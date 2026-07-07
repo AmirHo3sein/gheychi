@@ -43,4 +43,27 @@ describe('OnboardingView', () => {
 
     expect((next.element as HTMLButtonElement).disabled).toBe(false)
   })
+
+  it('keeps the next button disabled when capacity is out of the 1-50 range', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ([]) }))
+    const router = makeRouter()
+    await router.push('/onboarding')
+    await router.isReady()
+    const wrapper = mount(OnboardingView, { global: { plugins: [router] } })
+
+    await wrapper.find('[data-testid="salon-name"]').setValue('سالن سارا')
+    await wrapper.find('[data-testid="gender-target"]').setValue('women')
+    await wrapper.find('[data-testid="city"]').setValue('تهران')
+    await wrapper.find('[data-testid="address"]').setValue('خیابان ولیعصر، پلاک ۱')
+    await wrapper.find('[data-testid="capacity"]').setValue(0)
+    // The map pin picker doesn't run in jsdom/happy-dom (no real Neshan SDK) -- set the
+    // coordinates directly the way the picker's @update:model-value handler would.
+    await wrapper.setData({ form: { salonInfo: { lat: 35.7, lng: 51.4 } } })
+
+    const next = wrapper.find('[data-testid="wizard-next"]')
+    expect((next.element as HTMLButtonElement).disabled).toBe(true)
+
+    await wrapper.find('[data-testid="capacity"]').setValue(5)
+    expect((next.element as HTMLButtonElement).disabled).toBe(false)
+  })
 })
