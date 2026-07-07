@@ -56,7 +56,20 @@ export class SalonsService {
     if (salon.status !== 'rejected') {
       throw new BadRequestException('Only a rejected salon can be resubmitted');
     }
-    await this.repo.update({ id: salon.id }, { status: 'pending', rejectionReason: null });
+    // Guard against a concurrent admin action (approve or re-reject) on the same
+    // salon landing between the read above and this write -- without conditioning
+    // on the status still being 'rejected', an unconditional update({id}, ...) would
+    // silently clobber whatever the admin just set, with no error to either caller.
+    // Conditioning the update on the previously-read status (the same pattern used
+    // by BookingsService's cancel()/updateStatus()) means only the winner's write
+    // lands; a losing concurrent call gets a clear 409 instead of a misleading 200.
+    const result = await this.repo.update(
+      { id: salon.id, status: 'rejected' },
+      { status: 'pending', rejectionReason: null },
+    );
+    if (!result.affected) {
+      throw new ConflictException('Salon status changed before this resubmission could be applied');
+    }
     return (await this.repo.findOneBy({ id: salon.id }))!;
   }
 
