@@ -25,8 +25,14 @@ export function createAppRouter(history: RouterHistory): Router {
 
     if (!session.checked) {
       const { apiFetch } = useApi()
-      const { data } = await apiFetch<SessionUser>('/auth/me', { silent: true, redirectOn401: false })
-      session.setUser(data)
+      const { data, error } = await apiFetch<SessionUser>('/auth/me', { silent: true, redirectOn401: false })
+      // A network/5xx error isn't the same as a confirmed 401 -- don't mark session.checked
+      // in that case, so the next navigation retries instead of permanently treating a
+      // transient blip as "confirmed logged out" for the rest of this tab's session. Mirrors
+      // the same distinction useSalon.refetch() already makes for 404 vs. other errors.
+      if (!error || error.status === 401) {
+        session.setUser(data)
+      }
     }
 
     if (to.meta.public) {

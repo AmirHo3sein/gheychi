@@ -65,4 +65,26 @@ describe('router guard', () => {
     await router.isReady()
     expect(router.currentRoute.value.name).toBe('bookings')
   })
+
+  it('keeps an unauthenticated visitor already navigating to /login on /login', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({}) }))
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/login')
+    await router.isReady()
+    expect(router.currentRoute.value.name).toBe('login')
+  })
+
+  it('keeps a logged-in provider with no salon yet on /onboarding when navigating there directly', async () => {
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
+      if (url.includes('/auth/me')) {
+        return Promise.resolve({ ok: true, status: 200, json: async () => ({ id: 'u1', role: 'customer' }) })
+      }
+      return Promise.resolve({ ok: false, status: 404, json: async () => ({}) })
+    }))
+    useSessionStore().setUser({ id: 'u1', phone: '0912', name: null, gender: null, role: 'customer' })
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/onboarding')
+    await router.isReady()
+    expect(router.currentRoute.value.name).toBe('onboarding')
+  })
 })
