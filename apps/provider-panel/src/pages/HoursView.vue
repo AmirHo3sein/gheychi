@@ -27,7 +27,16 @@ async function loadHours() {
   if (!data) return
   for (const day of hours.value) {
     const match = data.find((h) => h.weekday === day.weekday)
-    if (match) Object.assign(day, { ...match, enabled: true })
+    // Postgres `time` columns round-trip through pg as HH:MM:SS, but the PUT
+    // validation (HourRangeDto) and the <input type="time"> fields only accept HH:MM.
+    if (match) {
+      Object.assign(day, {
+        weekday: match.weekday,
+        openTime: match.openTime.slice(0, 5),
+        closeTime: match.closeTime.slice(0, 5),
+        enabled: true,
+      })
+    }
   }
 }
 
@@ -66,7 +75,12 @@ async function removeException(id: string) {
     <section>
       <h1 class="mb-2 text-lg font-bold">ساعات کاری هفتگی</h1>
       <ScheduleStep v-model="hours" />
-      <button type="button" class="mt-3 rounded-lg bg-(--color-accent) px-4 py-2 text-white" @click="saveHours">
+      <button
+        type="button"
+        data-testid="save-hours"
+        class="mt-3 rounded-lg bg-(--color-accent) px-4 py-2 text-white"
+        @click="saveHours"
+      >
         ذخیره ساعات کاری
       </button>
     </section>
