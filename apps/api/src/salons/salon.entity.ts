@@ -1,7 +1,7 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 export type GenderTarget = 'women' | 'men';
-export type SalonStatus = 'pending' | 'approved' | 'suspended';
+export type SalonStatus = 'pending' | 'approved' | 'rejected' | 'suspended';
 
 export interface GeoPoint {
   type: 'Point';
@@ -30,6 +30,9 @@ export class Salon {
 
   @Column({ type: 'varchar', default: 'pending' })
   status: SalonStatus;
+
+  @Column({ name: 'rejection_reason', type: 'text', nullable: true })
+  rejectionReason: string | null;
 
   @Column({ type: 'text' })
   address: string;
