@@ -16,4 +16,7 @@ export class SalonPhoto {
 
   @Column({ name: 'is_cover', type: 'boolean', default: false })
   isCover: boolean;
+
+  @Column({ name: 'storage_key' })
+  storageKey: string;
 }
