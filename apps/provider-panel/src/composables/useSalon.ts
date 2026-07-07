@@ -19,7 +19,15 @@ export function useSalon() {
   const { apiFetch } = useApi()
 
   async function refetch(): Promise<void> {
-    const { data } = await apiFetch<Salon>('/salons/mine', { silent: true, redirectOn401: false })
+    const { data, error } = await apiFetch<Salon>('/salons/mine', { silent: true, redirectOn401: false })
+    if (error && error.status !== 404) {
+      // A transient failure (network error, 500, etc.) isn't the same as "confirmed no
+      // salon" -- leave salon.value as whatever it already was rather than nulling out a
+      // possibly-still-valid previous fetch, so a flaky response can't bounce an already-
+      // approved provider into onboarding.
+      checked.value = true
+      return
+    }
     salon.value = data
     checked.value = true
   }

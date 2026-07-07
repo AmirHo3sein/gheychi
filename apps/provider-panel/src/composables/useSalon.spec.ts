@@ -50,4 +50,26 @@ describe('useSalon', () => {
     expect(checked.value).toBe(false)
     expect(salon.value).toBeNull()
   })
+
+  it('leaves salon unchanged on a non-404 error (e.g. a transient 500)', async () => {
+    resetSalon()
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 's1', status: 'approved' }),
+    }))
+    const { salon, refetch } = useSalon()
+    await refetch()
+    expect(salon.value).toEqual({ id: 's1', status: 'approved' })
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ message: 'Internal server error' }),
+    }))
+    await refetch()
+
+    expect(salon.value).toEqual({ id: 's1', status: 'approved' })
+  })
 })
