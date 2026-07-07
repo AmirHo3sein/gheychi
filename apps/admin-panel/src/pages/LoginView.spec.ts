@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import LoginView from './LoginView.vue'
+import { useSessionStore } from '@/stores/session'
 
 const fetchMock = vi.fn()
 
@@ -20,18 +21,19 @@ describe('LoginView', () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
-        { path: '/login', component: LoginView },
-        { path: '/', component: { template: '<div />' } },
+        { path: '/login', name: 'login', component: LoginView },
+        { path: '/', name: 'dashboard', component: { template: '<div />' } },
       ],
     })
     router.push('/login')
     await router.isReady()
-    return mount(LoginView, { global: { plugins: [router] } })
+    const wrapper = mount(LoginView, { global: { plugins: [router] } })
+    return { wrapper, router }
   }
 
   it('requests an OTP for the entered phone number', async () => {
     fetchMock.mockResolvedValueOnce({ data: { ok: true }, error: null })
-    const wrapper = await mountWithRouter()
+    const { wrapper } = await mountWithRouter()
 
     await wrapper.get('[data-testid="phone-input"]').setValue('09120000900')
     // happy-dom doesn't implement the browser's implicit "clicking a submit
@@ -51,7 +53,7 @@ describe('LoginView', () => {
 
   it('shows an inline error and does not advance when the OTP request fails', async () => {
     fetchMock.mockResolvedValueOnce({ data: null, error: { status: 429, message: 'too many requests' } })
-    const wrapper = await mountWithRouter()
+    const { wrapper } = await mountWithRouter()
 
     await wrapper.get('[data-testid="phone-input"]').setValue('09120000900')
     await wrapper.get('[data-testid="phone-form"]').trigger('submit')
@@ -68,7 +70,7 @@ describe('LoginView', () => {
         data: { user: { id: 'u1', phone: '09120000900', name: null, gender: null, role: 'admin' }, isNewUser: false },
         error: null,
       })
-    const wrapper = await mountWithRouter()
+    const { wrapper, router } = await mountWithRouter()
 
     await wrapper.get('[data-testid="phone-input"]').setValue('09120000900')
     await wrapper.get('[data-testid="phone-form"]').trigger('submit')
@@ -78,11 +80,36 @@ describe('LoginView', () => {
     await wrapper.get('[data-testid="code-form"]').trigger('submit')
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
+    await new Promise((r) => setTimeout(r, 0))
+    await router.isReady()
 
     expect(fetchMock).toHaveBeenCalledWith('/auth/verify-otp', {
       method: 'POST',
       body: { phone: '09120000900', code: '123456' },
       silent: true,
     })
+    expect(useSessionStore().isLoggedIn).toBe(true)
+    expect(router.currentRoute.value.name).toBe('dashboard')
+  })
+
+  it('shows an error and stays on the code step when verify-otp fails', async () => {
+    fetchMock
+      .mockResolvedValueOnce({ data: { ok: true }, error: null })
+      .mockResolvedValueOnce({ data: null, error: { status: 400, message: 'کد وارد شده اشتباه است' } })
+    const { wrapper, router } = await mountWithRouter()
+
+    await wrapper.get('[data-testid="phone-input"]').setValue('09120000900')
+    await wrapper.get('[data-testid="phone-form"]').trigger('submit')
+    await wrapper.vm.$nextTick()
+
+    await wrapper.get('[data-testid="code-input"]').setValue('000000')
+    await wrapper.get('[data-testid="code-form"]').trigger('submit')
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="code-input"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('کد وارد شده اشتباه است')
+    expect(useSessionStore().isLoggedIn).toBe(false)
+    expect(router.currentRoute.value.name).toBe('login')
   })
 })
