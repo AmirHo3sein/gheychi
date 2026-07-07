@@ -4,6 +4,14 @@ import { loginAs } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
 
+// A minimal valid 1x1 transparent PNG (real magic-number bytes, not fake/placeholder
+// content) -- needed because NestJS's FileTypeValidator does real magic-number sniffing
+// via the `file-type` package, not a pure mimetype-string check.
+const MINIMAL_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'base64',
+);
+
 describe('Salon photos (e2e)', () => {
   let app: INestApplication;
   let cookie: string;
@@ -32,7 +40,7 @@ describe('Salon photos (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post('/api/salons/mine/photos')
       .set('Cookie', cookie)
-      .attach('file', Buffer.from('fake-image-bytes'), { filename: 'a.jpg', contentType: 'image/jpeg' })
+      .attach('file', MINIMAL_PNG, { filename: 'a.jpg', contentType: 'image/jpeg' })
       .expect(201);
     photoId = res.body.id;
     expect(res.body.isCover).toBe(true);

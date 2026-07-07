@@ -38,12 +38,10 @@ export class SalonPhotosController {
     @Req() req: Request,
     @UploadedFile(
       new ParseFilePipeBuilder()
-        // fallbackToMimetype: Nest's default magic-number sniffing (via the `file-type` package)
-        // relies on a dynamic import that this project's Jest/ts-jest e2e setup can't resolve, which
-        // would otherwise reject every upload with a false-negative 422. Falling back to the
-        // (already-validated-by-regex) declared mimetype keeps the endpoint working in both the test
-        // and production runtimes; magic-number sniffing still applies first wherever it *can* run.
-        .addFileTypeValidator({ fileType: /^image\/(jpeg|png|webp)$/, fallbackToMimetype: true })
+        // Real magic-number content-sniffing (via the `file-type` package), with no
+        // mimetype-trusting fallback. The client-declared Content-Type header is never
+        // trusted on its own; only actual file bytes matching a real image signature pass.
+        .addFileTypeValidator({ fileType: /^image\/(jpeg|png|webp)$/ })
         .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY }),
     )
     file: Express.Multer.File,
