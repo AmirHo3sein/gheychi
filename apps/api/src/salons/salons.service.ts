@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { UsersService } from '../users/users.service';
@@ -48,6 +48,16 @@ export class SalonsService {
       salon.location = { type: 'Point', coordinates: [lng, lat] };
     }
     return this.repo.save(salon);
+  }
+
+  async resubmitMine(ownerId: string): Promise<Salon> {
+    const salon = await this.repo.findOneBy({ ownerId });
+    if (!salon) throw new NotFoundException('Salon not found');
+    if (salon.status !== 'rejected') {
+      throw new BadRequestException('Only a rejected salon can be resubmitted');
+    }
+    await this.repo.update({ id: salon.id }, { status: 'pending', rejectionReason: null });
+    return (await this.repo.findOneBy({ id: salon.id }))!;
   }
 
   async findPublicBySlug(slug: string): Promise<Salon> {

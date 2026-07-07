@@ -27,6 +27,12 @@ export class SalonsController {
     return this.salons.updateMine((req.user as User).id, dto);
   }
 
+  @Post('mine/resubmit')
+  @UseGuards(AuthGuard)
+  resubmit(@Req() req: Request) {
+    return this.salons.resubmitMine((req.user as User).id);
+  }
+
   @Get(':slug')
   publicProfile(@Param('slug') slug: string) {
     return this.salons.findPublicBySlug(slug);
