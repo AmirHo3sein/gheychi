@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
+import { buildAllowedOrigins } from './cors-origins.util';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -16,7 +17,7 @@ async function bootstrap() {
   // localhost, or sibling subdomains in production) -- if the frontend ever moves to a genuinely
   // different registrable domain, Lax cookies stop being sent cross-origin and auth silently breaks.
   app.enableCors({
-    origin: nestConfig.get('FRONTEND_BASE_URL', 'http://localhost:3003'),
+    origin: buildAllowedOrigins(nestConfig),
     credentials: true,
   });
   await app.listen(process.env.PORT ?? 3000);
