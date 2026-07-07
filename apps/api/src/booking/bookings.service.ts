@@ -250,6 +250,30 @@ export class BookingsService {
     return this.bookings.find({ where: { salonId }, order: { startsAt: 'DESC' } });
   }
 
+  async getEarnings(salonId: string): Promise<{
+    totalCollected: number;
+    commissionPercent: number;
+    commissionAmount: number;
+    netPayout: number;
+  }> {
+    const bookings = await this.bookings.find({ where: { salonId }, select: ['id'] });
+    const bookingIds = bookings.map((b) => b.id);
+    const paidPayments = bookingIds.length
+      ? await this.payments.find({ where: { bookingId: In(bookingIds), status: 'paid' } })
+      : [];
+
+    const totalCollected = paidPayments.reduce((sum, p) => sum + p.amount, 0);
+    const commissionPercent = await this.config.getCommissionPercent();
+    const commissionAmount = Math.round((totalCollected * commissionPercent) / 100);
+
+    return {
+      totalCollected,
+      commissionPercent,
+      commissionAmount,
+      netPayout: totalCollected - commissionAmount,
+    };
+  }
+
   async updateStatus(salonId: string, bookingId: string, status: 'completed' | 'no_show'): Promise<Booking> {
     const booking = await this.bookings.findOneBy({ id: bookingId, salonId });
     if (!booking) throw new NotFoundException('Booking not found');

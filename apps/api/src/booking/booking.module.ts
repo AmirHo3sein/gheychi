@@ -21,6 +21,7 @@ import { PaymentReconciliationJob } from './payment-reconciliation.job';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 import { SalonBookingsController } from './salon-bookings.controller';
+import { SalonEarningsController } from './salon-earnings.controller';
 import { ZarinpalGateway } from './zarinpal-payment.gateway';
 
 @Module({
@@ -33,7 +34,7 @@ import { ZarinpalGateway } from './zarinpal-payment.gateway';
     PushModule,
     UsersModule,
   ],
-  controllers: [AvailabilityController, BookingsController, PaymentsController, SalonBookingsController],
+  controllers: [AvailabilityController, BookingsController, PaymentsController, SalonBookingsController, SalonEarningsController],
   providers: [
     AvailabilityService,
     BookingsService,
