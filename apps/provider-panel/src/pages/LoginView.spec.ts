@@ -69,4 +69,28 @@ describe('LoginView', () => {
     expect(wrapper.find('[data-testid="code-input"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('شماره موبایل نامعتبر است')
   })
+
+  it('shows an error and stays on the code step when verify-otp fails', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({}) }) // request-otp succeeds
+      .mockResolvedValueOnce({ ok: false, status: 400, json: async () => ({ message: 'bad code' }) }) // verify-otp fails
+    vi.stubGlobal('fetch', fetchMock)
+
+    const router = makeRouter()
+    await router.push('/login')
+    await router.isReady()
+    const wrapper = mount(LoginView, { global: { plugins: [router] } })
+
+    await wrapper.find('[data-testid="phone-input"]').setValue('09120000000')
+    await wrapper.find('[data-testid="phone-form"]').trigger('submit')
+    await new Promise((r) => setTimeout(r, 0))
+
+    await wrapper.find('[data-testid="code-input"]').setValue('0000')
+    await wrapper.find('[data-testid="code-form"]').trigger('submit')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(wrapper.find('[data-testid="code-input"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('کد وارد شده اشتباه است')
+    expect(useSessionStore().isLoggedIn).toBe(false)
+  })
 })
