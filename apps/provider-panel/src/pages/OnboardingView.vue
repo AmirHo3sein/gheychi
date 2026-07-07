@@ -1,10 +1,20 @@
 <!-- apps/provider-panel/src/pages/OnboardingView.vue -->
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import SalonInfoStep from '@/components/onboarding/SalonInfoStep.vue'
 import ScheduleStep from '@/components/onboarding/ScheduleStep.vue'
+import FirstServiceStep from '@/components/onboarding/FirstServiceStep.vue'
+import { useApi } from '@/composables/useApi'
+import { useSalon } from '@/composables/useSalon'
+
+const router = useRouter()
+const { apiFetch } = useApi()
+const { refetch } = useSalon()
 
 const step = ref(1)
+const submitting = ref(false)
+const submitError = ref('')
 
 const form = reactive({
   salonInfo: {
@@ -23,6 +33,12 @@ const form = reactive({
     closeTime: '20:00',
     enabled: false,
   })),
+  service: {
+    categoryId: null as number | null,
+    name: '',
+    price: 0,
+    durationMin: 30,
+  },
 })
 
 const isSalonInfoValid = computed(
@@ -37,6 +53,10 @@ const isSalonInfoValid = computed(
     form.salonInfo.lng !== null,
 )
 
+const isServiceValid = computed(
+  () => form.service.categoryId !== null && form.service.name.trim().length >= 2 && form.service.durationMin >= 5,
+)
+
 const canGoNext = computed(() => (step.value === 1 ? isSalonInfoValid.value : true))
 
 function next() {
@@ -45,12 +65,53 @@ function next() {
 function back() {
   if (step.value > 1) step.value--
 }
+
+async function submit() {
+  if (!isServiceValid.value) return
+  submitting.value = true
+  submitError.value = ''
+
+  const { data: salon, error: salonError } = await apiFetch<{ id: string }>('/salons', {
+    method: 'POST',
+    body: {
+      name: form.salonInfo.name,
+      description: form.salonInfo.description || undefined,
+      genderTarget: form.salonInfo.genderTarget,
+      address: form.salonInfo.address,
+      city: form.salonInfo.city,
+      capacity: form.salonInfo.capacity,
+      lat: form.salonInfo.lat,
+      lng: form.salonInfo.lng,
+    },
+    silent: true,
+  })
+  if (salonError || !salon) {
+    submitError.value = 'ثبت اطلاعات آرایشگاه ناموفق بود. دوباره تلاش کنید.'
+    submitting.value = false
+    return
+  }
+
+  const enabledHours = form.hours
+    .filter((h) => h.enabled)
+    .map(({ weekday, openTime, closeTime }) => ({ weekday, openTime, closeTime }))
+  if (enabledHours.length) {
+    await apiFetch('/salons/mine/hours', { method: 'PUT', body: { hours: enabledHours }, silent: true })
+  }
+
+  await apiFetch('/salons/mine/services', { method: 'POST', body: form.service, silent: true })
+
+  await refetch()
+  await router.push('/pending-approval')
+}
 </script>
 
 <template>
   <div class="mx-auto max-w-md p-6">
     <SalonInfoStep v-if="step === 1" v-model="form.salonInfo" />
     <ScheduleStep v-else-if="step === 2" v-model="form.hours" />
+    <FirstServiceStep v-else v-model="form.service" />
+
+    <p v-if="submitError" class="mt-2 text-sm text-red-600">{{ submitError }}</p>
 
     <div class="mt-4 flex justify-between">
       <button v-if="step > 1" type="button" class="rounded-lg border px-4 py-2" @click="back">قبلی</button>
@@ -63,6 +124,16 @@ function back() {
         @click="next"
       >
         بعدی
+      </button>
+      <button
+        v-else
+        data-testid="wizard-submit"
+        type="button"
+        :disabled="!isServiceValid || submitting"
+        class="rounded-lg bg-(--color-accent) px-4 py-2 text-white disabled:opacity-40"
+        @click="submit"
+      >
+        ثبت و ارسال برای بررسی
       </button>
     </div>
   </div>

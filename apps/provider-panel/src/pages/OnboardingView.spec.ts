@@ -66,4 +66,42 @@ describe('OnboardingView', () => {
     await wrapper.find('[data-testid="capacity"]').setValue(5)
     expect((next.element as HTMLButtonElement).disabled).toBe(false)
   })
+
+  it('submits salon, hours, and first service in order, then lands on pending-approval', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([{ id: 1, name: 'رنگ مو' }]) }) // categories (mounted on step 3)
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ id: 's1' }) }) // POST /salons
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // PUT hours
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ id: 'sv1' }) }) // POST services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ id: 's1', status: 'pending' }) }) // refetch salon
+    vi.stubGlobal('fetch', fetchMock)
+
+    const router = makeRouter()
+    await router.push('/onboarding')
+    await router.isReady()
+    const wrapper = mount(OnboardingView, { global: { plugins: [router] } })
+
+    await wrapper.find('[data-testid="salon-name"]').setValue('سالن سارا')
+    await wrapper.find('[data-testid="gender-target"]').setValue('women')
+    await wrapper.find('[data-testid="city"]').setValue('تهران')
+    await wrapper.find('[data-testid="address"]').setValue('خیابان ولیعصر، پلاک ۱')
+    await wrapper.setData({ form: { salonInfo: { lat: 35.7, lng: 51.4 } } })
+    await wrapper.find('[data-testid="wizard-next"]').trigger('click')
+
+    await wrapper.find('[data-testid="day-0"] input[type=checkbox]').setValue(true)
+    await wrapper.find('[data-testid="wizard-next"]').trigger('click')
+
+    await wrapper.find('[data-testid="service-category"]').setValue('1')
+    await wrapper.find('[data-testid="service-name"]').setValue('رنگ مو')
+    await wrapper.find('[data-testid="service-price"]').setValue('500000')
+    await wrapper.find('[data-testid="service-duration"]').setValue('60')
+    await wrapper.find('[data-testid="wizard-submit"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+    await router.isReady()
+
+    expect(fetchMock.mock.calls[1]![0]).toContain('/salons')
+    expect(fetchMock.mock.calls[2]![0]).toContain('/salons/mine/hours')
+    expect(fetchMock.mock.calls[3]![0]).toContain('/salons/mine/services')
+    expect(router.currentRoute.value.name).toBe('pending-approval')
+  })
 })
