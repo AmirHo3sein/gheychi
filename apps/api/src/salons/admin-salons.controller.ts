@@ -5,6 +5,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { AdminSalonQueryDto } from './dto/admin-salon-query.dto';
+import { AdminSalonStatusDto } from './dto/admin-salon-status.dto';
 import { SetFeaturedDto } from './dto/admin-salon.dto';
 import { Salon } from './salon.entity';
 
@@ -27,6 +28,16 @@ export class AdminSalonsController {
     if (query.genderTarget) qb.andWhere('salon.genderTarget = :genderTarget', { genderTarget: query.genderTarget });
 
     return qb.getMany();
+  }
+
+  @Patch(':id/status')
+  async setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AdminSalonStatusDto) {
+    const result = await this.salons.update(
+      { id },
+      { status: dto.status, rejectionReason: dto.status === 'approved' ? null : (dto.reason ?? null) },
+    );
+    if (!result.affected) throw new NotFoundException();
+    return this.salons.findOneBy({ id });
   }
 
   @Patch(':id/featured')
