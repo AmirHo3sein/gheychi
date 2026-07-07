@@ -45,7 +45,7 @@ describe('Admin — featured salon toggle (e2e)', () => {
 
   it('lists approved salons for an admin', async () => {
     const res = await request(app.getHttpServer())
-      .get('/api/admin/salons')
+      .get('/api/admin/salons?status=approved')
       .set('Cookie', adminCookie)
       .expect(200);
     expect(res.body.find((s: { id: string }) => s.id === salonId)).toBeDefined();
@@ -67,7 +67,7 @@ describe('Admin — featured salon toggle (e2e)', () => {
     await ds.destroy();
 
     const res = await request(app.getHttpServer())
-      .get('/api/admin/salons')
+      .get('/api/admin/salons?status=approved')
       .set('Cookie', adminCookie)
       .expect(200);
     expect(res.body.find((s: { id: string }) => s.id === pendingId)).toBeUndefined();
@@ -82,7 +82,7 @@ describe('Admin — featured salon toggle (e2e)', () => {
       .expect(200);
 
     const res = await request(app.getHttpServer())
-      .get('/api/admin/salons')
+      .get('/api/admin/salons?status=approved')
       .set('Cookie', adminCookie)
       .expect(200);
     const updated = res.body.find((s: { id: string }) => s.id === salonId);

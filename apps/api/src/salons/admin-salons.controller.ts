@@ -1,9 +1,10 @@
-import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Patch, Query, UseGuards } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { AdminSalonQueryDto } from './dto/admin-salon-query.dto';
 import { SetFeaturedDto } from './dto/admin-salon.dto';
 import { Salon } from './salon.entity';
 
@@ -14,12 +15,18 @@ export class AdminSalonsController {
   constructor(@InjectRepository(Salon) private readonly salons: Repository<Salon>) {}
 
   @Get()
-  list() {
-    return this.salons.find({
-      where: { status: 'approved' },
-      select: ['id', 'name', 'city', 'isFeatured', 'featuredUntil'],
-      order: { name: 'ASC' },
-    });
+  list(@Query() query: AdminSalonQueryDto) {
+    const qb = this.salons
+      .createQueryBuilder('salon')
+      .select(['salon.id', 'salon.name', 'salon.city', 'salon.status', 'salon.genderTarget', 'salon.isFeatured', 'salon.featuredUntil', 'salon.createdAt'])
+      .where('salon.status = :status', { status: query.status ?? 'pending' })
+      .orderBy('salon.name', 'ASC');
+
+    if (query.city) qb.andWhere('salon.city ILIKE :city', { city: `%${query.city}%` });
+    if (query.name) qb.andWhere('salon.name ILIKE :name', { name: `%${query.name}%` });
+    if (query.genderTarget) qb.andWhere('salon.genderTarget = :genderTarget', { genderTarget: query.genderTarget });
+
+    return qb.getMany();
   }
 
   @Patch(':id/featured')
