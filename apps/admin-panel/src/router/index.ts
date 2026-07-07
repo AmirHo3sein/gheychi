@@ -2,11 +2,16 @@ import { createRouter, type RouterHistory, type Router } from 'vue-router'
 import type { SessionUser } from '@/stores/session'
 import { useSessionStore } from '@/stores/session'
 import { useApi } from '@/composables/useApi'
+import AppLayout from '@/components/layout/AppLayout.vue'
 
 const routes = [
   { path: '/login', name: 'login', component: () => import('@/pages/LoginView.vue'), meta: { public: true } },
   { path: '/forbidden', name: 'forbidden', component: () => import('@/pages/ForbiddenView.vue') },
-  { path: '/', name: 'dashboard', component: () => import('@/pages/DashboardView.vue') },
+  {
+    path: '/',
+    component: AppLayout,
+    children: [{ path: '', name: 'dashboard', component: () => import('@/pages/DashboardView.vue') }],
+  },
 ]
 
 export function createAppRouter(history: RouterHistory): Router {
