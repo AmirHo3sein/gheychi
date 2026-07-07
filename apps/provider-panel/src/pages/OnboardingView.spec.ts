@@ -104,4 +104,68 @@ describe('OnboardingView', () => {
     expect(fetchMock.mock.calls[3]![0]).toContain('/salons/mine/services')
     expect(router.currentRoute.value.name).toBe('pending-approval')
   })
+
+  it('keeps the submit button disabled when duration or price is out of bounds', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'رنگ مو' }] }) // categories (mounted on step 3)
+    vi.stubGlobal('fetch', fetchMock)
+
+    const router = makeRouter()
+    await router.push('/onboarding')
+    await router.isReady()
+    const wrapper = mount(OnboardingView, { global: { plugins: [router] } })
+
+    await wrapper.find('[data-testid="salon-name"]').setValue('سالن سارا')
+    await wrapper.find('[data-testid="gender-target"]').setValue('women')
+    await wrapper.find('[data-testid="city"]').setValue('تهران')
+    await wrapper.find('[data-testid="address"]').setValue('خیابان ولیعصر، پلاک ۱')
+    await wrapper.setData({ form: { salonInfo: { lat: 35.7, lng: 51.4 } } })
+    await wrapper.find('[data-testid="wizard-next"]').trigger('click')
+    await wrapper.find('[data-testid="wizard-next"]').trigger('click')
+
+    await wrapper.find('[data-testid="service-category"]').setValue('1')
+    await wrapper.find('[data-testid="service-name"]').setValue('رنگ مو')
+    await wrapper.find('[data-testid="service-price"]').setValue('500000')
+    await wrapper.find('[data-testid="service-duration"]').setValue('900')
+
+    const submit = wrapper.find('[data-testid="wizard-submit"]')
+    expect((submit.element as HTMLButtonElement).disabled).toBe(true)
+
+    await wrapper.find('[data-testid="service-duration"]').setValue('60')
+    expect((submit.element as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('shows a retry option in the service step when categories fail to load', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const router = makeRouter()
+    await router.push('/onboarding')
+    await router.isReady()
+    const wrapper = mount(OnboardingView, { global: { plugins: [router] } })
+
+    await wrapper.find('[data-testid="salon-name"]').setValue('سالن سارا')
+    await wrapper.find('[data-testid="gender-target"]').setValue('women')
+    await wrapper.find('[data-testid="city"]').setValue('تهران')
+    await wrapper.find('[data-testid="address"]').setValue('خیابان ولیعصر، پلاک ۱')
+    await wrapper.setData({ form: { salonInfo: { lat: 35.7, lng: 51.4 } } })
+    await wrapper.find('[data-testid="wizard-next"]').trigger('click')
+    await wrapper.find('[data-testid="wizard-next"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(wrapper.find('[data-testid="retry-categories"]').exists()).toBe(true)
+
+    const retryFetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'رنگ مو' }] })
+    vi.stubGlobal('fetch', retryFetchMock)
+
+    await wrapper.find('[data-testid="retry-categories"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(retryFetchMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-testid="retry-categories"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="service-category"]').exists()).toBe(true)
+  })
 })

@@ -54,7 +54,12 @@ const isSalonInfoValid = computed(
 )
 
 const isServiceValid = computed(
-  () => form.service.categoryId !== null && form.service.name.trim().length >= 2 && form.service.durationMin >= 5,
+  () =>
+    form.service.categoryId !== null &&
+    form.service.name.trim().length >= 2 &&
+    form.service.price >= 0 &&
+    form.service.durationMin >= 5 &&
+    form.service.durationMin <= 600,
 )
 
 const canGoNext = computed(() => (step.value === 1 ? isSalonInfoValid.value : true))
@@ -95,10 +100,10 @@ async function submit() {
     .filter((h) => h.enabled)
     .map(({ weekday, openTime, closeTime }) => ({ weekday, openTime, closeTime }))
   if (enabledHours.length) {
-    await apiFetch('/salons/mine/hours', { method: 'PUT', body: { hours: enabledHours }, silent: true })
+    await apiFetch('/salons/mine/hours', { method: 'PUT', body: { hours: enabledHours } })
   }
 
-  await apiFetch('/salons/mine/services', { method: 'POST', body: form.service, silent: true })
+  await apiFetch('/salons/mine/services', { method: 'POST', body: form.service })
 
   await refetch()
   await router.push('/pending-approval')
