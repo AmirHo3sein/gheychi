@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useApi } from './useApi'
+import { useToast } from './useToast'
 
 describe('useApi', () => {
   beforeEach(() => {
@@ -62,5 +63,35 @@ describe('useApi', () => {
       expect.any(String),
       expect.objectContaining({ body: form, headers: undefined }),
     )
+  })
+
+  it('pushes a toast on a non-401 error response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ message: 'Server error' }),
+    }))
+
+    const { apiFetch } = useApi()
+    const { toasts } = useToast()
+    const before = toasts.value.length
+
+    await apiFetch('/salons/mine')
+
+    expect(toasts.value.length).toBe(before + 1)
+    expect(toasts.value.at(-1)?.message).toBe('Server error')
+  })
+
+  it('pushes a toast on a network error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')))
+
+    const { apiFetch } = useApi()
+    const { toasts } = useToast()
+    const before = toasts.value.length
+
+    await apiFetch('/salons/mine')
+
+    expect(toasts.value.length).toBe(before + 1)
+    expect(toasts.value.at(-1)?.message).toBe('Network error')
   })
 })

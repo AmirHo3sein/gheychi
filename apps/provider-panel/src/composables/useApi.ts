@@ -11,7 +11,7 @@ export interface ApiResult<T> {
 }
 
 interface ApiFetchOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   body?: unknown
   silent?: boolean
   /** Set to false to suppress the automatic redirect-to-/login on a 401 (defaults to true). */
