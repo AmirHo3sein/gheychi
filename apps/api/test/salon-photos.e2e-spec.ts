@@ -85,4 +85,37 @@ describe('Salon photos (e2e)', () => {
 
   it('rejects unauthenticated access', () =>
     request(app.getHttpServer()).get('/api/salons/mine/photos').expect(401));
+
+  it('unsets isCover on the salon\'s other photos when a new one is set via PATCH', async () => {
+    const firstRes = await request(app.getHttpServer())
+      .post('/api/salons/mine/photos')
+      .set('Cookie', cookie)
+      .attach('file', MINIMAL_PNG, { filename: 'c1.jpg', contentType: 'image/jpeg' })
+      .expect(201);
+    const firstId = firstRes.body.id;
+    expect(firstRes.body.isCover).toBe(true);
+
+    const secondRes = await request(app.getHttpServer())
+      .post('/api/salons/mine/photos')
+      .set('Cookie', cookie)
+      .attach('file', MINIMAL_PNG, { filename: 'c2.jpg', contentType: 'image/jpeg' })
+      .expect(201);
+    const secondId = secondRes.body.id;
+    expect(secondRes.body.isCover).toBe(false);
+
+    await request(app.getHttpServer())
+      .patch(`/api/salons/mine/photos/${secondId}`)
+      .set('Cookie', cookie)
+      .send({ isCover: true })
+      .expect(200);
+
+    const listRes = await request(app.getHttpServer())
+      .get('/api/salons/mine/photos')
+      .set('Cookie', cookie)
+      .expect(200);
+    const first = listRes.body.find((p: { id: string }) => p.id === firstId);
+    const second = listRes.body.find((p: { id: string }) => p.id === secondId);
+    expect(first.isCover).toBe(false);
+    expect(second.isCover).toBe(true);
+  });
 });

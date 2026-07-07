@@ -6,7 +6,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { AuthGuard } from '../auth/auth.guard';
 import { STORAGE_PROVIDER, StorageProvider } from '../storage/storage.provider';
 import { UpdateSalonPhotoDto } from './dto/salon-photo.dto';
@@ -25,6 +25,7 @@ export class SalonPhotosController {
   constructor(
     @InjectRepository(SalonPhoto) private readonly photos: Repository<SalonPhoto>,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+    private readonly dataSource: DataSource,
   ) {}
 
   @Get()
@@ -62,21 +63,37 @@ export class SalonPhotosController {
 
   @Patch(':id')
   async update(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateSalonPhotoDto) {
-    const photo = await this.photos.findOneBy({ id, salonId: req.salonId });
+    const salonId = req.salonId!;
+    const photo = await this.photos.findOneBy({ id, salonId });
     if (!photo) throw new NotFoundException();
     Object.assign(photo, dto);
+
+    if (dto.isCover === true) {
+      // A salon may only have one cover photo -- unset it on the salon's other photos in
+      // the same transaction as the save, so a concurrent read can never observe two rows
+      // with is_cover = true.
+      return this.dataSource.transaction(async (em) => {
+        await em.update(SalonPhoto, { salonId }, { isCover: false });
+        return em.save(SalonPhoto, photo);
+      });
+    }
     return this.photos.save(photo);
   }
 
   @Delete(':id')
   @HttpCode(204)
   async remove(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
-    const photo = await this.photos.findOneBy({ id, salonId: req.salonId });
+    const salonId = req.salonId!;
+    const photo = await this.photos.findOneBy({ id, salonId });
     if (!photo) throw new NotFoundException();
-    await this.photos.delete({ id });
+    await this.photos.delete({ id, salonId });
     // Best-effort: the DB row is the source of truth for what's shown in the gallery; an
     // orphaned object left in storage after a delete failure is a harmless cleanup gap,
     // not a user-visible bug (same class of tradeoff as this codebase's SMS/push sends).
-    await this.storage.delete(photo.storageKey).catch(() => {});
+    // Skip pre-migration rows whose storage_key defaulted to '' -- deleting that would
+    // resolve to the uploads root directory itself.
+    if (photo.storageKey) {
+      await this.storage.delete(photo.storageKey).catch(() => {});
+    }
   }
 }
