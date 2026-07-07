@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { useSalon } from './useSalon'
+import { resetSalon, useSalon } from './useSalon'
 
 describe('useSalon', () => {
   afterEach(() => {
@@ -30,6 +30,24 @@ describe('useSalon', () => {
     const { salon, refetch } = useSalon()
     await refetch()
 
+    expect(salon.value).toBeNull()
+  })
+
+  it('resetSalon clears state back to its initial values', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 's1', status: 'pending' }),
+    }))
+
+    const { salon, checked, refetch } = useSalon()
+    await refetch()
+    expect(checked.value).toBe(true)
+    expect(salon.value).not.toBeNull()
+
+    resetSalon()
+
+    expect(checked.value).toBe(false)
     expect(salon.value).toBeNull()
   })
 })

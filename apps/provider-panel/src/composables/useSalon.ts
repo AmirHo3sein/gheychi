@@ -26,3 +26,14 @@ export function useSalon() {
 
   return { salon, checked, refetch }
 }
+
+// Resets the module-level singleton state back to its initial values.
+// Vitest only isolates modules per test FILE, not per individual test, so
+// a test file with multiple it() blocks that each rely on a fresh refetch()
+// (e.g. Task 11's router-guard tests) needs an explicit reset hook to call
+// from beforeEach -- otherwise `checked` stays true after the first test
+// and later tests silently reuse stale state.
+export function resetSalon(): void {
+  salon.value = null
+  checked.value = false
+}
