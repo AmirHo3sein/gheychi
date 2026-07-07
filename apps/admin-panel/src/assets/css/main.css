@@ -1,0 +1,18 @@
+@import "tailwindcss";
+@import "@fontsource-variable/vazirmatn/wght.css";
+
+@theme static {
+  --font-sans: 'Vazirmatn Variable', ui-sans-serif, system-ui, sans-serif;
+
+  /* "Teal Trust" -- same brand tokens as provider-panel/user-app's light theme (single theme, no dark mode) */
+  --color-surface: #F4FBFA;
+  --color-surface-card: #FFFFFF;
+  --color-text: #0B4F4A;
+  --color-accent: #0EA89B;
+}
+
+html, body {
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+}

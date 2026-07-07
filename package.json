@@ -6,6 +6,7 @@
     "dev:api": "turbo run dev --filter=@arayeshgah/api",
     "dev:user-app": "turbo run dev --filter=@arayeshgah/user-app",
     "dev:provider-panel": "turbo run dev --filter=@arayeshgah/provider-panel",
+    "dev:admin-panel": "turbo run dev --filter=@arayeshgah/admin-panel",
     "build": "turbo run build",
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e"
