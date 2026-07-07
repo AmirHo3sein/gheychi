@@ -15,6 +15,10 @@ const { refetch } = useSalon()
 const step = ref(1)
 const submitting = ref(false)
 const submitError = ref('')
+// Tracks whether POST /salons already succeeded in a prior submit() attempt so a retry
+// (after the hours/services calls below failed) doesn't re-POST and hit a 409 "you
+// already have a salon" error.
+const salonCreated = ref(false)
 
 const form = reactive({
   salonInfo: {
@@ -76,34 +80,50 @@ async function submit() {
   submitting.value = true
   submitError.value = ''
 
-  const { data: salon, error: salonError } = await apiFetch<{ id: string }>('/salons', {
-    method: 'POST',
-    body: {
-      name: form.salonInfo.name,
-      description: form.salonInfo.description || undefined,
-      genderTarget: form.salonInfo.genderTarget,
-      address: form.salonInfo.address,
-      city: form.salonInfo.city,
-      capacity: form.salonInfo.capacity,
-      lat: form.salonInfo.lat,
-      lng: form.salonInfo.lng,
-    },
-    silent: true,
-  })
-  if (salonError || !salon) {
-    submitError.value = 'ثبت اطلاعات آرایشگاه ناموفق بود. دوباره تلاش کنید.'
-    submitting.value = false
-    return
+  if (!salonCreated.value) {
+    const { data: salon, error: salonError } = await apiFetch<{ id: string }>('/salons', {
+      method: 'POST',
+      body: {
+        name: form.salonInfo.name,
+        description: form.salonInfo.description || undefined,
+        genderTarget: form.salonInfo.genderTarget,
+        address: form.salonInfo.address,
+        city: form.salonInfo.city,
+        capacity: form.salonInfo.capacity,
+        lat: form.salonInfo.lat,
+        lng: form.salonInfo.lng,
+      },
+      silent: true,
+    })
+    if (salonError || !salon) {
+      submitError.value = 'ثبت اطلاعات آرایشگاه ناموفق بود. دوباره تلاش کنید.'
+      submitting.value = false
+      return
+    }
+    salonCreated.value = true
   }
 
   const enabledHours = form.hours
     .filter((h) => h.enabled)
     .map(({ weekday, openTime, closeTime }) => ({ weekday, openTime, closeTime }))
   if (enabledHours.length) {
-    await apiFetch('/salons/mine/hours', { method: 'PUT', body: { hours: enabledHours } })
+    const { error: hoursError } = await apiFetch('/salons/mine/hours', {
+      method: 'PUT',
+      body: { hours: enabledHours },
+    })
+    if (hoursError) {
+      submitError.value = 'ثبت ساعات کاری ناموفق بود. دوباره تلاش کنید.'
+      submitting.value = false
+      return
+    }
   }
 
-  await apiFetch('/salons/mine/services', { method: 'POST', body: form.service })
+  const { error: serviceError } = await apiFetch('/salons/mine/services', { method: 'POST', body: form.service })
+  if (serviceError) {
+    submitError.value = 'ثبت خدمت ناموفق بود. دوباره تلاش کنید.'
+    submitting.value = false
+    return
+  }
 
   await refetch()
   await router.push('/pending-approval')
