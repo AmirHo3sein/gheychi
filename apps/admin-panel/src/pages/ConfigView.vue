@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
 
 interface ConfigRow {
   key: string
@@ -9,6 +10,7 @@ interface ConfigRow {
 }
 
 const { apiFetch } = useApi()
+const { push: pushToast } = useToast()
 const rows = ref<ConfigRow[]>([])
 const saving = ref(false)
 
@@ -19,10 +21,11 @@ async function load() {
 
 async function save() {
   saving.value = true
-  await apiFetch('/admin/config', {
+  const { error } = await apiFetch('/admin/config', {
     method: 'PATCH',
     body: { updates: rows.value.map((r) => ({ key: r.key, value: r.value })) },
   })
+  if (!error) pushToast('تغییرات ذخیره شد')
   saving.value = false
 }
 
