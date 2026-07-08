@@ -62,13 +62,15 @@ Two background jobs run every 1 and 5 minutes respectively: expiring abandoned b
 
 `salons.rating_avg`/`rating_count` are always recomputed from every currently-`published` review for that salon, in the same transaction as any status-changing write — never incremented/decremented in place — so a rejection (or reversal) immediately and correctly updates the salon's public rating. The recompute locks the salon row first (`SELECT ... FOR UPDATE`) before reading the aggregate, closing a lost-update race that a naive single-statement `UPDATE ... FROM (aggregate subquery)` would have under concurrent writes to the same salon's reviews.
 
-## Provider panel backend additions (Plan 5)
+## Provider panel (Plan 5)
+
+A Vue 3 + Vite SPA (`apps/provider-panel`) covering onboarding, dashboard, bookings, services, hours, photos, reviews, and earnings for salon owners. Backend additions it needed:
 
 - `POST /api/salons/mine/photos` — upload a salon photo (multipart `file` field, jpeg/png/webp, 5MB max); the first photo uploaded is automatically marked cover. `PATCH /api/salons/mine/photos/:id` (isCover/sortOrder), `DELETE /api/salons/mine/photos/:id`.
 - Photo storage goes through a swappable `StorageProvider` (`STORAGE_PROVIDER=local|s3`, same pattern as `SmsProvider`/`PaymentGateway`/`PushProvider`) — `local` writes under `apps/api/uploads/` and serves it at `/uploads/*`; `s3` talks to any S3-compatible bucket via `S3_ENDPOINT`/`S3_BUCKET`/`S3_REGION`/`S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY`/`S3_PUBLIC_BASE_URL`.
 - `GET /api/salons/mine/earnings` — `{ totalCollected, commissionPercent, commissionAmount, netPayout }`, computed from `paid` payments on the caller's own bookings. No new payment infrastructure; purely aggregates existing `Booking`/`Payment` rows.
 - CORS now allows both `FRONTEND_BASE_URL` (user-app) and `PROVIDER_APP_BASE_URL` (provider-panel) as credentialed origins.
-- **No salon-approval workflow was added.** `GET /api/salons/mine` already returns `status`, which is all the provider-panel needs to show a "pending review" screen — `pending → approved` is still a manual DB update, same as before this plan.
+- No salon-approval workflow was added by this plan — that gap is closed by Plan 6 below.
 
 ## User app (Plan 4)
 

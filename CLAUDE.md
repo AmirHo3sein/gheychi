@@ -26,8 +26,8 @@ Arayeshgah is a salon discovery & booking marketplace for Iran, built as a **pnp
 |-----|---------|----------|--------|---------|
 | `apps/api` | `@arayeshgah/api` | 3002 | Built (Plans 1–3) | NestJS modular monolith — auth, salons, search, booking/payments, reviews |
 | `apps/user-app` | `@arayeshgah/user-app` | 3003 | Built (Plan 4) | Nuxt 4 SSR PWA — customer-facing discovery, booking, account |
-| `apps/provider-panel` | `@arayeshgah/provider-panel` | TBD | **Not started** — future plan | Vue 3 + Vite SPA — salon-owner onboarding, bookings, services, hours, reviews, earnings |
-| `apps/admin-panel` | `@arayeshgah/admin-panel` | TBD | **Not started** — future plan | Vue 3 + Vite SPA — salon approvals, moderation, categories, platform config |
+| `apps/provider-panel` | `@arayeshgah/provider-panel` | 3004 | Built (Plan 5) | Vue 3 + Vite SPA — salon-owner onboarding, bookings, services, hours, reviews, earnings |
+| `apps/admin-panel` | `@arayeshgah/admin-panel` | 3005 | Built (Plan 6) | Vue 3 + Vite SPA — salon approvals, moderation, categories, platform config |
 
 Backend infra: PostgreSQL 16 + PostGIS (geography columns for location/radius search) and Redis (OTP codes, rate limiting). Both run via `docker-compose.yml` at the repo root.
 
@@ -44,8 +44,10 @@ pnpm --filter @arayeshgah/api migration:run
 cp apps/user-app/.env.example apps/user-app/.env       # set NUXT_PUBLIC_NESHAN_API_KEY / NUXT_PUBLIC_VAPID_PUBLIC_KEY for map/push
 
 # Dev servers (from root)
-pnpm dev:api                    # apps/api      → http://localhost:3002/api/health
-pnpm dev:user-app               # apps/user-app → http://localhost:3003
+pnpm dev:api                    # apps/api            → http://localhost:3002/api/health
+pnpm dev:user-app               # apps/user-app       → http://localhost:3003
+pnpm dev:provider-panel         # apps/provider-panel → http://localhost:3004
+pnpm dev:admin-panel            # apps/admin-panel    → http://localhost:3005
 
 # Build (all apps, Turborepo-orchestrated)
 pnpm build
@@ -87,7 +89,7 @@ Ports in `docker-compose.yml`/`.env.example` are non-default on this dev machine
 - Vitest (unit + Nuxt-environment component tests) + Playwright (e2e)
 - **Persian/RTL only** — no i18n library, `lang="fa" dir="rtl"` set directly
 
-**Future frontends (`provider-panel`, `admin-panel`)** — planned as Vue 3 + Vite SPAs (no SSR need, authenticated-only tools), per the original marketplace design doc §6–7. Not yet scaffolded.
+**`provider-panel` and `admin-panel`** — both built as Vue 3 + Vite SPAs (no SSR need, authenticated-only tools), per the original marketplace design doc §6–7. See the README's "Provider panel (Plan 5)" and "Admin panel (Plan 6)" sections for what each covers; their frontend stacks aren't detailed separately here since neither needed the SSR/PWA machinery `apps/user-app` above does.
 
 ---
 
