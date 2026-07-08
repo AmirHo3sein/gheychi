@@ -15,6 +15,7 @@ const newName = ref('')
 const newIcon = ref('')
 const editingId = ref<number | null>(null)
 const editName = ref('')
+const submitting = ref(false)
 
 async function load() {
   const { data } = await apiFetch<Category[]>('/categories', { silent: true })
@@ -22,10 +23,12 @@ async function load() {
 }
 
 async function add() {
+  submitting.value = true
   const { data } = await apiFetch<Category>('/admin/categories', {
     method: 'POST',
     body: { name: newName.value, icon: newIcon.value },
   })
+  submitting.value = false
   if (data) {
     categories.value.push(data)
     newName.value = ''
@@ -39,10 +42,12 @@ function startEdit(category: Category) {
 }
 
 async function saveEdit() {
+  submitting.value = true
   const { data } = await apiFetch<Category>(`/admin/categories/${editingId.value}`, {
     method: 'PATCH',
     body: { name: editName.value },
   })
+  submitting.value = false
   if (data) {
     const category = categories.value.find((c) => c.id === data.id)
     if (category) category.name = data.name
@@ -62,10 +67,22 @@ onMounted(load)
         <span>{{ category.icon }}</span>
         <input v-if="editingId === category.id" v-model="editName" maxlength="60" class="flex-1 rounded border p-1 text-sm" />
         <span v-else class="flex-1">{{ category.name }}</span>
-        <button v-if="editingId === category.id" type="button" class="text-sm text-(--color-accent)" @click="saveEdit">
+        <button
+          v-if="editingId === category.id"
+          type="button"
+          :disabled="submitting"
+          class="text-sm text-(--color-accent)"
+          @click="saveEdit"
+        >
           ذخیره
         </button>
-        <button v-else type="button" class="text-sm text-(--color-accent)" @click="startEdit(category)">
+        <button
+          v-else
+          type="button"
+          :disabled="submitting"
+          class="text-sm text-(--color-accent)"
+          @click="startEdit(category)"
+        >
           ویرایش
         </button>
       </li>
@@ -74,7 +91,9 @@ onMounted(load)
     <form class="flex gap-2" @submit.prevent="add">
       <input v-model="newIcon" placeholder="آیکون" maxlength="20" class="w-20 rounded-lg border p-2 text-sm" />
       <input v-model="newName" placeholder="نام دسته‌بندی جدید" maxlength="60" class="flex-1 rounded-lg border p-2 text-sm" />
-      <button type="submit" class="rounded-lg bg-(--color-accent) px-4 py-2 text-sm text-white">افزودن</button>
+      <button type="submit" :disabled="submitting" class="rounded-lg bg-(--color-accent) px-4 py-2 text-sm text-white">
+        افزودن
+      </button>
     </form>
   </div>
 </template>
