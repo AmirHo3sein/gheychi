@@ -85,5 +85,54 @@ describe('PendingApprovalView', () => {
 
       expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/salons/mine/resubmit'), expect.objectContaining({ method: 'POST' }))
     })
+
+    it('disables the resubmit button while a request is in flight and ignores a second click', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: 's1',
+          name: 'x',
+          slug: 'x',
+          status: 'rejected',
+          genderTarget: 'women',
+          address: 'x',
+          city: 'x',
+          capacity: 1,
+          rejectionReason: 'آدرس نامعتبر است',
+        }),
+      }))
+      const { refetch } = useSalon()
+      await refetch()
+
+      const router = makeRouter()
+      await router.push('/pending-approval')
+      await router.isReady()
+      const wrapper = mount(PendingApprovalView, { global: { plugins: [router] } })
+
+      let resolveFetch!: (value: { ok: boolean; status: number; json: () => Promise<unknown> }) => void
+      const fetchMock = vi.fn().mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFetch = resolve
+        }),
+      )
+      vi.stubGlobal('fetch', fetchMock)
+
+      const resubmitButton = wrapper.get('[data-testid="resubmit-button"]')
+      await resubmitButton.trigger('click')
+
+      expect((resubmitButton.element as HTMLButtonElement).disabled).toBe(true)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+
+      // A second click while still in flight must not fire a duplicate request.
+      await resubmitButton.trigger('click')
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+
+      resolveFetch({ ok: true, status: 200, json: async () => ({ id: 's1', status: 'pending' }) })
+      await new Promise((r) => setTimeout(r, 0))
+      await wrapper.vm.$nextTick()
+
+      expect((resubmitButton.element as HTMLButtonElement).disabled).toBe(false)
+    })
   })
 })

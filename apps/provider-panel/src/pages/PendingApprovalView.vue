@@ -1,12 +1,16 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useSalon } from '@/composables/useSalon'
 import { useApi } from '@/composables/useApi'
 
 const { salon, refetch } = useSalon()
 const { apiFetch } = useApi()
+const submitting = ref(false)
 
 async function resubmit() {
+  submitting.value = true
   const { data } = await apiFetch('/salons/mine/resubmit', { method: 'POST' })
+  submitting.value = false
   if (data) await refetch()
 }
 </script>
@@ -19,7 +23,13 @@ async function resubmit() {
     <h1 class="text-xl font-bold">درخواست شما رد شد</h1>
     <p v-if="salon.rejectionReason" class="text-sm text-red-600">{{ salon.rejectionReason }}</p>
     <RouterLink to="/settings" class="text-sm text-(--color-accent)">ویرایش اطلاعات آرایشگاه</RouterLink>
-    <button data-testid="resubmit-button" type="button" class="rounded-lg border px-4 py-2" @click="resubmit">
+    <button
+      data-testid="resubmit-button"
+      type="button"
+      :disabled="submitting"
+      class="rounded-lg border px-4 py-2 disabled:opacity-40"
+      @click="resubmit"
+    >
       ارسال مجدد برای بررسی
     </button>
   </div>
