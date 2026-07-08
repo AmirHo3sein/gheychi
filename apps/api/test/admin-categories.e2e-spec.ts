@@ -68,4 +68,31 @@ describe('Admin categories (e2e)', () => {
     const res = await request(app.getHttpServer()).get('/api/categories').expect(200);
     expect(res.body.find((c: { id: number }) => c.id === categoryId).name).toBe('میکاپ و شینیون عروس');
   });
+
+  it('rejects a name longer than the varchar(60) column width with 400, not 500', async () => {
+    await request(app.getHttpServer())
+      .post('/api/admin/categories')
+      .set('Cookie', adminCookie)
+      .send({ name: 'a'.repeat(61), icon: 'x' })
+      .expect(400);
+  });
+
+  it('rejects renaming a category to another category\'s existing name with 409, not 500', async () => {
+    await request(app.getHttpServer())
+      .post('/api/admin/categories')
+      .set('Cookie', adminCookie)
+      .send({ name: 'CategoryA', icon: 'x' })
+      .expect(201);
+    const b = await request(app.getHttpServer())
+      .post('/api/admin/categories')
+      .set('Cookie', adminCookie)
+      .send({ name: 'CategoryB', icon: 'x' })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/api/admin/categories/${b.body.id}`)
+      .set('Cookie', adminCookie)
+      .send({ name: 'CategoryA' })
+      .expect(409);
+  });
 });

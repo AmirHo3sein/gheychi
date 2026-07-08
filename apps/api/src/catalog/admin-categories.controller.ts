@@ -26,7 +26,13 @@ export class AdminCategoriesController {
 
   @Patch(':id')
   async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCategoryDto) {
-    const result = await this.categories.update({ id }, dto);
+    let result;
+    try {
+      result = await this.categories.update({ id }, dto);
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new ConflictException('A category with this name already exists');
+      throw err;
+    }
     if (!result.affected) throw new NotFoundException();
     return this.categories.findOneBy({ id });
   }
