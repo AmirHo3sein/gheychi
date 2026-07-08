@@ -1,5 +1,18 @@
-import { Controller, Get, NotFoundException, Param, ParseUUIDPipe, Patch, Body, Query, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Body,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Request } from 'express';
 import { Repository } from 'typeorm';
 import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -30,10 +43,10 @@ export class AdminUsersController {
   }
 
   @Patch(':id/status')
-  async setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AdminUserStatusDto) {
+  async setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AdminUserStatusDto, @Req() req: Request) {
+    if (id === (req.user as User).id) throw new BadRequestException('You cannot change your own account status');
     const result = await this.users.update({ id }, { status: dto.status });
     if (!result.affected) throw new NotFoundException();
-    const { id: userId, phone, name, role, status, createdAt } = (await this.users.findOneBy({ id }))!;
-    return { id: userId, phone, name, role, status, createdAt };
+    return this.users.findOneBy({ id });
   }
 }

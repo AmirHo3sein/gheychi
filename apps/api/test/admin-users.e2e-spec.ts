@@ -8,6 +8,7 @@ describe('Admin users list and suspend (e2e)', () => {
   let app: INestApplication;
   let adminCookie: string;
   let customerUserId: string;
+  let adminUserId: string;
 
   beforeAll(async () => {
     await resetDatabase();
@@ -20,6 +21,12 @@ describe('Admin users list and suspend (e2e)', () => {
       .set('Cookie', adminCookie)
       .expect(200);
     customerUserId = me.body[0].id;
+
+    const self = await request(app.getHttpServer())
+      .get('/api/admin/users?phone=09122300001')
+      .set('Cookie', adminCookie)
+      .expect(200);
+    adminUserId = self.body[0].id;
   });
 
   afterAll(async () => {
@@ -73,5 +80,13 @@ describe('Admin users list and suspend (e2e)', () => {
   it('rejects a non-admin caller', async () => {
     const customerCookie = await loginAs(app, '09122300099');
     await request(app.getHttpServer()).get('/api/admin/users').set('Cookie', customerCookie).expect(403);
+  });
+
+  it('rejects an admin changing their own status', async () => {
+    await request(app.getHttpServer())
+      .patch(`/api/admin/users/${adminUserId}/status`)
+      .set('Cookie', adminCookie)
+      .send({ status: 'suspended' })
+      .expect(400);
   });
 });
