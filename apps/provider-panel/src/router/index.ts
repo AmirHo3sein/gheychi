@@ -18,6 +18,7 @@ const routes = [
       { path: 'services', name: 'services', component: () => import('@/pages/ServicesView.vue') },
       { path: 'hours', name: 'hours', component: () => import('@/pages/HoursView.vue') },
       { path: 'photos', name: 'photos', component: () => import('@/pages/PhotosView.vue') },
+      { path: 'settings', name: 'settings', component: () => import('@/pages/SalonSettingsView.vue') },
       { path: 'reviews', name: 'reviews', component: () => import('@/pages/ReviewsView.vue') },
       { path: 'earnings', name: 'earnings', component: () => import('@/pages/EarningsView.vue') },
     ],

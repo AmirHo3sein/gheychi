@@ -56,6 +56,7 @@ const upcomingBookings = computed(() =>
       <div class="flex gap-3 text-sm">
         <RouterLink to="/hours">ساعات کاری</RouterLink>
         <RouterLink to="/photos">تصاویر</RouterLink>
+        <RouterLink to="/settings">تنظیمات</RouterLink>
       </div>
     </div>
 
