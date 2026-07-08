@@ -1,10 +1,9 @@
 import { IsIn, IsOptional, IsString } from 'class-validator';
-import { SalonStatus } from '../salon.entity';
 
 export class AdminSalonQueryDto {
   @IsOptional()
-  @IsIn(['pending', 'approved', 'rejected', 'suspended'])
-  status?: SalonStatus;
+  @IsIn(['all', 'pending', 'approved', 'rejected', 'suspended'])
+  status?: 'all' | 'pending' | 'approved' | 'rejected' | 'suspended';
 
   @IsOptional()
   @IsString()

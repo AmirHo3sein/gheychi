@@ -20,8 +20,10 @@ export class AdminSalonsController {
     const qb = this.salons
       .createQueryBuilder('salon')
       .select(['salon.id', 'salon.name', 'salon.city', 'salon.status', 'salon.genderTarget', 'salon.isFeatured', 'salon.featuredUntil', 'salon.createdAt'])
-      .where('salon.status = :status', { status: query.status ?? 'pending' })
       .orderBy('salon.name', 'ASC');
+
+    const status = query.status ?? 'pending';
+    if (status !== 'all') qb.andWhere('salon.status = :status', { status });
 
     if (query.city) qb.andWhere('salon.city ILIKE :city', { city: `%${query.city}%` });
     if (query.name) qb.andWhere('salon.name ILIKE :name', { name: `%${query.name}%` });

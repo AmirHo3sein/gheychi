@@ -82,6 +82,14 @@ describe('Admin salon list filters (e2e)', () => {
     expect(res.body).toHaveLength(0);
   });
 
+  it('status=all returns every status with no filtering', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/admin/salons?status=all')
+      .set('Cookie', adminCookie)
+      .expect(200);
+    expect(res.body.length).toBeGreaterThanOrEqual(2); // at least the 2 pending salons seeded in beforeAll
+  });
+
   it('rejects a non-admin caller', async () => {
     const customerCookie = await loginAs(app, '09122230004');
     await request(app.getHttpServer())
