@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useApi } from '@/composables/useApi'
+import AppIcon from '@/components/ui/AppIcon.vue'
 
 const props = defineProps<{ reviewId: string; status: 'published' | 'rejected' }>()
 const emit = defineEmits<{ updated: [review: { id: string; status: string }] }>()
@@ -27,9 +28,10 @@ async function toggle() {
     data-testid="reject-review"
     type="button"
     :disabled="submitting"
-    class="rounded-lg border border-red-600 px-3 py-1 text-sm text-red-600 disabled:opacity-40"
+    class="inline-flex items-center gap-2 rounded-lg border border-(--tone-danger-text) px-3.5 py-2 text-sm font-semibold text-(--tone-danger-text) transition-colors hover:bg-(--tone-danger-bg) disabled:opacity-40"
     @click="toggle"
   >
+    <AppIcon name="x" :size="15" />
     رد نظر
   </button>
   <button
@@ -37,9 +39,10 @@ async function toggle() {
     data-testid="republish-review"
     type="button"
     :disabled="submitting"
-    class="rounded-lg bg-(--color-accent) px-3 py-1 text-sm text-white disabled:opacity-40"
+    class="inline-flex items-center gap-2 rounded-lg bg-(--color-accent) px-3.5 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
     @click="toggle"
   >
+    <AppIcon name="check" :size="15" />
     انتشار مجدد
   </button>
 </template>

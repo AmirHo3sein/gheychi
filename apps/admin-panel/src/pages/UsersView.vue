@@ -1,8 +1,23 @@
 <!-- apps/admin-panel/src/pages/UsersView.vue -->
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
 import SuspendUserButton from '@/components/users/SuspendUserButton.vue'
+import AppCard from '@/components/ui/AppCard.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
+import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
+import { debounce } from '@/utils/debounce'
+import { userRoleLabel, userStatusLabel } from '@/utils/labels'
+
+const ROLE_OPTIONS = [
+  { value: '', label: 'همه نقش‌ها' },
+  { value: 'customer', label: 'مشتری' },
+  { value: 'provider', label: 'آرایشگاه‌دار' },
+  { value: 'admin', label: 'مدیر' },
+]
 
 interface UserRow {
   id: string
@@ -42,50 +57,103 @@ function onUpdated(userId: string, status: string) {
   if (user) user.status = status as UserRow['status']
 }
 
+function formatDate(iso: string): string {
+  return new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
+}
+
+function clearFilters() {
+  phoneFilter.value = ''
+  nameFilter.value = ''
+  roleFilter.value = ''
+  joinedFrom.value = ''
+  joinedTo.value = ''
+}
+
+const hasActiveFilters = computed(
+  () => !!phoneFilter.value || !!nameFilter.value || !!roleFilter.value || !!joinedFrom.value || !!joinedTo.value,
+)
+
 onMounted(load)
-watch([phoneFilter, nameFilter, roleFilter, joinedFrom, joinedTo], load)
+watch([phoneFilter, nameFilter], debounce(load, 350))
+watch([roleFilter, joinedFrom, joinedTo], load)
 </script>
 
 <template>
-  <div class="space-y-4 p-6">
-    <h1 class="text-lg font-bold">کاربران</h1>
+  <div class="space-y-5 p-8">
+    <AppCard :padded="false" class="p-4">
+      <div class="flex flex-wrap items-end gap-3">
+        <div>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">شماره موبایل</label>
+          <div class="relative">
+            <AppIcon name="phone" :size="15" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-muted)" />
+            <input
+              v-model="phoneFilter"
+              placeholder="جست‌وجو…"
+              class="w-40 rounded-xl border border-(--color-border) py-2 ps-9 pe-3 text-sm"
+            />
+          </div>
+        </div>
+        <div>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">نام</label>
+          <input v-model="nameFilter" placeholder="همه" class="w-32 rounded-xl border border-(--color-border) p-2 text-sm" />
+        </div>
+        <div>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">نقش</label>
+          <AppSelect v-model="roleFilter" :options="ROLE_OPTIONS" width="10rem" />
+        </div>
+        <div>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">بازه عضویت</label>
+          <div class="flex items-center gap-1.5">
+            <JalaliDatePicker v-model="joinedFrom" placeholder="از تاریخ" class="w-32" />
+            <span class="text-(--color-muted)">تا</span>
+            <JalaliDatePicker v-model="joinedTo" placeholder="تا تاریخ" class="w-32" />
+          </div>
+        </div>
+        <button
+          v-if="hasActiveFilters"
+          type="button"
+          class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-(--color-muted) transition-colors hover:text-(--tone-danger-text)"
+          @click="clearFilters"
+        >
+          <AppIcon name="reset" :size="15" />
+          پاک کردن فیلترها
+        </button>
+      </div>
+    </AppCard>
 
-    <div class="flex flex-wrap gap-3">
-      <input v-model="phoneFilter" placeholder="شماره موبایل" class="rounded-lg border p-2 text-sm" />
-      <input v-model="nameFilter" placeholder="نام" class="rounded-lg border p-2 text-sm" />
-      <select v-model="roleFilter" class="rounded-lg border p-2 text-sm">
-        <option value="">همه نقش‌ها</option>
-        <option value="customer">مشتری</option>
-        <option value="provider">آرایشگاه‌دار</option>
-        <option value="admin">مدیر</option>
-      </select>
-      <input v-model="joinedFrom" type="date" class="rounded-lg border p-2 text-sm" />
-      <input v-model="joinedTo" type="date" class="rounded-lg border p-2 text-sm" />
-    </div>
+    <EmptyState v-if="!loading && users.length === 0" icon="users" message="کاربری با این فیلترها یافت نشد." />
 
-    <p v-if="!loading && users.length === 0" class="text-sm text-gray-500">موردی یافت نشد.</p>
-
-    <table v-else class="w-full text-right text-sm">
-      <thead>
-        <tr class="border-b text-gray-500">
-          <th class="p-2">نام</th>
-          <th class="p-2">موبایل</th>
-          <th class="p-2">نقش</th>
-          <th class="p-2">وضعیت</th>
-          <th class="p-2"></th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="user in users" :key="user.id" class="border-b">
-          <td class="p-2">{{ user.name ?? '—' }}</td>
-          <td class="p-2">{{ user.phone }}</td>
-          <td class="p-2">{{ user.role }}</td>
-          <td class="p-2">{{ user.status }}</td>
-          <td class="p-2">
-            <SuspendUserButton :user-id="user.id" :status="user.status" @updated="(u) => onUpdated(u.id, u.status)" />
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <AppCard v-else :padded="false" class="overflow-hidden">
+      <table class="w-full text-right text-sm">
+        <thead>
+          <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-muted)">
+            <th class="px-5 py-3 font-semibold">نام</th>
+            <th class="px-5 py-3 font-semibold">موبایل</th>
+            <th class="px-5 py-3 font-semibold">نقش</th>
+            <th class="px-5 py-3 font-semibold">تاریخ عضویت</th>
+            <th class="px-5 py-3 font-semibold">وضعیت</th>
+            <th class="px-5 py-3"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="user in users"
+            :key="user.id"
+            class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
+          >
+            <td class="px-5 py-3.5 font-semibold text-(--color-text)">{{ user.name ?? '—' }}</td>
+            <td class="tnum px-5 py-3.5 text-(--color-muted)">{{ user.phone }}</td>
+            <td class="px-5 py-3.5 text-(--color-muted)">{{ userRoleLabel(user.role) }}</td>
+            <td class="tnum px-5 py-3.5 text-(--color-muted)">{{ formatDate(user.createdAt) }}</td>
+            <td class="px-5 py-3.5">
+              <StatusBadge :label="userStatusLabel(user.status).label" :tone="userStatusLabel(user.status).tone" />
+            </td>
+            <td class="px-5 py-3.5">
+              <SuspendUserButton :user-id="user.id" :status="user.status" @updated="(u) => onUpdated(u.id, u.status)" />
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </AppCard>
   </div>
 </template>

@@ -8,7 +8,7 @@ test('log in as admin, approve a pending salon', async ({ page, request }) => {
   await page.goto('/login')
   await page.waitForLoadState('networkidle')
   await page.getByTestId('phone-input').fill(phone)
-  await page.getByTestId('phone-form').getByRole('button').click()
+  await page.getByTestId('submit-phone').click()
 
   const codeInput = page.getByTestId('code-input')
   await expect(codeInput).toBeVisible()
@@ -16,14 +16,16 @@ test('log in as admin, approve a pending salon', async ({ page, request }) => {
   await redis.quit()
   if (!code) throw new Error('OTP was not found in Redis -- did SMS_PROVIDER/OtpService change?')
   await codeInput.fill(code)
-  await page.getByTestId('code-form').getByRole('button').click()
+  await page.getByTestId('submit-code').click()
 
   await expect(page).toHaveURL('/')
 
-  await page.getByRole('link', { name: 'آرایشگاه‌ها' }).click()
+  // exact: true -- the dashboard's quick-link cards also contain "آرایشگاه‌ها" as a
+  // substring of a longer label, which would otherwise match this selector too.
+  await page.getByRole('link', { name: 'آرایشگاه‌ها', exact: true }).click()
   await expect(page).toHaveURL('/salons')
 
-  await page.getByRole('link', { name: 'سالن در انتظار تایید' }).click()
+  await page.getByRole('link', { name: 'سالن در انتظار تایید', exact: true }).click()
   await expect(page).toHaveURL(/\/salons\/[0-9a-f-]+/)
   const salonId = page.url().split('/salons/')[1]
 

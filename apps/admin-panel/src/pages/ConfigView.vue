@@ -3,6 +3,8 @@
 import { onMounted, ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
+import AppCard from '@/components/ui/AppCard.vue'
+import { configKeyMeta } from '@/utils/labels'
 
 interface ConfigRow {
   key: string
@@ -33,21 +35,27 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="max-w-md space-y-4 p-6">
-    <h1 class="text-lg font-bold">تنظیمات پلتفرم</h1>
-
-    <div v-for="row in rows" :key="row.key" class="flex items-center justify-between gap-3">
-      <label class="text-sm">{{ row.key }}</label>
-      <input v-model.number="row.value" type="number" class="w-32 rounded-lg border p-2 text-sm" />
-    </div>
+  <div class="mx-auto max-w-2xl space-y-5 p-8">
+    <AppCard :padded="false">
+      <div v-for="(row, i) in rows" :key="row.key" class="flex items-center justify-between gap-4 px-5 py-4" :class="i > 0 && 'border-t border-(--color-border-soft)'">
+        <div>
+          <p class="text-sm font-semibold text-(--color-text)">{{ configKeyMeta(row.key).label }}</p>
+          <p v-if="configKeyMeta(row.key).hint" class="mt-0.5 text-xs text-(--color-muted)">{{ configKeyMeta(row.key).hint }}</p>
+        </div>
+        <div class="flex shrink-0 items-center gap-2">
+          <input v-model.number="row.value" type="number" class="tnum w-24 rounded-xl border border-(--color-border) p-2 text-left text-sm" />
+          <span v-if="configKeyMeta(row.key).unit" class="w-14 text-xs text-(--color-muted)">{{ configKeyMeta(row.key).unit }}</span>
+        </div>
+      </div>
+    </AppCard>
 
     <button
       type="button"
       :disabled="saving"
-      class="rounded-lg bg-(--color-accent) px-4 py-2 text-sm text-white"
+      class="rounded-xl bg-(--color-accent) px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
       @click="save"
     >
-      ذخیره
+      ذخیره تغییرات
     </button>
   </div>
 </template>

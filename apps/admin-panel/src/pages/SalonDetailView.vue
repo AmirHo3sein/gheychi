@@ -4,6 +4,11 @@ import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import SalonStatusActions from '@/components/salons/SalonStatusActions.vue'
+import AppCard from '@/components/ui/AppCard.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
+import { genderTargetLabel, salonStatusLabel } from '@/utils/labels'
 
 interface SalonDetail {
   id: string
@@ -46,17 +51,46 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="space-y-4 p-6">
-    <p v-if="notFound" class="text-sm text-red-600">آرایشگاه یافت نشد.</p>
-    <template v-else-if="salon">
-      <h1 class="text-lg font-bold">{{ salon.name }}</h1>
-      <p class="text-sm text-gray-500">{{ salon.city }} — {{ salon.address }}</p>
-      <p v-if="salon.description" class="text-sm">{{ salon.description }}</p>
-      <p class="text-sm">ظرفیت همزمان: {{ salon.capacity }}</p>
-      <p class="text-sm">وضعیت: {{ salon.status }}</p>
-      <p v-if="salon.rejectionReason" class="text-sm text-red-600">دلیل: {{ salon.rejectionReason }}</p>
+  <div class="mx-auto max-w-2xl space-y-5 p-8">
+    <EmptyState v-if="notFound" icon="warning" message="آرایشگاه یافت نشد." />
 
-      <SalonStatusActions :salon-id="salon.id" :status="salon.status" @updated="onUpdated" />
+    <template v-else-if="salon">
+      <AppCard>
+        <div class="flex items-start justify-between gap-4">
+          <div class="flex items-start gap-3">
+            <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-(--color-border-soft) text-(--color-accent)">
+              <AppIcon name="building" :size="22" />
+            </div>
+            <div>
+              <h2 class="text-lg font-bold text-(--color-text)">{{ salon.name }}</h2>
+              <p class="mt-0.5 text-sm text-(--color-muted)">{{ salon.city }} — {{ salon.address }}</p>
+            </div>
+          </div>
+          <StatusBadge :label="salonStatusLabel(salon.status).label" :tone="salonStatusLabel(salon.status).tone" />
+        </div>
+
+        <p v-if="salon.description" class="mt-4 text-sm leading-6 text-(--color-text)">{{ salon.description }}</p>
+
+        <div class="mt-5 grid grid-cols-2 gap-3 border-t border-(--color-border-soft) pt-4 text-sm">
+          <div>
+            <p class="text-xs text-(--color-muted)">مخاطب</p>
+            <p class="mt-1 font-semibold">{{ genderTargetLabel(salon.genderTarget) }}</p>
+          </div>
+          <div>
+            <p class="text-xs text-(--color-muted)">ظرفیت همزمان</p>
+            <p class="tnum mt-1 font-semibold">{{ salon.capacity }} نفر</p>
+          </div>
+        </div>
+
+        <div v-if="salon.rejectionReason" class="mt-5 flex gap-2.5 rounded-xl bg-(--tone-danger-bg) p-3.5">
+          <AppIcon name="warning" :size="17" class="mt-0.5 shrink-0 text-(--tone-danger-text)" />
+          <p class="text-sm text-(--tone-danger-text)">{{ salon.rejectionReason }}</p>
+        </div>
+      </AppCard>
+
+      <AppCard>
+        <SalonStatusActions :salon-id="salon.id" :status="salon.status" @updated="onUpdated" />
+      </AppCard>
     </template>
   </div>
 </template>

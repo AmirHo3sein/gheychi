@@ -56,7 +56,8 @@ describe('SalonDetailView', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(wrapper.text()).not.toContain('یافت نشد')
     expect(wrapper.text()).toContain('سالن نمونه')
-    expect(wrapper.text()).toContain('approved')
+    // Status renders through the Farsi label map (StatusBadge), not the raw API enum value.
+    expect(wrapper.text()).toContain('تایید شده')
   })
 
   it('shows the not-found message on a confirmed 404', async () => {

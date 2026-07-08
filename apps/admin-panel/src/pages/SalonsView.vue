@@ -1,7 +1,30 @@
 <!-- apps/admin-panel/src/pages/SalonsView.vue -->
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
+import AppCard from '@/components/ui/AppCard.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
+import Pagination from '@/components/ui/Pagination.vue'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
+import { CITIES } from '@/utils/cities'
+import { debounce } from '@/utils/debounce'
+import { genderTargetLabel, salonStatusLabel } from '@/utils/labels'
+
+const GENDER_OPTIONS = [
+  { value: '', label: 'همه مخاطب‌ها' },
+  { value: 'women', label: 'بانوان' },
+  { value: 'men', label: 'آقایان' },
+]
+const STATUS_OPTIONS = [
+  { value: 'all', label: 'همه وضعیت‌ها' },
+  { value: 'pending', label: 'در انتظار بررسی' },
+  { value: 'approved', label: 'تایید شده' },
+  { value: 'rejected', label: 'رد شده' },
+  { value: 'suspended', label: 'معلق' },
+]
+const CITY_OPTIONS = [{ value: '', label: 'همه شهرها' }, ...CITIES.map((c) => ({ value: c, label: c }))]
 
 interface SalonRow {
   id: string
@@ -13,77 +36,139 @@ interface SalonRow {
   createdAt: string
 }
 
+interface SalonListResponse {
+  items: SalonRow[]
+  total: number
+  page: number
+  pageSize: number
+}
+
 const { apiFetch } = useApi()
 const salons = ref<SalonRow[]>([])
 const loading = ref(true)
+const page = ref(1)
+const total = ref(0)
+const pageSize = 20
 
-const statusFilter = ref<'pending' | 'approved' | 'rejected' | 'suspended'>('pending')
-const showAllStatuses = ref(false)
+const statusFilter = ref<'all' | 'pending' | 'approved' | 'rejected' | 'suspended'>('all')
 const cityFilter = ref('')
 const nameFilter = ref('')
 const genderFilter = ref<'' | 'women' | 'men'>('')
 
 async function load() {
   loading.value = true
-  const params = new URLSearchParams({ status: showAllStatuses.value ? 'all' : statusFilter.value })
+  const params = new URLSearchParams({ status: statusFilter.value, page: String(page.value), pageSize: String(pageSize) })
   if (cityFilter.value) params.set('city', cityFilter.value)
   if (nameFilter.value) params.set('name', nameFilter.value)
   if (genderFilter.value) params.set('genderTarget', genderFilter.value)
 
-  const { data } = await apiFetch<SalonRow[]>(`/admin/salons?${params.toString()}`, { silent: true })
-  salons.value = data ?? []
+  const { data } = await apiFetch<SalonListResponse>(`/admin/salons?${params.toString()}`, { silent: true })
+  salons.value = data?.items ?? []
+  total.value = data?.total ?? 0
   loading.value = false
 }
 
+function loadFromFilterChange() {
+  page.value = 1 // any filter change invalidates the current page position
+  load()
+}
+
+function formatDate(iso: string): string {
+  return new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
+}
+
+function clearFilters() {
+  statusFilter.value = 'all'
+  cityFilter.value = ''
+  nameFilter.value = ''
+  genderFilter.value = ''
+}
+
+const hasActiveFilters = computed(
+  () => statusFilter.value !== 'all' || !!cityFilter.value || !!nameFilter.value || !!genderFilter.value,
+)
+
 onMounted(load)
-watch([statusFilter, showAllStatuses, cityFilter, nameFilter, genderFilter], load)
+// nameFilter is free-text (fires on every keystroke) -- debounced so it doesn't hammer the
+// API mid-word. The dropdown filters are discrete clicks, so they still trigger immediately.
+watch(nameFilter, debounce(loadFromFilterChange, 350))
+watch([statusFilter, cityFilter, genderFilter], loadFromFilterChange)
+watch(page, load)
 </script>
 
 <template>
-  <div class="space-y-4 p-6">
-    <h1 class="text-lg font-bold">آرایشگاه‌ها</h1>
+  <div class="space-y-5 p-8">
+    <AppCard :padded="false" class="p-4">
+      <div class="flex flex-wrap items-end gap-3">
+        <div>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">جست‌وجو</label>
+          <div class="relative">
+            <AppIcon name="search" :size="16" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-muted)" />
+            <input
+              v-model="nameFilter"
+              placeholder="نام آرایشگاه"
+              class="w-52 rounded-xl border border-(--color-border) py-2 ps-9 pe-3 text-sm"
+            />
+          </div>
+        </div>
+        <div>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">شهر</label>
+          <AppSelect v-model="cityFilter" :options="CITY_OPTIONS" width="10rem" searchable />
+        </div>
+        <div>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">مخاطب</label>
+          <AppSelect v-model="genderFilter" :options="GENDER_OPTIONS" width="11rem" />
+        </div>
+        <div data-testid="status-filter">
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">وضعیت</label>
+          <AppSelect v-model="statusFilter" :options="STATUS_OPTIONS" width="11rem" />
+        </div>
+        <button
+          v-if="hasActiveFilters"
+          type="button"
+          class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-(--color-muted) transition-colors hover:text-(--tone-danger-text)"
+          @click="clearFilters"
+        >
+          <AppIcon name="reset" :size="15" />
+          پاک کردن فیلترها
+        </button>
+      </div>
+    </AppCard>
 
-    <div class="flex flex-wrap items-center gap-3">
-      <label class="flex items-center gap-1 text-sm">
-        <input v-model="showAllStatuses" type="checkbox" data-testid="show-all-statuses" />
-        همه وضعیت‌ها
-      </label>
-      <select v-model="statusFilter" data-testid="status-filter" :disabled="showAllStatuses" class="rounded-lg border p-2 text-sm">
-        <option value="pending">در انتظار بررسی</option>
-        <option value="approved">تایید شده</option>
-        <option value="rejected">رد شده</option>
-        <option value="suspended">معلق</option>
-      </select>
-      <input v-model="cityFilter" placeholder="شهر" class="rounded-lg border p-2 text-sm" />
-      <input v-model="nameFilter" placeholder="نام آرایشگاه" class="rounded-lg border p-2 text-sm" />
-      <select v-model="genderFilter" class="rounded-lg border p-2 text-sm">
-        <option value="">همه</option>
-        <option value="women">بانوان</option>
-        <option value="men">آقایان</option>
-      </select>
-    </div>
+    <EmptyState v-if="!loading && salons.length === 0" icon="salons" message="آرایشگاهی با این فیلترها یافت نشد." />
 
-    <p v-if="!loading && salons.length === 0" class="text-sm text-gray-500">موردی یافت نشد.</p>
-
-    <table v-else class="w-full text-right text-sm">
-      <thead>
-        <tr class="border-b text-gray-500">
-          <th class="p-2">نام</th>
-          <th class="p-2">شهر</th>
-          <th class="p-2">مخاطب</th>
-          <th class="p-2">وضعیت</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="salon in salons" :key="salon.id" class="border-b">
-          <td class="p-2">
-            <RouterLink :to="`/salons/${salon.id}`" class="text-(--color-accent)">{{ salon.name }}</RouterLink>
-          </td>
-          <td class="p-2">{{ salon.city }}</td>
-          <td class="p-2">{{ salon.genderTarget === 'women' ? 'بانوان' : 'آقایان' }}</td>
-          <td class="p-2">{{ salon.status }}</td>
-        </tr>
-      </tbody>
-    </table>
+    <AppCard v-else :padded="false" class="overflow-hidden">
+      <table class="w-full text-right text-sm">
+        <thead>
+          <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-muted)">
+            <th class="px-5 py-3 font-semibold">نام</th>
+            <th class="px-5 py-3 font-semibold">شهر</th>
+            <th class="px-5 py-3 font-semibold">مخاطب</th>
+            <th class="px-5 py-3 font-semibold">وضعیت</th>
+            <th class="px-5 py-3 font-semibold">تاریخ ثبت</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="salon in salons"
+            :key="salon.id"
+            class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
+          >
+            <td class="px-5 py-3.5">
+              <RouterLink :to="`/salons/${salon.id}`" class="font-semibold text-(--color-text) hover:text-(--color-accent)">
+                {{ salon.name }}
+              </RouterLink>
+            </td>
+            <td class="px-5 py-3.5 text-(--color-muted)">{{ salon.city }}</td>
+            <td class="px-5 py-3.5 text-(--color-muted)">{{ genderTargetLabel(salon.genderTarget) }}</td>
+            <td class="px-5 py-3.5">
+              <StatusBadge :label="salonStatusLabel(salon.status).label" :tone="salonStatusLabel(salon.status).tone" />
+            </td>
+            <td class="tnum px-5 py-3.5 text-(--color-muted)">{{ formatDate(salon.createdAt) }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <Pagination :page="page" :page-size="pageSize" :total="total" @update:page="(p) => (page = p)" />
+    </AppCard>
   </div>
 </template>

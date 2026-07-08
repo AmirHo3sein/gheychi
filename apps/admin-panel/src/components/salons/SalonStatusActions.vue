@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useApi } from '@/composables/useApi'
+import AppIcon from '@/components/ui/AppIcon.vue'
 
 const props = defineProps<{
   salonId: string
@@ -52,62 +53,72 @@ async function submitReason() {
 </script>
 
 <template>
-  <div class="space-y-3">
-    <div v-if="!showReasonFor" class="flex gap-2">
+  <div>
+    <div v-if="!showReasonFor" class="flex flex-wrap gap-2.5">
       <button
         v-if="status === 'pending'"
         data-testid="approve-button"
         type="button"
         :disabled="submitting"
-        class="rounded-lg bg-(--color-accent) px-4 py-2 text-sm text-white"
+        class="inline-flex items-center gap-2 rounded-xl bg-(--color-accent) px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
         @click="approve"
       >
-        تایید
+        <AppIcon name="check" :size="16" />
+        تایید آرایشگاه
       </button>
       <button
         v-if="status === 'pending'"
         data-testid="reject-button"
         type="button"
         :disabled="submitting"
-        class="rounded-lg border border-red-600 px-4 py-2 text-sm text-red-600"
+        class="inline-flex items-center gap-2 rounded-xl border border-(--tone-danger-text) px-4 py-2.5 text-sm font-semibold text-(--tone-danger-text) transition-colors hover:bg-(--tone-danger-bg) disabled:opacity-40"
         @click="openReason('rejected')"
       >
-        رد
+        <AppIcon name="x" :size="16" />
+        رد درخواست
       </button>
       <button
         v-if="status === 'approved'"
         data-testid="suspend-button"
         type="button"
         :disabled="submitting"
-        class="rounded-lg border border-red-600 px-4 py-2 text-sm text-red-600"
+        class="inline-flex items-center gap-2 rounded-xl border border-(--tone-danger-text) px-4 py-2.5 text-sm font-semibold text-(--tone-danger-text) transition-colors hover:bg-(--tone-danger-bg) disabled:opacity-40"
         @click="openReason('suspended')"
       >
-        تعلیق
+        <AppIcon name="warning" :size="16" />
+        تعلیق آرایشگاه
       </button>
+      <p v-if="status === 'suspended' || status === 'rejected'" class="text-sm text-(--color-muted)">
+        اقدامی برای این وضعیت لازم نیست.
+      </p>
     </div>
 
-    <div v-else class="space-y-2">
+    <div v-else class="space-y-3">
+      <label class="block text-sm font-semibold text-(--color-text)">
+        دلیل {{ showReasonFor === 'rejected' ? 'رد درخواست' : 'تعلیق' }}
+      </label>
       <textarea
         v-model="reason"
         data-testid="reason-input"
-        placeholder="دلیل"
-        class="w-full rounded-lg border p-2 text-sm"
+        placeholder="برای اطلاع آرایشگاه‌دار، دلیل را واضح بنویسید…"
+        rows="3"
+        class="w-full rounded-xl border border-(--color-border) p-3 text-sm"
       />
-      <p v-if="reasonError" data-testid="reason-error" class="text-sm text-red-600">وارد کردن دلیل الزامی است.</p>
-      <div class="flex gap-2">
+      <p v-if="reasonError" data-testid="reason-error" class="text-sm text-(--tone-danger-text)">وارد کردن دلیل الزامی است.</p>
+      <div class="flex gap-2.5">
         <button
           data-testid="reject-submit"
           type="button"
           :disabled="submitting"
-          class="rounded-lg bg-red-600 px-4 py-2 text-sm text-white"
+          class="rounded-xl bg-(--tone-danger-text) px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
           @click="submitReason"
         >
-          ثبت
+          ثبت نهایی
         </button>
         <button
           type="button"
           :disabled="submitting"
-          class="rounded-lg border px-4 py-2 text-sm"
+          class="rounded-xl border border-(--color-border) px-4 py-2.5 text-sm font-semibold text-(--color-muted) transition-colors hover:bg-(--color-border-soft)"
           @click="showReasonFor = null"
         >
           انصراف

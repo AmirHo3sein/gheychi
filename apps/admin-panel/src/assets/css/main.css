@@ -1,18 +1,273 @@
 @import "tailwindcss";
 @import "@fontsource-variable/vazirmatn/wght.css";
 
+/* Manual light/dark toggle (see composables/useTheme.ts) -- same mechanism as user-app's
+   useTheme.ts, but backed by localStorage instead of a cookie since this SPA has no SSR. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* static: prevents Tailwind from tree-shaking these before every consumer is registered */
 @theme static {
   --font-sans: 'Vazirmatn Variable', ui-sans-serif, system-ui, sans-serif;
 
-  /* "Teal Trust" -- same brand tokens as provider-panel/user-app's light theme (single theme, no dark mode) */
+  /* Light mode -- "Teal Trust", same brand tokens as provider-panel/user-app's light theme */
   --color-surface: #F4FBFA;
   --color-surface-card: #FFFFFF;
   --color-text: #0B4F4A;
   --color-accent: #0EA89B;
+  --color-border: #DCEEEC;
+  --color-border-soft: #EAF6F5;
+  --color-muted: #5B8A86;
+
+  /* Status tone system -- replaces raw enum strings everywhere with a consistent color language */
+  --tone-success-bg: #E3F7EE;
+  --tone-success-text: #0F8A54;
+  --tone-warning-bg: #FEF3DE;
+  --tone-warning-text: #B4740E;
+  --tone-danger-bg: #FCE8EA;
+  --tone-danger-text: #C22B3F;
+  --tone-neutral-bg: #EEF1F2;
+  --tone-neutral-text: #4B5F5E;
+  --tone-info-bg: #E7EFFC;
+  --tone-info-text: #2A5FBE;
+
+  --shadow-panel: 0 1px 2px rgba(11, 79, 74, 0.04), 0 8px 24px -12px rgba(11, 79, 74, 0.12);
+  --shadow-pop: 0 12px 32px -8px rgba(11, 79, 74, 0.22);
+}
+
+/* Dark mode -- "Bold Editorial", same accent/surface values as user-app's dark theme so the
+   two apps feel like one product family; the extra tokens this app has (border/muted/tone-*)
+   are new dark equivalents in the same spirit. */
+.dark {
+  --color-surface: #151217;
+  --color-surface-card: #211D24;
+  --color-text: #F5F0F2;
+  --color-accent: #7A3FF2;
+  --color-border: #362F3D;
+  --color-border-soft: #2A242E;
+  --color-muted: #A79AB0;
+
+  --tone-success-bg: #16301F;
+  --tone-success-text: #4ADE80;
+  --tone-warning-bg: #332507;
+  --tone-warning-text: #FBBF24;
+  --tone-danger-bg: #33141B;
+  --tone-danger-text: #FB7185;
+  --tone-neutral-bg: #2A242E;
+  --tone-neutral-text: #C4B8CC;
+  --tone-info-bg: #1E2247;
+  --tone-info-text: #A5A8F5;
+
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.2), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+  --shadow-pop: 0 12px 32px -8px rgba(0, 0, 0, 0.6);
 }
 
 html, body {
   background-color: var(--color-surface);
   color: var(--color-text);
   font-family: var(--font-sans);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+/* Themed scrollbar -- replaces the OS default (which shows up as a jarring bulky,
+   arrow-buttoned bar against this UI's flat panels) with a slim, brand-colored one. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-muted);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-button {
+  display: none;
+  height: 0;
+  width: 0;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Tabular numerals everywhere numbers appear in tables/stat cards -- part of the
+   "precision console" feel: prices, counts, dates line up instead of jittering. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: white;
+}
+
+input, select, textarea {
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(14, 168, 155, 0.15);
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* vue-multiselect brand + RTL overrides -- default CSS assumes LTR (arrow docked at the
+   physical right, text padded from the left); flipped to match this app's RTL convention
+   (arrow at the reading-direction "end" = left, text hugs the right edge), and re-themed
+   from the library's default green to the app's teal accent. Scoped under .app-select so
+   it only touches AppSelect.vue's instances. */
+.app-select .multiselect__tags {
+  min-height: 40px;
+  padding: 0.5rem 0.75rem 0.5rem 2.5rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-card);
+  font-size: 0.875rem;
+  text-align: right;
+}
+.app-select .multiselect--active .multiselect__tags {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(14, 168, 155, 0.15);
+}
+.app-select .multiselect__select {
+  right: auto;
+  left: 1px;
+  height: 38px;
+}
+.app-select .multiselect__select::before {
+  border-color: var(--color-muted) transparent transparent transparent;
+}
+.app-select .multiselect__single,
+.app-select .multiselect__placeholder,
+.app-select .multiselect__input {
+  margin: 0;
+  padding: 0;
+  text-align: right;
+  color: var(--color-text);
+  background: transparent;
+  /* The library's own CSS doesn't constrain this to one line, so a longer label
+     (e.g. "همه مخاطب‌ها") wraps onto a second line inside the fixed-height box
+     instead of just filling the available width -- clip with an ellipsis instead. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  max-width: 100%;
+}
+.app-select .multiselect__placeholder {
+  color: var(--color-muted);
+  padding-top: 0;
+}
+.app-select .multiselect__content-wrapper {
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  background: var(--color-surface-card);
+  box-shadow: var(--shadow-panel);
+  margin-top: 0.25rem;
+  overflow: hidden;
+}
+.app-select .multiselect__option {
+  padding: 0.6rem 0.9rem;
+  min-height: auto;
+  font-size: 0.875rem;
+  text-align: right;
+  color: var(--color-text);
+  background: transparent;
+  transition: background-color 0.1s ease, color 0.1s ease;
+}
+/* --selected marks the current value (kept a step below --highlight in source order,
+   equal specificity, so hovering the already-selected row still shows clear feedback
+   instead of getting stuck on the muted "selected" tint). */
+.app-select .multiselect__option--selected {
+  background: var(--color-border-soft);
+  font-weight: 700;
+}
+.app-select .multiselect__option--highlight,
+.app-select .multiselect__option--highlight::after {
+  background: var(--color-accent);
+  color: white;
+}
+
+/* Login page (v2) -- a light, editorial split-screen instead of the dark particle-field
+   attempt: a soft morphing mesh-gradient panel with a handful of large, calm floating
+   glyphs (curated hero decoration, not a confetti field), plus a clean white form panel. */
+@keyframes mesh-morph-a {
+  0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); }
+  50% { transform: translate(4%, -6%) scale(1.15) rotate(8deg); }
+}
+@keyframes mesh-morph-b {
+  0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); }
+  50% { transform: translate(-5%, 5%) scale(1.1) rotate(-6deg); }
+}
+@keyframes mesh-morph-c {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(3%, 4%) scale(0.92); }
+}
+.mesh-a { animation: mesh-morph-a 18s ease-in-out infinite; }
+.mesh-b { animation: mesh-morph-b 22s ease-in-out infinite; }
+.mesh-c { animation: mesh-morph-c 16s ease-in-out infinite; }
+
+@keyframes glyph-float {
+  0%, 100% { transform: translateY(0) rotate(var(--rot, 0deg)); }
+  50% { transform: translateY(-16px) rotate(calc(var(--rot, 0deg) + 6deg)); }
+}
+.login-glyph {
+  animation: glyph-float 7s ease-in-out infinite;
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.login-stagger {
+  opacity: 0;
+  animation: fade-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes underline-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.login-underline {
+  transform-origin: right;
+  animation: underline-grow 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation-delay: 0.5s;
+}
+
+/* Route-change transition -- a quick fade + gentle rise, applied to the RouterView
+   in AppLayout.vue. Kept subtle and fast so it reads as polish, not a delay. */
+.page-fade-enter-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.page-fade-leave-active {
+  transition: opacity 0.12s ease;
+}
+.page-fade-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.page-fade-leave-to {
+  opacity: 0;
 }
