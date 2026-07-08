@@ -1,0 +1,26 @@
+import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
+import { AuthGuard } from '../auth/auth.guard';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
+import { UpdateConfigDto } from './dto/admin-config.dto';
+import { PlatformConfigService } from './platform-config.service';
+
+@Controller('admin/config')
+@UseGuards(AuthGuard, RolesGuard)
+@Roles('admin')
+export class AdminConfigController {
+  constructor(private readonly config: PlatformConfigService) {}
+
+  @Get()
+  list() {
+    return this.config.listAll();
+  }
+
+  @Patch()
+  async update(@Body() dto: UpdateConfigDto) {
+    for (const entry of dto.updates) {
+      await this.config.set(entry.key, entry.value);
+    }
+    return this.config.listAll();
+  }
+}

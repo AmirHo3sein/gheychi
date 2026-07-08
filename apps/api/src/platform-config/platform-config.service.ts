@@ -38,4 +38,12 @@ export class PlatformConfigService {
   getReminderLeadHours(): Promise<number> {
     return this.getNumber('reminder_lead_hours');
   }
+
+  listAll(): Promise<PlatformConfig[]> {
+    return this.repo.find({ order: { key: 'ASC' } });
+  }
+
+  async set(key: string, value: number | string | boolean): Promise<void> {
+    await this.repo.upsert({ key, value }, ['key']);
+  }
 }
