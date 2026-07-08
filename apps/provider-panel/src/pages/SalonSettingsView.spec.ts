@@ -9,6 +9,8 @@ vi.mock('@/composables/useApi', () => ({
   useApi: () => ({ apiFetch: fetchMock }),
 }))
 
+// Matches the real GET /salons/mine response shape (the raw Salon entity): geo data
+// comes back as a PostGIS geography column, not top-level lat/lng fields.
 const validSalon = {
   id: 's1',
   name: 'سالن قدیمی',
@@ -17,8 +19,7 @@ const validSalon = {
   address: 'خیابان آزادی',
   city: 'تهران',
   capacity: 2,
-  lat: 35.7,
-  lng: 51.4,
+  location: { type: 'Point', coordinates: [51.4, 35.7] },
 }
 
 describe('SalonSettingsView', () => {
@@ -35,13 +36,20 @@ describe('SalonSettingsView', () => {
 
     expect(wrapper.get('[data-testid="salon-name"]').element as HTMLInputElement).toHaveProperty('value', 'سالن قدیمی')
 
+    // The save button must be enabled from the initial load already -- lat/lng are
+    // parsed out of the PostGIS `location` field, not read off a nonexistent top-level
+    // lat/lng, so isFormValid's null check should already be satisfied here.
+    expect((wrapper.get('[data-testid="save-button"]').element as HTMLButtonElement).disabled).toBe(false)
+
     fetchMock.mockResolvedValueOnce({ data: { id: 's1' }, error: null })
     await wrapper.get('[data-testid="salon-name"]').setValue('سالن جدید')
     await wrapper.get('[data-testid="save-button"]').trigger('click')
 
     expect(fetchMock).toHaveBeenCalledWith('/salons/mine', {
       method: 'PATCH',
-      body: expect.objectContaining({ name: 'سالن جدید' }),
+      // Coordinate order flips back to { lat, lng } for the PATCH body -- confirms
+      // `location.coordinates` ([lng, lat]) was unpacked correctly, not transposed.
+      body: expect.objectContaining({ name: 'سالن جدید', lat: 35.7, lng: 51.4 }),
     })
   })
 

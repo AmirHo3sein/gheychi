@@ -35,9 +35,22 @@ const isFormValid = computed(
     form.lng !== null,
 )
 
+// GET /salons/mine returns the raw Salon entity: geo data comes back as a PostGIS
+// geography column, `location: { type: 'Point', coordinates: [lng, lat] }` -- there is
+// no top-level lat/lng field. Note the coordinate order (lng first), matching
+// apps/user-app's geoJsonToLatLng (app/utils/geo.ts).
+interface SalonResponse extends Omit<typeof form, 'lat' | 'lng'> {
+  location: { type: 'Point'; coordinates: [number, number] }
+}
+
 async function load() {
-  const { data } = await apiFetch<typeof form>('/salons/mine', { silent: true })
-  if (data) Object.assign(form, data)
+  const { data } = await apiFetch<SalonResponse>('/salons/mine', { silent: true })
+  if (data) {
+    const { location, ...rest } = data
+    Object.assign(form, rest)
+    form.lng = location.coordinates[0]
+    form.lat = location.coordinates[1]
+  }
   loaded.value = true
 }
 
