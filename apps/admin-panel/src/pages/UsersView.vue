@@ -30,7 +30,7 @@ async function load() {
   if (nameFilter.value) params.set('name', nameFilter.value)
   if (roleFilter.value) params.set('role', roleFilter.value)
   if (joinedFrom.value) params.set('joinedFrom', new Date(joinedFrom.value).toISOString())
-  if (joinedTo.value) params.set('joinedTo', new Date(joinedTo.value).toISOString())
+  if (joinedTo.value) params.set('joinedTo', new Date(`${joinedTo.value}T23:59:59.999`).toISOString())
 
   const { data } = await apiFetch<UserRow[]>(`/admin/users?${params.toString()}`, { silent: true })
   users.value = data ?? []

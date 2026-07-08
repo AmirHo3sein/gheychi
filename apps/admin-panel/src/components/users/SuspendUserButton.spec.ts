@@ -38,6 +38,18 @@ describe('SuspendUserButton', () => {
     expect(fetchMock).toHaveBeenCalledWith('/admin/users/u1/status', { method: 'PATCH', body: { status: 'active' } })
   })
 
+  it('resets submitting without emitting updated when the request fails', async () => {
+    fetchMock.mockResolvedValueOnce({ data: null, error: new Error('boom') })
+    const wrapper = mount(SuspendUserButton, { props: { userId: 'u1', status: 'active' } })
+
+    const suspendButton = wrapper.get('[data-testid="suspend-user"]')
+    await suspendButton.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.emitted('updated')).toBeUndefined()
+    expect((suspendButton.element as HTMLButtonElement).disabled).toBe(false)
+  })
+
   it('disables the action button while a request is in flight', async () => {
     let resolveFetch!: (value: { data: { id: string; status: string }; error: null }) => void
     fetchMock.mockReturnValueOnce(
