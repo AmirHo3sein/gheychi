@@ -2,6 +2,7 @@ import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeor
 
 export type Gender = 'female' | 'male';
 export type UserRole = 'customer' | 'provider' | 'admin';
+export type UserStatus = 'active' | 'suspended';
 
 @Entity('users')
 export class User {
@@ -19,6 +20,9 @@ export class User {
 
   @Column({ type: 'varchar', default: 'customer' })
   role: UserRole;
+
+  @Column({ type: 'varchar', default: 'active' })
+  status: UserStatus;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

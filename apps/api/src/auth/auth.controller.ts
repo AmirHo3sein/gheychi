@@ -1,5 +1,5 @@
 import {
-  Body, Controller, Get, HttpCode, Inject, Patch, Post, Req, Res, UnauthorizedException, UseGuards,
+  Body, Controller, ForbiddenException, Get, HttpCode, Inject, Patch, Post, Req, Res, UnauthorizedException, UseGuards,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Request, Response } from 'express';
@@ -39,6 +39,7 @@ export class AuthController {
     if (!valid) throw new UnauthorizedException('Invalid or expired code');
 
     const { user, isNew } = await this.users.findOrCreateByPhone(dto.phone);
+    if (user.status === 'suspended') throw new ForbiddenException('This account has been suspended');
     const token = await this.jwt.signAsync({ sub: user.id, role: user.role });
     res.cookie(SESSION_COOKIE, token, {
       httpOnly: true,
