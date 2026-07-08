@@ -18,13 +18,14 @@ const salons = ref<SalonRow[]>([])
 const loading = ref(true)
 
 const statusFilter = ref<'pending' | 'approved' | 'rejected' | 'suspended'>('pending')
+const showAllStatuses = ref(false)
 const cityFilter = ref('')
 const nameFilter = ref('')
 const genderFilter = ref<'' | 'women' | 'men'>('')
 
 async function load() {
   loading.value = true
-  const params = new URLSearchParams({ status: statusFilter.value })
+  const params = new URLSearchParams({ status: showAllStatuses.value ? 'all' : statusFilter.value })
   if (cityFilter.value) params.set('city', cityFilter.value)
   if (nameFilter.value) params.set('name', nameFilter.value)
   if (genderFilter.value) params.set('genderTarget', genderFilter.value)
@@ -35,15 +36,19 @@ async function load() {
 }
 
 onMounted(load)
-watch([statusFilter, cityFilter, nameFilter, genderFilter], load)
+watch([statusFilter, showAllStatuses, cityFilter, nameFilter, genderFilter], load)
 </script>
 
 <template>
   <div class="space-y-4 p-6">
     <h1 class="text-lg font-bold">آرایشگاه‌ها</h1>
 
-    <div class="flex flex-wrap gap-3">
-      <select v-model="statusFilter" data-testid="status-filter" class="rounded-lg border p-2 text-sm">
+    <div class="flex flex-wrap items-center gap-3">
+      <label class="flex items-center gap-1 text-sm">
+        <input v-model="showAllStatuses" type="checkbox" data-testid="show-all-statuses" />
+        همه وضعیت‌ها
+      </label>
+      <select v-model="statusFilter" data-testid="status-filter" :disabled="showAllStatuses" class="rounded-lg border p-2 text-sm">
         <option value="pending">در انتظار بررسی</option>
         <option value="approved">تایید شده</option>
         <option value="rejected">رد شده</option>
