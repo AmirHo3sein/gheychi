@@ -1,0 +1,74 @@
+import { mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import SalonStatusActions from './SalonStatusActions.vue'
+
+const fetchMock = vi.fn()
+
+vi.mock('@/composables/useApi', () => ({
+  useApi: () => ({ apiFetch: fetchMock }),
+}))
+
+describe('SalonStatusActions', () => {
+  beforeEach(() => {
+    fetchMock.mockReset()
+  })
+
+  it('approves with no reason required', async () => {
+    fetchMock.mockResolvedValueOnce({ data: { id: 's1', status: 'approved' }, error: null })
+    const wrapper = mount(SalonStatusActions, { props: { salonId: 's1', status: 'pending' } })
+
+    await wrapper.get('[data-testid="approve-button"]').trigger('click')
+
+    expect(fetchMock).toHaveBeenCalledWith('/admin/salons/s1/status', {
+      method: 'PATCH',
+      body: { status: 'approved' },
+    })
+    expect(wrapper.emitted('updated')?.[0]).toEqual([{ id: 's1', status: 'approved' }])
+  })
+
+  it('does not submit a reject with an empty reason', async () => {
+    const wrapper = mount(SalonStatusActions, { props: { salonId: 's1', status: 'pending' } })
+
+    await wrapper.get('[data-testid="reject-button"]').trigger('click')
+    await wrapper.get('[data-testid="reject-submit"]').trigger('click')
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="reason-error"]').exists()).toBe(true)
+  })
+
+  it('rejects with a reason once one is entered', async () => {
+    fetchMock.mockResolvedValueOnce({ data: { id: 's1', status: 'rejected' }, error: null })
+    const wrapper = mount(SalonStatusActions, { props: { salonId: 's1', status: 'pending' } })
+
+    await wrapper.get('[data-testid="reject-button"]').trigger('click')
+    await wrapper.get('[data-testid="reason-input"]').setValue('آدرس نامعتبر است')
+    await wrapper.get('[data-testid="reject-submit"]').trigger('click')
+
+    expect(fetchMock).toHaveBeenCalledWith('/admin/salons/s1/status', {
+      method: 'PATCH',
+      body: { status: 'rejected', reason: 'آدرس نامعتبر است' },
+    })
+  })
+
+  it('only shows a suspend action when the salon is currently approved', () => {
+    const pendingWrapper = mount(SalonStatusActions, { props: { salonId: 's1', status: 'pending' } })
+    expect(pendingWrapper.find('[data-testid="suspend-button"]').exists()).toBe(false)
+
+    const approvedWrapper = mount(SalonStatusActions, { props: { salonId: 's1', status: 'approved' } })
+    expect(approvedWrapper.find('[data-testid="suspend-button"]').exists()).toBe(true)
+  })
+
+  it('suspends with a reason', async () => {
+    fetchMock.mockResolvedValueOnce({ data: { id: 's1', status: 'suspended' }, error: null })
+    const wrapper = mount(SalonStatusActions, { props: { salonId: 's1', status: 'approved' } })
+
+    await wrapper.get('[data-testid="suspend-button"]').trigger('click')
+    await wrapper.get('[data-testid="reason-input"]').setValue('شکایت مشتری')
+    await wrapper.get('[data-testid="reject-submit"]').trigger('click')
+
+    expect(fetchMock).toHaveBeenCalledWith('/admin/salons/s1/status', {
+      method: 'PATCH',
+      body: { status: 'suspended', reason: 'شکایت مشتری' },
+    })
+  })
+})
