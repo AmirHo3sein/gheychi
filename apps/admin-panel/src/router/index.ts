@@ -15,6 +15,7 @@ const routes = [
       { path: 'salons', name: 'salons', component: () => import('@/pages/SalonsView.vue') },
       { path: 'salons/:id', name: 'salon-detail', component: () => import('@/pages/SalonDetailView.vue') },
       { path: 'reviews', name: 'reviews', component: () => import('@/pages/ReviewsView.vue') },
+      { path: 'categories', name: 'categories', component: () => import('@/pages/CategoriesView.vue') },
     ],
   },
 ]
