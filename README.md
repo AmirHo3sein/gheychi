@@ -6,8 +6,8 @@ Salon discovery & booking marketplace (Iran). Spec: `docs/superpowers/specs/2026
 
 - `apps/api` — NestJS modular monolith (PostgreSQL + PostGIS, Redis)
 - `apps/user-app` — Nuxt 4, mobile-first PWA (Plan 4)
-- `apps/provider-panel` — Vue 3 SPA (future plan, not yet started)
-- `apps/admin-panel` — Vue 3 SPA (future plan, not yet started)
+- `apps/provider-panel` — Vue 3 SPA, salon-owner back office (Plan 5)
+- `apps/admin-panel` — Vue 3 SPA, platform admin back office (Plan 6)
 
 ## Getting started
 
@@ -84,3 +84,35 @@ The first real UI: a Nuxt 4 SSR PWA covering login, discovery, salon profiles, b
 - `salon_photos` has a public read endpoint now, but still no upload path anywhere in the system — galleries stay empty until provider-panel (a future plan) ships photo management.
 - The admin `/admin/featured` page and the two admin salon endpoints it calls are intentionally minimal — there's still no salon-approval workflow (`pending` → `approved`) anywhere in the API; that remains a future admin-panel concern, same as before this plan.
 - Blog/content-marketing SEO is a separate, not-yet-started Plan 5 — this plan only covers the salon-profile side of SEO.
+
+## Admin panel (Plan 6)
+
+A new Vue 3 + Vite SPA (`apps/admin-panel`, port 3005) for platform staff, same minimal stack and "Teal Trust" tokens as provider-panel, no shared code between the two per the isolation rule. Built as five vertical slices, backend + frontend together per slice:
+
+- **Salon approvals** — a queue view (defaults to `status=pending`) and a detail view with Approve / Reject (reason required) / Suspend (reason required) actions. This closes the biggest gap Provider Panel (Plan 5) left open: `pending` → `approved` no longer needs a manual DB update anywhere in the flow.
+- **Review moderation** — a filterable list (salon/status/rating) so an admin can find the review a report was about and flip it published ↔ rejected via the existing `PATCH /api/admin/reviews/:id`.
+- **Categories** — create and rename service categories. No delete (categories are FK'd from `salon_services`, so removing one in use needs a restrict-or-cascade decision left for later).
+- **Users & salons** — search/filter users (phone, name, role, join-date range) and salons (name, city, status, gender target), with suspend/unsuspend on both. Suspending a user blocks their login only — it does not cascade to their salon.
+- **Platform config** — a generic key/value editor over `platform_config`, no per-key curation or bounds checking.
+
+New/changed API endpoints:
+- `GET/PATCH /api/admin/salons` — now filterable by `status`/`city`/`name`/`genderTarget`, plus a `status=all` option; defaults to `status=pending`
+- `PATCH /api/admin/salons/:id/status` — `{ status: 'approved'|'rejected'|'suspended', reason?: string }` (reason required for reject/suspend)
+- `GET /api/admin/salons/:id` — full detail for the salon-detail view
+- `POST /api/salons/mine/resubmit` — provider-panel side; flips a `rejected` salon back to `pending`
+- `GET /api/admin/reviews` — filterable review list for moderation
+- `POST/PATCH /api/admin/categories` — create/rename
+- `GET/PATCH /api/admin/users` — search/filter, and `PATCH /api/admin/users/:id/status` to suspend/unsuspend
+- `GET/PATCH /api/admin/config` — read all `platform_config` rows / bulk-update them
+
+**Provider Panel addition:** a Salon Settings page (Dashboard → Settings, alongside Hours/Photos) reusing the onboarding `SalonInfoStep.vue` in edit mode, plus a `rejected`-status branch on the pending-approval screen showing the rejection reason with a link to Settings and a resubmit button — so a rejected provider has a real recovery path instead of a dead end.
+
+CORS now also allows `ADMIN_APP_BASE_URL` (default `http://localhost:3005`) as a credentialed origin, alongside the existing `FRONTEND_BASE_URL`/`PROVIDER_APP_BASE_URL` — found and fixed as part of this plan's e2e work (Task 24).
+
+**Out of scope, not built by this plan:**
+- No report/flag mechanism — reports about a salon or review still arrive out-of-band (support ticket, phone call), same as before.
+- No category delete.
+- No auto-suspend of a user's salon when the user is suspended.
+- No first-admin bootstrap script — the first admin account is still a manual DB update.
+- No audit log of admin actions (who approved/rejected/suspended what, when).
+- No notification to an admin when a provider resubmits a rejected salon.

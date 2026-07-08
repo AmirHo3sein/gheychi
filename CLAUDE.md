@@ -257,8 +257,14 @@ New feature work should follow the same shape: brainstorm to a spec in `specs/`,
 
 Carried forward across every plan shipped so far — check these are still accurate before assuming otherwise:
 
-- **No salon photo upload path.** `salon_photos` has a public read endpoint (`GET /salons/:slug/photos`) and the entity/table exist, but nothing lets a provider add a photo yet. Slated for the Provider Panel plan.
-- **No salon-approval workflow.** `pending` → `approved` is a manual DB update; there's no admin endpoint or UI for it. The `/admin/featured` page and its two endpoints (feature-flagging) are intentionally minimal and are *not* an approval workflow.
-- **Provider Panel and Admin Panel are both unstarted.** Nearly all provider-side CRUD capability already exists in the API (`/salons/mine/*` for services, hours, exceptions, bookings, review replies) — building these panels is primarily frontend work over existing endpoints, plus the two backend gaps above.
-- **Blog/content-marketing CMS** is a separate, not-yet-started Plan 5 (backend module + admin editor + public pages) — out of scope for every plan so far.
-- **No real payment refunds.** No real alerting/paging on the `logger.error(...)` calls that flag payments needing manual review — both are explicit MVP scope cuts, not bugs.
+- **Provider Panel (Plan 5) and Admin Panel (Plan 6) are both built.** `apps/provider-panel` (port 3004) covers onboarding, bookings, services, hours, photos, reviews, earnings, and a Salon Settings/resubmit flow. `apps/admin-panel` (port 3005) covers salon approvals, review moderation, categories, users/salons search+suspend, and platform config editing.
+- **Salon approval no longer requires a manual DB update.** `PATCH /api/admin/salons/:id/status` (approve/reject/suspend, reason required for reject/suspend) plus `POST /api/salons/mine/resubmit` (provider side, flips `rejected` back to `pending`) close this gap — see the README's "Admin panel (Plan 6)" section for the full endpoint list.
+- **No salon photo upload path** was the old gap here — it's closed: `POST /api/salons/mine/photos` (Plan 5) lets a provider upload/manage photos via a swappable `StorageProvider` (`local`/`s3`).
+- **Blog/content-marketing CMS** is a separate, not-yet-started future plan (backend module + admin editor + public pages) — out of scope for every plan so far.
+- **No real payment refunds**, and no real alerting/paging on the `logger.error(...)` calls that flag payments needing manual review — both are explicit MVP scope cuts, not bugs.
+- **No admin action audit log** — approve/reject/suspend/config-edit actions overwrite state with no history of who did what, when.
+- **No first-admin bootstrap script** — the first `admin`-role user is still a manual DB update; there's no self-service admin signup by design.
+- **No report/flag mechanism** — reports about a salon or review still arrive out-of-band (support ticket, phone call); the admin review/salon list views are how an admin *finds* what a report was about, not an in-system flag queue.
+- **No category delete** — `POST/PATCH /api/admin/categories` support create/rename only; categories are FK'd from `salon_services`, so delete needs a restrict-or-cascade decision left for later.
+- **No auto-suspend of a user's salon when the user is suspended** — `PATCH /api/admin/users/:id/status` blocks the user's login only, it does not cascade to their salon's status.
+- **No notification when a provider resubmits a rejected salon** — no notification system covers this yet.
