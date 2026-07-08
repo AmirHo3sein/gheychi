@@ -5,11 +5,12 @@ export interface Salon {
   id: string
   name: string
   slug: string
-  status: 'pending' | 'approved' | 'suspended'
+  status: 'pending' | 'approved' | 'rejected' | 'suspended'
   genderTarget: 'women' | 'men'
   address: string
   city: string
   capacity: number
+  rejectionReason: string | null
 }
 
 const salon = ref<Salon | null>(null)
