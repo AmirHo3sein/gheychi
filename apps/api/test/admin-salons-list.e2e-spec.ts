@@ -45,8 +45,9 @@ describe('Admin salon list filters (e2e)', () => {
       .get('/api/admin/salons')
       .set('Cookie', adminCookie)
       .expect(200);
-    expect(res.body).toHaveLength(2);
-    expect(res.body.every((s: { status: string }) => s.status === 'pending')).toBe(true);
+    expect(res.body.items).toHaveLength(2);
+    expect(res.body.total).toBe(2);
+    expect(res.body.items.every((s: { status: string }) => s.status === 'pending')).toBe(true);
   });
 
   it('filters by city', async () => {
@@ -54,8 +55,8 @@ describe('Admin salon list filters (e2e)', () => {
       .get('/api/admin/salons?city=Shiraz')
       .set('Cookie', adminCookie)
       .expect(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].name).toBe('Pending Salon Shiraz');
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0].name).toBe('Pending Salon Shiraz');
   });
 
   it('filters by genderTarget', async () => {
@@ -63,8 +64,8 @@ describe('Admin salon list filters (e2e)', () => {
       .get('/api/admin/salons?genderTarget=men')
       .set('Cookie', adminCookie)
       .expect(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].name).toBe('Pending Salon Shiraz');
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0].name).toBe('Pending Salon Shiraz');
   });
 
   it('filters by name (partial, case-insensitive)', async () => {
@@ -72,8 +73,8 @@ describe('Admin salon list filters (e2e)', () => {
       .get('/api/admin/salons?name=tehran')
       .set('Cookie', adminCookie)
       .expect(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].name).toBe('Pending Salon Tehran');
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0].name).toBe('Pending Salon Tehran');
   });
 
   it('an explicit status=approved filter overrides the pending default', async () => {
@@ -81,7 +82,8 @@ describe('Admin salon list filters (e2e)', () => {
       .get('/api/admin/salons?status=approved')
       .set('Cookie', adminCookie)
       .expect(200);
-    expect(res.body).toHaveLength(0);
+    expect(res.body.items).toHaveLength(0);
+    expect(res.body.total).toBe(0);
   });
 
   it('status=all returns every status with no filtering', async () => {
@@ -99,7 +101,7 @@ describe('Admin salon list filters (e2e)', () => {
       .get('/api/admin/salons?status=all')
       .set('Cookie', adminCookie)
       .expect(200);
-    const byName = (name: string) => res.body.find((s: { name: string }) => s.name === name);
+    const byName = (name: string) => res.body.items.find((s: { name: string }) => s.name === name);
     expect(byName('Pending Salon Tehran')?.status).toBe('approved');
     expect(byName('Pending Salon Shiraz')?.status).toBe('pending');
   });
@@ -110,5 +112,42 @@ describe('Admin salon list filters (e2e)', () => {
       .get('/api/admin/salons')
       .set('Cookie', customerCookie)
       .expect(403);
+  });
+
+  it('paginates results and reports the true total across all pages', async () => {
+    // Approve both seeded salons (Tehran was already approved by the previous test;
+    // Shiraz still needs to be) so status=all + pageSize=1 has two real pages to walk.
+    await request(app.getHttpServer())
+      .get('/api/admin/salons?status=all')
+      .set('Cookie', adminCookie)
+      .expect(200);
+    const shirazId = (
+      await request(app.getHttpServer()).get('/api/admin/salons?status=all').set('Cookie', adminCookie)
+    ).body.items.find((s: { name: string }) => s.name === 'Pending Salon Shiraz').id;
+    await request(app.getHttpServer())
+      .patch(`/api/admin/salons/${shirazId}/status`)
+      .set('Cookie', adminCookie)
+      .send({ status: 'approved' })
+      .expect(200);
+
+    const page1 = await request(app.getHttpServer())
+      .get('/api/admin/salons?status=all&page=1&pageSize=1')
+      .set('Cookie', adminCookie)
+      .expect(200);
+    expect(page1.body.items).toHaveLength(1);
+    expect(page1.body.total).toBe(2);
+    expect(page1.body.page).toBe(1);
+    expect(page1.body.pageSize).toBe(1);
+
+    const page2 = await request(app.getHttpServer())
+      .get('/api/admin/salons?status=all&page=2&pageSize=1')
+      .set('Cookie', adminCookie)
+      .expect(200);
+    expect(page2.body.items).toHaveLength(1);
+    expect(page2.body.total).toBe(2);
+    // The two pages, taken together, must cover both salons with no overlap --
+    // proving skip/take is genuinely wired to `page`, not just accepting and
+    // ignoring the query params.
+    expect(page1.body.items[0].id).not.toBe(page2.body.items[0].id);
   });
 });

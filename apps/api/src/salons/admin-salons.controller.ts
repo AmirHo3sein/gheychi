@@ -16,7 +16,7 @@ export class AdminSalonsController {
   constructor(@InjectRepository(Salon) private readonly salons: Repository<Salon>) {}
 
   @Get()
-  list(@Query() query: AdminSalonQueryDto) {
+  async list(@Query() query: AdminSalonQueryDto) {
     const qb = this.salons
       .createQueryBuilder('salon')
       .select(['salon.id', 'salon.name', 'salon.city', 'salon.status', 'salon.genderTarget', 'salon.isFeatured', 'salon.featuredUntil', 'salon.createdAt'])
@@ -29,7 +29,12 @@ export class AdminSalonsController {
     if (query.name) qb.andWhere('salon.name ILIKE :name', { name: `%${query.name}%` });
     if (query.genderTarget) qb.andWhere('salon.genderTarget = :genderTarget', { genderTarget: query.genderTarget });
 
-    return qb.getMany();
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    qb.skip((page - 1) * pageSize).take(pageSize);
+
+    const [items, total] = await qb.getManyAndCount();
+    return { items, total, page, pageSize };
   }
 
   @Get(':id')

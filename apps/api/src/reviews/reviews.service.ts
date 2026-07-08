@@ -58,12 +58,27 @@ export class ReviewsService {
     return this.reviews.find({ where: { salonId, status: 'published' }, order: { createdAt: 'DESC' } });
   }
 
-  listForAdmin(query: { salonId?: string; status?: 'published' | 'rejected'; rating?: number }): Promise<Review[]> {
+  async listForAdmin(query: {
+    salonId?: string;
+    status?: 'published' | 'rejected';
+    rating?: number;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ items: Review[]; total: number; page: number; pageSize: number }> {
     const where: Record<string, unknown> = {};
     if (query.salonId) where.salonId = query.salonId;
     if (query.status) where.status = query.status;
     if (query.rating) where.rating = query.rating;
-    return this.reviews.find({ where, order: { createdAt: 'DESC' } });
+
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    const [items, total] = await this.reviews.findAndCount({
+      where,
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    });
+    return { items, total, page, pageSize };
   }
 
   async addSalonReply(salonId: string, reviewId: string, reply: string): Promise<Review> {

@@ -48,7 +48,7 @@ describe('Admin — featured salon toggle (e2e)', () => {
       .get('/api/admin/salons?status=approved')
       .set('Cookie', adminCookie)
       .expect(200);
-    expect(res.body.find((s: { id: string }) => s.id === salonId)).toBeDefined();
+    expect(res.body.items.find((s: { id: string }) => s.id === salonId)).toBeDefined();
   });
 
   it('excludes salons that are not approved', async () => {
@@ -70,7 +70,7 @@ describe('Admin — featured salon toggle (e2e)', () => {
       .get('/api/admin/salons?status=approved')
       .set('Cookie', adminCookie)
       .expect(200);
-    expect(res.body.find((s: { id: string }) => s.id === pendingId)).toBeUndefined();
+    expect(res.body.items.find((s: { id: string }) => s.id === pendingId)).toBeUndefined();
   });
 
   it('toggles a salon to featured with an expiry', async () => {
@@ -85,7 +85,7 @@ describe('Admin — featured salon toggle (e2e)', () => {
       .get('/api/admin/salons?status=approved')
       .set('Cookie', adminCookie)
       .expect(200);
-    const updated = res.body.find((s: { id: string }) => s.id === salonId);
+    const updated = res.body.items.find((s: { id: string }) => s.id === salonId);
     expect(updated.isFeatured).toBe(true);
     expect(updated.featuredUntil).toBe(featuredUntil);
   });

@@ -74,8 +74,9 @@ describe('Admin reviews list (e2e)', () => {
       .get(`/api/admin/reviews?salonId=${salonId}`)
       .set('Cookie', adminCookie)
       .expect(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].comment).toBe('خوب بود');
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.total).toBe(1);
+    expect(res.body.items[0].comment).toBe('خوب بود');
   });
 
   it('filters by status', async () => {
@@ -83,7 +84,8 @@ describe('Admin reviews list (e2e)', () => {
       .get('/api/admin/reviews?status=rejected')
       .set('Cookie', adminCookie)
       .expect(200);
-    expect(res.body).toHaveLength(0);
+    expect(res.body.items).toHaveLength(0);
+    expect(res.body.total).toBe(0);
   });
 
   it('filters by rating', async () => {
@@ -91,11 +93,47 @@ describe('Admin reviews list (e2e)', () => {
       .get('/api/admin/reviews?rating=4')
       .set('Cookie', adminCookie)
       .expect(200);
-    expect(res.body).toHaveLength(1);
+    expect(res.body.items).toHaveLength(1);
   });
 
   it('rejects a non-admin caller', async () => {
     const customerCookie = await loginAs(app, '09122270098');
     await request(app.getHttpServer()).get('/api/admin/reviews').set('Cookie', customerCookie).expect(403);
+  });
+
+  it('paginates results and reports the true total across all pages', async () => {
+    const dataSource = app.get(DataSource);
+    // A second completed booking + review on the same salon, so there are two reviews
+    // total to page across (the first review was seeded by the 'lists reviews filtered
+    // by salonId' test above, in the same salon/booking fixture chain).
+    await dataSource.query(
+      `INSERT INTO bookings (id, salon_id, service_id, user_id, starts_at, ends_at, status, price_snapshot, deposit_amount)
+       SELECT '00000000-0000-0000-0000-0000000000b2', $1, id, '00000000-0000-0000-0000-0000000000a1', now(), now(), 'completed', 100000, 20000
+       FROM salon_services WHERE salon_id = $1 LIMIT 1`,
+      [salonId],
+    );
+    await dataSource.query(
+      `INSERT INTO reviews (id, booking_id, salon_id, user_id, rating, comment, status)
+       VALUES ('00000000-0000-0000-0000-0000000000c2', '00000000-0000-0000-0000-0000000000b2', $1, '00000000-0000-0000-0000-0000000000a1', 5, 'دوباره اومدم', 'published')`,
+      [salonId],
+    );
+
+    const page1 = await request(app.getHttpServer())
+      .get(`/api/admin/reviews?salonId=${salonId}&page=1&pageSize=1`)
+      .set('Cookie', adminCookie)
+      .expect(200);
+    expect(page1.body.items).toHaveLength(1);
+    expect(page1.body.total).toBe(2);
+    expect(page1.body.page).toBe(1);
+    expect(page1.body.pageSize).toBe(1);
+
+    const page2 = await request(app.getHttpServer())
+      .get(`/api/admin/reviews?salonId=${salonId}&page=2&pageSize=1`)
+      .set('Cookie', adminCookie)
+      .expect(200);
+    expect(page2.body.items).toHaveLength(1);
+    expect(page2.body.total).toBe(2);
+    // Confirms skip/take is genuinely wired to `page`, not just accepted and ignored.
+    expect(page1.body.items[0].id).not.toBe(page2.body.items[0].id);
   });
 });

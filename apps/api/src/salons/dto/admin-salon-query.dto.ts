@@ -1,4 +1,5 @@
-import { IsIn, IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class AdminSalonQueryDto {
   @IsOptional()
@@ -16,4 +17,17 @@ export class AdminSalonQueryDto {
   @IsOptional()
   @IsIn(['women', 'men'])
   genderTarget?: 'women' | 'men';
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  pageSize?: number;
 }
