@@ -30,6 +30,13 @@ export class AdminSalonsController {
     return qb.getMany();
   }
 
+  @Get(':id')
+  async detail(@Param('id', ParseUUIDPipe) id: string) {
+    const salon = await this.salons.findOneBy({ id });
+    if (!salon) throw new NotFoundException();
+    return salon;
+  }
+
   @Patch(':id/status')
   async setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AdminSalonStatusDto) {
     const result = await this.salons.update(
