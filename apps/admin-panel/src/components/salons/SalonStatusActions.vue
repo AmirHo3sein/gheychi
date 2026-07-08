@@ -14,12 +14,15 @@ const { apiFetch } = useApi()
 const showReasonFor = ref<'rejected' | 'suspended' | null>(null)
 const reason = ref('')
 const reasonError = ref(false)
+const submitting = ref(false)
 
 async function approve() {
+  submitting.value = true
   const { data } = await apiFetch<{ id: string; status: string }>(`/admin/salons/${props.salonId}/status`, {
     method: 'PATCH',
     body: { status: 'approved' },
   })
+  submitting.value = false
   if (data) emit('updated', data)
 }
 
@@ -35,10 +38,12 @@ async function submitReason() {
     return
   }
   const target = showReasonFor.value!
+  submitting.value = true
   const { data } = await apiFetch<{ id: string; status: string }>(`/admin/salons/${props.salonId}/status`, {
     method: 'PATCH',
     body: { status: target, reason: reason.value.trim() },
   })
+  submitting.value = false
   if (data) {
     showReasonFor.value = null
     emit('updated', data)
@@ -53,6 +58,7 @@ async function submitReason() {
         v-if="status === 'pending'"
         data-testid="approve-button"
         type="button"
+        :disabled="submitting"
         class="rounded-lg bg-(--color-accent) px-4 py-2 text-sm text-white"
         @click="approve"
       >
@@ -62,6 +68,7 @@ async function submitReason() {
         v-if="status === 'pending'"
         data-testid="reject-button"
         type="button"
+        :disabled="submitting"
         class="rounded-lg border border-red-600 px-4 py-2 text-sm text-red-600"
         @click="openReason('rejected')"
       >
@@ -71,6 +78,7 @@ async function submitReason() {
         v-if="status === 'approved'"
         data-testid="suspend-button"
         type="button"
+        :disabled="submitting"
         class="rounded-lg border border-red-600 px-4 py-2 text-sm text-red-600"
         @click="openReason('suspended')"
       >
@@ -90,12 +98,18 @@ async function submitReason() {
         <button
           data-testid="reject-submit"
           type="button"
+          :disabled="submitting"
           class="rounded-lg bg-red-600 px-4 py-2 text-sm text-white"
           @click="submitReason"
         >
           ثبت
         </button>
-        <button type="button" class="rounded-lg border px-4 py-2 text-sm" @click="showReasonFor = null">
+        <button
+          type="button"
+          :disabled="submitting"
+          class="rounded-lg border px-4 py-2 text-sm"
+          @click="showReasonFor = null"
+        >
           انصراف
         </button>
       </div>

@@ -23,13 +23,18 @@ const salon = ref<SalonDetail | null>(null)
 const notFound = ref(false)
 
 async function load() {
-  const { data, error } = await apiFetch<SalonDetail>(`/admin/salons/${route.params.id}`, { silent: true })
-  if (!data) {
-    notFound.value = true
+  const { data, error } = await apiFetch<SalonDetail>(`/admin/salons/${route.params.id}`)
+  if (data) {
+    salon.value = data
+    notFound.value = false
     return
   }
-  salon.value = data
-  notFound.value = !!error
+  // Only a confirmed 404 means the record genuinely doesn't exist. Any other
+  // error (network failure, 5xx, etc.) -- notably the refetch triggered by
+  // onUpdated() right after a successful approve/reject/suspend -- must not
+  // wipe already-known-good salon state; the apiFetch call above already
+  // surfaces a toast for it.
+  if (error?.status === 404) notFound.value = true
 }
 
 function onUpdated(updated: { id: string; status: string }) {

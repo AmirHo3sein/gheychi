@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SalonStatusActions from './SalonStatusActions.vue'
 
@@ -48,6 +48,31 @@ describe('SalonStatusActions', () => {
       method: 'PATCH',
       body: { status: 'rejected', reason: 'آدرس نامعتبر است' },
     })
+  })
+
+  it('disables the approve button while a request is in flight', async () => {
+    let resolveFetch!: (value: { data: { id: string; status: string }; error: null }) => void
+    fetchMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFetch = resolve
+      }),
+    )
+    const wrapper = mount(SalonStatusActions, { props: { salonId: 's1', status: 'pending' } })
+
+    const approveButton = wrapper.get('[data-testid="approve-button"]')
+    await approveButton.trigger('click')
+
+    expect((approveButton.element as HTMLButtonElement).disabled).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    // A second click while still in flight must not fire a duplicate request.
+    await approveButton.trigger('click')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    resolveFetch({ data: { id: 's1', status: 'approved' }, error: null })
+    await flushPromises()
+
+    expect((approveButton.element as HTMLButtonElement).disabled).toBe(false)
   })
 
   it('only shows a suspend action when the salon is currently approved', () => {
