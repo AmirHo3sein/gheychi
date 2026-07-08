@@ -7,6 +7,7 @@ import { createTestApp } from './utils/test-app';
 describe('Admin salon list filters (e2e)', () => {
   let app: INestApplication;
   let adminCookie: string;
+  let tehranSalonId: string;
 
   beforeAll(async () => {
     await resetDatabase();
@@ -14,7 +15,7 @@ describe('Admin salon list filters (e2e)', () => {
     adminCookie = await loginAsAdmin(app, '09122230001');
 
     const ownerCookie = await loginAs(app, '09122230002');
-    await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerCookie).send({
+    const tehranRes = await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerCookie).send({
       name: 'Pending Salon Tehran',
       genderTarget: 'women',
       address: 'Somewhere St, No. 5',
@@ -22,6 +23,7 @@ describe('Admin salon list filters (e2e)', () => {
       lat: 35.7,
       lng: 51.4,
     });
+    tehranSalonId = tehranRes.body.id;
 
     const owner2Cookie = await loginAs(app, '09122230003');
     await request(app.getHttpServer()).post('/api/salons').set('Cookie', owner2Cookie).send({
@@ -83,11 +85,23 @@ describe('Admin salon list filters (e2e)', () => {
   });
 
   it('status=all returns every status with no filtering', async () => {
+    // Approve one of the two seeded salons so this request must span both
+    // 'pending' and 'approved' statuses -- proving the 'all' bypass genuinely
+    // disables the pending-only default, rather than the assertion happening
+    // to pass because both seeded salons are still pending.
+    await request(app.getHttpServer())
+      .patch(`/api/admin/salons/${tehranSalonId}/status`)
+      .set('Cookie', adminCookie)
+      .send({ status: 'approved' })
+      .expect(200);
+
     const res = await request(app.getHttpServer())
       .get('/api/admin/salons?status=all')
       .set('Cookie', adminCookie)
       .expect(200);
-    expect(res.body.length).toBeGreaterThanOrEqual(2); // at least the 2 pending salons seeded in beforeAll
+    const byName = (name: string) => res.body.find((s: { name: string }) => s.name === name);
+    expect(byName('Pending Salon Tehran')?.status).toBe('approved');
+    expect(byName('Pending Salon Shiraz')?.status).toBe('pending');
   });
 
   it('rejects a non-admin caller', async () => {
