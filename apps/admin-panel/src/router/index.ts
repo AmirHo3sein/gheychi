@@ -10,7 +10,10 @@ const routes = [
   {
     path: '/',
     component: AppLayout,
-    children: [{ path: '', name: 'dashboard', component: () => import('@/pages/DashboardView.vue') }],
+    children: [
+      { path: '', name: 'dashboard', component: () => import('@/pages/DashboardView.vue') },
+      { path: 'salons', name: 'salons', component: () => import('@/pages/SalonsView.vue') },
+    ],
   },
 ]
 
