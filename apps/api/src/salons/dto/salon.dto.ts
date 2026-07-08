@@ -42,6 +42,7 @@ export class CreateSalonDto {
 export class UpdateSalonDto {
   @IsOptional() @IsString() @Length(2, 150) name?: string;
   @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsIn(['women', 'men']) genderTarget?: 'women' | 'men';
   @IsOptional() @IsString() @Length(5, 500) address?: string;
   @IsOptional() @IsString() @Length(2, 80) city?: string;
   @IsOptional() @Type(() => Number) @IsLatitude() lat?: number;
