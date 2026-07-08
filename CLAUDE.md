@@ -235,7 +235,7 @@ Tailwind v4 (via `@tailwindcss/vite`, no `tailwind.config`) + CSS custom propert
 | Entity | Key states/fields |
 |---|---|
 | `User.role` | `customer` \| `provider` \| `admin` — becoming a provider is automatic (`UsersService.promoteToProvider()`) when a user creates a salon, not a separate admin step |
-| `Salon.status` | `pending` (default on create) → `approved` (manual DB update today — **no API approval workflow exists yet**) \| `suspended`; only `approved` salons appear in public search/profile queries |
+| `Salon.status` | `pending` (default on create) → `approved` \| `rejected` \| `suspended`, via `PATCH /api/admin/salons/:id/status` (admin-only, Plan 6); a `rejected` salon can flip back to `pending` via `POST /api/salons/mine/resubmit` (provider-side). Only `approved` salons appear in public search/profile queries |
 | `Salon.genderTarget` | `women` \| `men` — every search/listing result respects this filter, including featured/ad-boosted results, with no bypass |
 | `Booking.status` | `pending_payment` → `confirmed` → `completed` \| `cancelled_by_user` \| `cancelled_by_salon` \| `expired` \| `no_show` |
 | `Payment.status` | `initiated` → `paid` \| `failed` \| `refunded` — **bookkeeping labels only**; there is no real Zarinpal refund API call anywhere. `refunded` means "customer is owed a refund," not "a refund was issued" |
