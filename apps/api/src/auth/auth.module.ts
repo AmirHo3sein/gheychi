@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { SmsModule } from '../sms/sms.module';
 import { UsersModule } from '../users/users.module';
+import { AdminUsersController } from '../users/admin-users.controller';
 import { AuthController } from './auth.controller';
 import { AuthGuard } from './auth.guard';
 import { OtpService } from './otp.service';
@@ -21,7 +22,7 @@ import { RolesGuard } from './roles.guard';
       }),
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, AdminUsersController],
   providers: [OtpService, AuthGuard, RolesGuard],
   exports: [OtpService, AuthGuard, RolesGuard, UsersModule],
 })
