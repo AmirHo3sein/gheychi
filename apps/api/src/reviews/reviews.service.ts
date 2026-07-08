@@ -58,6 +58,14 @@ export class ReviewsService {
     return this.reviews.find({ where: { salonId, status: 'published' }, order: { createdAt: 'DESC' } });
   }
 
+  listForAdmin(query: { salonId?: string; status?: 'published' | 'rejected'; rating?: number }): Promise<Review[]> {
+    const where: Record<string, unknown> = {};
+    if (query.salonId) where.salonId = query.salonId;
+    if (query.status) where.status = query.status;
+    if (query.rating) where.rating = query.rating;
+    return this.reviews.find({ where, order: { createdAt: 'DESC' } });
+  }
+
   async addSalonReply(salonId: string, reviewId: string, reply: string): Promise<Review> {
     const review = await this.reviews.findOneBy({ id: reviewId, salonId });
     if (!review) throw new NotFoundException('Review not found');

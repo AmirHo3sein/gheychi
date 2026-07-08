@@ -1,7 +1,8 @@
-import { Body, Controller, Param, ParseUUIDPipe, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { AdminReviewQueryDto } from './dto/admin-review-query.dto';
 import { ModerateReviewDto } from './dto/review.dto';
 import { ReviewsService } from './reviews.service';
 
@@ -10,6 +11,11 @@ import { ReviewsService } from './reviews.service';
 @Roles('admin')
 export class AdminReviewsController {
   constructor(private readonly reviews: ReviewsService) {}
+
+  @Get()
+  list(@Query() query: AdminReviewQueryDto) {
+    return this.reviews.listForAdmin(query);
+  }
 
   @Patch(':id')
   moderate(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ModerateReviewDto) {
