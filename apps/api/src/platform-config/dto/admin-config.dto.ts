@@ -1,8 +1,9 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsNumber, IsString, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsNotEmpty, IsNumber, IsString, ValidateNested } from 'class-validator';
 
 class ConfigUpdateEntryDto {
   @IsString()
+  @IsNotEmpty()
   key: string;
 
   @IsNumber()

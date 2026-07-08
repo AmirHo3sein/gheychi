@@ -18,9 +18,7 @@ export class AdminConfigController {
 
   @Patch()
   async update(@Body() dto: UpdateConfigDto) {
-    for (const entry of dto.updates) {
-      await this.config.set(entry.key, entry.value);
-    }
+    await this.config.setMany(dto.updates);
     return this.config.listAll();
   }
 }

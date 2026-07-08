@@ -52,6 +52,34 @@ describe('Admin platform config (e2e)', () => {
       .expect(400);
   });
 
+  it('rejects a batch containing an unknown key and leaves the valid key unchanged', async () => {
+    await request(app.getHttpServer())
+      .patch('/api/admin/config')
+      .set('Cookie', adminCookie)
+      .send({
+        updates: [
+          { key: 'commission_percent', value: 40 },
+          { key: 'commission_precent', value: 5 },
+        ],
+      })
+      .expect(404);
+
+    const res = await request(app.getHttpServer()).get('/api/admin/config').set('Cookie', adminCookie).expect(200);
+    const byKey = Object.fromEntries(res.body.map((r: { key: string; value: unknown }) => [r.key, r.value]));
+    // Unchanged from the earlier successful bulk-update test, proving the
+    // rejected batch didn't partially write before the unknown key was hit.
+    expect(byKey.commission_percent).toBe(12);
+    expect(byKey.commission_precent).toBeUndefined();
+  });
+
+  it('rejects an empty-string key', async () => {
+    await request(app.getHttpServer())
+      .patch('/api/admin/config')
+      .set('Cookie', adminCookie)
+      .send({ updates: [{ key: '', value: 10 }] })
+      .expect(400);
+  });
+
   it('rejects a non-admin caller', async () => {
     const customerCookie = await loginAs(app, '09122310099');
     await request(app.getHttpServer()).get('/api/admin/config').set('Cookie', customerCookie).expect(403);
