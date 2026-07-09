@@ -121,6 +121,8 @@ describe('Admin audit log (e2e)', () => {
 
   it('filters by actorId and targetType', async () => {
     // Rows so far: approve, suspend, failed 404 approve, set-featured -- all by this admin, all targeting salons.
+    // These counts hold because resetDatabase() gives this file a fresh schema and this suite is the
+    // only writer of audit rows in it; update them if this file gains more admin mutations.
     const mine = await request(app.getHttpServer())
       .get('/api/admin/audit-log')
       .set('Cookie', adminCookie)
@@ -131,6 +133,8 @@ describe('Admin audit log (e2e)', () => {
     const nobody = await request(app.getHttpServer())
       .get('/api/admin/audit-log')
       .set('Cookie', adminCookie)
+      // Variant nibble must be 8/9/a/b to clear @IsUUID() and reach the "no match" branch
+      // (an all-1s UUID is not RFC 4122 valid and would 400 at the DTO).
       .query({ actorId: '11111111-1111-1111-8111-111111111111' })
       .expect(200);
     expect(nobody.body.total).toBe(0);
