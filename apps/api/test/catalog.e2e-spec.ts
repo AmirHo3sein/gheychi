@@ -17,8 +17,8 @@ describe('Catalog (e2e)', () => {
 
   it('GET /api/categories returns the seeded list', async () => {
     const res = await request(app.getHttpServer()).get('/api/categories').expect(200);
-    expect(res.body.length).toBe(8);
+    expect(res.body.length).toBe(14);
     expect(res.body[0]).toEqual({ id: expect.any(Number), name: expect.any(String), icon: expect.any(String) });
-    expect(res.body.map((c: { name: string }) => c.name)).toContain('Haircut');
+    expect(res.body.map((c: { name: string }) => c.name)).toContain('کوتاهی مو');
   });
 });
