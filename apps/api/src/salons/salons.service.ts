@@ -1,6 +1,7 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { AdminNotificationsService } from '../admin-notifications/admin-notifications.service';
 import { UsersService } from '../users/users.service';
 import { CreateSalonDto, UpdateSalonDto } from './dto/salon.dto';
 import { Salon } from './salon.entity';
@@ -8,9 +9,12 @@ import { makeSlug } from './slug.util';
 
 @Injectable()
 export class SalonsService {
+  private readonly logger = new Logger(SalonsService.name);
+
   constructor(
     @InjectRepository(Salon) private readonly repo: Repository<Salon>,
     private readonly users: UsersService,
+    private readonly adminNotifications: AdminNotificationsService,
   ) {}
 
   async createForOwner(ownerId: string, dto: CreateSalonDto): Promise<Salon> {
@@ -70,7 +74,26 @@ export class SalonsService {
     if (!result.affected) {
       throw new ConflictException('Salon status changed before this resubmission could be applied');
     }
-    return (await this.repo.findOneBy({ id: salon.id }))!;
+    const updated = (await this.repo.findOneBy({ id: salon.id }))!;
+
+    // Tell admins a rejected salon is back in the review queue (spec 3.6). This is
+    // a fire-safe side effect: emit() throws on failure by contract, but a lost
+    // notification must never fail the owner's resubmission, so it is logged and
+    // swallowed here.
+    try {
+      await this.adminNotifications.emit(
+        'salon_resubmitted',
+        `سالن «${updated.name}» دوباره برای بررسی ارسال شد`,
+        'مالک سالن پس از رد شدن، اطلاعات را ویرایش و درخواست بررسی مجدد ثبت کرده است.',
+        `/salons/${updated.id}`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to emit salon_resubmitted notification for salon ${updated.id}`,
+        err instanceof Error ? err.stack : String(err),
+      );
+    }
+    return updated;
   }
 
   async findPublicBySlug(slug: string): Promise<Salon> {

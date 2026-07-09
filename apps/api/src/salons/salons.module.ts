@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AdminNotificationsModule } from '../admin-notifications/admin-notifications.module';
 import { AuditModule } from '../audit/audit.module';
 import { AuthModule } from '../auth/auth.module';
 import { StorageModule } from '../storage/storage.module';
@@ -24,6 +25,7 @@ import { WorkingHour } from './working-hour.entity';
     AuthModule,
     StorageModule,
     AuditModule,
+    AdminNotificationsModule,
   ],
   controllers: [
     SalonServicesController,

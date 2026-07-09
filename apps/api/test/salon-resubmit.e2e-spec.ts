@@ -113,4 +113,32 @@ describe('Salon resubmit after rejection (e2e)', () => {
     const [row] = await ds.query('SELECT status FROM salons WHERE id = $1', [raceSalonId]);
     expect(row.status).toBe('approved'); // the admin's concurrent write wins, not the stale resubmit
   });
+
+  it('created an admin notification for the one successful resubmit, visible via the admin endpoints', async () => {
+    const countRes = await request(app.getHttpServer())
+      .get('/api/admin/notifications/unread-count')
+      .set('Cookie', adminCookie)
+      .expect(200);
+    expect(countRes.body).toEqual({ count: 1 });
+
+    const listRes = await request(app.getHttpServer())
+      .get('/api/admin/notifications?unread=true')
+      .set('Cookie', adminCookie)
+      .expect(200);
+    expect(listRes.body.total).toBe(1);
+    const item = listRes.body.items[0];
+    expect(item.type).toBe('salon_resubmitted');
+    expect(item.title).toBe('سالن «Resubmit Test Salon» دوباره برای بررسی ارسال شد');
+    expect(item.link).toBe(`/salons/${salonId}`);
+
+    await request(app.getHttpServer())
+      .patch(`/api/admin/notifications/${item.id}/read`)
+      .set('Cookie', adminCookie)
+      .expect(200);
+    const afterRead = await request(app.getHttpServer())
+      .get('/api/admin/notifications/unread-count')
+      .set('Cookie', adminCookie)
+      .expect(200);
+    expect(afterRead.body).toEqual({ count: 0 });
+  });
 });
