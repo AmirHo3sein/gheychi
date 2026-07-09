@@ -1,6 +1,6 @@
 import { IsIn, IsOptional, IsString, Length, Matches } from 'class-validator';
 
-const IRAN_MOBILE = /^09\d{9}$/;
+export const IRAN_MOBILE = /^09\d{9}$/;
 
 export class RequestOtpDto {
   @Matches(IRAN_MOBILE, { message: 'phone must be a valid Iranian mobile number' })
