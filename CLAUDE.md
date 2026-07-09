@@ -41,7 +41,7 @@ docker compose up -d                                  # postgres (postgis) + red
 cp .env.example apps/api/.env
 pnpm install
 pnpm --filter @arayeshgah/api migration:run
-cp apps/user-app/.env.example apps/user-app/.env       # set NUXT_PUBLIC_NESHAN_API_KEY / NUXT_PUBLIC_VAPID_PUBLIC_KEY for map/push
+cp apps/user-app/.env.example apps/user-app/.env       # set NUXT_PUBLIC_VAPID_PUBLIC_KEY for push
 
 # Dev servers (from root)
 pnpm dev:api                    # apps/api            → http://localhost:3002/api/health
@@ -65,7 +65,7 @@ pnpm --filter @arayeshgah/api migration:run
 pnpm --filter @arayeshgah/api migration:revert
 ```
 
-`NUXT_PUBLIC_VAPID_PUBLIC_KEY` must be the public half of the same keypair as the API's `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` — generate one pair with `npx web-push generate-vapid-keys` and split the halves between the two `.env` files. Map and push both degrade gracefully without real keys.
+`NUXT_PUBLIC_VAPID_PUBLIC_KEY` must be the public half of the same keypair as the API's `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` — generate one pair with `npx web-push generate-vapid-keys` and split the halves between the two `.env` files. Push degrades gracefully without real keys. Maps need no key at all — see the "Maps" section below.
 
 Ports in `docker-compose.yml`/`.env.example` are non-default on this dev machine (Postgres `5544`, Redis `6381`) — adjust if setting up fresh elsewhere; see the "Port note" in `docs/superpowers/plans/2026-07-04-plan-1-foundation-backend-core.md` (Task 2).
 
@@ -85,7 +85,7 @@ Ports in `docker-compose.yml`/`.env.example` are non-default on this dev machine
 - Tailwind CSS v4 via `@tailwindcss/vite` (no separate `tailwind.config`) + CSS custom properties for light/dark theming
 - `@vite-pwa/nuxt` (installable PWA, Workbox service worker, Web Push)
 - `@nuxt/image` with a custom ArvanCloud provider (`app/providers/arvancloud.ts`)
-- Leaflet + Neshan tiles for maps (client-only, lazy-loaded)
+- Leaflet + CARTO's free Voyager tiles for maps (client-only, lazy-loaded, no API key)
 - Vitest (unit + Nuxt-environment component tests) + Playwright (e2e)
 - **Persian/RTL only** — no i18n library, `lang="fa" dir="rtl"` set directly
 
@@ -220,7 +220,7 @@ Tailwind v4 (via `@tailwindcss/vite`, no `tailwind.config`) + CSS custom propert
 
 ### Maps
 
-`SalonMap.client.vue` — Leaflet + Neshan tiles, always client-only and lazy-loaded (never SSR'd), injects the Neshan SDK `<script>`/`<link>` once via a module-scope singleton promise to survive rapid mount/unmount toggles. Falls back silently to the list view if the map fails to load or no API key is configured.
+`SalonMap.client.vue` — Leaflet (bundled npm package) + CARTO's free Voyager tile layer, no API key or paid SDK involved, always client-only and lazy-loaded (never SSR'd). Marker popups link out to the customer's own maps app for directions (`nshn.ir/?lat=&lng=` for Neshan, `google.com/maps/dir/?api=1&destination=` for Google Maps) rather than routing turn-by-turn navigation in-app. `SalonPinPicker.vue` (provider-panel's onboarding/settings location picker) uses the same Leaflet + CARTO setup for drag-to-set-pin.
 
 ### Testing
 
