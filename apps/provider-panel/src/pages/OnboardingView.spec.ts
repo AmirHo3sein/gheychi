@@ -37,8 +37,9 @@ describe('OnboardingView', () => {
     await wrapper.find('[data-testid="gender-target"]').setValue('women')
     await wrapper.find('[data-testid="city"]').setValue('تهران')
     await wrapper.find('[data-testid="address"]').setValue('خیابان ولیعصر، پلاک ۱')
-    // The map pin picker doesn't run in jsdom/happy-dom (no real Neshan SDK) -- set the
-    // coordinates directly the way the picker's @update:model-value handler would.
+    // The map pin picker's Leaflet map doesn't render meaningfully in jsdom/happy-dom
+    // (no real layout/getBoundingClientRect) -- set the coordinates directly the way the
+    // picker's @update:model-value handler would.
     await wrapper.setData({ form: { salonInfo: { lat: 35.7, lng: 51.4 } } })
 
     expect((next.element as HTMLButtonElement).disabled).toBe(false)
@@ -56,8 +57,9 @@ describe('OnboardingView', () => {
     await wrapper.find('[data-testid="city"]').setValue('تهران')
     await wrapper.find('[data-testid="address"]').setValue('خیابان ولیعصر، پلاک ۱')
     await wrapper.find('[data-testid="capacity"]').setValue(0)
-    // The map pin picker doesn't run in jsdom/happy-dom (no real Neshan SDK) -- set the
-    // coordinates directly the way the picker's @update:model-value handler would.
+    // The map pin picker's Leaflet map doesn't render meaningfully in jsdom/happy-dom
+    // (no real layout/getBoundingClientRect) -- set the coordinates directly the way the
+    // picker's @update:model-value handler would.
     await wrapper.setData({ form: { salonInfo: { lat: 35.7, lng: 51.4 } } })
 
     const next = wrapper.find('[data-testid="wizard-next"]')

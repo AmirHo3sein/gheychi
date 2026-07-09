@@ -1,6 +1,9 @@
 <!-- apps/provider-panel/src/pages/ServicesView.vue -->
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import AppCard from '@/components/ui/AppCard.vue'
+import AppSelect, { type SelectOption } from '@/components/ui/AppSelect.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import { useApi } from '@/composables/useApi'
 
 interface Service {
@@ -15,11 +18,15 @@ interface Service {
 const { apiFetch } = useApi()
 const services = ref<Service[]>([])
 const categories = ref<{ id: number; name: string }[]>([])
+const loading = ref(true)
 const newService = reactive({ categoryId: null as number | null, name: '', price: 0, durationMin: 30 })
+
+const categoryOptions = computed<SelectOption[]>(() => categories.value.map((c) => ({ value: c.id, label: c.name })))
 
 async function load() {
   const { data } = await apiFetch<Service[]>('/salons/mine/services', { silent: true })
   services.value = data ?? []
+  loading.value = false
 }
 
 onMounted(async () => {
@@ -55,34 +62,53 @@ async function updatePrice(service: Service, price: number) {
 
 <template>
   <div class="space-y-4 p-4">
-    <h1 class="text-lg font-bold">خدمات و قیمت‌ها</h1>
+    <h1 class="text-lg font-bold text-(--color-text)">خدمات و قیمت‌ها</h1>
 
-    <div v-for="s in services" :key="s.id" class="flex items-center justify-between rounded-lg border p-3">
+    <EmptyState v-if="!loading && services.length === 0" icon="services" message="هنوز خدمتی ثبت نشده است." />
+
+    <AppCard v-for="s in services" :key="s.id" :padded="false" class="flex items-center justify-between p-4">
       <div>
-        <p class="font-bold">{{ s.name }}</p>
-        <input
-          :value="s.price"
-          type="number"
-          class="w-28 rounded border p-1 text-sm"
-          @change="updatePrice(s, +($event.target as HTMLInputElement).value)"
-        />
+        <p class="mb-1.5 text-sm font-bold text-(--color-text)">{{ s.name }}</p>
+        <div class="relative w-32">
+          <input
+            :value="s.price"
+            type="number"
+            class="tnum w-full rounded-lg border border-(--color-border) bg-(--color-surface) p-1.5 text-sm"
+            @change="updatePrice(s, +($event.target as HTMLInputElement).value)"
+          />
+        </div>
       </div>
-      <label class="flex items-center gap-2 text-sm">
-        <input type="checkbox" :checked="s.isActive" @change="deactivate(s)" />
+      <label class="flex items-center gap-2 text-sm text-(--color-text)">
+        <input type="checkbox" class="h-4 w-4 accent-(--color-accent)" :checked="s.isActive" @change="deactivate(s)" />
         فعال
       </label>
-    </div>
+    </AppCard>
 
-    <div class="space-y-2 rounded-lg border p-3">
-      <h2 class="font-bold">افزودن خدمت جدید</h2>
-      <select v-model.number="newService.categoryId" class="w-full rounded-lg border p-2">
-        <option :value="null" disabled>دسته‌بندی</option>
-        <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
-      </select>
-      <input v-model="newService.name" placeholder="نام خدمت" class="w-full rounded-lg border p-2" />
-      <input v-model.number="newService.price" type="number" placeholder="قیمت" class="w-full rounded-lg border p-2" />
-      <input v-model.number="newService.durationMin" type="number" placeholder="مدت زمان (دقیقه)" class="w-full rounded-lg border p-2" />
-      <button type="button" class="w-full rounded-lg bg-(--color-accent) p-2 text-white" @click="addService">افزودن</button>
-    </div>
+    <AppCard class="space-y-3">
+      <h2 class="font-bold text-(--color-text)">افزودن خدمت جدید</h2>
+      <AppSelect v-model="newService.categoryId" :options="categoryOptions" placeholder="دسته‌بندی" />
+      <input v-model="newService.name" placeholder="نام خدمت" class="w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-3 text-sm" />
+      <div class="grid grid-cols-2 gap-3">
+        <input
+          v-model.number="newService.price"
+          type="number"
+          placeholder="قیمت"
+          class="tnum w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-3 text-sm"
+        />
+        <input
+          v-model.number="newService.durationMin"
+          type="number"
+          placeholder="مدت زمان (دقیقه)"
+          class="tnum w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-3 text-sm"
+        />
+      </div>
+      <button
+        type="button"
+        class="w-full rounded-xl bg-(--color-accent) p-3 text-sm font-bold text-white transition-opacity hover:opacity-90"
+        @click="addService"
+      >
+        افزودن
+      </button>
+    </AppCard>
   </div>
 </template>

@@ -1,6 +1,9 @@
 <!-- apps/provider-panel/src/pages/DashboardView.vue -->
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import AppCard from '@/components/ui/AppCard.vue'
+import AppIcon, { type IconName } from '@/components/ui/AppIcon.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import { useApi } from '@/composables/useApi'
 
 interface Booking {
@@ -47,36 +50,62 @@ const upcomingBookings = computed(() =>
     .sort((a, b) => a.startsAt.localeCompare(b.startsAt))
     .slice(0, 5),
 )
+
+const QUICK_LINKS: Array<{ to: string; label: string; icon: IconName }> = [
+  { to: '/hours', label: 'ساعات کاری', icon: 'hours' },
+  { to: '/photos', label: 'تصاویر', icon: 'photos' },
+  { to: '/settings', label: 'تنظیمات', icon: 'settings' },
+]
 </script>
 
 <template>
   <div class="space-y-6 p-4">
-    <div class="flex items-center justify-between">
-      <h1 class="text-lg font-bold">داشبورد</h1>
-      <div class="flex gap-3 text-sm">
-        <RouterLink to="/hours">ساعات کاری</RouterLink>
-        <RouterLink to="/photos">تصاویر</RouterLink>
-        <RouterLink to="/settings">تنظیمات</RouterLink>
-      </div>
+    <h1 class="text-lg font-bold text-(--color-text)">داشبورد</h1>
+
+    <div class="grid grid-cols-3 gap-2">
+      <RouterLink
+        v-for="link in QUICK_LINKS"
+        :key="link.to"
+        :to="link.to"
+        class="flex flex-col items-center gap-1.5 rounded-2xl border border-(--color-border) bg-(--color-surface-card) py-4 text-center shadow-(--shadow-panel) transition-colors hover:border-(--color-accent)"
+      >
+        <div class="flex h-9 w-9 items-center justify-center rounded-full bg-(--tone-info-bg) text-(--color-accent)">
+          <AppIcon :name="link.icon" :size="18" />
+        </div>
+        <span class="text-xs font-semibold text-(--color-text)">{{ link.label }}</span>
+      </RouterLink>
     </div>
 
     <section>
-      <h2 class="mb-2 font-bold">نوبت‌های امروز</h2>
-      <p v-if="!loading && todaysBookings.length === 0" class="text-sm text-gray-500">نوبتی برای امروز ثبت نشده است.</p>
-      <ul class="space-y-2">
-        <li v-for="b in todaysBookings" :key="b.id" class="rounded-lg border p-3">
-          {{ serviceName(b.serviceId) }} — {{ new Date(b.startsAt).toLocaleTimeString('fa-IR') }}
-        </li>
-      </ul>
+      <h2 class="mb-2 flex items-center gap-2 text-sm font-bold text-(--color-text)">
+        <AppIcon name="bookings" :size="16" class="text-(--color-accent)" />
+        نوبت‌های امروز
+      </h2>
+      <EmptyState v-if="!loading && todaysBookings.length === 0" icon="bookings" message="نوبتی برای امروز ثبت نشده است." />
+      <div v-else class="space-y-2">
+        <AppCard v-for="b in todaysBookings" :key="b.id" :padded="false" class="p-3">
+          <div class="flex items-center justify-between">
+            <p class="text-sm font-semibold text-(--color-text)">{{ serviceName(b.serviceId) }}</p>
+            <p class="tnum text-sm font-bold text-(--color-accent)">{{ new Date(b.startsAt).toLocaleTimeString('fa-IR') }}</p>
+          </div>
+        </AppCard>
+      </div>
     </section>
 
     <section>
-      <h2 class="mb-2 font-bold">نوبت‌های بعدی</h2>
-      <ul class="space-y-2">
-        <li v-for="b in upcomingBookings" :key="b.id" class="rounded-lg border p-3">
-          {{ serviceName(b.serviceId) }} — {{ new Date(b.startsAt).toLocaleDateString('fa-IR') }}
-        </li>
-      </ul>
+      <h2 class="mb-2 flex items-center gap-2 text-sm font-bold text-(--color-text)">
+        <AppIcon name="dashboard" :size="16" class="text-(--color-accent)" />
+        نوبت‌های بعدی
+      </h2>
+      <EmptyState v-if="!loading && upcomingBookings.length === 0" icon="bookings" message="نوبت بعدی ثبت نشده است." />
+      <div v-else class="space-y-2">
+        <AppCard v-for="b in upcomingBookings" :key="b.id" :padded="false" class="p-3">
+          <div class="flex items-center justify-between">
+            <p class="text-sm font-semibold text-(--color-text)">{{ serviceName(b.serviceId) }}</p>
+            <p class="tnum text-sm text-(--color-muted)">{{ new Date(b.startsAt).toLocaleDateString('fa-IR') }}</p>
+          </div>
+        </AppCard>
+      </div>
     </section>
   </div>
 </template>

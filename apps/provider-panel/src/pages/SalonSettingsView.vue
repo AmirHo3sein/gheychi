@@ -4,6 +4,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import SalonInfoStep from '@/components/onboarding/SalonInfoStep.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
 
 const { apiFetch } = useApi()
 const { push: pushToast } = useToast()
@@ -79,16 +80,19 @@ onMounted(load)
 
 <template>
   <div v-if="loaded" class="space-y-4 p-4">
-    <h1 class="text-lg font-bold">تنظیمات آرایشگاه</h1>
-    <SalonInfoStep v-model="form" />
+    <h1 class="text-lg font-bold text-(--color-text)">تنظیمات آرایشگاه</h1>
+    <div class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-5 shadow-(--shadow-panel)">
+      <SalonInfoStep v-model="form" />
+    </div>
     <button
       data-testid="save-button"
       type="button"
       :disabled="saving || !isFormValid"
-      class="w-full rounded-lg bg-(--color-accent) p-3 text-white disabled:opacity-40"
+      class="flex w-full items-center justify-center gap-2 rounded-xl bg-(--color-accent) py-3 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
       @click="save"
     >
-      ذخیره
+      <AppIcon name="check" :size="16" />
+      {{ saving ? 'در حال ذخیره…' : 'ذخیره' }}
     </button>
   </div>
 </template>

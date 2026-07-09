@@ -2,6 +2,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import PhotoUploader from '@/components/photos/PhotoUploader.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import { useApi } from '@/composables/useApi'
 
 interface SalonPhoto {
@@ -13,10 +15,12 @@ interface SalonPhoto {
 
 const { apiFetch } = useApi()
 const photos = ref<SalonPhoto[]>([])
+const loading = ref(true)
 
 async function load() {
   const { data } = await apiFetch<SalonPhoto[]>('/salons/mine/photos', { silent: true })
   photos.value = data ?? []
+  loading.value = false
 }
 
 onMounted(load)
@@ -38,17 +42,34 @@ async function removePhoto(id: string) {
 
 <template>
   <div class="space-y-4 p-4">
-    <h1 class="text-lg font-bold">تصاویر آرایشگاه</h1>
+    <h1 class="text-lg font-bold text-(--color-text)">تصاویر آرایشگاه</h1>
     <PhotoUploader @uploaded="onUploaded" />
 
-    <div class="grid grid-cols-2 gap-3">
-      <div v-for="p in photos" :key="p.id" class="space-y-1">
-        <img :src="p.url" class="aspect-square w-full rounded-lg object-cover" />
-        <div class="flex justify-between text-xs">
-          <button type="button" :disabled="p.isCover" @click="setCover(p.id)">
-            {{ p.isCover ? 'عکس اصلی' : 'انتخاب به‌عنوان اصلی' }}
+    <EmptyState v-if="!loading && photos.length === 0" icon="photos" message="هنوز تصویری بارگذاری نشده است." />
+
+    <div v-else class="grid grid-cols-2 gap-3">
+      <div v-for="p in photos" :key="p.id" class="overflow-hidden rounded-2xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-panel)">
+        <div class="relative aspect-square w-full">
+          <img :src="p.url" class="h-full w-full object-cover" />
+          <span
+            v-if="p.isCover"
+            class="absolute right-2 top-2 rounded-full bg-(--color-accent) px-2 py-0.5 text-[10px] font-bold text-white shadow-(--shadow-panel)"
+          >
+            عکس اصلی
+          </span>
+        </div>
+        <div class="flex items-center justify-between p-2">
+          <button
+            type="button"
+            :disabled="p.isCover"
+            class="text-xs font-semibold text-(--color-accent) disabled:text-(--color-muted)"
+            @click="setCover(p.id)"
+          >
+            {{ p.isCover ? 'انتخاب شده' : 'انتخاب به‌عنوان اصلی' }}
           </button>
-          <button type="button" class="text-red-600" @click="removePhoto(p.id)">حذف</button>
+          <button type="button" class="text-(--tone-danger-text)" @click="removePhoto(p.id)">
+            <AppIcon name="trash" :size="15" />
+          </button>
         </div>
       </div>
     </div>

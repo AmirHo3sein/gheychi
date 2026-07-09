@@ -1,6 +1,9 @@
 <!-- apps/provider-panel/src/pages/ReviewsView.vue -->
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import AppCard from '@/components/ui/AppCard.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import { useApi } from '@/composables/useApi'
 import { useSalon } from '@/composables/useSalon'
 
@@ -15,6 +18,7 @@ interface Review {
 const { apiFetch } = useApi()
 const { salon } = useSalon()
 const reviews = ref<Review[]>([])
+const loading = ref(true)
 const drafts = reactive<Record<string, string>>({})
 
 onMounted(async () => {
@@ -22,6 +26,7 @@ onMounted(async () => {
   const { data } = await apiFetch<Review[]>(`/salons/${salon.value.id}/reviews`, { silent: true })
   reviews.value = data ?? []
   for (const r of reviews.value) drafts[r.id] = r.salonReply ?? ''
+  loading.value = false
 })
 
 async function sendReply(id: string) {
@@ -36,16 +41,33 @@ async function sendReply(id: string) {
 </script>
 
 <template>
-  <div class="space-y-4 p-4">
-    <h1 class="text-lg font-bold">نظرات مشتریان</h1>
-    <div v-for="r in reviews" :key="r.id" class="space-y-2 rounded-lg border p-3">
-      <p>{{ '⭐'.repeat(r.rating) }}</p>
-      <p v-if="r.comment">{{ r.comment }}</p>
-      <p v-if="r.salonReply" class="rounded bg-(--color-surface) p-2 text-sm">پاسخ شما: {{ r.salonReply }}</p>
-      <div class="flex gap-2">
-        <input v-model="drafts[r.id]" placeholder="پاسخ شما" class="flex-1 rounded-lg border p-2 text-sm" />
-        <button type="button" class="rounded-lg border px-3 text-sm" @click="sendReply(r.id)">ارسال</button>
+  <div class="space-y-3 p-4">
+    <h1 class="text-lg font-bold text-(--color-text)">نظرات مشتریان</h1>
+
+    <EmptyState v-if="!loading && reviews.length === 0" icon="reviews" message="هنوز نظری ثبت نشده است." />
+
+    <AppCard v-for="r in reviews" :key="r.id" class="space-y-3">
+      <div class="flex items-center gap-1 text-(--tone-warning-text)">
+        <AppIcon v-for="i in 5" :key="i" name="star" :size="15" :fill="i <= r.rating ? 'currentColor' : 'none'" />
       </div>
-    </div>
+      <p v-if="r.comment" class="text-sm text-(--color-text)">{{ r.comment }}</p>
+      <p v-if="r.salonReply" class="rounded-xl bg-(--tone-info-bg) p-3 text-sm text-(--color-text)">
+        <span class="font-semibold text-(--color-accent)">پاسخ شما: </span>{{ r.salonReply }}
+      </p>
+      <div class="flex gap-2">
+        <input
+          v-model="drafts[r.id]"
+          :placeholder="r.salonReply ? 'ویرایش پاسخ' : 'پاسخ شما'"
+          class="flex-1 rounded-xl border border-(--color-border) bg-(--color-surface) p-2.5 text-sm"
+        />
+        <button
+          type="button"
+          class="rounded-xl border border-(--color-border) px-4 text-sm font-semibold text-(--color-text) hover:bg-(--color-border-soft)"
+          @click="sendReply(r.id)"
+        >
+          ارسال
+        </button>
+      </div>
+    </AppCard>
   </div>
 </template>

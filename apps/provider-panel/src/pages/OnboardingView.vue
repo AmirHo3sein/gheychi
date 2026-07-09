@@ -5,8 +5,11 @@ import { useRouter } from 'vue-router'
 import SalonInfoStep from '@/components/onboarding/SalonInfoStep.vue'
 import ScheduleStep from '@/components/onboarding/ScheduleStep.vue'
 import FirstServiceStep from '@/components/onboarding/FirstServiceStep.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
 import { useApi } from '@/composables/useApi'
 import { useSalon } from '@/composables/useSalon'
+
+const STEP_LABELS = ['اطلاعات آرایشگاه', 'ساعات کاری', 'اولین خدمت']
 
 const router = useRouter()
 const { apiFetch } = useApi()
@@ -132,20 +135,61 @@ async function submit() {
 
 <template>
   <div class="mx-auto max-w-md p-6">
-    <SalonInfoStep v-if="step === 1" v-model="form.salonInfo" />
-    <ScheduleStep v-else-if="step === 2" v-model="form.hours" />
-    <FirstServiceStep v-else v-model="form.service" />
+    <div class="mb-6 flex flex-col items-center text-center">
+      <div class="mb-2 flex h-11 w-11 items-center justify-center rounded-2xl bg-(--color-accent) text-lg font-black text-white shadow-(--shadow-panel)">
+        آ
+      </div>
+      <h1 class="text-lg font-bold text-(--color-text)">ثبت‌نام آرایشگاه</h1>
+    </div>
 
-    <p v-if="submitError" class="mt-2 text-sm text-red-600">{{ submitError }}</p>
+    <div class="mb-6 flex items-center gap-2">
+      <template v-for="(label, i) in STEP_LABELS" :key="label">
+        <div class="flex flex-1 flex-col items-center gap-1.5">
+          <div
+            class="flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition-colors"
+            :class="
+              i + 1 < step
+                ? 'bg-(--color-accent) text-white'
+                : i + 1 === step
+                  ? 'border-2 border-(--color-accent) text-(--color-accent)'
+                  : 'border border-(--color-border) text-(--color-muted)'
+            "
+          >
+            <AppIcon v-if="i + 1 < step" name="check" :size="14" />
+            <span v-else>{{ i + 1 }}</span>
+          </div>
+          <span class="text-[11px] text-(--color-muted)">{{ label }}</span>
+        </div>
+        <div v-if="i < STEP_LABELS.length - 1" class="mb-4 h-px flex-1 bg-(--color-border)" />
+      </template>
+    </div>
 
-    <div class="mt-4 flex justify-between">
-      <button v-if="step > 1" type="button" class="rounded-lg border px-4 py-2" @click="back">قبلی</button>
+    <div class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-5 shadow-(--shadow-panel)">
+      <SalonInfoStep v-if="step === 1" v-model="form.salonInfo" />
+      <ScheduleStep v-else-if="step === 2" v-model="form.hours" />
+      <FirstServiceStep v-else v-model="form.service" />
+    </div>
+
+    <p v-if="submitError" class="mt-3 flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)">
+      <AppIcon name="warning" :size="16" class="shrink-0" />
+      {{ submitError }}
+    </p>
+
+    <div class="mt-4 flex justify-between gap-3">
+      <button
+        v-if="step > 1"
+        type="button"
+        class="rounded-xl border border-(--color-border) px-4 py-2.5 text-sm font-semibold text-(--color-text) hover:bg-(--color-border-soft)"
+        @click="back"
+      >
+        قبلی
+      </button>
       <button
         v-if="step < 3"
         data-testid="wizard-next"
         type="button"
         :disabled="!canGoNext"
-        class="rounded-lg bg-(--color-accent) px-4 py-2 text-white disabled:opacity-40"
+        class="mr-auto rounded-xl bg-(--color-accent) px-5 py-2.5 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
         @click="next"
       >
         بعدی
@@ -155,10 +199,10 @@ async function submit() {
         data-testid="wizard-submit"
         type="button"
         :disabled="!isServiceValid || submitting"
-        class="rounded-lg bg-(--color-accent) px-4 py-2 text-white disabled:opacity-40"
+        class="mr-auto rounded-xl bg-(--color-accent) px-5 py-2.5 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
         @click="submit"
       >
-        ثبت و ارسال برای بررسی
+        {{ submitting ? 'در حال ثبت…' : 'ثبت و ارسال برای بررسی' }}
       </button>
     </div>
   </div>

@@ -8,7 +8,7 @@ test('login, complete onboarding wizard, land on pending-approval', async ({ pag
   await page.goto('/login')
   await page.waitForLoadState('networkidle')
   await page.getByTestId('phone-input').fill(phone)
-  await page.getByTestId('phone-form').getByRole('button').click()
+  await page.getByTestId('submit-phone').click()
 
   const codeInput = page.getByTestId('code-input')
   await expect(codeInput).toBeVisible()
@@ -16,7 +16,7 @@ test('login, complete onboarding wizard, land on pending-approval', async ({ pag
   await redis.quit()
   if (!code) throw new Error('OTP was not found in Redis -- did SMS_PROVIDER/OtpService change?')
   await codeInput.fill(code)
-  await page.getByTestId('code-form').getByRole('button').click()
+  await page.getByTestId('submit-code').click()
 
   await expect(page).toHaveURL('/onboarding')
 
@@ -24,10 +24,8 @@ test('login, complete onboarding wizard, land on pending-approval', async ({ pag
   await page.getByTestId('gender-target').selectOption('women')
   await page.getByTestId('city').fill('تهران')
   await page.getByTestId('address').fill('خیابان آزادی، پلاک ۲')
-  // Whether the real Neshan SDK loads in this environment or not, SalonPinPicker emits a
-  // default coordinate either way (see its onMounted success path and its catch-block
-  // fallback) -- waiting for the next button to enable covers both cases without the test
-  // needing to know which one happened.
+  // SalonPinPicker emits a default coordinate as soon as its Leaflet map mounts --
+  // waiting for the next button to enable covers that without polling the map directly.
   await expect(page.getByTestId('wizard-next')).toBeEnabled({ timeout: 15_000 })
   await page.getByTestId('wizard-next').click()
 

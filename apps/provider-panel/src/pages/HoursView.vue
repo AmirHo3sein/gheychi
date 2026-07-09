@@ -2,7 +2,11 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import ScheduleStep from '@/components/onboarding/ScheduleStep.vue'
+import AppCard from '@/components/ui/AppCard.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
 
 interface WorkingHour {
   weekday: number
@@ -16,11 +20,13 @@ interface ScheduleException {
 }
 
 const { apiFetch } = useApi()
+const { push: pushToast } = useToast()
 const hours = ref(
   Array.from({ length: 7 }, (_, weekday) => ({ weekday, openTime: '09:00', closeTime: '20:00', enabled: false })),
 )
 const exceptions = ref<ScheduleException[]>([])
 const newExceptionDate = ref('')
+const saving = ref(false)
 
 async function loadHours() {
   const { data } = await apiFetch<WorkingHour[]>('/salons/mine/hours', { silent: true })
@@ -51,10 +57,13 @@ onMounted(() => {
 })
 
 async function saveHours() {
+  saving.value = true
   const enabled = hours.value
     .filter((h) => h.enabled)
     .map(({ weekday, openTime, closeTime }) => ({ weekday, openTime, closeTime }))
-  await apiFetch('/salons/mine/hours', { method: 'PUT', body: { hours: enabled } })
+  const { error } = await apiFetch('/salons/mine/hours', { method: 'PUT', body: { hours: enabled } })
+  saving.value = false
+  if (!error) pushToast('ساعات کاری ذخیره شد')
 }
 
 async function addException() {
@@ -72,31 +81,43 @@ async function removeException(id: string) {
 
 <template>
   <div class="space-y-6 p-4">
+    <h1 class="text-lg font-bold text-(--color-text)">ساعات کاری</h1>
+
     <section>
-      <h1 class="mb-2 text-lg font-bold">ساعات کاری هفتگی</h1>
+      <h2 class="mb-2 text-sm font-bold text-(--color-text)">ساعات کاری هفتگی</h2>
       <ScheduleStep v-model="hours" />
       <button
         type="button"
         data-testid="save-hours"
-        class="mt-3 rounded-lg bg-(--color-accent) px-4 py-2 text-white"
+        :disabled="saving"
+        class="mt-3 w-full rounded-xl bg-(--color-accent) py-3 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
         @click="saveHours"
       >
-        ذخیره ساعات کاری
+        {{ saving ? 'در حال ذخیره…' : 'ذخیره ساعات کاری' }}
       </button>
     </section>
 
     <section>
-      <h2 class="mb-2 font-bold">تعطیلی‌های موردی</h2>
+      <h2 class="mb-2 text-sm font-bold text-(--color-text)">تعطیلی‌های موردی</h2>
       <div class="flex gap-2">
-        <input v-model="newExceptionDate" type="date" class="flex-1 rounded-lg border p-2" />
-        <button type="button" class="rounded-lg border px-3" @click="addException">افزودن</button>
+        <input v-model="newExceptionDate" type="date" class="tnum flex-1 rounded-xl border border-(--color-border) bg-(--color-surface-card) p-3 text-sm" />
+        <button
+          type="button"
+          class="flex items-center justify-center rounded-xl border border-(--color-border) px-4 text-sm font-semibold text-(--color-text) hover:bg-(--color-border-soft)"
+          @click="addException"
+        >
+          <AppIcon name="plus" :size="16" />
+        </button>
       </div>
-      <ul class="mt-2 space-y-1">
-        <li v-for="e in exceptions" :key="e.id" class="flex items-center justify-between rounded border p-2 text-sm">
-          {{ e.date }}
-          <button type="button" class="text-red-600" @click="removeException(e.id)">حذف</button>
-        </li>
-      </ul>
+      <EmptyState v-if="exceptions.length === 0" icon="hours" message="تعطیلی موردی ثبت نشده است." class="mt-3" />
+      <div v-else class="mt-3 space-y-2">
+        <AppCard v-for="e in exceptions" :key="e.id" :padded="false" class="flex items-center justify-between p-3">
+          <span class="tnum text-sm text-(--color-text)">{{ e.date }}</span>
+          <button type="button" class="text-(--tone-danger-text)" @click="removeException(e.id)">
+            <AppIcon name="trash" :size="16" />
+          </button>
+        </AppCard>
+      </div>
     </section>
   </div>
 </template>

@@ -8,7 +8,7 @@ test('log in as an approved provider and mark a confirmed booking completed', as
   await page.goto('/login')
   await page.waitForLoadState('networkidle')
   await page.getByTestId('phone-input').fill(phone)
-  await page.getByTestId('phone-form').getByRole('button').click()
+  await page.getByTestId('submit-phone').click()
 
   const codeInput = page.getByTestId('code-input')
   await expect(codeInput).toBeVisible()
@@ -16,13 +16,13 @@ test('log in as an approved provider and mark a confirmed booking completed', as
   await redis.quit()
   if (!code) throw new Error('OTP was not found in Redis -- did SMS_PROVIDER/OtpService change?')
   await codeInput.fill(code)
-  await page.getByTestId('code-form').getByRole('button').click()
+  await page.getByTestId('submit-code').click()
 
   await expect(page).toHaveURL('/')
 
-  await page.getByRole('link', { name: 'نوبت‌ها' }).click()
+  await page.getByRole('link', { name: 'نوبت‌ها', exact: true }).click()
   await expect(page).toHaveURL('/bookings')
 
   await page.getByTestId('mark-completed').first().click()
-  await expect(page.getByText('completed')).toBeVisible()
+  await expect(page.getByText('انجام شد')).toBeVisible()
 })
