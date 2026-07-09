@@ -14,3 +14,4 @@ test-results/
 playwright-report/
 blob-report/
 apps/api/uploads/
+*.tsbuildinfo
