@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AdminNotificationsModule } from './admin-notifications/admin-notifications.module';
 import { AuthModule } from './auth/auth.module';
 import { BookingModule } from './booking/booking.module';
 import { CatalogModule } from './catalog/catalog.module';
@@ -44,6 +45,7 @@ import { SearchModule } from './search/search.module';
     ReviewsModule,
     FavoritesModule,
     PushModule,
+    AdminNotificationsModule,
   ],
   controllers: [HealthController],
 })
