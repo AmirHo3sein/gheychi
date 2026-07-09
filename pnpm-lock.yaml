@@ -199,9 +199,15 @@ importers:
       '@fontsource-variable/vazirmatn':
         specifier: ^5.2.8
         version: 5.2.8
+      '@lucide/vue':
+        specifier: 1.23.0
+        version: 1.23.0(vue@3.5.39(typescript@5.9.3))
       '@tailwindcss/vite':
         specifier: ^4.3.2
         version: 4.3.2(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(yaml@2.9.0))
+      leaflet:
+        specifier: ^1.9.4
+        version: 1.9.4
       pinia:
         specifier: ^3.0.4
         version: 3.0.4(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3))
@@ -211,6 +217,9 @@ importers:
       vue:
         specifier: ^3.5.13
         version: 3.5.39(typescript@5.9.3)
+      vue-multiselect:
+        specifier: 3.5.0
+        version: 3.5.0
       vue-router:
         specifier: ^4.5.0
         version: 4.6.4(vue@3.5.39(typescript@5.9.3))
@@ -218,6 +227,9 @@ importers:
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.61.1
+      '@types/leaflet':
+        specifier: ^1.9.21
+        version: 1.9.21
       '@types/node':
         specifier: ^22.10.0
         version: 22.20.0
@@ -269,6 +281,9 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.3.2
         version: 4.3.2(vite@7.3.6(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(yaml@2.9.0))
+      leaflet:
+        specifier: ^1.9.4
+        version: 1.9.4
       nuxt:
         specifier: ^4.4.0
         version: 4.4.8(@babel/plugin-syntax-jsx@7.29.7(@babel/core@7.29.7))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.7))(@parcel/watcher@2.5.6)(@rollup/plugin-babel@6.1.0(@babel/core@7.29.7)(@types/babel__core@7.20.5)(rollup@4.62.2))(@types/node@22.20.0)(@vue/compiler-sfc@3.5.39)(cac@6.7.14)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.11.1)(lightningcss@1.32.0)(magicast@0.5.3)(pinia@3.0.4(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3)))(rollup-plugin-visualizer@7.0.1(rollup@4.62.2))(rollup@4.62.2)(srvx@0.11.21)(terser@5.48.0)(typescript@5.9.3)(vite@7.3.6(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(yaml@2.9.0))(vue-tsc@3.3.6(typescript@5.9.3))(webpack@5.106.2(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.16))(yaml@2.9.0)
@@ -285,6 +300,9 @@ importers:
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.61.1
+      '@types/leaflet':
+        specifier: ^1.9.21
+        version: 1.9.21
       '@vite-pwa/nuxt':
         specifier: ^1.1.1
         version: 1.1.1(magicast@0.5.3)(vite@7.3.6(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(yaml@2.9.0))(workbox-build@7.4.1(@types/babel__core@7.20.5))(workbox-window@7.4.1)
@@ -3045,6 +3063,9 @@ packages:
   '@types/express@5.0.6':
     resolution: {integrity: sha512-sKYVuV7Sv9fbPIt/442koC7+IIwK5olP1KWeD88e/idgoJqDm3JV/YUiPwkoKK92ylff2MGxSz1CSjsXelx0YA==}
 
+  '@types/geojson@7946.0.16':
+    resolution: {integrity: sha512-6C8nqWur3j98U6+lXDfTUWIfgvZU+EumvpHKcYjujKH7woYyLj2sUmff0tRhrqM7BohUw7Pz3ZB1jj2gW9Fvmg==}
+
   '@types/graceful-fs@4.1.9':
     resolution: {integrity: sha512-olP3sd1qOEe5dXTSaFvQG+02VdRXcdytWLAZsAq1PecU8uqQAhkrnbli7DagjtXKW/Bl7YJbUsa8MPcuc8LHEQ==}
 
@@ -3076,6 +3097,9 @@ packages:
 
   '@types/jsonwebtoken@9.0.10':
     resolution: {integrity: sha512-asx5hIG9Qmf/1oStypjanR7iKTv0gXQ1Ov/jfrX6kS/EO0OFni8orbmGCn0672NHR3kXHwpAwR+B368ZGN/2rA==}
+
+  '@types/leaflet@1.9.21':
+    resolution: {integrity: sha512-TbAd9DaPGSnzp6QvtYngntMZgcRk+igFELwR2N99XZn7RXUdKgsXMR+28bUO0rPsWp8MIu/f47luLIQuSLYv/w==}
 
   '@types/luxon@3.4.2':
     resolution: {integrity: sha512-TifLZlFudklWlMBfhubvgqTXRzLDI5pCbGa4P8a3wPyUQSW+1xQ5eDsreP9DWHX3tjq1ke96uYG/nwundroWcA==}
@@ -5349,6 +5373,9 @@ packages:
   lazystream@1.0.1:
     resolution: {integrity: sha512-b94GiNHQNy6JNTrt5w6zNyffMrNkXZb3KTkCZJb2V1xaEGCk093vkZ2jk3tpaeP33/OiXC+WvK9AxUebnf5nbw==}
     engines: {node: '>= 0.6.3'}
+
+  leaflet@1.9.4:
+    resolution: {integrity: sha512-nxS1ynzJOmOlHp+iL3FyWqK89GtNL8U8rvlMOsQdTTssxZwCXh8N2NB3GDQOL+YR3XnWyZAxwQixURb+FA74PA==}
 
   leven@3.1.0:
     resolution: {integrity: sha512-qsda+H8jTaUaN/x5vzW2rzc+8Rw4TAQ/4KjB46IwK5VH+IlVeeeje/EoZRpiXvIqjFgK84QffqPztGI3VBLG1A==}
@@ -10865,6 +10892,8 @@ snapshots:
       '@types/express-serve-static-core': 5.1.1
       '@types/serve-static': 2.2.0
 
+  '@types/geojson@7946.0.16': {}
+
   '@types/graceful-fs@4.1.9':
     dependencies:
       '@types/node': 22.20.0
@@ -10898,6 +10927,10 @@ snapshots:
     dependencies:
       '@types/ms': 2.1.0
       '@types/node': 22.20.0
+
+  '@types/leaflet@1.9.21':
+    dependencies:
+      '@types/geojson': 7946.0.16
 
   '@types/luxon@3.4.2': {}
 
@@ -13676,6 +13709,8 @@ snapshots:
   lazystream@1.0.1:
     dependencies:
       readable-stream: 2.3.8
+
+  leaflet@1.9.4: {}
 
   leven@3.1.0: {}
 
