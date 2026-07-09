@@ -28,10 +28,20 @@ export async function createAdmin(dataSource: DataSource, phone: string): Promis
   return 'promoted';
 }
 
+/**
+ * pnpm 9 leaks the `--` separator into forwarded script args as a literal
+ * first argument. Tolerate both invocation forms by skipping a leading `--`.
+ */
+export function resolvePhoneArg(args: string[]): string | undefined {
+  return args[0] === '--' ? args[1] : args[0];
+}
+
+const USAGE = 'Usage: pnpm --filter @arayeshgah/api create-admin 09xxxxxxxxx';
+
 async function main(): Promise<void> {
-  const phone = process.argv[2];
+  const phone = resolvePhoneArg(process.argv.slice(2));
   if (!phone) {
-    console.error('Usage: pnpm --filter @arayeshgah/api create-admin -- 09xxxxxxxxx');
+    console.error(USAGE);
     process.exit(1);
   }
   // Imported lazily so the unit spec never touches dotenv/DataSource construction.
@@ -53,7 +63,7 @@ async function main(): Promise<void> {
 if (require.main === module) {
   main().catch((err: unknown) => {
     console.error(err instanceof Error ? err.message : err);
-    console.error('Usage: pnpm --filter @arayeshgah/api create-admin -- 09xxxxxxxxx');
+    console.error(USAGE);
     process.exit(1);
   });
 }

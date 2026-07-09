@@ -1,6 +1,24 @@
 import { DataSource } from 'typeorm';
 import { User } from '../src/users/user.entity';
-import { createAdmin } from './create-admin';
+import { createAdmin, resolvePhoneArg } from './create-admin';
+
+describe('resolvePhoneArg', () => {
+  it('returns the first argument as the phone', () => {
+    expect(resolvePhoneArg(['09121234567'])).toBe('09121234567');
+  });
+
+  it('skips a leading literal -- leaked by pnpm and uses the next argument', () => {
+    expect(resolvePhoneArg(['--', '09121234567'])).toBe('09121234567');
+  });
+
+  it('returns undefined when no arguments are given', () => {
+    expect(resolvePhoneArg([])).toBeUndefined();
+  });
+
+  it('returns undefined when only the -- separator is given', () => {
+    expect(resolvePhoneArg(['--'])).toBeUndefined();
+  });
+});
 
 describe('createAdmin', () => {
   let repo: { findOneBy: jest.Mock; create: jest.Mock; save: jest.Mock };
