@@ -17,6 +17,8 @@ describe('Reviews — creation (e2e)', () => {
     app = await createTestApp();
 
     ownerCookie = await loginAs(app, '09131110001');
+    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+    const categoryId = categoriesRes.body[0].id;
     const salonRes = await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerCookie).send({
       name: 'Review Test Salon',
       genderTarget: 'women',
@@ -31,7 +33,7 @@ describe('Reviews — creation (e2e)', () => {
     const serviceRes = await request(app.getHttpServer())
       .post('/api/salons/mine/services')
       .set('Cookie', ownerCookie)
-      .send({ categoryId: 1, name: 'Cut', price: 500000, durationMin: 60 });
+      .send({ categoryId, name: 'Cut', price: 500000, durationMin: 60 });
     serviceId = serviceRes.body.id;
 
     const ds = app.get(DataSource);
@@ -160,6 +162,8 @@ describe('Reviews — public listing (e2e)', () => {
     app = await createTestApp();
 
     ownerCookie = await loginAs(app, '09134440004');
+    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+    const categoryId = categoriesRes.body[0].id;
     const salonRes = await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerCookie).send({
       name: 'Listing Test Salon',
       genderTarget: 'women',
@@ -174,7 +178,7 @@ describe('Reviews — public listing (e2e)', () => {
     const serviceRes = await request(app.getHttpServer())
       .post('/api/salons/mine/services')
       .set('Cookie', ownerCookie)
-      .send({ categoryId: 1, name: 'Cut', price: 500000, durationMin: 60 });
+      .send({ categoryId, name: 'Cut', price: 500000, durationMin: 60 });
     serviceId = serviceRes.body.id;
 
     const ds = app.get(DataSource);
@@ -241,6 +245,8 @@ describe('Reviews — salon owner reply (e2e)', () => {
     app = await createTestApp();
 
     ownerCookie = await loginAs(app, '09136660006');
+    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+    const categoryId = categoriesRes.body[0].id;
     const salonRes = await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerCookie).send({
       name: 'Reply Test Salon',
       genderTarget: 'women',
@@ -255,7 +261,7 @@ describe('Reviews — salon owner reply (e2e)', () => {
     const serviceRes = await request(app.getHttpServer())
       .post('/api/salons/mine/services')
       .set('Cookie', ownerCookie)
-      .send({ categoryId: 1, name: 'Cut', price: 500000, durationMin: 60 });
+      .send({ categoryId, name: 'Cut', price: 500000, durationMin: 60 });
     serviceId = serviceRes.body.id;
 
     const ds = app.get(DataSource);
@@ -368,6 +374,8 @@ describe('Reviews — admin moderation (e2e)', () => {
     app = await createTestApp();
 
     ownerCookie = await loginAs(app, '09139990009');
+    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+    const categoryId = categoriesRes.body[0].id;
     const salonRes = await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerCookie).send({
       name: 'Moderation Test Salon',
       genderTarget: 'women',
@@ -382,7 +390,7 @@ describe('Reviews — admin moderation (e2e)', () => {
     const serviceRes = await request(app.getHttpServer())
       .post('/api/salons/mine/services')
       .set('Cookie', ownerCookie)
-      .send({ categoryId: 1, name: 'Cut', price: 500000, durationMin: 60 });
+      .send({ categoryId, name: 'Cut', price: 500000, durationMin: 60 });
     serviceId = serviceRes.body.id;
 
     const ds = app.get(DataSource);

@@ -19,6 +19,8 @@ describe('Payments — callback (e2e)', () => {
     app = await createTestApp();
 
     const ownerCookie = await loginAs(app, '09129990005');
+    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+    const categoryId = categoriesRes.body[0].id;
     const salonRes = await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerCookie).send({
       name: 'Payments Test Salon',
       genderTarget: 'women',
@@ -33,7 +35,7 @@ describe('Payments — callback (e2e)', () => {
     const serviceRes = await request(app.getHttpServer())
       .post('/api/salons/mine/services')
       .set('Cookie', ownerCookie)
-      .send({ categoryId: 1, name: 'Cut', price: 500000, durationMin: 60 });
+      .send({ categoryId, name: 'Cut', price: 500000, durationMin: 60 });
     serviceId = serviceRes.body.id;
 
     const ds = app.get(DataSource);

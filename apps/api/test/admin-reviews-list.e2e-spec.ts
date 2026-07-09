@@ -15,6 +15,9 @@ describe('Admin reviews list (e2e)', () => {
     app = await createTestApp();
     adminCookie = await loginAsAdmin(app, '09122270001');
 
+    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+    const categoryId = categoriesRes.body[0].id;
+
     const ownerCookie = await loginAs(app, '09122270002');
     const salonRes = await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerCookie).send({
       name: 'Reviewed Salon',
@@ -38,7 +41,7 @@ describe('Admin reviews list (e2e)', () => {
     await request(app.getHttpServer())
       .post('/api/salons/mine/services')
       .set('Cookie', ownerCookie)
-      .send({ categoryId: 1, name: 'Cut', price: 500000, durationMin: 60 })
+      .send({ categoryId, name: 'Cut', price: 500000, durationMin: 60 })
       .expect(201);
 
     // Directly seed two reviews via the repository -- creating them through the real

@@ -7,11 +7,14 @@ import { createTestApp } from './utils/test-app';
 describe('Salon services (e2e)', () => {
   let app: INestApplication;
   let cookie: string;
+  let categoryId: number;
 
   beforeAll(async () => {
     await resetDatabase();
     app = await createTestApp();
     cookie = await loginAs(app, '09122220000');
+    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+    categoryId = categoriesRes.body[0].id;
     await request(app.getHttpServer()).post('/api/salons').set('Cookie', cookie).send({
       name: 'Test Salon',
       genderTarget: 'women',
@@ -32,7 +35,7 @@ describe('Salon services (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post('/api/salons/mine/services')
       .set('Cookie', cookie)
-      .send({ categoryId: 1, name: 'Bob Haircut', price: 800000, durationMin: 45 })
+      .send({ categoryId, name: 'Bob Haircut', price: 800000, durationMin: 45 })
       .expect(201);
     serviceId = res.body.id;
     expect(res.body.isActive).toBe(true);

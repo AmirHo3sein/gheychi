@@ -16,6 +16,8 @@ describe('Bookings — create hold (e2e)', () => {
     app = await createTestApp();
 
     const ownerCookie = await loginAs(app, '09125550001');
+    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+    const categoryId = categoriesRes.body[0].id;
     const salonRes = await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerCookie).send({
       name: 'Booking Test Salon',
       genderTarget: 'women',
@@ -30,7 +32,7 @@ describe('Bookings — create hold (e2e)', () => {
     const serviceRes = await request(app.getHttpServer())
       .post('/api/salons/mine/services')
       .set('Cookie', ownerCookie)
-      .send({ categoryId: 1, name: 'Cut', price: 2000000, durationMin: 60 });
+      .send({ categoryId, name: 'Cut', price: 2000000, durationMin: 60 });
     serviceId = serviceRes.body.id;
 
     const ds = app.get(DataSource);

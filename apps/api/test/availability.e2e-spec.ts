@@ -15,6 +15,8 @@ describe('Availability (e2e)', () => {
     await resetDatabase();
     app = await createTestApp();
     cookie = await loginAs(app, '09124440000');
+    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+    const categoryId = categoriesRes.body[0].id;
 
     const salonRes = await request(app.getHttpServer()).post('/api/salons').set('Cookie', cookie).send({
       name: 'Availability Salon',
@@ -30,7 +32,7 @@ describe('Availability (e2e)', () => {
     const serviceRes = await request(app.getHttpServer())
       .post('/api/salons/mine/services')
       .set('Cookie', cookie)
-      .send({ categoryId: 1, name: 'Cut', price: 500000, durationMin: 60 });
+      .send({ categoryId, name: 'Cut', price: 500000, durationMin: 60 });
     serviceId = serviceRes.body.id;
 
     const ds = app.get(DataSource);
