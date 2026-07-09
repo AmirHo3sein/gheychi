@@ -49,6 +49,12 @@ describe('admin mutation audit wiring', () => {
       targetType: 'category',
     },
     {
+      label: 'category delete',
+      handler: AdminCategoriesController.prototype.remove,
+      action: 'category.delete',
+      targetType: 'category',
+    },
+    {
       label: 'config update',
       handler: AdminConfigController.prototype.update,
       action: 'config.update',

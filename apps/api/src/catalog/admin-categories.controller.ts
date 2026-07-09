@@ -1,4 +1,4 @@
-import { Body, ConflictException, Controller, NotFoundException, Param, ParseIntPipe, Patch, Post, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, ConflictException, Controller, Delete, HttpCode, NotFoundException, Param, ParseIntPipe, Patch, Post, UseGuards, UseInterceptors } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuditAction } from '../audit/audit.decorator';
@@ -6,7 +6,7 @@ import { AuditInterceptor } from '../audit/audit.interceptor';
 import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
-import { isUniqueViolation } from '../common/postgres-error-codes';
+import { isForeignKeyViolation, isUniqueViolation } from '../common/postgres-error-codes';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
 import { ServiceCategory } from './service-category.entity';
 
@@ -41,5 +41,24 @@ export class AdminCategoriesController {
     }
     if (!result.affected) throw new NotFoundException();
     return this.categories.findOneBy({ id });
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  @UseInterceptors(AuditInterceptor)
+  @AuditAction('category.delete', 'category')
+  async remove(@Param('id', ParseIntPipe) id: number) {
+    let result;
+    try {
+      result = await this.categories.delete({ id });
+    } catch (err) {
+      // No pre-check by design: salon_services.category_id REFERENCES service_categories(id)
+      // (NO ACTION) makes Postgres the source of truth for "in use".
+      if (isForeignKeyViolation(err)) {
+        throw new ConflictException('این دسته‌بندی توسط خدمات سالن‌ها استفاده می‌شود و قابل حذف نیست');
+      }
+      throw err;
+    }
+    if (!result.affected) throw new NotFoundException();
   }
 }
