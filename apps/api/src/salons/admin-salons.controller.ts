@@ -1,6 +1,8 @@
-import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Patch, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Patch, Query, UseGuards, UseInterceptors } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { AuditAction } from '../audit/audit.decorator';
+import { AuditInterceptor } from '../audit/audit.interceptor';
 import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
@@ -45,6 +47,8 @@ export class AdminSalonsController {
   }
 
   @Patch(':id/status')
+  @UseInterceptors(AuditInterceptor)
+  @AuditAction('salon.status.set', 'salon')
   async setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AdminSalonStatusDto) {
     const result = await this.salons.update(
       { id },
@@ -55,6 +59,8 @@ export class AdminSalonsController {
   }
 
   @Patch(':id/featured')
+  @UseInterceptors(AuditInterceptor)
+  @AuditAction('salon.featured.set', 'salon')
   async setFeatured(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SetFeaturedDto) {
     const result = await this.salons.update(
       { id },

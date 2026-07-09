@@ -1,0 +1,68 @@
+import 'reflect-metadata';
+import { AdminCategoriesController } from '../catalog/admin-categories.controller';
+import { AdminConfigController } from '../platform-config/admin-config.controller';
+import { AdminReviewsController } from '../reviews/admin-reviews.controller';
+import { AdminSalonsController } from '../salons/admin-salons.controller';
+import { AdminUsersController } from '../users/admin-users.controller';
+import { AUDIT_ACTION } from './audit.decorator';
+import { AuditInterceptor } from './audit.interceptor';
+
+// Nest stores @UseInterceptors metadata under this key (INTERCEPTORS_METADATA in @nestjs/common/constants).
+const INTERCEPTORS_METADATA = '__interceptors__';
+
+describe('admin mutation audit wiring', () => {
+  const cases = [
+    {
+      label: 'salon status',
+      handler: AdminSalonsController.prototype.setStatus,
+      action: 'salon.status.set',
+      targetType: 'salon',
+    },
+    {
+      label: 'salon featured',
+      handler: AdminSalonsController.prototype.setFeatured,
+      action: 'salon.featured.set',
+      targetType: 'salon',
+    },
+    {
+      label: 'user status',
+      handler: AdminUsersController.prototype.setStatus,
+      action: 'user.status.set',
+      targetType: 'user',
+    },
+    {
+      label: 'review moderate',
+      handler: AdminReviewsController.prototype.moderate,
+      action: 'review.moderate',
+      targetType: 'review',
+    },
+    {
+      label: 'category create',
+      handler: AdminCategoriesController.prototype.create,
+      action: 'category.create',
+      targetType: 'category',
+    },
+    {
+      label: 'category update',
+      handler: AdminCategoriesController.prototype.update,
+      action: 'category.update',
+      targetType: 'category',
+    },
+    {
+      label: 'config update',
+      handler: AdminConfigController.prototype.update,
+      action: 'config.update',
+      targetType: 'config',
+    },
+  ];
+
+  for (const { label, handler, action, targetType } of cases) {
+    it(`${label} handler carries @AuditAction('${action}', '${targetType}')`, () => {
+      expect(Reflect.getMetadata(AUDIT_ACTION, handler)).toEqual({ action, targetType });
+    });
+
+    it(`${label} handler runs through AuditInterceptor`, () => {
+      expect(Reflect.getMetadata(INTERCEPTORS_METADATA, handler)).toContain(AuditInterceptor);
+    });
+  }
+});

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuditModule } from '../audit/audit.module';
 import { AuthModule } from '../auth/auth.module';
 import { StorageModule } from '../storage/storage.module';
 import { AdminSalonsController } from './admin-salons.controller';
@@ -22,6 +23,7 @@ import { WorkingHour } from './working-hour.entity';
     TypeOrmModule.forFeature([Salon, SalonService, WorkingHour, ScheduleException, SalonPhoto]),
     AuthModule,
     StorageModule,
+    AuditModule,
   ],
   controllers: [
     SalonServicesController,

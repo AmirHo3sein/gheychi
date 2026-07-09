@@ -1,6 +1,8 @@
-import { Body, ConflictException, Controller, NotFoundException, Param, ParseIntPipe, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, ConflictException, Controller, NotFoundException, Param, ParseIntPipe, Patch, Post, UseGuards, UseInterceptors } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { AuditAction } from '../audit/audit.decorator';
+import { AuditInterceptor } from '../audit/audit.interceptor';
 import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
@@ -15,6 +17,8 @@ export class AdminCategoriesController {
   constructor(@InjectRepository(ServiceCategory) private readonly categories: Repository<ServiceCategory>) {}
 
   @Post()
+  @UseInterceptors(AuditInterceptor)
+  @AuditAction('category.create', 'category')
   async create(@Body() dto: CreateCategoryDto) {
     try {
       return await this.categories.save(this.categories.create(dto));
@@ -25,6 +29,8 @@ export class AdminCategoriesController {
   }
 
   @Patch(':id')
+  @UseInterceptors(AuditInterceptor)
+  @AuditAction('category.update', 'category')
   async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCategoryDto) {
     let result;
     try {

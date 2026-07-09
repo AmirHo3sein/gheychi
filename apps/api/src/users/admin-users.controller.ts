@@ -10,10 +10,13 @@ import {
   Query,
   Req,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
 import { Repository } from 'typeorm';
+import { AuditAction } from '../audit/audit.decorator';
+import { AuditInterceptor } from '../audit/audit.interceptor';
 import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
@@ -43,6 +46,8 @@ export class AdminUsersController {
   }
 
   @Patch(':id/status')
+  @UseInterceptors(AuditInterceptor)
+  @AuditAction('user.status.set', 'user')
   async setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AdminUserStatusDto, @Req() req: Request) {
     if (id === (req.user as User).id) throw new BadRequestException('You cannot change your own account status');
     const result = await this.users.update({ id }, { status: dto.status });

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
+import { AuditModule } from '../audit/audit.module';
 import { SmsModule } from '../sms/sms.module';
 import { UsersModule } from '../users/users.module';
 import { AdminUsersController } from '../users/admin-users.controller';
@@ -13,6 +14,7 @@ import { RolesGuard } from './roles.guard';
   imports: [
     UsersModule,
     SmsModule,
+    AuditModule,
     JwtModule.registerAsync({
       global: true,
       inject: [ConfigService],
