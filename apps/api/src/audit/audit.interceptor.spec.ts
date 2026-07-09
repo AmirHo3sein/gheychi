@@ -3,6 +3,7 @@ import { ExecutionContext, Logger, NotFoundException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { lastValueFrom, of, throwError } from 'rxjs';
 import { Repository } from 'typeorm';
+import { User } from '../users/user.entity';
 import { AuditLog } from './audit-log.entity';
 import { AUDIT_ACTION, AuditAction } from './audit.decorator';
 import { AuditInterceptor } from './audit.interceptor';
@@ -195,7 +196,10 @@ describe('AuditInterceptor', () => {
 describe('AuditService.record', () => {
   it('inserts the row as given on the happy path', async () => {
     const repo = { insert: jest.fn().mockResolvedValue(undefined) };
-    const service = new AuditService(repo as unknown as Repository<AuditLog>);
+    const service = new AuditService(
+      repo as unknown as Repository<AuditLog>,
+      { find: jest.fn() } as unknown as Repository<User>,
+    );
 
     await service.record({
       actorId: 'admin-1',
@@ -219,7 +223,10 @@ describe('AuditService.record', () => {
   it('swallows insert failures (logger.error, no throw) so audit can never break the admin request', async () => {
     const errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     const repo = { insert: jest.fn().mockRejectedValue(new Error('db down')) };
-    const service = new AuditService(repo as unknown as Repository<AuditLog>);
+    const service = new AuditService(
+      repo as unknown as Repository<AuditLog>,
+      { find: jest.fn() } as unknown as Repository<User>,
+    );
 
     await expect(
       service.record({
