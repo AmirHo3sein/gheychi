@@ -11,6 +11,8 @@ export interface AuditActionMetadata {
  * Marks an admin mutation handler for audit capture. Read endpoints are never
  * annotated. Only takes effect on handlers whose controller/handler also applies
  * AuditInterceptor via @UseInterceptors.
+ * The audited route must expose its target as the `:id` route param -- other
+ * param names record targetId: null.
  */
 export const AuditAction = (action: string, targetType: string) =>
   SetMetadata(AUDIT_ACTION, { action, targetType });

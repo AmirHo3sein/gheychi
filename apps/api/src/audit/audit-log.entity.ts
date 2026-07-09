@@ -8,13 +8,13 @@ export class AuditLog {
   @Column({ name: 'actor_id' })
   actorId: string;
 
-  @Column()
+  @Column({ type: 'varchar', length: 60 })
   action: string;
 
-  @Column({ name: 'target_type' })
+  @Column({ name: 'target_type', type: 'varchar', length: 30 })
   targetType: string;
 
-  @Column({ name: 'target_id', type: 'varchar', nullable: true })
+  @Column({ name: 'target_id', type: 'varchar', length: 64, nullable: true })
   targetId: string | null;
 
   @Column({ type: 'jsonb', nullable: true })

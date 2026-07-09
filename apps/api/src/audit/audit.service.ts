@@ -37,7 +37,12 @@ export class AuditService {
         success: entry.success,
       });
     } catch (err) {
-      this.logger.error(`Failed to write audit row for ${entry.action}: ${(err as Error).message}`);
+      // No alerting exists on audit failures (explicit MVP scope cut), so the log
+      // line is the only trace -- include the stack to make it actionable.
+      this.logger.error(
+        `Failed to write audit row for ${entry.action}: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
     }
   }
 }

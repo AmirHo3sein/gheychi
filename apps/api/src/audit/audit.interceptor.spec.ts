@@ -124,6 +124,72 @@ describe('AuditInterceptor', () => {
       success: true,
     });
   });
+
+  it('awaits the audit insert before emitting the response (pins the not-fire-and-forget invariant)', async () => {
+    const order: string[] = [];
+    let resolveInsert!: () => void;
+    record.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveInsert = resolve;
+        }).then(() => {
+          order.push('recorded');
+        }),
+    );
+    const interceptor = new AuditInterceptor(
+      reflectorReturning({ action: 'salon.status.set', targetType: 'salon' }),
+      audit,
+    );
+    const req = { user: { id: 'admin-1' }, params: { id: 'salon-9' }, body: { status: 'approved' } };
+
+    const emission = lastValueFrom(
+      interceptor.intercept(mockContext(req), { handle: () => of({ id: 'salon-9' }) }),
+    ).then((result) => {
+      order.push('emitted');
+      return result;
+    });
+
+    // Let the interceptor reach the pending insert; the response must still be held back.
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(order).toEqual([]);
+
+    resolveInsert();
+    await expect(emission).resolves.toEqual({ id: 'salon-9' });
+    expect(order).toEqual(['recorded', 'emitted']);
+  });
+
+  it('awaits the failure audit insert before the rethrown error reaches the subscriber', async () => {
+    const order: string[] = [];
+    let resolveInsert!: () => void;
+    record.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveInsert = resolve;
+        }).then(() => {
+          order.push('recorded');
+        }),
+    );
+    const interceptor = new AuditInterceptor(
+      reflectorReturning({ action: 'salon.status.set', targetType: 'salon' }),
+      audit,
+    );
+    const req = { user: { id: 'admin-1' }, params: { id: 'missing' }, body: { status: 'approved' } };
+
+    const settled = lastValueFrom(
+      interceptor.intercept(mockContext(req), { handle: () => throwError(() => new NotFoundException()) }),
+    ).catch((err: unknown) => {
+      order.push('errored');
+      return err;
+    });
+
+    // Let the interceptor reach the pending insert; the error must still be held back.
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(order).toEqual([]);
+
+    resolveInsert();
+    await expect(settled).resolves.toBeInstanceOf(NotFoundException);
+    expect(order).toEqual(['recorded', 'errored']);
+  });
 });
 
 describe('AuditService.record', () => {
