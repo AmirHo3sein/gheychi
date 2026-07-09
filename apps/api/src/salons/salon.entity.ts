@@ -34,6 +34,9 @@ export class Salon {
   @Column({ name: 'rejection_reason', type: 'text', nullable: true })
   rejectionReason: string | null;
 
+  @Column({ name: 'suspended_cause', type: 'varchar', length: 20, nullable: true })
+  suspendedCause: 'admin' | 'owner_suspended' | null;
+
   @Column({ type: 'text' })
   address: string;
 
