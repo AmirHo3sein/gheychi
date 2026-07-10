@@ -36,6 +36,7 @@ const salons = ref<SalonRow[]>([])
 const users = ref<UserRow[]>([])
 const reviews = ref<ReviewRow[]>([])
 const categoryCount = ref(0)
+const openReportCount = ref(0)
 
 const { isDark } = useTheme()
 
@@ -78,6 +79,7 @@ const publishedReviews = computed(() => reviews.value.filter((r) => r.status ===
 
 const stats = computed<Stat[]>(() => [
   { label: 'در انتظار بررسی', value: pendingSalons.value, icon: 'salons', tone: 'warning', to: '/salons' },
+  { label: 'گزارش‌های باز', value: openReportCount.value, icon: 'flag', tone: 'danger', to: '/reports' },
   { label: 'کاربران معلق', value: suspendedUsers.value, icon: 'users', tone: 'danger', to: '/users' },
   { label: 'نظرات منتشر شده', value: publishedReviews.value, icon: 'reviews', tone: 'success', to: '/reviews' },
   { label: 'دسته‌بندی‌های خدمات', value: categoryCount.value, icon: 'categories', tone: 'info', to: '/categories' },
@@ -86,6 +88,7 @@ const stats = computed<Stat[]>(() => [
 const QUICK_LINKS: { to: string; label: string; icon: IconName; desc: string }[] = [
   { to: '/salons', label: 'آرایشگاه‌ها', icon: 'salons', desc: 'بررسی، تایید و رد درخواست‌ها' },
   { to: '/reviews', label: 'نظرات', icon: 'reviews', desc: 'مدیریت و تعدیل نظرات کاربران' },
+  { to: '/reports', label: 'گزارش‌ها', icon: 'flag', desc: 'رسیدگی به گزارش‌های کاربران' },
   { to: '/categories', label: 'دسته‌بندی‌ها', icon: 'categories', desc: 'افزودن و ویرایش خدمات' },
   { to: '/users', label: 'کاربران', icon: 'users', desc: 'جست‌وجو و مدیریت وضعیت کاربران' },
   { to: '/config', label: 'تنظیمات پلتفرم', icon: 'config', desc: 'مقادیر پیش‌پرداخت، کمیسیون و...' },
@@ -214,23 +217,26 @@ onMounted(async () => {
   // charts need the full distribution, not one page of it, so pageSize is set to the
   // backend's own max (100). Fine for this admin tool's scale; would need a dedicated
   // aggregate/stats endpoint if the dataset ever meaningfully exceeds that.
-  const [salonsRes, usersRes, reviewsRes, categoriesRes] = await Promise.all([
+  const [salonsRes, usersRes, reviewsRes, categoriesRes, reportsRes] = await Promise.all([
     apiFetch<{ items: SalonRow[]; total: number }>('/admin/salons?status=all&pageSize=100', { silent: true }),
     apiFetch<UserRow[]>('/admin/users', { silent: true }),
     apiFetch<{ items: ReviewRow[]; total: number }>('/admin/reviews?pageSize=100', { silent: true }),
     apiFetch<CategoryRow[]>('/categories', { silent: true }),
+    // Only the total matters for the stat card -- pageSize=1 keeps the payload minimal.
+    apiFetch<{ items: unknown[]; total: number }>('/admin/reports?status=open&pageSize=1', { silent: true }),
   ])
   salons.value = salonsRes.data?.items ?? []
   users.value = usersRes.data ?? []
   reviews.value = reviewsRes.data?.items ?? []
   categoryCount.value = categoriesRes.data?.length ?? 0
+  openReportCount.value = reportsRes.data?.total ?? 0
   loading.value = false
 })
 </script>
 
 <template>
   <div class="space-y-6 p-8">
-    <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <div class="grid grid-cols-2 gap-4 lg:grid-cols-5">
       <RouterLink v-for="stat in stats" :key="stat.label" :to="stat.to">
         <AppCard class="transition-shadow hover:shadow-(--shadow-pop)">
           <div class="flex items-center justify-between">
