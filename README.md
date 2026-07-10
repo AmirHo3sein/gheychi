@@ -85,7 +85,7 @@ The first real UI: a Nuxt 4 SSR PWA covering login, discovery, salon profiles, b
 **Known gaps carried forward, not fixed by this plan:**
 - ~~`salon_photos` has a public read endpoint now, but still no upload path anywhere in the system — galleries stay empty until provider-panel (a future plan) ships photo management.~~ Closed by Plan 5: `POST /api/salons/mine/photos` (see "Provider panel (Plan 5)" above) lets a provider upload/manage photos.
 - ~~The admin `/admin/featured` page and the two admin salon endpoints it calls are intentionally minimal — there's still no salon-approval workflow (`pending` → `approved`) anywhere in the API; that remains a future admin-panel concern, same as before this plan.~~ Closed by Plan 6: `PATCH /api/admin/salons/:id/status` (see "Admin panel (Plan 6)" below) adds a real approve/reject/suspend workflow.
-- Blog/content-marketing SEO is a separate, not-yet-started Plan 5 — this plan only covers the salon-profile side of SEO.
+- ~~Blog/content-marketing SEO is a separate, not-yet-started Plan 5 — this plan only covers the salon-profile side of SEO.~~ Closed by Plan 8 (the plan numbering shifted after this was written — "Plan 5" became provider-panel): see "Blog / content CMS (Plan 8)" below.
 
 ## Admin panel (Plan 6)
 
@@ -134,3 +134,32 @@ Closes the six trust-and-safety gaps carried since Plans 5/6 — no new product 
 - An admin can approve a pending salon whose owner is suspended — the salon goes publicly live while its owner is locked out of managing it; no guard exists on either side.
 - The salon-side effect of a user-suspension cascade is not separately audited (only the `user.status.set` row exists) — deliberate; reconstructing a salon's status timeline from audit rows alone has that gap.
 - Admin notifications are one shared queue (read = handled for everyone), not per-admin state — deliberate MVP cut.
+
+## Blog / content CMS (Plan 8)
+
+A Persian content-marketing blog: admins author Markdown articles in the admin panel, and the user-app serves them as SEO-optimized public pages that pull organic search traffic toward salon discovery. Spec: `docs/superpowers/specs/2026-07-10-plan-8-blog-cms-design.md`. This is the "backend module + admin editor + public pages" subsystem deferred since Plan 4.
+
+**Authoring flow (admin panel, `/blog`):** create a draft («مطلب جدید») → edit in a Markdown editor with a live side-by-side preview — slug auto-generates from the title but stays editable, plus optional category, free-text byline, excerpt, per-post SEO overrides (meta description, og-title), and a cover image (uploaded through the same swappable `StorageProvider` as salon photos) → publish. Publishing stamps `published_at` on the *first* publish only; unpublish → republish keeps the original date. Publish/unpublish are conditional updates (`WHERE status='draft'`/`'published'`), so a lost race 409s instead of double-applying; delete is a hard delete of any status. Categories are managed in a side card on the same page. Every admin mutation writes an audit row (`post.create/update/publish/unpublish/delete/cover.set`, `blogcategory.create/update/delete`) via the Plan 7 audit seam.
+
+Admin endpoints (all `@Roles('admin')`, all audited):
+
+- `GET /api/admin/blog/posts?status&categoryId&page&pageSize` — `{items, total, page, pageSize}` envelope, items joined with category name; status defaults to all (admins manage everything)
+- `GET /api/admin/blog/posts/:id` · `POST /api/admin/blog/posts` · `PATCH /api/admin/blog/posts/:id` · `DELETE /api/admin/blog/posts/:id`
+- `POST /api/admin/blog/posts/:id/publish` · `POST /api/admin/blog/posts/:id/unpublish` — the conditional transitions above
+- `POST /api/admin/blog/posts/:id/cover` (multipart, same size/type validation as salon photos; replaces and best-effort-deletes any previous cover object) · `DELETE /api/admin/blog/posts/:id/cover`
+- `POST /api/admin/blog/categories` · `PATCH /api/admin/blog/categories/:id` · `DELETE /api/admin/blog/categories/:id` — delete restricts: a category referenced by any post 409s, same semantics as Plan 7's salon-service category delete
+
+Public endpoints (no auth):
+
+- `GET /api/blog/posts?category=<slug>&page&pageSize` — published only, `published_at DESC`, list items carry no article body. An empty-string `category` param behaves as no-filter, not as an empty-slug match.
+- `GET /api/blog/posts/:slug` — full article incl. `bodyMarkdown` and SEO fields; 404 unless published
+- `GET /api/blog/categories`
+- Published articles feed the user-app sitemap via a dedicated sitemap source (`apps/api/src/content/sitemap-blog.controller.ts`), same mechanism as salon profile pages, both wired into `apps/user-app/server/api/__sitemap__/` Nitro handlers consumed by `@nuxtjs/sitemap`. Cover images get public URLs the same way salon photos do. **Both sitemap sources are unbounded** (fetch-all, no pagination) — cap or paginate before either approaches practical XML-sitemap size limits.
+
+User-app pages: `/blog` (SSR list — cover cards, category chips, pagination) and `/blog/[slug]` (SSR article with `useSeoMeta`, canonical URL, and JSON-LD `Article`). Both are public (unauthenticated) routes, joining `/salons/:slug` as the app's SEO surface. A post with neither `metaDescription` nor `excerpt` set emits no `description` meta tag at all — accepted rather than fabricating one. The article page also guards its whole template behind a root `v-if="post"` to sidestep a Suspense render-pass hazard around the not-found path; `salons/[slug].vue` and the booking page still use the older unguarded `page!` pattern and should get the same fix when next touched.
+
+**The `html: false` safety invariant.** Posts store raw Markdown; nothing is sanitized because nothing needs to be. Both frontends render through their own three-line `markdown-it` utility configured `{ html: false, linkify: true }`, so raw HTML in a post body never parses into DOM — `<script>alert(1)</script>` and `<img src=x onerror=…>` come out escaped/inert, and each app's utility has an invariant test pinning exactly that (a config regression fails CI). The rendered output is bound with `v-html` in exactly two places (admin editor preview, user-app article body), each commented as sanctioned solely by this invariant. Do not loosen `html: false` or add a third `v-html` site without re-deciding the whole model.
+
+**Deliberate cuts, recorded in the spec — not bugs:** no comments, likes, or any reader interaction; no scheduled publishing (publish is manual, no cron); a single category per post (no tags), no post revisions/history, byline is free text (no author user accounts); no RSS/Atom, no in-blog search, no related-posts logic; no editorial roles beyond the existing single `admin` role; and no redirect table — changing a published post's slug, or renaming a category without pinning its slug, or hard-deleting a post, all break previously indexed URLs, which is accepted for MVP (the editor hints at the slug case; unpublish is the soft path for posts).
+
+**Other known rough edges from this plan:** creating a post with a manually-edited slug applies it via a follow-up `PATCH` after the initial `POST` (create has no `slug` field, so it always auto-generates first) — if that `PATCH` 409s on a taken slug, the post silently keeps its auto-generated slug and the only signal is a transient toast, no persistent error state or rollback. Storage best-effort deletes (salon photos and blog covers alike) swallow failures with no logging — accepted, but orphaned objects accumulate without observability.
