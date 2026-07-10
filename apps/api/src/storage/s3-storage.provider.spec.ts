@@ -1,4 +1,5 @@
 import { S3Client } from '@aws-sdk/client-s3';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { S3StorageProvider } from './s3-storage.provider';
 
 jest.mock('@aws-sdk/client-s3', () => {
@@ -9,6 +10,10 @@ jest.mock('@aws-sdk/client-s3', () => {
     DeleteObjectCommand: jest.fn((input) => ({ input })),
   };
 });
+
+jest.mock('@smithy/node-http-handler', () => ({
+  NodeHttpHandler: jest.fn(() => ({ __mockHandler: true })),
+}));
 
 describe('S3StorageProvider', () => {
   const provider = new S3StorageProvider(
@@ -44,5 +49,13 @@ describe('S3StorageProvider', () => {
 
   it('derives the same public URL from a bare key that upload() returned for it', () => {
     expect(provider.publicUrl('salons/abc/photo.jpg')).toBe('https://cdn.example.com/salons/abc/photo.jpg');
+  });
+
+  it('bounds every S3 request with connection and request timeouts', () => {
+    expect(NodeHttpHandler).toHaveBeenCalledWith({ connectionTimeout: 5_000, requestTimeout: 10_000 });
+    const handlerInstance = (NodeHttpHandler as unknown as jest.Mock).mock.results[0].value;
+    expect(S3Client).toHaveBeenCalledWith(
+      expect.objectContaining({ requestHandler: handlerInstance }),
+    );
   });
 });
