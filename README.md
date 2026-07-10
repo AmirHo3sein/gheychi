@@ -93,8 +93,8 @@ A new Vue 3 + Vite SPA (`apps/admin-panel`, port 3005) for platform staff, same 
 
 - **Salon approvals** — a queue view (defaults to `status=pending`) and a detail view with Approve / Reject (reason required) / Suspend (reason required) actions. This closes the biggest gap Provider Panel (Plan 5) left open: `pending` → `approved` no longer needs a manual DB update anywhere in the flow.
 - **Review moderation** — a filterable list (salon/status/rating) so an admin can find the review a report was about and flip it published ↔ rejected via the existing `PATCH /api/admin/reviews/:id`.
-- **Categories** — create and rename service categories. No delete (categories are FK'd from `salon_services`, so removing one in use needs a restrict-or-cascade decision left for later).
-- **Users & salons** — search/filter users (phone, name, role, join-date range) and salons (name, city, status, gender target), with suspend/unsuspend on both. Suspending a user blocks their login only — it does not cascade to their salon.
+- **Categories** — create and rename service categories. ~~No delete (categories are FK'd from `salon_services`, so removing one in use needs a restrict-or-cascade decision left for later).~~ Closed by Plan 7: restrict-style delete shipped.
+- **Users & salons** — search/filter users (phone, name, role, join-date range) and salons (name, city, status, gender target), with suspend/unsuspend on both. ~~Suspending a user blocks their login only — it does not cascade to their salon.~~ Closed by Plan 7: suspension now cascades to the approved salon with cause tracking.
 - **Platform config** — a generic key/value editor over `platform_config`, no per-key curation or bounds checking.
 
 New/changed API endpoints:
