@@ -134,6 +134,8 @@ describe('Reports — lifecycle (e2e)', () => {
       .expect(404));
 
   it('wrote exactly one report_created notification — the duplicate rolled back with its report', async () => {
+    // Count holds because resetDatabase() gives this file a fresh schema and, at this point in the
+    // describe, exactly one report has been created; the review-targeted report later adds a second row.
     const ds = app.get(DataSource);
     const rows = await ds.query(`SELECT type, title, body, link, read_at FROM admin_notifications WHERE type = 'report_created'`);
     expect(rows).toHaveLength(1);
