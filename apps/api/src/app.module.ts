@@ -11,6 +11,7 @@ import { HealthController } from './health/health.controller';
 import { PlatformConfigModule } from './platform-config/platform-config.module';
 import { PushModule } from './push/push.module';
 import { RedisModule } from './redis/redis.module';
+import { ReportsModule } from './reports/reports.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { SalonsModule } from './salons/salons.module';
 import { SearchModule } from './search/search.module';
@@ -43,6 +44,7 @@ import { SearchModule } from './search/search.module';
     BookingModule,
     SearchModule,
     ReviewsModule,
+    ReportsModule,
     FavoritesModule,
     PushModule,
     AdminNotificationsModule,

@@ -1,0 +1,203 @@
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import { DataSource, QueryFailedError } from 'typeorm';
+import { Booking } from '../booking/booking.entity';
+import { Review } from '../reviews/review.entity';
+import { CreateReportDto } from './dto/report.dto';
+import { Report } from './report.entity';
+import { ReportsService } from './reports.service';
+
+interface Mocks {
+  reportsRepo: Record<string, jest.Mock>;
+  reviewsRepo: { findOneBy: jest.Mock };
+  bookingsRepo: { countBy: jest.Mock };
+  em: { create: jest.Mock; save: jest.Mock };
+  transaction: jest.Mock;
+}
+
+async function setup(): Promise<{ service: ReportsService; mocks: Mocks }> {
+  const em = {
+    create: jest.fn((_entity: unknown, values: Record<string, unknown>) => values),
+    save: jest.fn(async (_entity: unknown, values: Record<string, unknown>) => ({
+      id: 'report-1',
+      createdAt: new Date(),
+      ...values,
+    })),
+  };
+  const mocks: Mocks = {
+    reportsRepo: {},
+    reviewsRepo: { findOneBy: jest.fn() },
+    bookingsRepo: { countBy: jest.fn() },
+    em,
+    transaction: jest.fn(async (cb: (em: unknown) => Promise<unknown>) => cb(em)),
+  };
+
+  const moduleRef = await Test.createTestingModule({
+    providers: [
+      ReportsService,
+      { provide: getRepositoryToken(Report), useValue: mocks.reportsRepo },
+      { provide: getRepositoryToken(Review), useValue: mocks.reviewsRepo },
+      { provide: getRepositoryToken(Booking), useValue: mocks.bookingsRepo },
+      { provide: DataSource, useValue: { transaction: mocks.transaction } },
+    ],
+  }).compile();
+
+  return { service: moduleRef.get(ReportsService), mocks };
+}
+
+describe('ReportsService.canReport', () => {
+  it('is true when the caller has at least one completed booking at the salon', async () => {
+    const { service, mocks } = await setup();
+    mocks.bookingsRepo.countBy.mockResolvedValue(1);
+
+    await expect(service.canReport('user-1', 'salon-1')).resolves.toBe(true);
+    expect(mocks.bookingsRepo.countBy).toHaveBeenCalledWith({
+      userId: 'user-1',
+      salonId: 'salon-1',
+      status: 'completed',
+    });
+  });
+
+  it('is false when the caller has no completed booking there', async () => {
+    const { service, mocks } = await setup();
+    mocks.bookingsRepo.countBy.mockResolvedValue(0);
+
+    await expect(service.canReport('user-1', 'salon-1')).resolves.toBe(false);
+  });
+});
+
+describe('ReportsService.create', () => {
+  it('creates an open salon-targeted report for an eligible customer', async () => {
+    const { service, mocks } = await setup();
+    mocks.bookingsRepo.countBy.mockResolvedValue(2);
+
+    const report = await service.create('user-1', { salonId: 'salon-1', reason: 'سالن تمیز نبود و رزرو رعایت نشد' });
+
+    expect(report.id).toBe('report-1');
+    expect(mocks.em.save).toHaveBeenCalledWith(Report, {
+      reporterId: 'user-1',
+      salonId: 'salon-1',
+      reviewId: null,
+      reason: 'سالن تمیز نبود و رزرو رعایت نشد',
+      status: 'open',
+    });
+  });
+
+  it('derives the salon from the review when reviewId is the target', async () => {
+    const { service, mocks } = await setup();
+    mocks.reviewsRepo.findOneBy.mockResolvedValue({ id: 'review-9', salonId: 'salon-9' });
+    mocks.bookingsRepo.countBy.mockResolvedValue(1);
+
+    await service.create('user-1', { reviewId: 'review-9', reason: 'این دیدگاه توهین‌آمیز است' });
+
+    expect(mocks.bookingsRepo.countBy).toHaveBeenCalledWith({
+      userId: 'user-1',
+      salonId: 'salon-9',
+      status: 'completed',
+    });
+    expect(mocks.em.save).toHaveBeenCalledWith(
+      Report,
+      expect.objectContaining({ salonId: 'salon-9', reviewId: 'review-9' }),
+    );
+  });
+
+  it('404s when the reported review does not exist', async () => {
+    const { service, mocks } = await setup();
+    mocks.reviewsRepo.findOneBy.mockResolvedValue(null);
+
+    await expect(service.create('user-1', { reviewId: 'review-9', reason: 'این دیدگاه توهین‌آمیز است' })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it('403s an ineligible reporter with the Farsi eligibility message', async () => {
+    const { service, mocks } = await setup();
+    mocks.bookingsRepo.countBy.mockResolvedValue(0);
+
+    await expect(service.create('user-1', { salonId: 'salon-1', reason: 'اطلاعات سالن نادرست است' })).rejects.toMatchObject({
+      constructor: ForbiddenException,
+      message: 'فقط مشتریانی که نوبت تکمیل‌شده در این سالن داشته‌اند می‌توانند گزارش ثبت کنند',
+    });
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it('400s when both salonId and reviewId are provided', async () => {
+    const { service, mocks } = await setup();
+
+    await expect(
+      service.create('user-1', { salonId: 'salon-1', reviewId: 'review-9', reason: 'هر دو هدف با هم' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it('400s when neither salonId nor reviewId is provided', async () => {
+    const { service, mocks } = await setup();
+
+    await expect(service.create('user-1', { reason: 'بدون هدف مشخص' })).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('translates the partial-unique-index violation into a Farsi 409', async () => {
+    const { service, mocks } = await setup();
+    mocks.bookingsRepo.countBy.mockResolvedValue(1);
+    const dup = new QueryFailedError('INSERT', [], new Error('duplicate key'));
+    Object.assign(dup, { code: '23505' });
+    mocks.em.save.mockRejectedValue(dup);
+
+    await expect(service.create('user-1', { salonId: 'salon-1', reason: 'گزارش تکراری برای همین سالن' })).rejects.toMatchObject({
+      constructor: ConflictException,
+      message: 'گزارش قبلی شما هنوز در حال بررسی است',
+    });
+  });
+
+  it('rethrows non-unique-violation errors untouched', async () => {
+    const { service, mocks } = await setup();
+    mocks.bookingsRepo.countBy.mockResolvedValue(1);
+    mocks.em.save.mockRejectedValue(new Error('connection reset'));
+
+    await expect(service.create('user-1', { salonId: 'salon-1', reason: 'اطلاعات سالن نادرست است' })).rejects.toThrow(
+      'connection reset',
+    );
+  });
+});
+
+describe('CreateReportDto', () => {
+  it('fails validation when neither target is provided', async () => {
+    const dto = plainToInstance(CreateReportDto, { reason: 'اطلاعات سالن نادرست است' });
+    const errors = await validate(dto);
+    expect(errors.map((e) => e.property)).toEqual(expect.arrayContaining(['salonId', 'reviewId']));
+  });
+
+  it('passes with only a salonId', async () => {
+    const dto = plainToInstance(CreateReportDto, {
+      salonId: '2c4b8f9e-1a2b-4c3d-8e4f-5a6b7c8d9e0f',
+      reason: 'اطلاعات سالن نادرست است',
+    });
+    await expect(validate(dto)).resolves.toEqual([]);
+  });
+
+  it('passes with only a reviewId', async () => {
+    const dto = plainToInstance(CreateReportDto, {
+      reviewId: '2c4b8f9e-1a2b-4c3d-8e4f-5a6b7c8d9e0f',
+      reason: 'این دیدگاه توهین‌آمیز است',
+    });
+    await expect(validate(dto)).resolves.toEqual([]);
+  });
+
+  it('fails on a reason shorter than 5 characters', async () => {
+    const dto = plainToInstance(CreateReportDto, {
+      salonId: '2c4b8f9e-1a2b-4c3d-8e4f-5a6b7c8d9e0f',
+      reason: 'کوتاه',  // 5 chars — boundary passes; test the real failure below
+    });
+    const short = plainToInstance(CreateReportDto, {
+      salonId: '2c4b8f9e-1a2b-4c3d-8e4f-5a6b7c8d9e0f',
+      reason: 'بد',
+    });
+    await expect(validate(dto)).resolves.toEqual([]);
+    const errors = await validate(short);
+    expect(errors.map((e) => e.property)).toContain('reason');
+  });
+});
