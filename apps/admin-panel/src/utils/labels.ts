@@ -90,7 +90,7 @@ const AUDIT_ACTION: Record<string, LabelEntry> = {
 }
 
 // Canonical list of the audited action names -- filter dropdowns and tests derive from
-// this export instead of re-declaring the nine strings at every call site.
+// this export instead of re-declaring the action strings at every call site.
 export const AUDIT_ACTION_KEYS = Object.keys(AUDIT_ACTION)
 
 const AUDIT_TARGET_TYPE: Record<string, string> = {
