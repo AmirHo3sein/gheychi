@@ -83,6 +83,9 @@ async function confirmDelete() {
   const { error } = await apiFetch(`/admin/categories/${id}`, { method: 'DELETE' })
   submitting.value = false
   confirmingId.value = null
+  // On any error the row stays as-is (a 404 from a concurrent delete leaves it stale until
+  // the next page load) — accepted staleness for an admin tool, same reactive philosophy as
+  // the rest of the moderation surfaces.
   if (!error) categories.value = categories.value.filter((c) => c.id !== id)
 }
 
