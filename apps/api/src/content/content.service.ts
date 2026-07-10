@@ -199,13 +199,16 @@ export class ContentService {
 
   async setCover(id: string, file: Express.Multer.File): Promise<BlogPost & { coverImageUrl: string }> {
     const post = await this.posts.findOneBy({ id });
-    if (!post) throw new NotFoundException();
+    if (!post) throw new NotFoundException('Post not found');
     // Deliberately NOT using file.originalname in the key -- it's client-controlled and
     // could contain path-traversal sequences. The mimetype was already restricted to
     // image/jpeg|png|webp by the controller's validator, so deriving the extension from
     // it keeps the key fully server-controlled (same reasoning as salon photo uploads).
     const extension = EXTENSION_BY_MIME_TYPE[file.mimetype] ?? 'bin';
     const key = `blog/${id}/${randomUUID()}.${extension}`;
+    // If the save below fails after this upload succeeds, the fresh object is orphaned in
+    // storage with no row pointing at it -- accepted (same harmless-orphan class as the
+    // best-effort deletes; no cleanup pass exists by MVP scope cut).
     await this.storage.upload(file.buffer, key, file.mimetype);
     const oldKey = post.coverImageKey;
     post.coverImageKey = key;
@@ -221,7 +224,7 @@ export class ContentService {
 
   async clearCover(id: string): Promise<void> {
     const post = await this.posts.findOneBy({ id });
-    if (!post) throw new NotFoundException();
+    if (!post) throw new NotFoundException('Post not found');
     const oldKey = post.coverImageKey;
     if (!oldKey) return; // idempotent: nothing to clear
     post.coverImageKey = null;
