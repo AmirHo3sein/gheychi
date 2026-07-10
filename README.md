@@ -58,7 +58,7 @@ Two background jobs run every 1 and 5 minutes respectively: expiring abandoned b
 
 **Reviews are verified-booking-only**, enforced at the database level by a UNIQUE index on `reviews.booking_id` — a booking can only be reviewed once, and only after the salon marks it `completed`.
 
-**Moderation is reactive, not pre-publish**: a review is `published` the instant it's created; there's no queue to clear before it's visible. An admin can later flip it to `rejected` (or back) if a report is upheld — how a report reaches an admin (support ticket, phone call) is outside this system for MVP, same as Zarinpal refund settlement in Plan 2.
+**Moderation is reactive, not pre-publish**: a review is `published` the instant it's created; there's no queue to clear before it's visible. An admin can later flip it to `rejected` (or back) if a report is upheld — reports originally arrived out-of-band (support ticket, phone call), but Plan 7 added an in-system report flow (see "Platform hardening (Plan 7)" below). Zarinpal refund settlement remains outside the system, same as Plan 2.
 
 `salons.rating_avg`/`rating_count` are always recomputed from every currently-`published` review for that salon, in the same transaction as any status-changing write — never incremented/decremented in place — so a rejection (or reversal) immediately and correctly updates the salon's public rating. The recompute locks the salon row first (`SELECT ... FOR UPDATE`) before reading the aggregate, closing a lost-update race that a naive single-statement `UPDATE ... FROM (aggregate subquery)` would have under concurrent writes to the same salon's reviews.
 
@@ -111,10 +111,26 @@ New/changed API endpoints:
 
 CORS now also allows `ADMIN_APP_BASE_URL` (default `http://localhost:3005`) as a credentialed origin, alongside the existing `FRONTEND_BASE_URL`/`PROVIDER_APP_BASE_URL` — found and fixed as part of this plan's e2e work (Task 24).
 
-**Out of scope, not built by this plan:**
-- No report/flag mechanism — reports about a salon or review still arrive out-of-band (support ticket, phone call), same as before.
-- No category delete.
-- No auto-suspend of a user's salon when the user is suspended.
-- No first-admin bootstrap script — the first admin account is still a manual DB update.
-- No audit log of admin actions (who approved/rejected/suspended what, when).
-- No notification to an admin when a provider resubmits a rejected salon.
+**Out of scope at the time — all six closed by Plan 7 (see "Platform hardening (Plan 7)" below):**
+- ~~No report/flag mechanism — reports about a salon or review still arrive out-of-band (support ticket, phone call), same as before.~~
+- ~~No category delete.~~
+- ~~No auto-suspend of a user's salon when the user is suspended.~~
+- ~~No first-admin bootstrap script — the first admin account is still a manual DB update.~~
+- ~~No audit log of admin actions (who approved/rejected/suspended what, when).~~
+- ~~No notification to an admin when a provider resubmits a rejected salon.~~
+
+## Platform hardening (Plan 7)
+
+Closes the six trust-and-safety gaps carried since Plans 5/6 — no new product surface beyond these. Spec: `docs/superpowers/specs/2026-07-10-plan-7-platform-hardening-design.md`.
+
+- **Admin audit log** — every admin mutation (salon status/featured, user status, review moderation, category create/update/delete, config update, report resolve) writes an `audit_log` row via a declarative `@AuditAction` decorator + interceptor; audit-insert failures are logged and swallowed, never failing the admin's request. Browse via `GET /api/admin/audit-log` (filterable by actor/action/target-type/date, paginated) or the admin-panel's Audit Log page. No before/after value snapshots in v1 — the log answers "who did what, to what, with what input, when."
+- **First-admin bootstrap** — `pnpm --filter @arayeshgah/api create-admin 09121234567` idempotently creates the user if missing and sets `role='admin'`, `status='active'`; the first admin is no longer a manual DB update. (pnpm 9 sometimes leaks a `--` separator into forwarded script args — the script tolerates both `create-admin 09...` and `create-admin -- 09...`.)
+- **Reports** — a verified customer (at least one `completed` booking at the salon) can report a salon or one of its reviews from the salon profile page: `POST /api/reports` (one *open* report per reporter per target, enforced by a partial unique index → 409), `GET /api/reports/eligibility?salonId=` gates the UI. Admins work the queue via `GET/PATCH /api/admin/reports` and the admin-panel Reports page. Resolving a report doesn't itself moderate anything — the queue links to the existing, already-audited moderation actions.
+- **Category delete** — `DELETE /api/admin/categories/:id` with restrict semantics: a category referenced by any salon service (active or not) 409s, mirroring the DB's FK. Reassign-or-cascade is deferred until someone actually needs it.
+- **Cascade suspend** — suspending a user now also suspends their `approved` salon in the same transaction, recording `suspended_cause='owner_suspended'`; reactivating the user restores only cascade-suspended salons — a salon an admin suspended directly (`suspended_cause='admin'`) stays suspended. Public review listing (`GET /api/salons/:salonId/reviews`) now also requires the salon to be `approved`.
+- **Admin notifications** — a persisted queue (`admin_notifications`) polled by the admin panel (bell badge, 60s cadence), fed by two emit points: provider resubmits (`salon_resubmitted`) and new reports (`report_created`). One shared read-state for all admins is a deliberate cut.
+
+**Known gaps carried forward, not fixed by this plan:**
+- An admin can approve a pending salon whose owner is suspended — the salon goes publicly live while its owner is locked out of managing it; no guard exists on either side.
+- The salon-side effect of a user-suspension cascade is not separately audited (only the `user.status.set` row exists) — deliberate; reconstructing a salon's status timeline from audit rows alone has that gap.
+- Admin notifications are one shared queue (read = handled for everyone), not per-admin state — deliberate MVP cut.
