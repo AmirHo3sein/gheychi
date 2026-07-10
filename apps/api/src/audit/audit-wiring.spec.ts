@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { AdminCategoriesController } from '../catalog/admin-categories.controller';
 import { AdminConfigController } from '../platform-config/admin-config.controller';
+import { AdminReportsController } from '../reports/admin-reports.controller';
 import { AdminReviewsController } from '../reviews/admin-reviews.controller';
 import { AdminSalonsController } from '../salons/admin-salons.controller';
 import { AdminUsersController } from '../users/admin-users.controller';
@@ -59,6 +60,12 @@ describe('admin mutation audit wiring', () => {
       handler: AdminConfigController.prototype.update,
       action: 'config.update',
       targetType: 'config',
+    },
+    {
+      label: 'report resolve',
+      handler: AdminReportsController.prototype.resolve,
+      action: 'report.resolve',
+      targetType: 'report',
     },
   ];
 

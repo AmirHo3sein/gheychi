@@ -1,4 +1,5 @@
-import { IsString, IsUUID, MaxLength, MinLength, ValidateIf } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
 
 export class CreateReportDto {
   // Exactly one of salonId/reviewId identifies the target. Each is required (and must
@@ -22,4 +23,38 @@ export class CreateReportDto {
 export class ReportEligibilityQueryDto {
   @IsUUID()
   salonId: string;
+}
+
+export class AdminReportQueryDto {
+  @IsOptional()
+  @IsIn(['open', 'resolved', 'dismissed', 'all'])
+  status?: 'open' | 'resolved' | 'dismissed' | 'all';
+
+  @IsOptional()
+  @IsUUID()
+  salonId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  pageSize?: number;
+}
+
+export class ResolveReportDto {
+  @IsIn(['resolved', 'dismissed'])
+  status: 'resolved' | 'dismissed';
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(1000)
+  note?: string;
 }

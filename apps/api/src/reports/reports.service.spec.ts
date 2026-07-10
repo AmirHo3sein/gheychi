@@ -10,12 +10,29 @@ import { CreateReportDto } from './dto/report.dto';
 import { Report } from './report.entity';
 import { ReportsService } from './reports.service';
 
+interface QueryBuilderMock {
+  leftJoin: jest.Mock;
+  select: jest.Mock;
+  addSelect: jest.Mock;
+  andWhere: jest.Mock;
+  orderBy: jest.Mock;
+  offset: jest.Mock;
+  limit: jest.Mock;
+  getRawMany: jest.Mock;
+}
+
 interface Mocks {
-  reportsRepo: Record<string, jest.Mock>;
+  reportsRepo: {
+    findOneBy: jest.Mock;
+    update: jest.Mock;
+    count: jest.Mock;
+    createQueryBuilder: jest.Mock;
+  };
   reviewsRepo: { findOneBy: jest.Mock };
   bookingsRepo: { countBy: jest.Mock };
   em: { create: jest.Mock; save: jest.Mock };
   transaction: jest.Mock;
+  qb: QueryBuilderMock;
 }
 
 async function setup(): Promise<{ service: ReportsService; mocks: Mocks }> {
@@ -27,12 +44,24 @@ async function setup(): Promise<{ service: ReportsService; mocks: Mocks }> {
       ...values,
     })),
   };
+  const qb = {} as QueryBuilderMock;
+  for (const method of ['leftJoin', 'select', 'addSelect', 'andWhere', 'orderBy', 'offset', 'limit'] as const) {
+    qb[method] = jest.fn().mockReturnValue(qb);
+  }
+  qb.getRawMany = jest.fn().mockResolvedValue([]);
+
   const mocks: Mocks = {
-    reportsRepo: {},
+    reportsRepo: {
+      findOneBy: jest.fn(),
+      update: jest.fn(),
+      count: jest.fn().mockResolvedValue(0),
+      createQueryBuilder: jest.fn().mockReturnValue(qb),
+    },
     reviewsRepo: { findOneBy: jest.fn() },
     bookingsRepo: { countBy: jest.fn() },
     em,
     transaction: jest.fn(async (cb: (em: unknown) => Promise<unknown>) => cb(em)),
+    qb,
   };
 
   const moduleRef = await Test.createTestingModule({
@@ -166,6 +195,23 @@ describe('ReportsService.create', () => {
     );
   });
 
+  it('treats a numeric reviewId as absent and creates a salon-only report', async () => {
+    const { service, mocks } = await setup();
+    mocks.bookingsRepo.countBy.mockResolvedValue(1);
+
+    await service.create('user-1', {
+      salonId: 'salon-1',
+      reviewId: 12345 as unknown as string,
+      reason: 'سالن تمیز نبود و رزرو رعایت نشد',
+    });
+
+    expect(mocks.reviewsRepo.findOneBy).not.toHaveBeenCalled();
+    expect(mocks.em.save).toHaveBeenCalledWith(
+      Report,
+      expect.objectContaining({ salonId: 'salon-1', reviewId: null }),
+    );
+  });
+
   it('400s with the Farsi exactly-one message when both targets are empty strings', async () => {
     const { service, mocks } = await setup();
 
@@ -235,5 +281,90 @@ describe('CreateReportDto', () => {
     await expect(validate(dto)).resolves.toEqual([]);
     const errors = await validate(short);
     expect(errors.map((e) => e.property)).toContain('reason');
+  });
+});
+
+describe('ReportsService.listForAdmin', () => {
+  it('defaults to the open queue with the standard envelope', async () => {
+    const { service, mocks } = await setup();
+    mocks.qb.getRawMany.mockResolvedValue([{ id: 'report-1', salonName: 'Salon A' }]);
+    mocks.reportsRepo.count.mockResolvedValue(1);
+
+    const result = await service.listForAdmin({});
+
+    expect(result).toEqual({ items: [{ id: 'report-1', salonName: 'Salon A' }], total: 1, page: 1, pageSize: 20 });
+    expect(mocks.qb.andWhere).toHaveBeenCalledWith('report.status = :status', { status: 'open' });
+    expect(mocks.reportsRepo.count).toHaveBeenCalledWith({ where: { status: 'open' } });
+    expect(mocks.qb.offset).toHaveBeenCalledWith(0);
+    expect(mocks.qb.limit).toHaveBeenCalledWith(20);
+  });
+
+  it('skips the status filter for status=all and applies the salon filter', async () => {
+    const { service, mocks } = await setup();
+
+    await service.listForAdmin({ status: 'all', salonId: 'salon-1', page: 2, pageSize: 10 });
+
+    expect(mocks.qb.andWhere).not.toHaveBeenCalledWith('report.status = :status', expect.anything());
+    expect(mocks.qb.andWhere).toHaveBeenCalledWith('report.salonId = :salonId', { salonId: 'salon-1' });
+    expect(mocks.reportsRepo.count).toHaveBeenCalledWith({ where: { salonId: 'salon-1' } });
+    expect(mocks.qb.offset).toHaveBeenCalledWith(10);
+    expect(mocks.qb.limit).toHaveBeenCalledWith(10);
+  });
+});
+
+describe('ReportsService.resolve', () => {
+  it('stamps resolver, note, and time via a conditional update on the open status', async () => {
+    const { service, mocks } = await setup();
+    mocks.reportsRepo.findOneBy
+      .mockResolvedValueOnce({ id: 'report-1', status: 'open' })
+      .mockResolvedValueOnce({ id: 'report-1', status: 'resolved', resolvedBy: 'admin-1' });
+    mocks.reportsRepo.update.mockResolvedValue({ affected: 1 });
+
+    const result = await service.resolve('admin-1', 'report-1', { status: 'resolved', note: 'بررسی شد' });
+
+    expect(mocks.reportsRepo.update).toHaveBeenCalledWith(
+      { id: 'report-1', status: 'open' },
+      expect.objectContaining({
+        status: 'resolved',
+        resolutionNote: 'بررسی شد',
+        resolvedBy: 'admin-1',
+        resolvedAt: expect.any(Date),
+      }),
+    );
+    expect(result.status).toBe('resolved');
+  });
+
+  it('stores a null note when none is given', async () => {
+    const { service, mocks } = await setup();
+    mocks.reportsRepo.findOneBy
+      .mockResolvedValueOnce({ id: 'report-1', status: 'open' })
+      .mockResolvedValueOnce({ id: 'report-1', status: 'dismissed' });
+    mocks.reportsRepo.update.mockResolvedValue({ affected: 1 });
+
+    await service.resolve('admin-1', 'report-1', { status: 'dismissed' });
+
+    expect(mocks.reportsRepo.update).toHaveBeenCalledWith(
+      { id: 'report-1', status: 'open' },
+      expect.objectContaining({ resolutionNote: null }),
+    );
+  });
+
+  it('404s when the report does not exist', async () => {
+    const { service, mocks } = await setup();
+    mocks.reportsRepo.findOneBy.mockResolvedValue(null);
+
+    await expect(service.resolve('admin-1', 'missing', { status: 'resolved' })).rejects.toBeInstanceOf(NotFoundException);
+    expect(mocks.reportsRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('409s when a concurrent admin already closed the report', async () => {
+    const { service, mocks } = await setup();
+    mocks.reportsRepo.findOneBy.mockResolvedValue({ id: 'report-1', status: 'open' });
+    mocks.reportsRepo.update.mockResolvedValue({ affected: 0 });
+
+    await expect(service.resolve('admin-1', 'report-1', { status: 'resolved' })).rejects.toMatchObject({
+      constructor: ConflictException,
+      message: 'این گزارش قبلاً بررسی شده است',
+    });
   });
 });
