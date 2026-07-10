@@ -8,6 +8,9 @@ const ANCHOR = { lat: 35.7219, lng: 51.3347 };
 
 describe('Search (e2e)', () => {
   let app: INestApplication;
+  let cutCategoryId: number;
+  let nailsCategoryId: number;
+  let unusedCategoryId: number;
 
   beforeAll(async () => {
     await resetDatabase();
@@ -38,11 +41,20 @@ describe('Search (e2e)', () => {
          'Pending Salon', 'pending-salon', 'women', 'pending', 'D', 'Tehran',
          ST_SetSRID(ST_MakePoint(51.3348, 35.7218), 4326)::geography)`);
 
-    // services: Near has Haircut(cat 1, 500k); Far has Nails(cat 4, 300k)
-    await ds.query(`
-      INSERT INTO salon_services (salon_id, category_id, name, price, duration_min) VALUES
-        ('10000000-0000-4000-8000-000000000001', 1, 'Cut', 500000, 45),
-        ('10000000-0000-4000-8000-000000000002', 4, 'Manicure', 300000, 60)`);
+    // Category ids are resolved from the seeded rows (not hardcoded) so the fixture
+    // survives reseeds of service_categories; the third id stays unattached to any salon.
+    const categories = await ds.query(`SELECT id FROM service_categories ORDER BY id LIMIT 3`);
+    cutCategoryId = categories[0].id;
+    nailsCategoryId = categories[1].id;
+    unusedCategoryId = categories[2].id;
+
+    // services: Near has a cut service (500k); Far has a nails service (300k)
+    await ds.query(
+      `INSERT INTO salon_services (salon_id, category_id, name, price, duration_min) VALUES
+        ('10000000-0000-4000-8000-000000000001', $1, 'Cut', 500000, 45),
+        ('10000000-0000-4000-8000-000000000002', $2, 'Manicure', 300000, 60)`,
+      [cutCategoryId, nailsCategoryId],
+    );
   });
 
   afterAll(async () => {
@@ -72,7 +84,7 @@ describe('Search (e2e)', () => {
   it('filters by category', async () => {
     const res = await request(app.getHttpServer())
       .get('/api/search')
-      .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', categoryId: 4 })
+      .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', categoryId: nailsCategoryId })
       .expect(200);
     expect(res.body.map((s: { slug: string }) => s.slug)).toEqual(['far-salon']);
   });
@@ -111,7 +123,7 @@ describe('Search (e2e)', () => {
   it('returns an empty array when no salon has the requested category', async () => {
     const res = await request(app.getHttpServer())
       .get('/api/search')
-      .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', categoryId: 8 })
+      .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', categoryId: unusedCategoryId })
       .expect(200);
     expect(res.body).toEqual([]);
   });
