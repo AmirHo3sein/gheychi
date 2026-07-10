@@ -25,14 +25,15 @@ async function toggle() {
   })
   submitting.value = false
   if (data) {
-    // Providers get the cascade spelled out: suspending them also pulls their salon from
-    // public listings, and reactivating restores only what the cascade itself suspended
-    // (a salon an admin suspended directly stays suspended) -- spec §3.5.
+    // Providers get the cascade spelled out. Worded conditionally because the backend
+    // cascade only touches an APPROVED salon on suspend (and only a cascade-suspended one
+    // on reactivate) -- a pending/rejected salon is untouched, so the toast must not
+    // assert an effect that may not have happened -- spec §3.5.
     if (props.role === 'provider') {
       push(
         target === 'suspended'
-          ? 'کاربر معلق شد؛ آرایشگاه او نیز از دسترس عموم خارج شد.'
-          : 'کاربر فعال شد؛ آرایشگاهی که به دلیل تعلیق او معلق شده بود بازگردانده شد.',
+          ? 'کاربر معلق شد؛ آرایشگاه تاییدشدهٔ او (در صورت وجود) نیز از دسترس عموم خارج شد.'
+          : 'کاربر فعال شد؛ آرایشگاهی که به دلیل تعلیق او معلق شده بود (در صورت وجود) بازگردانده شد.',
       )
     } else {
       push(target === 'suspended' ? 'کاربر معلق شد.' : 'کاربر فعال شد.')

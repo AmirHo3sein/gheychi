@@ -51,7 +51,7 @@ describe('SuspendUserButton', () => {
     await wrapper.get('[data-testid="suspend-user"]').trigger('click')
     await flushPromises()
 
-    expect(pushMock).toHaveBeenCalledWith('کاربر معلق شد؛ آرایشگاه او نیز از دسترس عموم خارج شد.')
+    expect(pushMock).toHaveBeenCalledWith('کاربر معلق شد؛ آرایشگاه تاییدشدهٔ او (در صورت وجود) نیز از دسترس عموم خارج شد.')
   })
 
   it('toasts the salon restore when reactivating a provider', async () => {
@@ -61,7 +61,7 @@ describe('SuspendUserButton', () => {
     await wrapper.get('[data-testid="unsuspend-user"]').trigger('click')
     await flushPromises()
 
-    expect(pushMock).toHaveBeenCalledWith('کاربر فعال شد؛ آرایشگاهی که به دلیل تعلیق او معلق شده بود بازگردانده شد.')
+    expect(pushMock).toHaveBeenCalledWith('کاربر فعال شد؛ آرایشگاهی که به دلیل تعلیق او معلق شده بود (در صورت وجود) بازگردانده شد.')
   })
 
   it('uses a plain toast without cascade wording for non-providers', async () => {
