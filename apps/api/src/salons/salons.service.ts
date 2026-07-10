@@ -5,7 +5,7 @@ import { AdminNotificationsService } from '../admin-notifications/admin-notifica
 import { UsersService } from '../users/users.service';
 import { CreateSalonDto, UpdateSalonDto } from './dto/salon.dto';
 import { Salon } from './salon.entity';
-import { makeSlug } from './slug.util';
+import { makeSlug } from '../common/slug.util';
 
 @Injectable()
 export class SalonsService {
