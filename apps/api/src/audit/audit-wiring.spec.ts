@@ -116,6 +116,12 @@ describe('admin mutation audit wiring', () => {
       action: 'blogcategory.delete',
       targetType: 'blogcategory',
     },
+    {
+      label: 'blog post cover set',
+      handler: AdminBlogController.prototype.uploadCover,
+      action: 'post.cover.set',
+      targetType: 'post',
+    },
   ];
 
   for (const { label, handler, action, targetType } of cases) {

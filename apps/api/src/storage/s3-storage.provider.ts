@@ -26,6 +26,10 @@ export class S3StorageProvider implements StorageProvider {
     await this.client.send(
       new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: buffer, ContentType: contentType }),
     );
+    return this.publicUrl(key);
+  }
+
+  publicUrl(key: string): string {
     return `${this.publicBaseUrl}/${key}`;
   }
 

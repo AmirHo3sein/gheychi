@@ -1,8 +1,10 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'crypto';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, Repository } from 'typeorm';
 import { isForeignKeyViolation, isUniqueViolation } from '../common/postgres-error-codes';
 import { makeSlug } from '../common/slug.util';
+import { STORAGE_PROVIDER, StorageProvider } from '../storage/storage.provider';
 import { BlogCategory } from './blog-category.entity';
 import { BlogPost, BlogPostStatus } from './blog-post.entity';
 import {
@@ -37,11 +39,18 @@ const CATEGORY_IN_USE = 'این دسته‌بندی دارای مطلب است �
 // categoryId (23503) into a 400 instead of letting it fall through as a raw 500.
 const CATEGORY_NOT_FOUND = 'دسته‌بندی انتخاب‌شده وجود ندارد';
 
+const EXTENSION_BY_MIME_TYPE: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+};
+
 @Injectable()
 export class ContentService {
   constructor(
     @InjectRepository(BlogPost) private readonly posts: Repository<BlogPost>,
     @InjectRepository(BlogCategory) private readonly categories: Repository<BlogCategory>,
+    @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
 
   async createPost(dto: CreateBlogPostDto): Promise<BlogPost> {
@@ -99,10 +108,10 @@ export class ContentService {
     }
   }
 
-  async getPostForAdmin(id: string): Promise<BlogPost> {
+  async getPostForAdmin(id: string): Promise<BlogPost & { coverImageUrl: string | null }> {
     const post = await this.posts.findOneBy({ id });
     if (!post) throw new NotFoundException('Post not found');
-    return post;
+    return { ...post, coverImageUrl: post.coverImageKey ? this.storage.publicUrl(post.coverImageKey) : null };
   }
 
   async listPostsForAdmin(query: AdminBlogPostQueryDto): Promise<{
@@ -188,12 +197,49 @@ export class ContentService {
     return (await this.posts.findOneBy({ id }))!;
   }
 
+  async setCover(id: string, file: Express.Multer.File): Promise<BlogPost & { coverImageUrl: string }> {
+    const post = await this.posts.findOneBy({ id });
+    if (!post) throw new NotFoundException();
+    // Deliberately NOT using file.originalname in the key -- it's client-controlled and
+    // could contain path-traversal sequences. The mimetype was already restricted to
+    // image/jpeg|png|webp by the controller's validator, so deriving the extension from
+    // it keeps the key fully server-controlled (same reasoning as salon photo uploads).
+    const extension = EXTENSION_BY_MIME_TYPE[file.mimetype] ?? 'bin';
+    const key = `blog/${id}/${randomUUID()}.${extension}`;
+    await this.storage.upload(file.buffer, key, file.mimetype);
+    const oldKey = post.coverImageKey;
+    post.coverImageKey = key;
+    const saved = await this.posts.save(post);
+    // Best-effort replace-cleanup AFTER the save: the DB row is the source of truth for
+    // the cover; an orphaned object after a failed delete is a harmless cleanup gap
+    // (same class of tradeoff as salon photo deletes).
+    if (oldKey) {
+      await this.storage.delete(oldKey).catch(() => {});
+    }
+    return { ...saved, coverImageUrl: this.storage.publicUrl(key) };
+  }
+
+  async clearCover(id: string): Promise<void> {
+    const post = await this.posts.findOneBy({ id });
+    if (!post) throw new NotFoundException();
+    const oldKey = post.coverImageKey;
+    if (!oldKey) return; // idempotent: nothing to clear
+    post.coverImageKey = null;
+    await this.posts.save(post);
+    await this.storage.delete(oldKey).catch(() => {});
+  }
+
   async deletePost(id: string): Promise<void> {
     const post = await this.posts.findOneBy({ id });
     if (!post) throw new NotFoundException('Post not found');
     // Hard delete for any status (spec §3.3) — unpublish is the soft path.
-    // Cover-object cleanup lands in Task 6 together with the storage seam.
     await this.posts.delete({ id });
+    // Best-effort object cleanup after the row delete: the DB row is the source of
+    // truth for what's public; an orphaned object after a storage failure is a
+    // harmless cleanup gap (same tradeoff as SalonPhotosController.remove()).
+    if (post.coverImageKey) {
+      await this.storage.delete(post.coverImageKey).catch(() => {});
+    }
   }
 
   async createCategory(dto: CreateBlogCategoryDto): Promise<BlogCategory> {

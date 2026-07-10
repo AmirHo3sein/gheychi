@@ -14,6 +14,10 @@ export class LocalDiskStorageProvider implements StorageProvider {
     const filePath = join(this.root, key);
     await fs.mkdir(dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, buffer);
+    return this.publicUrl(key);
+  }
+
+  publicUrl(key: string): string {
     return `${this.publicBaseUrl}/uploads/${key}`;
   }
 

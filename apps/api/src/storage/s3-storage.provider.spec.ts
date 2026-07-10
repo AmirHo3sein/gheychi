@@ -41,4 +41,8 @@ describe('S3StorageProvider', () => {
       }),
     );
   });
+
+  it('derives the same public URL from a bare key that upload() returned for it', () => {
+    expect(provider.publicUrl('salons/abc/photo.jpg')).toBe('https://cdn.example.com/salons/abc/photo.jpg');
+  });
 });

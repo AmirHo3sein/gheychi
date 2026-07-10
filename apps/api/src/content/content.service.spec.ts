@@ -4,6 +4,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { QueryFailedError } from 'typeorm';
+import { STORAGE_PROVIDER } from '../storage/storage.provider';
 import { BlogCategory } from './blog-category.entity';
 import { BlogPost } from './blog-post.entity';
 import { ContentService } from './content.service';
@@ -114,6 +115,7 @@ async function setup(): Promise<{ service: ContentService; mocks: Mocks }> {
       ContentService,
       { provide: getRepositoryToken(BlogPost), useValue: mocks.postsRepo },
       { provide: getRepositoryToken(BlogCategory), useValue: mocks.categoriesRepo },
+      { provide: STORAGE_PROVIDER, useValue: { upload: jest.fn(), delete: jest.fn(), publicUrl: jest.fn() } },
     ],
   }).compile();
 

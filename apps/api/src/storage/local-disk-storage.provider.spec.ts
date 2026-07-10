@@ -27,6 +27,12 @@ describe('LocalDiskStorageProvider', () => {
     expect(existsSync(join(root, 'salons/new-salon-id/deep/photo.jpg'))).toBe(true);
   });
 
+  it('derives the same public URL from a bare key that upload() returned for it', async () => {
+    const uploaded = await provider.upload(Buffer.from('x'), 'blog/post-1/cover.jpg', 'image/jpeg');
+    expect(provider.publicUrl('blog/post-1/cover.jpg')).toBe(uploaded);
+    expect(provider.publicUrl('blog/post-1/cover.jpg')).toBe('http://localhost:3002/uploads/blog/post-1/cover.jpg');
+  });
+
   it('deletes the file for a given key', async () => {
     await provider.upload(Buffer.from('x'), 'salons/abc/photo.jpg', 'image/jpeg');
     await provider.delete('salons/abc/photo.jpg');

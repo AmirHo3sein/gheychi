@@ -4,15 +4,19 @@ import {
   Delete,
   Get,
   HttpCode,
+  HttpStatus,
   Param,
+  ParseFilePipeBuilder,
   ParseIntPipe,
   ParseUUIDPipe,
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { AuditAction } from '../audit/audit.decorator';
 import { AuditInterceptor } from '../audit/audit.interceptor';
 import { AuthGuard } from '../auth/auth.guard';
@@ -77,6 +81,32 @@ export class AdminBlogController {
   @AuditAction('post.delete', 'post')
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.content.deletePost(id);
+  }
+
+  @Post('posts/:id/cover')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }), AuditInterceptor)
+  @AuditAction('post.cover.set', 'post')
+  uploadCover(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        // Real magic-number content-sniffing (via the `file-type` package), with no
+        // mimetype-trusting fallback -- identical validator to salon photo uploads:
+        // only actual file bytes matching a real image signature pass (422 otherwise).
+        .addFileTypeValidator({ fileType: /^image\/(jpeg|png|webp)$/ })
+        .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY }),
+    )
+    file: Express.Multer.File,
+  ) {
+    return this.content.setCover(id, file);
+  }
+
+  @Delete('posts/:id/cover')
+  @HttpCode(204)
+  @UseInterceptors(AuditInterceptor)
+  @AuditAction('post.cover.set', 'post')
+  removeCover(@Param('id', ParseUUIDPipe) id: string) {
+    return this.content.clearCover(id);
   }
 
   @Post('categories')
