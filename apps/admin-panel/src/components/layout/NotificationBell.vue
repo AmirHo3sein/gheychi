@@ -52,7 +52,8 @@ async function loadList() {
 
 async function toggle() {
   open.value = !open.value
-  if (open.value) await loadList()
+  // Refresh the count too, so the badge can't lag the freshly-loaded list by up to a poll tick.
+  if (open.value) await Promise.all([loadList(), loadCount()])
 }
 
 async function openNotification(notification: AdminNotification) {
