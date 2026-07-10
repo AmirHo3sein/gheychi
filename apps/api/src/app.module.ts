@@ -6,6 +6,7 @@ import { AdminNotificationsModule } from './admin-notifications/admin-notificati
 import { AuthModule } from './auth/auth.module';
 import { BookingModule } from './booking/booking.module';
 import { CatalogModule } from './catalog/catalog.module';
+import { ContentModule } from './content/content.module';
 import { FavoritesModule } from './favorites/favorites.module';
 import { HealthController } from './health/health.controller';
 import { PlatformConfigModule } from './platform-config/platform-config.module';
@@ -48,6 +49,7 @@ import { SearchModule } from './search/search.module';
     FavoritesModule,
     PushModule,
     AdminNotificationsModule,
+    ContentModule,
   ],
   controllers: [HealthController],
 })
