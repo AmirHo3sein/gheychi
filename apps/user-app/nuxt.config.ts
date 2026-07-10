@@ -13,7 +13,7 @@ export default defineNuxtConfig({
     url: process.env.NUXT_PUBLIC_SITE_URL ?? 'http://localhost:3003',
   },
   sitemap: {
-    sources: ['/api/__sitemap__/urls'],
+    sources: ['/api/__sitemap__/urls', '/api/__sitemap__/blog'],
   },
   css: ['~/assets/css/main.css'],
   // Nested components/<dir>/*.vue would otherwise auto-register with a directory-name

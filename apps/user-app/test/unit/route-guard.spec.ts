@@ -20,4 +20,13 @@ describe('isPublicRoute', () => {
   it('does not treat /salons-something-else as public (no false-positive prefix match)', () => {
     expect(isPublicRoute('/salons-archive')).toBe(false)
   })
+
+  it('treats the blog index and articles as public', () => {
+    expect(isPublicRoute('/blog')).toBe(true)
+    expect(isPublicRoute('/blog/healthy-hair-tips')).toBe(true)
+  })
+
+  it('does not treat /blog-something-else as public (no false-positive prefix match)', () => {
+    expect(isPublicRoute('/blog-archive')).toBe(false)
+  })
 })
