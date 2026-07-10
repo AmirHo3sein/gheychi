@@ -83,9 +83,15 @@ describe('NotificationBell', () => {
   })
 
   it('opens a dropdown listing the ten most recent notifications', async () => {
-    fetchMock
-      .mockResolvedValueOnce({ data: { count: 1 }, error: null }) // mount poll
-      .mockResolvedValueOnce({ data: { items: [notification], total: 1, page: 1, pageSize: 10 }, error: null })
+    // Opening the dropdown refreshes both the list AND the count, so dispatch by URL
+    // instead of by call order.
+    fetchMock.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.startsWith('/admin/notifications?')
+          ? { data: { items: [notification], total: 1, page: 1, pageSize: 10 }, error: null }
+          : { data: { count: 1 }, error: null },
+      ),
+    )
     const { wrapper } = await mountBell()
 
     await wrapper.get('[data-testid="notification-bell"]').trigger('click')
@@ -96,10 +102,12 @@ describe('NotificationBell', () => {
   })
 
   it('marks a clicked notification read and navigates to its link', async () => {
-    fetchMock
-      .mockResolvedValueOnce({ data: { count: 1 }, error: null })
-      .mockResolvedValueOnce({ data: { items: [{ ...notification }], total: 1, page: 1, pageSize: 10 }, error: null })
-      .mockResolvedValueOnce({ data: null, error: null }) // PATCH .../read
+    fetchMock.mockImplementation((url: string, opts?: { method?: string }) => {
+      if (opts?.method === 'PATCH') return Promise.resolve({ data: null, error: null })
+      if (url.startsWith('/admin/notifications?'))
+        return Promise.resolve({ data: { items: [{ ...notification }], total: 1, page: 1, pageSize: 10 }, error: null })
+      return Promise.resolve({ data: { count: 1 }, error: null })
+    })
     const { wrapper, router } = await mountBell()
 
     await wrapper.get('[data-testid="notification-bell"]').trigger('click')
@@ -113,10 +121,12 @@ describe('NotificationBell', () => {
   })
 
   it('marks everything read via the mark-all affordance', async () => {
-    fetchMock
-      .mockResolvedValueOnce({ data: { count: 2 }, error: null })
-      .mockResolvedValueOnce({ data: { items: [{ ...notification }], total: 1, page: 1, pageSize: 10 }, error: null })
-      .mockResolvedValueOnce({ data: null, error: null }) // POST read-all
+    fetchMock.mockImplementation((url: string, opts?: { method?: string }) => {
+      if (opts?.method === 'POST') return Promise.resolve({ data: { ok: true }, error: null })
+      if (url.startsWith('/admin/notifications?'))
+        return Promise.resolve({ data: { items: [{ ...notification }], total: 1, page: 1, pageSize: 10 }, error: null })
+      return Promise.resolve({ data: { count: 2 }, error: null })
+    })
     const { wrapper } = await mountBell()
 
     await wrapper.get('[data-testid="notification-bell"]').trigger('click')
