@@ -70,6 +70,7 @@ const isFavorited = ref(false)
 const favoriteBusy = ref(false)
 const canReport = ref(false)
 const reportOpen = ref(false)
+const reportReviewId = ref<string | null>(null)
 
 onMounted(async () => {
   if (!session.isLoggedIn) return
@@ -85,11 +86,18 @@ onMounted(async () => {
 })
 
 function openSalonReport() {
+  reportReviewId.value = null
+  reportOpen.value = true
+}
+
+function openReviewReport(reviewId: string) {
+  reportReviewId.value = reviewId
   reportOpen.value = true
 }
 
 function closeReport() {
   reportOpen.value = false
+  reportReviewId.value = null
 }
 
 async function toggleFavorite() {
@@ -144,18 +152,7 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
       </ul>
     </section>
 
-    <section>
-      <h2 class="font-bold mb-2">نظرات</h2>
-      <p v-if="!page!.reviews.length" class="text-sm">هنوز نظری ثبت نشده است</p>
-      <ul v-else class="space-y-3">
-        <li v-for="review in page!.reviews" :key="review.id" class="rounded-lg bg-(--color-surface-card) p-3 text-sm">
-          <p>⭐ {{ review.rating }} — {{ review.comment }}</p>
-          <p v-if="review.salonReply" class="mt-1 ps-3 border-s-2 text-(--color-text)">
-            پاسخ سالن: {{ review.salonReply }}
-          </p>
-        </li>
-      </ul>
-    </section>
+    <SalonReviews :reviews="page!.reviews" :can-report="canReport" @report="openReviewReport" />
 
     <button
       v-if="canReport"
@@ -167,6 +164,6 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
       گزارش این سالن
     </button>
 
-    <ReportForm v-if="reportOpen" :salon-id="page!.salon.id" @close="closeReport" />
+    <ReportForm v-if="reportOpen" :salon-id="page!.salon.id" :review-id="reportReviewId" @close="closeReport" />
   </div>
 </template>
