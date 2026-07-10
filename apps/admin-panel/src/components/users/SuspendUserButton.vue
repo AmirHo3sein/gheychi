@@ -2,12 +2,18 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
 import AppIcon from '@/components/ui/AppIcon.vue'
 
-const props = defineProps<{ userId: string; status: 'active' | 'suspended' }>()
+const props = defineProps<{
+  userId: string
+  status: 'active' | 'suspended'
+  role: 'customer' | 'provider' | 'admin'
+}>()
 const emit = defineEmits<{ updated: [user: { id: string; status: string }] }>()
 
 const { apiFetch } = useApi()
+const { push } = useToast()
 const submitting = ref(false)
 
 async function toggle() {
@@ -18,7 +24,21 @@ async function toggle() {
     body: { status: target },
   })
   submitting.value = false
-  if (data) emit('updated', data)
+  if (data) {
+    // Providers get the cascade spelled out: suspending them also pulls their salon from
+    // public listings, and reactivating restores only what the cascade itself suspended
+    // (a salon an admin suspended directly stays suspended) -- spec §3.5.
+    if (props.role === 'provider') {
+      push(
+        target === 'suspended'
+          ? 'کاربر معلق شد؛ آرایشگاه او نیز از دسترس عموم خارج شد.'
+          : 'کاربر فعال شد؛ آرایشگاهی که به دلیل تعلیق او معلق شده بود بازگردانده شد.',
+      )
+    } else {
+      push(target === 'suspended' ? 'کاربر معلق شد.' : 'کاربر فعال شد.')
+    }
+    emit('updated', data)
+  }
 }
 </script>
 

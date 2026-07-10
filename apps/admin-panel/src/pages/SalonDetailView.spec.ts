@@ -19,6 +19,7 @@ const salon = {
   city: 'تهران',
   capacity: 3,
   rejectionReason: null,
+  suspendedCause: null,
 }
 
 describe('SalonDetailView', () => {
@@ -66,5 +67,28 @@ describe('SalonDetailView', () => {
     const wrapper = await mountWithRouter()
 
     expect(wrapper.text()).toContain('آرایشگاه یافت نشد')
+  })
+
+  it('explains the cascade cause when the salon was suspended via its owner', async () => {
+    fetchMock.mockResolvedValueOnce({
+      data: { ...salon, status: 'suspended', suspendedCause: 'owner_suspended' },
+      error: null,
+    })
+
+    const wrapper = await mountWithRouter()
+
+    expect(wrapper.find('[data-testid="suspended-cause"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('به دلیل تعلیق حساب مالک')
+  })
+
+  it('shows no cause line for a direct admin suspension', async () => {
+    fetchMock.mockResolvedValueOnce({
+      data: { ...salon, status: 'suspended', suspendedCause: 'admin' },
+      error: null,
+    })
+
+    const wrapper = await mountWithRouter()
+
+    expect(wrapper.find('[data-testid="suspended-cause"]').exists()).toBe(false)
   })
 })

@@ -88,7 +88,18 @@ async function submitReason() {
         <AppIcon name="warning" :size="16" />
         تعلیق آرایشگاه
       </button>
-      <p v-if="status === 'suspended' || status === 'rejected'" class="text-sm text-(--color-muted)">
+      <button
+        v-if="status === 'suspended'"
+        data-testid="reapprove-button"
+        type="button"
+        :disabled="submitting"
+        class="inline-flex items-center gap-2 rounded-xl bg-(--color-accent) px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+        @click="approve"
+      >
+        <AppIcon name="check" :size="16" />
+        رفع تعلیق و تایید مجدد
+      </button>
+      <p v-if="status === 'rejected'" class="text-sm text-(--color-muted)">
         اقدامی برای این وضعیت لازم نیست.
       </p>
     </div>

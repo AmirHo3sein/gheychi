@@ -96,4 +96,25 @@ describe('SalonStatusActions', () => {
       body: { status: 'suspended', reason: 'شکایت مشتری' },
     })
   })
+
+  it('offers a re-approve action for suspended salons', async () => {
+    fetchMock.mockResolvedValueOnce({ data: { id: 's1', status: 'approved' }, error: null })
+    const wrapper = mount(SalonStatusActions, { props: { salonId: 's1', status: 'suspended' } })
+
+    await wrapper.get('[data-testid="reapprove-button"]').trigger('click')
+
+    expect(fetchMock).toHaveBeenCalledWith('/admin/salons/s1/status', {
+      method: 'PATCH',
+      body: { status: 'approved' },
+    })
+    expect(wrapper.emitted('updated')?.[0]).toEqual([{ id: 's1', status: 'approved' }])
+  })
+
+  it('keeps rejected salons on the provider-resubmit-only flow (no admin action)', () => {
+    const wrapper = mount(SalonStatusActions, { props: { salonId: 's1', status: 'rejected' } })
+
+    expect(wrapper.find('[data-testid="reapprove-button"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="approve-button"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('اقدامی برای این وضعیت لازم نیست.')
+  })
 })

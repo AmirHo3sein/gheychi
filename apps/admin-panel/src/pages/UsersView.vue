@@ -151,7 +151,7 @@ watch([roleFilter, joinedFrom, joinedTo], load)
               <StatusBadge :label="userStatusLabel(user.status).label" :tone="userStatusLabel(user.status).tone" />
             </td>
             <td class="px-5 py-3.5">
-              <SuspendUserButton :user-id="user.id" :status="user.status" @updated="(u) => onUpdated(u.id, u.status)" />
+              <SuspendUserButton :user-id="user.id" :status="user.status" :role="user.role" @updated="(u) => onUpdated(u.id, u.status)" />
             </td>
           </tr>
         </tbody>

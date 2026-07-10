@@ -20,6 +20,7 @@ interface SalonDetail {
   city: string
   capacity: number
   rejectionReason: string | null
+  suspendedCause: 'admin' | 'owner_suspended' | null
 }
 
 const route = useRoute()
@@ -85,6 +86,17 @@ onMounted(load)
         <div v-if="salon.rejectionReason" class="mt-5 flex gap-2.5 rounded-xl bg-(--tone-danger-bg) p-3.5">
           <AppIcon name="warning" :size="17" class="mt-0.5 shrink-0 text-(--tone-danger-text)" />
           <p class="text-sm text-(--tone-danger-text)">{{ salon.rejectionReason }}</p>
+        </div>
+
+        <div
+          v-if="salon.status === 'suspended' && salon.suspendedCause === 'owner_suspended'"
+          data-testid="suspended-cause"
+          class="mt-5 flex gap-2.5 rounded-xl bg-(--tone-warning-bg) p-3.5"
+        >
+          <AppIcon name="warning" :size="17" class="mt-0.5 shrink-0 text-(--tone-warning-text)" />
+          <p class="text-sm text-(--tone-warning-text)">
+            این آرایشگاه به دلیل تعلیق حساب مالک آن معلق شده است و با رفع تعلیق مالک، به‌صورت خودکار به حالت تایید بازمی‌گردد.
+          </p>
         </div>
       </AppCard>
 
