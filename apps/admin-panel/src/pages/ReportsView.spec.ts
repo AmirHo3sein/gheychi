@@ -1,6 +1,8 @@
 import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ReportsView from './ReportsView.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
+import Pagination from '@/components/ui/Pagination.vue'
 
 const fetchMock = vi.fn()
 
@@ -67,10 +69,16 @@ describe('ReportsView', () => {
     expect(wrapper.find('[data-testid="quoted-review"]').exists()).toBe(false)
   })
 
-  it('updates the card status in place after a resolve', async () => {
-    fetchMock
-      .mockResolvedValueOnce({ data: { items: [{ ...report }], total: 1, page: 1, pageSize: 10 }, error: null })
-      .mockResolvedValueOnce({ data: { id: 'r1', status: 'resolved' }, error: null })
+  it('reloads the list after a successful resolve, so the card leaves the open queue', async () => {
+    // Dispatch by method/URL: the resolve flow makes three calls (list, PATCH, list again).
+    let items: (typeof report)[] = [{ ...report }]
+    fetchMock.mockImplementation((url: string, options?: { method?: string }) => {
+      if (options?.method === 'PATCH' && url === '/admin/reports/r1') {
+        items = [] // the backend now considers r1 resolved; the open queue is empty
+        return Promise.resolve({ data: { id: 'r1', status: 'resolved' }, error: null })
+      }
+      return Promise.resolve({ data: { items, total: items.length, page: 1, pageSize: 10 }, error: null })
+    })
     const wrapper = mount(ReportsView, mountOptions)
     await flushPromises()
 
@@ -78,9 +86,54 @@ describe('ReportsView', () => {
     await wrapper.get('[data-testid="submit-resolution"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('رسیدگی شده')
-    // A non-open report offers no further actions.
-    expect(wrapper.find('[data-testid="resolve-button"]').exists()).toBe(false)
+    // The list was re-fetched after the action, keeping items/total truthful...
+    const listCalls = fetchMock.mock.calls.filter(([url]) => (url as string).startsWith('/admin/reports?'))
+    expect(listCalls).toHaveLength(2)
+    // ...and the handled card is gone from the open queue.
+    expect(wrapper.find('[data-testid="report-card"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('گزارشی با این وضعیت وجود ندارد.')
+  })
+
+  it('reloads the list when the PATCH fails (409 lost race), showing the winning state', async () => {
+    fetchMock.mockImplementation((url: string, options?: { method?: string }) => {
+      if (options?.method === 'PATCH') {
+        return Promise.resolve({ data: null, error: { status: 409, message: 'این گزارش قبلاً رسیدگی شده است' } })
+      }
+      return Promise.resolve({ data: { items: [{ ...report }], total: 1, page: 1, pageSize: 10 }, error: null })
+    })
+    const wrapper = mount(ReportsView, mountOptions)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="resolve-button"]').trigger('click')
+    await wrapper.get('[data-testid="submit-resolution"]').trigger('click')
+    await flushPromises()
+
+    // The failed action still triggers a reload so the row reflects the winner's state.
+    const listCalls = fetchMock.mock.calls.filter(([url]) => (url as string).startsWith('/admin/reports?'))
+    expect(listCalls).toHaveLength(2)
+    // The stale note panel collapsed instead of inviting a doomed retry.
+    expect(wrapper.find('[data-testid="submit-resolution"]').exists()).toBe(false)
+  })
+
+  it('resets to page 1 with a single fetch when the filter changes from page > 1', async () => {
+    fetchMock.mockImplementation(() =>
+      Promise.resolve({ data: { items: [{ ...report }], total: 25, page: 1, pageSize: 10 }, error: null }),
+    )
+    const wrapper = mount(ReportsView, mountOptions)
+    await flushPromises()
+
+    wrapper.findComponent(Pagination).vm.$emit('update:page', 2)
+    await flushPromises()
+    expect(fetchMock).toHaveBeenLastCalledWith('/admin/reports?status=open&page=2&pageSize=10', { silent: true })
+
+    fetchMock.mockClear()
+    wrapper.findComponent(AppSelect).vm.$emit('update:modelValue', 'resolved')
+    await flushPromises()
+
+    // Exactly ONE request: the page reset rides along with the filter change,
+    // not as a second duplicate fetch.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith('/admin/reports?status=resolved&page=1&pageSize=10', { silent: true })
   })
 
   it('shows an empty state when the queue is clear', async () => {

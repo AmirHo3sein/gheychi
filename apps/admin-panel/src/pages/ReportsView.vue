@@ -73,9 +73,11 @@ function loadFromFilterChange() {
   }
 }
 
-function onUpdated(reportId: string, status: string) {
-  const report = reports.value.find((r) => r.id === reportId)
-  if (report) report.status = status as ReportRow['status']
+// Both a successful action and a failed one (409 lost race) re-run load(): on success
+// the handled card leaves the open queue and total/pagination stay truthful; on failure
+// the row refreshes to the winning admin's state instead of lingering as a stale 'open'.
+function onActionFinished() {
+  load()
 }
 
 function formatDate(iso: string): string {
@@ -118,7 +120,7 @@ watch(page, load)
         <div v-if="report.reviewId" data-testid="quoted-review" class="mt-3 rounded-xl bg-(--color-border-soft) p-3">
           <p class="mb-1 flex items-center gap-1.5 text-xs font-semibold text-(--color-muted)">
             <AppIcon name="star" :size="13" />
-            نظر گزارش‌شده — امتیاز {{ report.reviewRating }}
+            نظر گزارش‌شده — امتیاز {{ report.reviewRating ?? '—' }}
           </p>
           <p class="text-sm text-(--color-text)">{{ report.reviewComment ?? '(بدون متن)' }}</p>
         </div>
@@ -131,7 +133,7 @@ watch(page, load)
         <p class="tnum mt-3 text-xs text-(--color-muted)">{{ formatDate(report.createdAt) }}</p>
 
         <div v-if="report.status === 'open'" class="mt-4 border-t border-(--color-border-soft) pt-3.5">
-          <ResolveReportActions :report-id="report.id" @updated="(r) => onUpdated(r.id, r.status)" />
+          <ResolveReportActions :report-id="report.id" @updated="onActionFinished" @refresh="onActionFinished" />
         </div>
       </AppCard>
     </div>

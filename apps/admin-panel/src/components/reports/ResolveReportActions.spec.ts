@@ -46,6 +46,25 @@ describe('ResolveReportActions', () => {
     expect(wrapper.emitted('updated')?.[0]).toEqual([{ id: 'r1', status: 'dismissed' }])
   })
 
+  it('collapses the panel and emits refresh instead of updated when the PATCH fails (409 lost race)', async () => {
+    fetchMock.mockResolvedValueOnce({
+      data: null,
+      error: { status: 409, message: 'این گزارش قبلاً رسیدگی شده است' },
+    })
+    const wrapper = mount(ResolveReportActions, { props: { reportId: 'r1' } })
+
+    await wrapper.get('[data-testid="resolve-button"]').trigger('click')
+    await wrapper.get('[data-testid="note-input"]').setValue('یادداشتی که دیگر معتبر نیست')
+    await wrapper.get('[data-testid="submit-resolution"]').trigger('click')
+    await flushPromises()
+
+    // The stale note panel must not stay open inviting a doomed retry.
+    expect(wrapper.find('[data-testid="note-input"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="resolve-button"]').exists()).toBe(true)
+    expect(wrapper.emitted('updated')).toBeUndefined()
+    expect(wrapper.emitted('refresh')).toHaveLength(1)
+  })
+
   it('cancelling collapses back to the action buttons without a request', async () => {
     const wrapper = mount(ResolveReportActions, { props: { reportId: 'r1' } })
 
