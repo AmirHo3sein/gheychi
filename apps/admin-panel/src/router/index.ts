@@ -17,6 +17,7 @@ const routes = [
       { path: 'reviews', name: 'reviews', component: () => import('@/pages/ReviewsView.vue'), meta: { title: 'نظرات' } },
       { path: 'reports', name: 'reports', component: () => import('@/pages/ReportsView.vue'), meta: { title: 'گزارش‌ها' } },
       { path: 'categories', name: 'categories', component: () => import('@/pages/CategoriesView.vue'), meta: { title: 'دسته‌بندی‌ها' } },
+      { path: 'blog', name: 'blog', component: () => import('@/pages/BlogPostsView.vue'), meta: { title: 'بلاگ' } },
       { path: 'users', name: 'users', component: () => import('@/pages/UsersView.vue'), meta: { title: 'کاربران' } },
       { path: 'audit-log', name: 'audit-log', component: () => import('@/pages/AuditLogView.vue'), meta: { title: 'تاریخچه اقدامات' } },
       { path: 'config', name: 'config', component: () => import('@/pages/ConfigView.vue'), meta: { title: 'تنظیمات پلتفرم' } },

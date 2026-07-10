@@ -9,6 +9,7 @@ const LINKS: { to: string; label: string; icon: IconName }[] = [
   { to: '/reviews', label: 'نظرات', icon: 'reviews' },
   { to: '/reports', label: 'گزارش‌ها', icon: 'flag' },
   { to: '/categories', label: 'دسته‌بندی‌ها', icon: 'categories' },
+  { to: '/blog', label: 'بلاگ', icon: 'newspaper' },
   { to: '/users', label: 'کاربران', icon: 'users' },
   { to: '/audit-log', label: 'تاریخچه اقدامات', icon: 'history' },
   { to: '/config', label: 'تنظیمات', icon: 'config' },
