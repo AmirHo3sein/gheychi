@@ -92,4 +92,21 @@ describe('ZarinpalGateway', () => {
     const gateway = new ZarinpalGateway('MERCHANT_ID');
     await expect(gateway.requestPayment(200000, 'x', 'https://x.com/cb')).rejects.toThrow('Zarinpal');
   });
+
+  it('bounds both requests with a network timeout', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: { code: 100, authority: 'AUTH123', message: 'ok' }, errors: [] }),
+    });
+    const gateway = new ZarinpalGateway('MERCHANT_ID');
+    await gateway.requestPayment(200000, 'x', 'https://x.com/cb');
+    expect(fetchMock.mock.calls[0][1]?.signal).toBeInstanceOf(AbortSignal);
+
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: { code: 100, ref_id: 1, message: 'ok' }, errors: [] }),
+    });
+    await gateway.verifyPayment('AUTH123', 200000);
+    expect(fetchMock.mock.calls[1][1]?.signal).toBeInstanceOf(AbortSignal);
+  });
 });

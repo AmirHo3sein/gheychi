@@ -5,6 +5,7 @@ const REQUEST_URL = 'https://payment.zarinpal.com/pg/v4/payment/request.json';
 const VERIFY_URL = 'https://payment.zarinpal.com/pg/v4/payment/verify.json';
 const STARTPAY_URL = 'https://payment.zarinpal.com/pg/StartPay';
 const TOMAN_TO_RIAL = 10;
+const ZARINPAL_TIMEOUT_MS = 10_000;
 
 interface ZarinpalRequestResponse {
   data: { code: number; authority: string; message: string } | null;
@@ -37,6 +38,7 @@ export class ZarinpalGateway implements PaymentGateway {
       res = await fetch(REQUEST_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(ZARINPAL_TIMEOUT_MS),
         body: JSON.stringify({
           merchant_id: this.merchantId,
           amount: amountToman * TOMAN_TO_RIAL,
@@ -70,6 +72,7 @@ export class ZarinpalGateway implements PaymentGateway {
       res = await fetch(VERIFY_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(ZARINPAL_TIMEOUT_MS),
         body: JSON.stringify({
           merchant_id: this.merchantId,
           amount: amountToman * TOMAN_TO_RIAL,
