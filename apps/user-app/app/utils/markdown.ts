@@ -7,10 +7,10 @@ import MarkdownIt from 'markdown-it'
 // cross-app isolation convention.
 const md = new MarkdownIt({ html: false, linkify: true })
 
-// Carry-forward from Task 9's quality review: linkified URLs render into the article body
-// via v-html, so external links need rel="noopener noreferrer" to prevent a reverse-tabnabbing
-// window.opener handoff. Navigation stays same-window on purpose -- no target=_blank is added.
-// Pinned by test/unit/markdown.spec.ts.
+// Linkified URLs render into the article body via v-html, so every link gains
+// rel="noopener noreferrer" to prevent a reverse-tabnabbing window.opener handoff.
+// Navigation stays same-window on purpose -- no target=_blank is added. The admin panel's
+// copy carries the same rule. Pinned by test/unit/markdown.spec.ts.
 const defaultLinkOpenRenderer =
   md.renderer.rules.link_open ??
   ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))

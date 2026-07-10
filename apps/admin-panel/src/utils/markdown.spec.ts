@@ -25,6 +25,11 @@ describe('renderMarkdown', () => {
   })
 
   it('linkifies bare URLs', () => {
-    expect(renderMarkdown('آدرس: https://example.com')).toContain('<a href="https://example.com">')
+    expect(renderMarkdown('آدرس: https://example.com')).toContain('<a href="https://example.com"')
+  })
+
+  it('adds rel="noopener noreferrer" to every rendered link', () => {
+    expect(renderMarkdown('آدرس: https://example.com')).toContain('rel="noopener noreferrer"')
+    expect(renderMarkdown('[پیوند](https://example.com)')).toContain('rel="noopener noreferrer"')
   })
 })
