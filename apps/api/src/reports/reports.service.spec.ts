@@ -4,6 +4,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { DataSource, QueryFailedError } from 'typeorm';
+import { AdminNotificationsService } from '../admin-notifications/admin-notifications.service';
 import { Booking } from '../booking/booking.entity';
 import { Review } from '../reviews/review.entity';
 import { CreateReportDto } from './dto/report.dto';
@@ -32,6 +33,7 @@ interface Mocks {
   bookingsRepo: { countBy: jest.Mock };
   em: { create: jest.Mock; save: jest.Mock };
   transaction: jest.Mock;
+  emit: jest.Mock;
   qb: QueryBuilderMock;
 }
 
@@ -61,6 +63,7 @@ async function setup(): Promise<{ service: ReportsService; mocks: Mocks }> {
     bookingsRepo: { countBy: jest.fn() },
     em,
     transaction: jest.fn(async (cb: (em: unknown) => Promise<unknown>) => cb(em)),
+    emit: jest.fn().mockResolvedValue(undefined),
     qb,
   };
 
@@ -71,6 +74,7 @@ async function setup(): Promise<{ service: ReportsService; mocks: Mocks }> {
       { provide: getRepositoryToken(Review), useValue: mocks.reviewsRepo },
       { provide: getRepositoryToken(Booking), useValue: mocks.bookingsRepo },
       { provide: DataSource, useValue: { transaction: mocks.transaction } },
+      { provide: AdminNotificationsService, useValue: { emit: mocks.emit } },
     ],
   }).compile();
 
@@ -366,5 +370,42 @@ describe('ReportsService.resolve', () => {
       constructor: ConflictException,
       message: 'این گزارش قبلاً بررسی شده است',
     });
+  });
+});
+
+describe('ReportsService.create — report_created notification', () => {
+  it('emits report_created through the same transaction manager as the insert', async () => {
+    const { service, mocks } = await setup();
+    mocks.bookingsRepo.countBy.mockResolvedValue(1);
+
+    await service.create('user-1', { salonId: 'salon-1', reason: 'سالن تمیز نبود و رزرو رعایت نشد' });
+
+    expect(mocks.emit).toHaveBeenCalledWith(
+      'report_created',
+      'گزارش جدید ثبت شد',
+      'سالن تمیز نبود و رزرو رعایت نشد',
+      '/reports',
+      mocks.em,
+    );
+  });
+
+  it('propagates an emit failure so the transaction rolls the report back', async () => {
+    const { service, mocks } = await setup();
+    mocks.bookingsRepo.countBy.mockResolvedValue(1);
+    mocks.emit.mockRejectedValue(new Error('notification insert failed'));
+
+    await expect(service.create('user-1', { salonId: 'salon-1', reason: 'اطلاعات سالن نادرست است' })).rejects.toThrow(
+      'notification insert failed',
+    );
+  });
+
+  it('does not emit when the reporter is ineligible', async () => {
+    const { service, mocks } = await setup();
+    mocks.bookingsRepo.countBy.mockResolvedValue(0);
+
+    await expect(service.create('user-1', { salonId: 'salon-1', reason: 'اطلاعات سالن نادرست است' })).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(mocks.emit).not.toHaveBeenCalled();
   });
 });

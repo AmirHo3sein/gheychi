@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, FindOptionsWhere, Repository } from 'typeorm';
+import { AdminNotificationsService } from '../admin-notifications/admin-notifications.service';
 import { Booking } from '../booking/booking.entity';
 import { isUniqueViolation } from '../common/postgres-error-codes';
 import { Review } from '../reviews/review.entity';
@@ -34,6 +35,7 @@ export class ReportsService {
     @InjectRepository(Review) private readonly reviews: Repository<Review>,
     @InjectRepository(Booking) private readonly bookings: Repository<Booking>,
     private readonly dataSource: DataSource,
+    private readonly adminNotifications: AdminNotificationsService,
   ) {}
 
   async create(reporterId: string, dto: CreateReportDto): Promise<Report> {
@@ -68,10 +70,13 @@ export class ReportsService {
     }
 
     try {
-      // A transaction for a single insert today — Task 12 adds the report_created
-      // admin-notification emit into this same transaction, per the design spec §3.3.
+      // Insert + notification are atomic: emit() writes through this transaction's
+      // manager (spec §3.3), so a duplicate-report rollback never leaves a stray
+      // notification, and a failed notification insert rolls the report back. This is
+      // intentionally NOT the fire-safe pattern used for salon_resubmitted — here the
+      // transaction boundary is the contract.
       return await this.dataSource.transaction(async (em) => {
-        return em.save(
+        const report = await em.save(
           Report,
           em.create(Report, {
             reporterId,
@@ -81,6 +86,8 @@ export class ReportsService {
             status: 'open',
           }),
         );
+        await this.adminNotifications.emit('report_created', 'گزارش جدید ثبت شد', dto.reason, '/reports', em);
+        return report;
       });
     } catch (err) {
       // The partial unique index reports_open_target_uidx (one OPEN report per reporter
