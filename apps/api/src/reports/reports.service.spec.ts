@@ -140,6 +140,42 @@ describe('ReportsService.create', () => {
     await expect(service.create('user-1', { reason: 'بدون هدف مشخص' })).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('treats an empty-string reviewId as absent and creates a salon report with reviewId null', async () => {
+    const { service, mocks } = await setup();
+    mocks.bookingsRepo.countBy.mockResolvedValue(1);
+
+    await service.create('user-1', { salonId: 'salon-1', reviewId: '', reason: 'سالن تمیز نبود و رزرو رعایت نشد' });
+
+    expect(mocks.reviewsRepo.findOneBy).not.toHaveBeenCalled();
+    expect(mocks.em.save).toHaveBeenCalledWith(
+      Report,
+      expect.objectContaining({ salonId: 'salon-1', reviewId: null }),
+    );
+  });
+
+  it('treats an empty-string salonId as absent and derives the salon from the review', async () => {
+    const { service, mocks } = await setup();
+    mocks.reviewsRepo.findOneBy.mockResolvedValue({ id: 'review-9', salonId: 'salon-9' });
+    mocks.bookingsRepo.countBy.mockResolvedValue(1);
+
+    await service.create('user-1', { salonId: '', reviewId: 'review-9', reason: 'این دیدگاه توهین‌آمیز است' });
+
+    expect(mocks.em.save).toHaveBeenCalledWith(
+      Report,
+      expect.objectContaining({ salonId: 'salon-9', reviewId: 'review-9' }),
+    );
+  });
+
+  it('400s with the Farsi exactly-one message when both targets are empty strings', async () => {
+    const { service, mocks } = await setup();
+
+    await expect(service.create('user-1', { salonId: '', reviewId: '', reason: 'بدون هدف مشخص' })).rejects.toMatchObject({
+      constructor: BadRequestException,
+      message: 'دقیقاً یکی از سالن یا دیدگاه باید به‌عنوان هدف گزارش مشخص شود',
+    });
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
   it('translates the partial-unique-index violation into a Farsi 409', async () => {
     const { service, mocks } = await setup();
     mocks.bookingsRepo.countBy.mockResolvedValue(1);

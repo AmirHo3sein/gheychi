@@ -8,8 +8,8 @@ const ANCHOR = { lat: 35.7219, lng: 51.3347 };
 
 describe('Search (e2e)', () => {
   let app: INestApplication;
-  let cutCategoryId: number;
-  let nailsCategoryId: number;
+  let firstCategoryId: number;
+  let secondCategoryId: number;
   let unusedCategoryId: number;
 
   beforeAll(async () => {
@@ -44,16 +44,17 @@ describe('Search (e2e)', () => {
     // Category ids are resolved from the seeded rows (not hardcoded) so the fixture
     // survives reseeds of service_categories; the third id stays unattached to any salon.
     const categories = await ds.query(`SELECT id FROM service_categories ORDER BY id LIMIT 3`);
-    cutCategoryId = categories[0].id;
-    nailsCategoryId = categories[1].id;
+    firstCategoryId = categories[0].id;
+    secondCategoryId = categories[1].id;
     unusedCategoryId = categories[2].id;
 
-    // services: Near has a cut service (500k); Far has a nails service (300k)
+    // services: Near offers a service in the first category (500k); Far in the second (300k);
+    // the third category stays unattached to any salon
     await ds.query(
       `INSERT INTO salon_services (salon_id, category_id, name, price, duration_min) VALUES
         ('10000000-0000-4000-8000-000000000001', $1, 'Cut', 500000, 45),
         ('10000000-0000-4000-8000-000000000002', $2, 'Manicure', 300000, 60)`,
-      [cutCategoryId, nailsCategoryId],
+      [firstCategoryId, secondCategoryId],
     );
   });
 
@@ -84,7 +85,7 @@ describe('Search (e2e)', () => {
   it('filters by category', async () => {
     const res = await request(app.getHttpServer())
       .get('/api/search')
-      .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', categoryId: nailsCategoryId })
+      .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', categoryId: secondCategoryId })
       .expect(200);
     expect(res.body.map((s: { slug: string }) => s.slug)).toEqual(['far-salon']);
   });

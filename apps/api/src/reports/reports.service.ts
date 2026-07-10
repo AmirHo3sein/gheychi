@@ -17,14 +17,26 @@ export class ReportsService {
   ) {}
 
   async create(reporterId: string, dto: CreateReportDto): Promise<Report> {
+    // Blank/whitespace target ids are treated as absent. The DTO's @ValidateIf pair
+    // skips @IsUUID on a target whenever its sibling is present, so e.g.
+    // { salonId: '<valid>', reviewId: '' } reaches here — without normalization the
+    // empty string would be inserted into the uuid review_id column and surface as a
+    // raw Postgres 22P02 (500). Normalized values feed the exactly-one check, the
+    // review derivation, and the insert.
+    const rawSalonId = dto.salonId?.trim() || null;
+    const rawReviewId = dto.reviewId?.trim() || null;
+
     // The DTO's @ValidateIf pair guarantees "at least one" target; "exactly one" is
     // completed here (both-provided skips both DTO branches by design).
-    if ((dto.salonId ? 1 : 0) + (dto.reviewId ? 1 : 0) !== 1) {
+    if ((rawSalonId ? 1 : 0) + (rawReviewId ? 1 : 0) !== 1) {
       throw new BadRequestException('دقیقاً یکی از سالن یا دیدگاه باید به‌عنوان هدف گزارش مشخص شود');
     }
 
-    let salonId = dto.salonId ?? null;
-    const reviewId = dto.reviewId ?? null;
+    // Deliberate: targets are not filtered by salon status or review moderation state.
+    // A completed booking grants standing, and reports about suspended salons or
+    // rejected reviews still carry signal for admins.
+    let salonId = rawSalonId;
+    const reviewId = rawReviewId;
     if (reviewId) {
       const review = await this.reviews.findOneBy({ id: reviewId });
       if (!review) throw new NotFoundException('Review not found');
