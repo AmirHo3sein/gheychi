@@ -71,6 +71,19 @@ const AUDIT_ACTION: Record<string, LabelEntry> = {
   'report.resolve': { label: 'رسیدگی به گزارش', tone: 'success' },
 }
 
+// Canonical list of the audited action names -- filter dropdowns and tests derive from
+// this export instead of re-declaring the nine strings at every call site.
+export const AUDIT_ACTION_KEYS = Object.keys(AUDIT_ACTION)
+
+const AUDIT_TARGET_TYPE: Record<string, string> = {
+  salon: 'آرایشگاه',
+  user: 'کاربر',
+  review: 'نظر',
+  category: 'دسته‌بندی',
+  config: 'تنظیمات',
+  report: 'گزارش',
+}
+
 const REPORT_STATUS: Record<string, LabelEntry> = {
   open: { label: 'باز', tone: 'warning' },
   resolved: { label: 'رسیدگی شده', tone: 'success' },
@@ -79,6 +92,10 @@ const REPORT_STATUS: Record<string, LabelEntry> = {
 
 export function auditActionLabel(action: string): LabelEntry {
   return AUDIT_ACTION[action] ?? { label: action, tone: 'neutral' }
+}
+
+export function targetTypeLabel(targetType: string): string {
+  return AUDIT_TARGET_TYPE[targetType] ?? targetType
 }
 
 export function reportStatusLabel(status: string): LabelEntry {

@@ -1,22 +1,11 @@
 // apps/admin-panel/src/utils/labels.spec.ts
 import { describe, expect, it } from 'vitest'
-import { auditActionLabel, reportStatusLabel } from './labels'
-
-const AUDIT_ACTIONS = [
-  'salon.status.set',
-  'salon.featured.set',
-  'user.status.set',
-  'review.moderate',
-  'category.create',
-  'category.update',
-  'category.delete',
-  'config.update',
-  'report.resolve',
-]
+import { AUDIT_ACTION_KEYS, auditActionLabel, reportStatusLabel } from './labels'
 
 describe('auditActionLabel', () => {
   it('maps every one of the nine audited actions to a Farsi label', () => {
-    for (const action of AUDIT_ACTIONS) {
+    expect(AUDIT_ACTION_KEYS).toHaveLength(9)
+    for (const action of AUDIT_ACTION_KEYS) {
       const entry = auditActionLabel(action)
       // A mapped entry never falls back to the raw dotted action name.
       expect(entry.label).not.toBe(action)

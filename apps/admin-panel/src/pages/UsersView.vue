@@ -44,7 +44,9 @@ async function load() {
   if (phoneFilter.value) params.set('phone', phoneFilter.value)
   if (nameFilter.value) params.set('name', nameFilter.value)
   if (roleFilter.value) params.set('role', roleFilter.value)
-  if (joinedFrom.value) params.set('joinedFrom', new Date(joinedFrom.value).toISOString())
+  // Both bounds are anchored in LOCAL time -- `new Date('YYYY-MM-DD')` alone would parse
+  // as UTC midnight and silently exclude 00:00-03:29 local rows on the from-day (UTC+3:30).
+  if (joinedFrom.value) params.set('joinedFrom', new Date(`${joinedFrom.value}T00:00:00.000`).toISOString())
   if (joinedTo.value) params.set('joinedTo', new Date(`${joinedTo.value}T23:59:59.999`).toISOString())
 
   const { data } = await apiFetch<UserRow[]>(`/admin/users?${params.toString()}`, { silent: true })

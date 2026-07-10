@@ -10,34 +10,14 @@ import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { debounce } from '@/utils/debounce'
-import { auditActionLabel } from '@/utils/labels'
+import { AUDIT_ACTION_KEYS, auditActionLabel, targetTypeLabel } from '@/utils/labels'
 
-// The nine audited admin mutations -- keep in sync with the backend's @AuditAction() names.
-const AUDIT_ACTIONS = [
-  'salon.status.set',
-  'salon.featured.set',
-  'user.status.set',
-  'review.moderate',
-  'category.create',
-  'category.update',
-  'category.delete',
-  'config.update',
-  'report.resolve',
-]
-
+// Options derive from labels.ts's canonical key list -- single source of truth with
+// the backend's @AuditAction() names, no locally re-declared copy to drift.
 const ACTION_OPTIONS = [
   { value: '', label: 'همه اقدامات' },
-  ...AUDIT_ACTIONS.map((action) => ({ value: action, label: auditActionLabel(action).label })),
+  ...AUDIT_ACTION_KEYS.map((action) => ({ value: action, label: auditActionLabel(action).label })),
 ]
-
-const TARGET_TYPE_FA: Record<string, string> = {
-  salon: 'آرایشگاه',
-  user: 'کاربر',
-  review: 'نظر',
-  category: 'دسته‌بندی',
-  config: 'تنظیمات',
-  report: 'گزارش',
-}
 
 interface AuditRow {
   id: string
@@ -47,6 +27,7 @@ interface AuditRow {
   action: string
   targetType: string
   targetId: string | null
+  payload: Record<string, unknown> | null
   success: boolean
   createdAt: string
 }
@@ -70,7 +51,9 @@ const actorFilter = ref('')
 const fromDate = ref('')
 const toDate = ref('')
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+// Mirrors class-validator's @IsUUID() shape (version nibble 1-8, variant nibble 8/9/a/b),
+// so anything we send is guaranteed to pass the backend DTO's validation.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 async function load() {
   loading.value = true
@@ -79,7 +62,9 @@ async function load() {
   // The backend DTO validates actorId with @IsUUID() (400 otherwise), so only send it
   // once the input is a complete UUID; partial input just doesn't filter yet.
   if (UUID_RE.test(actorFilter.value.trim())) params.set('actorId', actorFilter.value.trim())
-  if (fromDate.value) params.set('from', new Date(fromDate.value).toISOString())
+  // Both bounds are anchored in LOCAL time -- `new Date('YYYY-MM-DD')` alone would parse
+  // as UTC midnight and silently exclude 00:00-03:29 local rows on the from-day (UTC+3:30).
+  if (fromDate.value) params.set('from', new Date(`${fromDate.value}T00:00:00.000`).toISOString())
   if (toDate.value) params.set('to', new Date(`${toDate.value}T23:59:59.999`).toISOString())
 
   const { data } = await apiFetch<AuditListResponse>(`/admin/audit-log?${params.toString()}`, { silent: true })
@@ -89,8 +74,14 @@ async function load() {
 }
 
 function loadFromFilterChange() {
-  page.value = 1 // any filter change invalidates the current page position
-  load()
+  // Any filter change invalidates the current page position. When we're past page 1,
+  // just reset it -- the page watcher triggers the (single) reload; calling load() here
+  // too would fire a duplicate request.
+  if (page.value !== 1) {
+    page.value = 1
+  } else {
+    load()
+  }
 }
 
 function formatDateTime(iso: string): string {
@@ -103,8 +94,8 @@ function formatDateTime(iso: string): string {
   }).format(new Date(iso))
 }
 
-function targetLabel(row: AuditRow): string {
-  return TARGET_TYPE_FA[row.targetType] ?? row.targetType
+function formatPayload(payload: Record<string, unknown>): string {
+  return JSON.stringify(payload, null, 2)
 }
 
 function clearFilters() {
@@ -175,6 +166,7 @@ watch(page, load)
             <th class="px-5 py-3 font-semibold">مدیر</th>
             <th class="px-5 py-3 font-semibold">اقدام</th>
             <th class="px-5 py-3 font-semibold">هدف</th>
+            <th class="px-5 py-3 font-semibold">جزئیات</th>
             <th class="px-5 py-3 font-semibold">نتیجه</th>
           </tr>
         </thead>
@@ -198,12 +190,25 @@ watch(page, load)
                 :to="`/salons/${row.targetId}`"
                 class="font-semibold text-(--color-text) hover:text-(--color-accent)"
               >
-                {{ targetLabel(row) }}
+                {{ targetTypeLabel(row.targetType) }}
               </RouterLink>
-              <span v-else class="text-(--color-muted)">{{ targetLabel(row) }}</span>
+              <span v-else class="text-(--color-muted)">{{ targetTypeLabel(row.targetType) }}</span>
               <p v-if="row.targetId" dir="ltr" class="tnum text-right text-xs text-(--color-muted)">
                 {{ row.targetId.slice(0, 8) }}…
               </p>
+            </td>
+            <td data-testid="payload-cell" class="px-5 py-3.5">
+              <!-- Text interpolation only (never v-html) -- payloads contain user-supplied text. -->
+              <details v-if="row.payload" data-testid="payload-details">
+                <summary class="cursor-pointer text-xs font-semibold text-(--color-muted) transition-colors hover:text-(--color-text)">
+                  نمایش
+                </summary>
+                <pre
+                  dir="ltr"
+                  class="mt-1.5 max-h-40 max-w-64 overflow-x-auto overflow-y-auto rounded-lg bg-(--color-border-soft) p-2 text-left text-xs text-(--color-muted)"
+                >{{ formatPayload(row.payload) }}</pre>
+              </details>
+              <span v-else class="text-(--color-muted)">—</span>
             </td>
             <td class="px-5 py-3.5">
               <StatusBadge

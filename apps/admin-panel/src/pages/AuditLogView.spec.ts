@@ -19,6 +19,7 @@ const row = {
   action: 'salon.status.set',
   targetType: 'salon',
   targetId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+  payload: null,
   success: true,
   createdAt: '2026-07-10T09:30:00.000Z',
 }
@@ -64,6 +65,36 @@ describe('AuditLogView', () => {
     expect(fetchMock).toHaveBeenLastCalledWith('/admin/audit-log?page=1&pageSize=20&action=category.delete', {
       silent: true,
     })
+  })
+
+  it('renders the payload JSON in an expandable details cell and a dash for null payloads', async () => {
+    fetchMock.mockResolvedValue({
+      data: {
+        items: [
+          { ...row, id: 'p1', payload: { status: 'approved' } },
+          { ...row, id: 'p2', payload: null },
+        ],
+        total: 2,
+        page: 1,
+        pageSize: 20,
+      },
+      error: null,
+    })
+    const wrapper = mount(AuditLogView, mountOptions)
+    await flushPromises()
+
+    const cells = wrapper.findAll('[data-testid="payload-cell"]')
+    expect(cells).toHaveLength(2)
+
+    // Expand the details element, then the pretty-printed JSON is visible.
+    const details = wrapper.get('[data-testid="payload-details"]')
+    ;(details.element as HTMLDetailsElement).open = true
+    await wrapper.vm.$nextTick()
+    expect(details.text()).toContain('"status": "approved"')
+
+    // The null-payload row renders a plain dash and no details element.
+    expect(cells[1]!.find('[data-testid="payload-details"]').exists()).toBe(false)
+    expect(cells[1]!.text()).toBe('—')
   })
 
   it('shows an empty state when nothing matches', async () => {
