@@ -1,10 +1,12 @@
 // apps/admin-panel/src/utils/labels.spec.ts
 import { describe, expect, it } from 'vitest'
-import { AUDIT_ACTION_KEYS, auditActionLabel, reportStatusLabel } from './labels'
+import { AUDIT_ACTION_KEYS, auditActionLabel, blogPostStatusLabel, reportStatusLabel } from './labels'
 
 describe('auditActionLabel', () => {
-  it('maps every one of the nine audited actions to a Farsi label', () => {
-    expect(AUDIT_ACTION_KEYS).toHaveLength(9)
+  it('maps every one of the eighteen audited actions to a Farsi label', () => {
+    // 9 from Plan 7 + 6 post.* + 3 blogcategory.* from Plan 8. This length guard is
+    // deliberate: adding a backend @AuditAction without a Farsi label must fail here.
+    expect(AUDIT_ACTION_KEYS).toHaveLength(18)
     for (const action of AUDIT_ACTION_KEYS) {
       const entry = auditActionLabel(action)
       // A mapped entry never falls back to the raw dotted action name.
@@ -15,6 +17,17 @@ describe('auditActionLabel', () => {
 
   it('falls back to the raw value with a neutral tone for unknown actions', () => {
     expect(auditActionLabel('something.new')).toEqual({ label: 'something.new', tone: 'neutral' })
+  })
+})
+
+describe('blogPostStatusLabel', () => {
+  it('maps the two blog post statuses', () => {
+    expect(blogPostStatusLabel('draft')).toEqual({ label: 'پیش‌نویس', tone: 'neutral' })
+    expect(blogPostStatusLabel('published')).toEqual({ label: 'منتشرشده', tone: 'success' })
+  })
+
+  it('falls back to the raw value for unknown statuses', () => {
+    expect(blogPostStatusLabel('archived')).toEqual({ label: 'archived', tone: 'neutral' })
   })
 })
 

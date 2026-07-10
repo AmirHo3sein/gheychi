@@ -58,6 +58,15 @@ export function genderTargetLabel(gender: string): string {
   return GENDER_TARGET[gender] ?? gender
 }
 
+const BLOG_POST_STATUS: Record<string, LabelEntry> = {
+  draft: { label: 'پیش‌نویس', tone: 'neutral' },
+  published: { label: 'منتشرشده', tone: 'success' },
+}
+
+export function blogPostStatusLabel(status: string): LabelEntry {
+  return BLOG_POST_STATUS[status] ?? { label: status, tone: 'neutral' }
+}
+
 // Keys must stay in sync with the backend's @AuditAction() names (audit.decorator.ts).
 const AUDIT_ACTION: Record<string, LabelEntry> = {
   'salon.status.set': { label: 'تغییر وضعیت آرایشگاه', tone: 'warning' },
@@ -69,6 +78,15 @@ const AUDIT_ACTION: Record<string, LabelEntry> = {
   'category.delete': { label: 'حذف دسته‌بندی', tone: 'danger' },
   'config.update': { label: 'به‌روزرسانی تنظیمات', tone: 'info' },
   'report.resolve': { label: 'رسیدگی به گزارش', tone: 'success' },
+  'post.create': { label: 'ایجاد مطلب بلاگ', tone: 'success' },
+  'post.update': { label: 'ویرایش مطلب بلاگ', tone: 'info' },
+  'post.publish': { label: 'انتشار مطلب بلاگ', tone: 'success' },
+  'post.unpublish': { label: 'لغو انتشار مطلب بلاگ', tone: 'warning' },
+  'post.delete': { label: 'حذف مطلب بلاگ', tone: 'danger' },
+  'post.cover.set': { label: 'تغییر تصویر شاخص مطلب', tone: 'info' },
+  'blogcategory.create': { label: 'ایجاد دسته‌بندی بلاگ', tone: 'success' },
+  'blogcategory.update': { label: 'ویرایش دسته‌بندی بلاگ', tone: 'info' },
+  'blogcategory.delete': { label: 'حذف دسته‌بندی بلاگ', tone: 'danger' },
 }
 
 // Canonical list of the audited action names -- filter dropdowns and tests derive from
@@ -82,6 +100,8 @@ const AUDIT_TARGET_TYPE: Record<string, string> = {
   category: 'دسته‌بندی',
   config: 'تنظیمات',
   report: 'گزارش',
+  post: 'مطلب بلاگ',
+  blogcategory: 'دسته‌بندی بلاگ',
 }
 
 const REPORT_STATUS: Record<string, LabelEntry> = {
