@@ -60,4 +60,17 @@ describe('KavenegarSmsProvider', () => {
     const provider = new KavenegarSmsProvider('MY_KEY', 'my-template');
     await expect(provider.send('09121234567', 'hi')).rejects.toThrow();
   });
+
+  it('bounds both requests with a network timeout', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ return: { status: 200 } }),
+    });
+    const provider = new KavenegarSmsProvider('MY_KEY', 'my-template');
+    await provider.sendOtp('09121234567', '123456');
+    await provider.send('09121234567', 'hi');
+
+    expect(fetchMock.mock.calls[0][1]?.signal).toBeInstanceOf(AbortSignal);
+    expect(fetchMock.mock.calls[1][1]?.signal).toBeInstanceOf(AbortSignal);
+  });
 });

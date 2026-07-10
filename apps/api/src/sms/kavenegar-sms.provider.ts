@@ -8,6 +8,8 @@ interface KavenegarResponse {
   };
 }
 
+const KAVENEGAR_TIMEOUT_MS = 10_000;
+
 @Injectable()
 export class KavenegarSmsProvider implements SmsProvider {
   constructor(
@@ -26,7 +28,7 @@ export class KavenegarSmsProvider implements SmsProvider {
     const url = `https://api.kavenegar.com/v1/${this.apiKey}/verify/lookup.json?${params}`;
     let res: Response;
     try {
-      res = await fetch(url);
+      res = await fetch(url, { signal: AbortSignal.timeout(KAVENEGAR_TIMEOUT_MS) });
     } catch (err) {
       throw new Error(`Kavenegar send failed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -41,7 +43,7 @@ export class KavenegarSmsProvider implements SmsProvider {
     const url = `https://api.kavenegar.com/v1/${this.apiKey}/sms/send.json?${params}`;
     let res: Response;
     try {
-      res = await fetch(url);
+      res = await fetch(url, { signal: AbortSignal.timeout(KAVENEGAR_TIMEOUT_MS) });
     } catch (err) {
       throw new Error(`Kavenegar send failed: ${err instanceof Error ? err.message : String(err)}`);
     }
