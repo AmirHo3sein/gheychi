@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Booking } from '../booking/booking.entity';
 import { isUniqueViolation } from '../common/postgres-error-codes';
+import { Salon } from '../salons/salon.entity';
 import { CreateReviewDto } from './dto/review.dto';
 import { Review } from './review.entity';
 
@@ -11,6 +12,7 @@ export class ReviewsService {
   constructor(
     @InjectRepository(Review) private readonly reviews: Repository<Review>,
     @InjectRepository(Booking) private readonly bookings: Repository<Booking>,
+    @InjectRepository(Salon) private readonly salons: Repository<Salon>,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -54,7 +56,13 @@ export class ReviewsService {
     }
   }
 
-  findForSalon(salonId: string): Promise<Review[]> {
+  async findForSalon(salonId: string): Promise<Review[]> {
+    // Public sub-resources of a salon 404 when the salon is not approved -- the same
+    // policy PublicSalonContentController.requireSalonId() applies to the public
+    // services/hours/photos listings via SalonsService.findPublicBySlug(). Without
+    // this check, reviews of pending/suspended salons were publicly listable by id.
+    const salon = await this.salons.findOneBy({ id: salonId, status: 'approved' });
+    if (!salon) throw new NotFoundException();
     return this.reviews.find({ where: { salonId, status: 'published' }, order: { createdAt: 'DESC' } });
   }
 
