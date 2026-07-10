@@ -58,6 +58,33 @@ export function genderTargetLabel(gender: string): string {
   return GENDER_TARGET[gender] ?? gender
 }
 
+// Keys must stay in sync with the backend's @AuditAction() names (audit.decorator.ts).
+const AUDIT_ACTION: Record<string, LabelEntry> = {
+  'salon.status.set': { label: 'تغییر وضعیت آرایشگاه', tone: 'warning' },
+  'salon.featured.set': { label: 'تغییر نشان ویژه', tone: 'info' },
+  'user.status.set': { label: 'تغییر وضعیت کاربر', tone: 'danger' },
+  'review.moderate': { label: 'تعدیل نظر', tone: 'warning' },
+  'category.create': { label: 'ایجاد دسته‌بندی', tone: 'success' },
+  'category.update': { label: 'ویرایش دسته‌بندی', tone: 'info' },
+  'category.delete': { label: 'حذف دسته‌بندی', tone: 'danger' },
+  'config.update': { label: 'به‌روزرسانی تنظیمات', tone: 'info' },
+  'report.resolve': { label: 'رسیدگی به گزارش', tone: 'success' },
+}
+
+const REPORT_STATUS: Record<string, LabelEntry> = {
+  open: { label: 'باز', tone: 'warning' },
+  resolved: { label: 'رسیدگی شده', tone: 'success' },
+  dismissed: { label: 'رد شده', tone: 'neutral' },
+}
+
+export function auditActionLabel(action: string): LabelEntry {
+  return AUDIT_ACTION[action] ?? { label: action, tone: 'neutral' }
+}
+
+export function reportStatusLabel(status: string): LabelEntry {
+  return REPORT_STATUS[status] ?? { label: status, tone: 'neutral' }
+}
+
 interface ConfigMeta {
   label: string
   hint: string

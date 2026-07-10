@@ -7,6 +7,7 @@ import { useApi } from '@/composables/useApi'
 import { useTheme } from '@/composables/useTheme'
 import { useSessionStore } from '@/stores/session'
 import { userRoleLabel } from '@/utils/labels'
+import NotificationBell from './NotificationBell.vue'
 import SidebarNav from './SidebarNav.vue'
 
 const route = useRoute()
@@ -51,6 +52,8 @@ async function logout() {
           >
             <AppIcon :name="isDark ? 'sun' : 'moon'" :size="18" />
           </button>
+
+          <NotificationBell />
 
           <div class="mx-1 h-6 w-px bg-(--color-border)" />
 
