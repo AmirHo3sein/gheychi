@@ -60,6 +60,11 @@ async function load() {
   reports.value = data?.items ?? []
   total.value = data?.total ?? 0
   loading.value = false
+  // Resolving the last item on a page > 1 can leave us past the end (empty page, total > 0,
+  // Pagination hidden) — step back so the admin isn't stranded; the page watcher reloads.
+  if (reports.value.length === 0 && total.value > 0 && page.value > 1) {
+    page.value -= 1
+  }
 }
 
 function loadFromFilterChange() {
