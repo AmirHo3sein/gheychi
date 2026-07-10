@@ -1,8 +1,6 @@
 import {
-  BadRequestException,
   Controller,
   Get,
-  NotFoundException,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -20,6 +18,7 @@ import { AuditInterceptor } from '../audit/audit.interceptor';
 import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { AdminUsersService } from './admin-users.service';
 import { AdminUserQueryDto, AdminUserStatusDto } from './dto/admin-user.dto';
 import { User } from './user.entity';
 
@@ -27,7 +26,10 @@ import { User } from './user.entity';
 @UseGuards(AuthGuard, RolesGuard)
 @Roles('admin')
 export class AdminUsersController {
-  constructor(@InjectRepository(User) private readonly users: Repository<User>) {}
+  constructor(
+    @InjectRepository(User) private readonly users: Repository<User>,
+    private readonly adminUsers: AdminUsersService,
+  ) {}
 
   @Get()
   list(@Query() query: AdminUserQueryDto) {
@@ -48,10 +50,7 @@ export class AdminUsersController {
   @Patch(':id/status')
   @UseInterceptors(AuditInterceptor)
   @AuditAction('user.status.set', 'user')
-  async setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AdminUserStatusDto, @Req() req: Request) {
-    if (id === (req.user as User).id) throw new BadRequestException('You cannot change your own account status');
-    const result = await this.users.update({ id }, { status: dto.status });
-    if (!result.affected) throw new NotFoundException();
-    return this.users.findOneBy({ id });
+  setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AdminUserStatusDto, @Req() req: Request) {
+    return this.adminUsers.setStatus((req.user as User).id, id, dto.status);
   }
 }

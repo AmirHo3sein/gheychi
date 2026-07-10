@@ -2,6 +2,7 @@ import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeor
 
 export type GenderTarget = 'women' | 'men';
 export type SalonStatus = 'pending' | 'approved' | 'rejected' | 'suspended';
+export type SuspendedCause = 'admin' | 'owner_suspended';
 
 export interface GeoPoint {
   type: 'Point';
@@ -35,7 +36,7 @@ export class Salon {
   rejectionReason: string | null;
 
   @Column({ name: 'suspended_cause', type: 'varchar', length: 20, nullable: true })
-  suspendedCause: 'admin' | 'owner_suspended' | null;
+  suspendedCause: SuspendedCause | null;
 
   @Column({ type: 'text' })
   address: string;
