@@ -152,7 +152,9 @@ async function save() {
   } else {
     const { data } = await apiFetch<AdminBlogPost>(`/admin/blog/posts/${postId.value}`, {
       method: 'PATCH',
-      body: { ...basePayload(), slug: slug.value.trim() },
+      // An emptied slug field is skipped rather than sent: '' fails the backend's
+      // SLUG_PATTERN with a raw class-validator message; the server keeps the old slug.
+      body: { ...basePayload(), ...(slug.value.trim() ? { slug: slug.value.trim() } : {}) },
     })
     if (data) applyPost(data)
   }

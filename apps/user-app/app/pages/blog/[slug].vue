@@ -56,6 +56,8 @@ useHead({
     {
       type: 'application/ld+json',
       // JSON.stringify drops undefined members, so optional fields simply vanish.
+      // The < escaping matters: stringify does NOT escape a closing script tag, so an
+      // admin-authored title containing one could otherwise break out of this block.
       innerHTML: JSON.stringify({
         '@context': 'https://schema.org',
         '@type': 'Article',
@@ -64,7 +66,7 @@ useHead({
         dateModified: post.value.updatedAt,
         author: post.value.authorName ? { '@type': 'Person', name: post.value.authorName } : undefined,
         image: post.value.coverImageUrl ?? undefined,
-      }),
+      }).replace(/[<]/g, '\\u003c'),
     },
   ],
 })

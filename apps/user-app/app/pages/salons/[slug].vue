@@ -53,6 +53,8 @@ useHead({
   script: [
     {
       type: 'application/ld+json',
+      // The < escaping matters: stringify does NOT escape a closing script tag, so a
+      // provider-authored name/address containing one could otherwise break out of this block.
       innerHTML: JSON.stringify({
         '@context': 'https://schema.org',
         '@type': 'BeautySalon',
@@ -61,7 +63,7 @@ useHead({
         aggregateRating: page.value.salon.ratingCount > 0
           ? { '@type': 'AggregateRating', ratingValue: page.value.salon.ratingAvg, reviewCount: page.value.salon.ratingCount }
           : undefined,
-      }),
+      }).replace(/[<]/g, '\\u003c'),
     },
   ],
 })
