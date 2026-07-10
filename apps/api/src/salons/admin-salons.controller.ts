@@ -48,12 +48,18 @@ export class AdminSalonsController {
 
   @Patch(':id/status')
   @UseInterceptors(AuditInterceptor)
-  @AuditAction('salon.status.set', 'salon')
+  @AuditAction('salon.status.set', 'salon') // already present from the audit task -- keep
   async setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AdminSalonStatusDto) {
-    const result = await this.salons.update(
-      { id },
-      { status: dto.status, rejectionReason: dto.status === 'approved' ? null : (dto.reason ?? null) },
-    );
+    const patch: Partial<Salon> = {
+      status: dto.status,
+      rejectionReason: dto.status === 'approved' ? null : (dto.reason ?? null),
+    };
+    // suspended_cause bookkeeping (Plan 7 spec 3.5): a direct admin suspension is marked
+    // 'admin' so a later owner reactivation will NOT auto-restore this salon; approving
+    // (from any prior state) clears the cause. Rejection leaves it untouched.
+    if (dto.status === 'suspended') patch.suspendedCause = 'admin';
+    if (dto.status === 'approved') patch.suspendedCause = null;
+    const result = await this.salons.update({ id }, patch);
     if (!result.affected) throw new NotFoundException();
     return this.salons.findOneBy({ id });
   }
