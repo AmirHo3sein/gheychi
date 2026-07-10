@@ -36,6 +36,8 @@ const requestUrl = useRequestURL()
 const canonicalUrl = `${requestUrl.origin}/blog/${post.value.slug}`
 
 const seoTitle = post.value.ogTitle ?? post.value.title
+// When both SEO override and excerpt are null, no description meta tag is emitted at all --
+// accepted: an absent description beats an empty or misleading one.
 const seoDescription = post.value.metaDescription ?? post.value.excerpt ?? undefined
 
 useSeoMeta({
