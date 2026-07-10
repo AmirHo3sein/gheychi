@@ -139,6 +139,6 @@ The nine new action strings (six `post.*`, three `blogcategory.*`) join the admi
 ## 8. Open Risks
 
 - **`v-html` for rendered markdown** is safe only while `html: false` holds in both render utilities — each utility carries a test pinning that a raw-HTML/script payload comes out inert, so a config regression fails CI.
-- **Slug changes after publish** break previously indexed URLs (no redirect table — accepted; admins are told via a hint in the editor that changing a published slug changes the URL).
+- **Slug changes after publish** break previously indexed URLs (no redirect table — accepted; admins are told via a hint in the editor that changing a published slug changes the URL). The same applies to category slugs: renaming a category without pinning its slug regenerates it, changing `/blog?category=<slug>` URLs — same accepted risk, same escape hatch (provide the slug explicitly).
 - **Two markdown-it copies** (admin-panel preview, user-app render) can drift in config; both configs are three lines and each is pinned by its own invariant test — accepted per the cross-app isolation convention.
 - **Hard delete of published posts** removes public URLs without redirects — accepted for MVP (unpublish is the soft path).
