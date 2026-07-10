@@ -68,12 +68,29 @@ useHead({
 
 const isFavorited = ref(false)
 const favoriteBusy = ref(false)
+const canReport = ref(false)
+const reportOpen = ref(false)
 
 onMounted(async () => {
   if (!session.isLoggedIn) return
-  const { data } = await apiFetch<Salon[]>('/favorites', { silent: true })
-  isFavorited.value = !!data?.some((s) => s.id === page.value!.salon.id)
+  const [favoritesRes, eligibilityRes] = await Promise.all([
+    apiFetch<Salon[]>('/favorites', { silent: true }),
+    apiFetch<{ canReport: boolean }>('/reports/eligibility', {
+      query: { salonId: page.value!.salon.id },
+      silent: true,
+    }),
+  ])
+  isFavorited.value = !!favoritesRes.data?.some((s) => s.id === page.value!.salon.id)
+  canReport.value = !!eligibilityRes.data?.canReport
 })
+
+function openSalonReport() {
+  reportOpen.value = true
+}
+
+function closeReport() {
+  reportOpen.value = false
+}
 
 async function toggleFavorite() {
   favoriteBusy.value = true
@@ -139,5 +156,17 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
         </li>
       </ul>
     </section>
+
+    <button
+      v-if="canReport"
+      type="button"
+      data-testid="report-salon-button"
+      class="text-xs opacity-70 underline"
+      @click="openSalonReport"
+    >
+      گزارش این سالن
+    </button>
+
+    <ReportForm v-if="reportOpen" :salon-id="page!.salon.id" @close="closeReport" />
   </div>
 </template>
