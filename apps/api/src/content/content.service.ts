@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindOptionsWhere, Repository } from 'typeorm';
+import { FindOptionsWhere, In, Repository } from 'typeorm';
 import { isForeignKeyViolation, isUniqueViolation } from '../common/postgres-error-codes';
 import { makeSlug } from '../common/slug.util';
 import { STORAGE_PROVIDER, StorageProvider } from '../storage/storage.provider';
@@ -27,6 +27,18 @@ export interface AdminBlogPostListItem {
   publishedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface PublicBlogPostListItem {
+  id: string;
+  title: string;
+  slug: string;
+  excerpt: string | null;
+  coverImageUrl: string | null;
+  categoryName: string | null;
+  categorySlug: string | null;
+  authorName: string | null;
+  publishedAt: Date | null;
 }
 
 // Exact message from the Plan 8 spec (§3.2) — surfaced as a toast by the admin panel.
@@ -292,5 +304,70 @@ export class ContentService {
 
   listCategories(): Promise<BlogCategory[]> {
     return this.categories.find({ order: { name: 'ASC' } });
+  }
+
+  async listPublishedPosts(query: {
+    category?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ items: PublicBlogPostListItem[]; total: number; page: number; pageSize: number }> {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20; // DTO caps pageSize at 100
+
+    // Same where-object idiom as AuditService.listForAdmin.
+    const where: Record<string, unknown> = { status: 'published' };
+    if (query.category) {
+      const category = await this.categories.findOneBy({ slug: query.category });
+      // An unknown category slug can never match a post -- short-circuit instead of
+      // issuing a query guaranteed to return nothing.
+      if (!category) return { items: [], total: 0, page, pageSize };
+      where.categoryId = category.id;
+    }
+
+    const [posts, total] = await this.posts.findAndCount({
+      where,
+      order: { publishedAt: 'DESC' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    });
+
+    // Second IN lookup instead of a QB join: entities carry no relation decorators
+    // (repo convention -- same as AuditService's actor lookup).
+    const categoryIds = [...new Set(posts.map((p) => p.categoryId).filter((id): id is number => id !== null))];
+    const categoriesById = new Map(
+      (categoryIds.length ? await this.categories.find({ where: { id: In(categoryIds) } }) : []).map((c) => [
+        c.id,
+        c,
+      ]),
+    );
+
+    const items = posts.map((post) => ({
+      id: post.id,
+      title: post.title,
+      slug: post.slug,
+      excerpt: post.excerpt,
+      // Same URL the storage provider returned at upload time (publicUrl == upload's return, Task 6).
+      coverImageUrl: post.coverImageKey ? this.storage.publicUrl(post.coverImageKey) : null,
+      categoryName: post.categoryId !== null ? (categoriesById.get(post.categoryId)?.name ?? null) : null,
+      categorySlug: post.categoryId !== null ? (categoriesById.get(post.categoryId)?.slug ?? null) : null,
+      authorName: post.authorName,
+      publishedAt: post.publishedAt,
+    }));
+    return { items, total, page, pageSize };
+  }
+
+  async getPublishedBySlug(
+    slug: string,
+  ): Promise<BlogPost & { coverImageUrl: string | null; categoryName: string | null; categorySlug: string | null }> {
+    // status is part of the lookup key: drafts and unpublished posts 404 here by construction.
+    const post = await this.posts.findOneBy({ slug, status: 'published' });
+    if (!post) throw new NotFoundException();
+    const category = post.categoryId !== null ? await this.categories.findOneBy({ id: post.categoryId }) : null;
+    return {
+      ...post,
+      coverImageUrl: post.coverImageKey ? this.storage.publicUrl(post.coverImageKey) : null,
+      categoryName: category?.name ?? null,
+      categorySlug: category?.slug ?? null,
+    };
   }
 }
