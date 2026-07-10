@@ -56,7 +56,10 @@ export class AdminSalonsController {
     };
     // suspended_cause bookkeeping (Plan 7 spec 3.5): a direct admin suspension is marked
     // 'admin' so a later owner reactivation will NOT auto-restore this salon; approving
-    // (from any prior state) clears the cause. Rejection leaves it untouched.
+    // (from any prior state) clears the cause. Rejection leaves it untouched — so a
+    // rejected/pending salon may carry a stale 'owner_suspended' cause until its next
+    // approve/suspend scrubs it. Harmless: the reactivation cascade also requires
+    // status='suspended', so a stale cause on any other status can never trigger a restore.
     if (dto.status === 'suspended') patch.suspendedCause = 'admin';
     if (dto.status === 'approved') patch.suspendedCause = null;
     const result = await this.salons.update({ id }, patch);
