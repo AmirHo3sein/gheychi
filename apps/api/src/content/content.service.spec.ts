@@ -244,6 +244,18 @@ describe('ContentService.updatePost', () => {
       message: 'این نامک قبلاً استفاده شده است',
     });
   });
+
+  // Deviation (carry-forward from Task 3's quality review): design §8's accepted risk —
+  // updatePost has no status guard, so a slug change on an already-PUBLISHED post is
+  // allowed. Previously only inferable from the absence of a check; pinned explicitly here.
+  it('allows a slug change on an already-published post (design §8 accepted risk)', async () => {
+    const { service, mocks } = await setup();
+    mocks.postsRepo.findOneBy.mockResolvedValue(draft({ status: 'published', publishedAt: new Date() }));
+
+    await service.updatePost('post-1', { slug: 'new-slug' });
+
+    expect(mocks.postsRepo.save).toHaveBeenCalledWith(expect.objectContaining({ slug: 'new-slug', status: 'published' }));
+  });
 });
 
 describe('ContentService.getPostForAdmin', () => {
@@ -340,5 +352,112 @@ describe('blog post DTOs', () => {
     await expect(
       validate(plainToInstance(UpdateBlogPostDto, { excerpt: null, categoryId: null, metaDescription: null })),
     ).resolves.toEqual([]);
+  });
+});
+
+describe('ContentService.publishPost', () => {
+  it('404s when the post does not exist', async () => {
+    const { service, mocks } = await setup();
+    mocks.postsRepo.findOneBy.mockResolvedValue(null);
+
+    await expect(service.publishPost('missing')).rejects.toBeInstanceOf(NotFoundException);
+    expect(mocks.postsRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('publishes a never-published draft and stamps published_at, conditioned on status=draft', async () => {
+    const { service, mocks } = await setup();
+    mocks.postsRepo.findOneBy
+      .mockResolvedValueOnce(draft())
+      .mockResolvedValueOnce(draft({ status: 'published', publishedAt: new Date() }));
+    mocks.postsRepo.update.mockResolvedValue({ affected: 1 });
+
+    const result = await service.publishPost('post-1');
+
+    expect(mocks.postsRepo.update).toHaveBeenCalledWith(
+      { id: 'post-1', status: 'draft' },
+      { status: 'published', publishedAt: expect.any(Date) },
+    );
+    expect(result.status).toBe('published');
+  });
+
+  it('keeps the original published_at on republish (no re-stamp)', async () => {
+    const { service, mocks } = await setup();
+    const original = new Date('2026-06-01T09:00:00Z');
+    mocks.postsRepo.findOneBy
+      .mockResolvedValueOnce(draft({ publishedAt: original }))
+      .mockResolvedValueOnce(draft({ status: 'published', publishedAt: original }));
+    mocks.postsRepo.update.mockResolvedValue({ affected: 1 });
+
+    await service.publishPost('post-1');
+
+    // Exact payload equality: publishedAt must NOT be part of the update when already set.
+    expect(mocks.postsRepo.update).toHaveBeenCalledWith({ id: 'post-1', status: 'draft' }, { status: 'published' });
+  });
+
+  it('409s in Farsi when the conditional draft-only update loses a race', async () => {
+    const { service, mocks } = await setup();
+    mocks.postsRepo.findOneBy.mockResolvedValue(draft());
+    mocks.postsRepo.update.mockResolvedValue({ affected: 0 });
+
+    await expect(service.publishPost('post-1')).rejects.toMatchObject({
+      constructor: ConflictException,
+      message: 'این مطلب قبلاً منتشر شده است',
+    });
+  });
+});
+
+describe('ContentService.unpublishPost', () => {
+  it('404s when the post does not exist', async () => {
+    const { service, mocks } = await setup();
+    mocks.postsRepo.findOneBy.mockResolvedValue(null);
+
+    await expect(service.unpublishPost('missing')).rejects.toBeInstanceOf(NotFoundException);
+    expect(mocks.postsRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('unpublishes via a conditional published-only update and keeps published_at', async () => {
+    const { service, mocks } = await setup();
+    const original = new Date('2026-06-01T09:00:00Z');
+    mocks.postsRepo.findOneBy
+      .mockResolvedValueOnce(draft({ status: 'published', publishedAt: original }))
+      .mockResolvedValueOnce(draft({ status: 'draft', publishedAt: original }));
+    mocks.postsRepo.update.mockResolvedValue({ affected: 1 });
+
+    const result = await service.unpublishPost('post-1');
+
+    // Exact payload: published_at is untouched so a later republish keeps the original date.
+    expect(mocks.postsRepo.update).toHaveBeenCalledWith({ id: 'post-1', status: 'published' }, { status: 'draft' });
+    expect(result.publishedAt).toEqual(original);
+  });
+
+  it('409s in Farsi when the post is not currently published', async () => {
+    const { service, mocks } = await setup();
+    mocks.postsRepo.findOneBy.mockResolvedValue(draft());
+    mocks.postsRepo.update.mockResolvedValue({ affected: 0 });
+
+    await expect(service.unpublishPost('post-1')).rejects.toMatchObject({
+      constructor: ConflictException,
+      message: 'این مطلب در حال حاضر منتشر نیست',
+    });
+  });
+});
+
+describe('ContentService.deletePost', () => {
+  it('404s when the post does not exist', async () => {
+    const { service, mocks } = await setup();
+    mocks.postsRepo.findOneBy.mockResolvedValue(null);
+
+    await expect(service.deletePost('missing')).rejects.toBeInstanceOf(NotFoundException);
+    expect(mocks.postsRepo.delete).not.toHaveBeenCalled();
+  });
+
+  it('hard-deletes the row for any status', async () => {
+    const { service, mocks } = await setup();
+    mocks.postsRepo.findOneBy.mockResolvedValue(draft({ status: 'published' }));
+    mocks.postsRepo.delete.mockResolvedValue({ affected: 1 });
+
+    await service.deletePost('post-1');
+
+    expect(mocks.postsRepo.delete).toHaveBeenCalledWith({ id: 'post-1' });
   });
 });

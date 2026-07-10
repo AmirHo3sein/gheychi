@@ -135,4 +135,42 @@ export class ContentService {
     ]);
     return { items, total, page, pageSize };
   }
+
+  async publishPost(id: string): Promise<BlogPost> {
+    const post = await this.posts.findOneBy({ id });
+    if (!post) throw new NotFoundException('Post not found');
+    // Conditional update WHERE status='draft' — the same lost-race guard as
+    // SalonsService.resubmitMine() / ReportsService.resolve(): a concurrent publish
+    // affects 0 rows here and the loser gets a clear 409 instead of double-stamping.
+    // published_at is stamped only on FIRST publish; a republish (after unpublish)
+    // keeps the original date so public ordering and SEO dates stay stable.
+    const result = await this.posts.update(
+      { id, status: 'draft' },
+      post.publishedAt ? { status: 'published' } : { status: 'published', publishedAt: new Date() },
+    );
+    if (!result.affected) {
+      throw new ConflictException('این مطلب قبلاً منتشر شده است');
+    }
+    return (await this.posts.findOneBy({ id }))!;
+  }
+
+  async unpublishPost(id: string): Promise<BlogPost> {
+    const post = await this.posts.findOneBy({ id });
+    if (!post) throw new NotFoundException('Post not found');
+    // Conditional WHERE status='published'; published_at is deliberately untouched —
+    // publishPost()'s republish path relies on it surviving an unpublish.
+    const result = await this.posts.update({ id, status: 'published' }, { status: 'draft' });
+    if (!result.affected) {
+      throw new ConflictException('این مطلب در حال حاضر منتشر نیست');
+    }
+    return (await this.posts.findOneBy({ id }))!;
+  }
+
+  async deletePost(id: string): Promise<void> {
+    const post = await this.posts.findOneBy({ id });
+    if (!post) throw new NotFoundException('Post not found');
+    // Hard delete for any status (spec §3.3) — unpublish is the soft path.
+    // Cover-object cleanup lands in Task 6 together with the storage seam.
+    await this.posts.delete({ id });
+  }
 }
