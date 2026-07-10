@@ -1,11 +1,17 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, Repository } from 'typeorm';
-import { isUniqueViolation } from '../common/postgres-error-codes';
+import { isForeignKeyViolation, isUniqueViolation } from '../common/postgres-error-codes';
 import { makeSlug } from '../common/slug.util';
 import { BlogCategory } from './blog-category.entity';
 import { BlogPost, BlogPostStatus } from './blog-post.entity';
-import { AdminBlogPostQueryDto, CreateBlogPostDto, UpdateBlogPostDto } from './dto/blog.dto';
+import {
+  AdminBlogPostQueryDto,
+  CreateBlogCategoryDto,
+  CreateBlogPostDto,
+  UpdateBlogCategoryDto,
+  UpdateBlogPostDto,
+} from './dto/blog.dto';
 
 export interface AdminBlogPostListItem {
   id: string;
@@ -23,10 +29,20 @@ export interface AdminBlogPostListItem {
 
 // Exact message from the Plan 8 spec (§3.2) — surfaced as a toast by the admin panel.
 const SLUG_CONFLICT = 'این نامک قبلاً استفاده شده است';
+// name and slug are both UNIQUE on blog_categories; one 23505 message covers both.
+const CATEGORY_CONFLICT = 'دسته‌بندی با این نام یا نامک از قبل وجود دارد';
+// Exact message from the Plan 8 spec (§3.3) for the FK-restricted delete.
+const CATEGORY_IN_USE = 'این دسته‌بندی دارای مطلب است و قابل حذف نیست';
+// Carry-forward from Task 3's review: createPost/updatePost translate a nonexistent
+// categoryId (23503) into a 400 instead of letting it fall through as a raw 500.
+const CATEGORY_NOT_FOUND = 'دسته‌بندی انتخاب‌شده وجود ندارد';
 
 @Injectable()
 export class ContentService {
-  constructor(@InjectRepository(BlogPost) private readonly posts: Repository<BlogPost>) {}
+  constructor(
+    @InjectRepository(BlogPost) private readonly posts: Repository<BlogPost>,
+    @InjectRepository(BlogCategory) private readonly categories: Repository<BlogCategory>,
+  ) {}
 
   async createPost(dto: CreateBlogPostDto): Promise<BlogPost> {
     try {
@@ -53,6 +69,7 @@ export class ContentService {
       );
     } catch (err) {
       if (isUniqueViolation(err)) throw new ConflictException(SLUG_CONFLICT);
+      if (isForeignKeyViolation(err)) throw new BadRequestException(CATEGORY_NOT_FOUND);
       throw err;
     }
   }
@@ -77,6 +94,7 @@ export class ContentService {
       return await this.posts.save(post);
     } catch (err) {
       if (isUniqueViolation(err)) throw new ConflictException(SLUG_CONFLICT);
+      if (isForeignKeyViolation(err)) throw new BadRequestException(CATEGORY_NOT_FOUND);
       throw err;
     }
   }
@@ -176,5 +194,54 @@ export class ContentService {
     // Hard delete for any status (spec §3.3) — unpublish is the soft path.
     // Cover-object cleanup lands in Task 6 together with the storage seam.
     await this.posts.delete({ id });
+  }
+
+  async createCategory(dto: CreateBlogCategoryDto): Promise<BlogCategory> {
+    try {
+      // 'category' fallbackPrefix: a Persian name with no explicit dto.slug gets a
+      // category-<hex> slug rather than makeSlug's salon-flavored default; the
+      // optional dto.slug stays the escape hatch for readable Persian slugs.
+      return await this.categories.save(
+        this.categories.create({ name: dto.name, slug: dto.slug ?? makeSlug(dto.name, 'category') }),
+      );
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new ConflictException(CATEGORY_CONFLICT);
+      throw err;
+    }
+  }
+
+  async updateCategory(id: number, dto: UpdateBlogCategoryDto): Promise<BlogCategory> {
+    const category = await this.categories.findOneBy({ id });
+    if (!category) throw new NotFoundException('Category not found');
+    if (typeof dto.name === 'string') category.name = dto.name;
+    // Slug regenerates from the (possibly new) name unless the caller pinned one.
+    if (typeof dto.slug === 'string') category.slug = dto.slug;
+    else if (typeof dto.name === 'string') category.slug = makeSlug(dto.name, 'category');
+    try {
+      return await this.categories.save(category);
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new ConflictException(CATEGORY_CONFLICT);
+      throw err;
+    }
+  }
+
+  async deleteCategory(id: number): Promise<void> {
+    let result;
+    try {
+      result = await this.categories.delete({ id });
+    } catch (err) {
+      // No pre-check by design: blog_posts.category_id REFERENCES blog_categories(id)
+      // (NO ACTION) makes Postgres the source of truth for "in use" — the same idiom
+      // as AdminCategoriesController.remove().
+      if (isForeignKeyViolation(err)) {
+        throw new ConflictException(CATEGORY_IN_USE);
+      }
+      throw err;
+    }
+    if (!result.affected) throw new NotFoundException();
+  }
+
+  listCategories(): Promise<BlogCategory[]> {
+    return this.categories.find({ order: { name: 'ASC' } });
   }
 }

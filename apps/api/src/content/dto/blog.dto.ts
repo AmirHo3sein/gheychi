@@ -110,3 +110,32 @@ export class AdminBlogPostQueryDto {
   @Max(100)
   pageSize?: number;
 }
+
+export class CreateBlogCategoryDto {
+  @IsString()
+  @Length(1, 60)
+  name: string;
+
+  // Optional explicit slug — makeSlug(name, 'category')'s non-latin fallback produces
+  // a random category-<hex> slug for Persian names, so admins who care about the public
+  // /blog?category= URL pass one here (the deliberate escape hatch). Cap matches
+  // blog_categories.slug varchar(80).
+  @IsOptional()
+  @IsString()
+  @Matches(SLUG_PATTERN)
+  @MaxLength(80)
+  slug?: string;
+}
+
+export class UpdateBlogCategoryDto {
+  @IsOptional()
+  @IsString()
+  @Length(1, 60)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(SLUG_PATTERN)
+  @MaxLength(80)
+  slug?: string;
+}

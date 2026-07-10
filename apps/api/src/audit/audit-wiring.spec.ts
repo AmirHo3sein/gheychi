@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { AdminCategoriesController } from '../catalog/admin-categories.controller';
+import { AdminBlogController } from '../content/admin-blog.controller';
 import { AdminConfigController } from '../platform-config/admin-config.controller';
 import { AdminReportsController } from '../reports/admin-reports.controller';
 import { AdminReviewsController } from '../reviews/admin-reviews.controller';
@@ -66,6 +67,54 @@ describe('admin mutation audit wiring', () => {
       handler: AdminReportsController.prototype.resolve,
       action: 'report.resolve',
       targetType: 'report',
+    },
+    {
+      label: 'blog post create',
+      handler: AdminBlogController.prototype.create,
+      action: 'post.create',
+      targetType: 'post',
+    },
+    {
+      label: 'blog post update',
+      handler: AdminBlogController.prototype.update,
+      action: 'post.update',
+      targetType: 'post',
+    },
+    {
+      label: 'blog post publish',
+      handler: AdminBlogController.prototype.publish,
+      action: 'post.publish',
+      targetType: 'post',
+    },
+    {
+      label: 'blog post unpublish',
+      handler: AdminBlogController.prototype.unpublish,
+      action: 'post.unpublish',
+      targetType: 'post',
+    },
+    {
+      label: 'blog post delete',
+      handler: AdminBlogController.prototype.remove,
+      action: 'post.delete',
+      targetType: 'post',
+    },
+    {
+      label: 'blog category create',
+      handler: AdminBlogController.prototype.createCategory,
+      action: 'blogcategory.create',
+      targetType: 'blogcategory',
+    },
+    {
+      label: 'blog category update',
+      handler: AdminBlogController.prototype.updateCategory,
+      action: 'blogcategory.update',
+      targetType: 'blogcategory',
+    },
+    {
+      label: 'blog category delete',
+      handler: AdminBlogController.prototype.removeCategory,
+      action: 'blogcategory.delete',
+      targetType: 'blogcategory',
     },
   ];
 

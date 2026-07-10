@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
@@ -7,7 +7,7 @@ import { QueryFailedError } from 'typeorm';
 import { BlogCategory } from './blog-category.entity';
 import { BlogPost } from './blog-post.entity';
 import { ContentService } from './content.service';
-import { CreateBlogPostDto, UpdateBlogPostDto } from './dto/blog.dto';
+import { CreateBlogCategoryDto, CreateBlogPostDto, UpdateBlogCategoryDto, UpdateBlogPostDto } from './dto/blog.dto';
 
 interface QueryBuilderMock {
   leftJoin: jest.Mock;
@@ -193,6 +193,20 @@ describe('ContentService.createPost', () => {
       'connection reset',
     );
   });
+
+  // Deviation (carry-forward from Task 3's review): a nonexistent categoryId used to surface
+  // as a raw 500 (23503 fell through the isUniqueViolation-only catch). Now translated to a 400.
+  it('translates a nonexistent categoryId (23503) into a Farsi 400', async () => {
+    const { service, mocks } = await setup();
+    mocks.postsRepo.save.mockRejectedValue(pgError('23503'));
+
+    await expect(
+      service.createPost({ title: 'Summer Hair Trends', bodyMarkdown: '# body', categoryId: 999 }),
+    ).rejects.toMatchObject({
+      constructor: BadRequestException,
+      message: 'دسته‌بندی انتخاب‌شده وجود ندارد',
+    });
+  });
 });
 
 describe('ContentService.updatePost', () => {
@@ -271,6 +285,18 @@ describe('ContentService.updatePost', () => {
     await service.updatePost('post-1', { slug: 'new-slug' });
 
     expect(mocks.postsRepo.save).toHaveBeenCalledWith(expect.objectContaining({ slug: 'new-slug', status: 'published' }));
+  });
+
+  // Deviation (carry-forward from Task 3's review): same 23503 gap as createPost.
+  it('translates a nonexistent categoryId (23503) on save into a Farsi 400', async () => {
+    const { service, mocks } = await setup();
+    mocks.postsRepo.findOneBy.mockResolvedValue(draft());
+    mocks.postsRepo.save.mockRejectedValue(pgError('23503'));
+
+    await expect(service.updatePost('post-1', { categoryId: 999 })).rejects.toMatchObject({
+      constructor: BadRequestException,
+      message: 'دسته‌بندی انتخاب‌شده وجود ندارد',
+    });
   });
 });
 
@@ -483,5 +509,138 @@ describe('ContentService.deletePost', () => {
     await service.deletePost('post-1');
 
     expect(mocks.postsRepo.delete).toHaveBeenCalledWith({ id: 'post-1' });
+  });
+});
+
+describe('ContentService.createCategory', () => {
+  it('auto-generates the slug from the name when none is provided', async () => {
+    const { service, mocks } = await setup();
+
+    const category = await service.createCategory({ name: 'Hair Care' });
+
+    expect(mocks.categoriesRepo.create).toHaveBeenCalledWith({
+      name: 'Hair Care',
+      slug: expect.stringMatching(/^hair-care-[0-9a-f]{4}$/),
+    });
+    expect(category.id).toBe(1);
+  });
+
+  it('pins an explicitly provided slug', async () => {
+    const { service, mocks } = await setup();
+
+    await service.createCategory({ name: 'مراقبت از مو', slug: 'مراقبت-مو' });
+
+    expect(mocks.categoriesRepo.create).toHaveBeenCalledWith({ name: 'مراقبت از مو', slug: 'مراقبت-مو' });
+  });
+
+  it('translates a duplicate name/slug 23505 into the Farsi 409', async () => {
+    const { service, mocks } = await setup();
+    mocks.categoriesRepo.save.mockRejectedValue(pgError('23505'));
+
+    await expect(service.createCategory({ name: 'Hair Care' })).rejects.toMatchObject({
+      constructor: ConflictException,
+      message: 'دسته‌بندی با این نام یا نامک از قبل وجود دارد',
+    });
+  });
+
+  it('rethrows non-unique-violation errors untouched', async () => {
+    const { service, mocks } = await setup();
+    mocks.categoriesRepo.save.mockRejectedValue(new Error('connection reset'));
+
+    await expect(service.createCategory({ name: 'Hair Care' })).rejects.toThrow('connection reset');
+  });
+});
+
+describe('ContentService.updateCategory', () => {
+  it('404s when the category does not exist', async () => {
+    const { service, mocks } = await setup();
+    mocks.categoriesRepo.findOneBy.mockResolvedValue(null);
+
+    await expect(service.updateCategory(9, { name: 'New' })).rejects.toBeInstanceOf(NotFoundException);
+    expect(mocks.categoriesRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('regenerates the slug from the new name when no slug is provided', async () => {
+    const { service, mocks } = await setup();
+    mocks.categoriesRepo.findOneBy.mockResolvedValue({ id: 1, name: 'Hair Care', slug: 'hair-care-ab12' });
+
+    await service.updateCategory(1, { name: 'Skin Care' });
+
+    expect(mocks.categoriesRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 1, name: 'Skin Care', slug: expect.stringMatching(/^skin-care-[0-9a-f]{4}$/) }),
+    );
+  });
+
+  it('keeps a pinned slug over regeneration', async () => {
+    const { service, mocks } = await setup();
+    mocks.categoriesRepo.findOneBy.mockResolvedValue({ id: 1, name: 'Hair Care', slug: 'hair-care-ab12' });
+
+    await service.updateCategory(1, { name: 'Skin Care', slug: 'skin' });
+
+    expect(mocks.categoriesRepo.save).toHaveBeenCalledWith(expect.objectContaining({ name: 'Skin Care', slug: 'skin' }));
+  });
+
+  it('translates a duplicate 23505 on save into the Farsi 409', async () => {
+    const { service, mocks } = await setup();
+    mocks.categoriesRepo.findOneBy.mockResolvedValue({ id: 1, name: 'Hair Care', slug: 'hair-care-ab12' });
+    mocks.categoriesRepo.save.mockRejectedValue(pgError('23505'));
+
+    await expect(service.updateCategory(1, { name: 'Skin Care' })).rejects.toMatchObject({
+      constructor: ConflictException,
+      message: 'دسته‌بندی با این نام یا نامک از قبل وجود دارد',
+    });
+  });
+});
+
+describe('ContentService.deleteCategory', () => {
+  it('deletes an unused category', async () => {
+    const { service, mocks } = await setup();
+    mocks.categoriesRepo.delete.mockResolvedValue({ affected: 1 });
+
+    await expect(service.deleteCategory(1)).resolves.toBeUndefined();
+    expect(mocks.categoriesRepo.delete).toHaveBeenCalledWith({ id: 1 });
+  });
+
+  it('404s when nothing was deleted', async () => {
+    const { service, mocks } = await setup();
+    mocks.categoriesRepo.delete.mockResolvedValue({ affected: 0 });
+
+    await expect(service.deleteCategory(9)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('translates the FK restrict (23503) into the exact Farsi 409', async () => {
+    const { service, mocks } = await setup();
+    mocks.categoriesRepo.delete.mockRejectedValue(pgError('23503'));
+
+    await expect(service.deleteCategory(1)).rejects.toMatchObject({
+      constructor: ConflictException,
+      message: 'این دسته‌بندی دارای مطلب است و قابل حذف نیست',
+    });
+  });
+});
+
+describe('ContentService.listCategories', () => {
+  it('lists categories ordered by name', async () => {
+    const { service, mocks } = await setup();
+    mocks.categoriesRepo.find.mockResolvedValue([{ id: 1, name: 'مو', slug: 'مو' }]);
+
+    await expect(service.listCategories()).resolves.toEqual([{ id: 1, name: 'مو', slug: 'مو' }]);
+    expect(mocks.categoriesRepo.find).toHaveBeenCalledWith({ order: { name: 'ASC' } });
+  });
+});
+
+describe('blog category DTOs', () => {
+  it('CreateBlogCategoryDto requires a 1–60 char name', async () => {
+    expect((await validate(plainToInstance(CreateBlogCategoryDto, {}))).map((e) => e.property)).toContain('name');
+    expect(
+      (await validate(plainToInstance(CreateBlogCategoryDto, { name: 'x'.repeat(61) }))).map((e) => e.property),
+    ).toContain('name');
+    await expect(validate(plainToInstance(CreateBlogCategoryDto, { name: 'مراقبت از مو' }))).resolves.toEqual([]);
+  });
+
+  it('category slug follows the slug pattern when provided', async () => {
+    await expect(validate(plainToInstance(CreateBlogCategoryDto, { name: 'مو', slug: 'مراقبت-مو' }))).resolves.toEqual([]);
+    const errors = await validate(plainToInstance(UpdateBlogCategoryDto, { slug: 'has space' }));
+    expect(errors.map((e) => e.property)).toContain('slug');
   });
 });
