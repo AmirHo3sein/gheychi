@@ -152,7 +152,7 @@ All additions follow the existing recipes exactly (pages flat in `src/pages/`, r
 ## 5. Error Handling
 
 - All new endpoints throw NestJS built-ins directly (no global filter), per convention: 403 ineligible reporter, 409 duplicate open report / in-use category / lost status race, 404 missing target.
-- Audit and notification writes are strictly non-blocking side effects: failures are `logger.error`'d, never propagated.
+- Audit and notification writes are strictly non-blocking side effects: failures are `logger.error`'d, never propagated — with one deliberate exception: the `report_created` emit shares the report insert's transaction (§3.3), so its failure rolls back and fails report creation. Report + notification are an atomic pair by design.
 - The bootstrap script exits non-zero with a usage message on invalid input; DB errors print and exit non-zero (it's an operator tool, not an API).
 
 ## 6. Testing
