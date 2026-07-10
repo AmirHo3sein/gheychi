@@ -144,10 +144,14 @@ export class ContentService {
     // affects 0 rows here and the loser gets a clear 409 instead of double-stamping.
     // published_at is stamped only on FIRST publish; a republish (after unpublish)
     // keeps the original date so public ordering and SEO dates stay stable.
-    const result = await this.posts.update(
-      { id, status: 'draft' },
-      post.publishedAt ? { status: 'published' } : { status: 'published', publishedAt: new Date() },
-    );
+    // COALESCE decides at write time, so the original date survives any interleaving
+    // (no stale-read window between the findOneBy above and this update).
+    const result = await this.posts
+      .createQueryBuilder()
+      .update()
+      .set({ status: 'published', publishedAt: () => 'COALESCE(published_at, now())' })
+      .where('id = :id AND status = :status', { id, status: 'draft' })
+      .execute();
     if (!result.affected) {
       throw new ConflictException('این مطلب قبلاً منتشر شده است');
     }

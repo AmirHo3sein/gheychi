@@ -18,6 +18,10 @@ interface QueryBuilderMock {
   offset: jest.Mock;
   limit: jest.Mock;
   getRawMany: jest.Mock;
+  update: jest.Mock;
+  set: jest.Mock;
+  where: jest.Mock;
+  execute: jest.Mock;
 }
 
 interface Mocks {
@@ -68,10 +72,22 @@ const draft = (overrides: Partial<BlogPost> = {}): BlogPost =>
 
 async function setup(): Promise<{ service: ContentService; mocks: Mocks }> {
   const qb = {} as QueryBuilderMock;
-  for (const method of ['leftJoin', 'select', 'addSelect', 'andWhere', 'orderBy', 'offset', 'limit'] as const) {
+  for (const method of [
+    'leftJoin',
+    'select',
+    'addSelect',
+    'andWhere',
+    'orderBy',
+    'offset',
+    'limit',
+    'update',
+    'set',
+    'where',
+  ] as const) {
     qb[method] = jest.fn().mockReturnValue(qb);
   }
   qb.getRawMany = jest.fn().mockResolvedValue([]);
+  qb.execute = jest.fn();
 
   const mocks: Mocks = {
     postsRepo: {
@@ -356,48 +372,56 @@ describe('blog post DTOs', () => {
 });
 
 describe('ContentService.publishPost', () => {
+  // The publish stamp is a single atomic UPDATE ... SET published_at = COALESCE(published_at, now())
+  // conditioned on status='draft'. COALESCE decides at write time, so there is no stale-read
+  // window: whatever happened between the 404-check read and the update, an already-set
+  // published_at is never overwritten.
+  const setStamp = (mocks: Mocks): { status: string; publishedAt: () => string } =>
+    mocks.qb.set.mock.calls[0][0] as { status: string; publishedAt: () => string };
+
   it('404s when the post does not exist', async () => {
     const { service, mocks } = await setup();
     mocks.postsRepo.findOneBy.mockResolvedValue(null);
 
     await expect(service.publishPost('missing')).rejects.toBeInstanceOf(NotFoundException);
-    expect(mocks.postsRepo.update).not.toHaveBeenCalled();
+    expect(mocks.qb.execute).not.toHaveBeenCalled();
   });
 
-  it('publishes a never-published draft and stamps published_at, conditioned on status=draft', async () => {
+  it('publishes a draft via an atomic COALESCE stamp, conditioned on status=draft', async () => {
     const { service, mocks } = await setup();
     mocks.postsRepo.findOneBy
       .mockResolvedValueOnce(draft())
       .mockResolvedValueOnce(draft({ status: 'published', publishedAt: new Date() }));
-    mocks.postsRepo.update.mockResolvedValue({ affected: 1 });
+    mocks.qb.execute.mockResolvedValue({ affected: 1 });
 
     const result = await service.publishPost('post-1');
 
-    expect(mocks.postsRepo.update).toHaveBeenCalledWith(
-      { id: 'post-1', status: 'draft' },
-      { status: 'published', publishedAt: expect.any(Date) },
-    );
+    expect(mocks.qb.set).toHaveBeenCalledWith({ status: 'published', publishedAt: expect.any(Function) });
+    expect(setStamp(mocks).publishedAt()).toBe('COALESCE(published_at, now())');
+    expect(mocks.qb.where).toHaveBeenCalledWith('id = :id AND status = :status', { id: 'post-1', status: 'draft' });
     expect(result.status).toBe('published');
   });
 
-  it('keeps the original published_at on republish (no re-stamp)', async () => {
+  it('keeps the original published_at on republish — the COALESCE is write-time, immune to stale reads', async () => {
     const { service, mocks } = await setup();
     const original = new Date('2026-06-01T09:00:00Z');
     mocks.postsRepo.findOneBy
       .mockResolvedValueOnce(draft({ publishedAt: original }))
       .mockResolvedValueOnce(draft({ status: 'published', publishedAt: original }));
-    mocks.postsRepo.update.mockResolvedValue({ affected: 1 });
+    mocks.qb.execute.mockResolvedValue({ affected: 1 });
 
-    await service.publishPost('post-1');
+    const result = await service.publishPost('post-1');
 
-    // Exact payload equality: publishedAt must NOT be part of the update when already set.
-    expect(mocks.postsRepo.update).toHaveBeenCalledWith({ id: 'post-1', status: 'draft' }, { status: 'published' });
+    // The SQL-expression form (not a JS Date) is what guarantees the original date survives
+    // any interleaving: a non-null published_at wins inside the database, not in a read.
+    expect(setStamp(mocks).publishedAt()).toBe('COALESCE(published_at, now())');
+    expect(result.publishedAt).toEqual(original);
   });
 
   it('409s in Farsi when the conditional draft-only update loses a race', async () => {
     const { service, mocks } = await setup();
     mocks.postsRepo.findOneBy.mockResolvedValue(draft());
-    mocks.postsRepo.update.mockResolvedValue({ affected: 0 });
+    mocks.qb.execute.mockResolvedValue({ affected: 0 });
 
     await expect(service.publishPost('post-1')).rejects.toMatchObject({
       constructor: ConflictException,
