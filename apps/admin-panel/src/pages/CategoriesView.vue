@@ -18,6 +18,7 @@ const newIcon = ref('')
 const editingId = ref<number | null>(null)
 const editName = ref('')
 const submitting = ref(false)
+const confirmingId = ref<number | null>(null)
 
 const KNOWN_ICONS: IconName[] = ['scissors', 'palette', 'droplet', 'nail', 'sparkles', 'brush', 'eye', 'razor', 'pencil']
 
@@ -50,6 +51,7 @@ async function add() {
 function startEdit(category: Category) {
   editingId.value = category.id
   editName.value = category.name
+  confirmingId.value = null
 }
 
 async function saveEdit() {
@@ -64,6 +66,24 @@ async function saveEdit() {
     if (category) category.name = data.name
     editingId.value = null
   }
+}
+
+function askDelete(category: Category) {
+  confirmingId.value = category.id
+  editingId.value = null
+}
+
+async function confirmDelete() {
+  if (submitting.value) return
+  const id = confirmingId.value
+  if (id === null) return
+  submitting.value = true
+  // Deliberately NOT silent: a category still referenced by salon services comes back as a
+  // 409 with a Farsi message, which useApi surfaces through the standard toast path.
+  const { error } = await apiFetch(`/admin/categories/${id}`, { method: 'DELETE' })
+  submitting.value = false
+  confirmingId.value = null
+  if (!error) categories.value = categories.value.filter((c) => c.id !== id)
 }
 
 onMounted(load)
@@ -112,32 +132,70 @@ onMounted(load)
           <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-(--color-border-soft) text-(--color-accent)">
             <AppIcon :name="iconFor(category.icon)" :size="19" />
           </div>
-          <input
-            v-if="editingId === category.id"
-            v-model="editName"
-            maxlength="60"
-            class="min-w-0 flex-1 rounded-lg border border-(--color-border) p-1.5 text-sm"
-          />
-          <span v-else class="min-w-0 flex-1 truncate text-sm font-semibold text-(--color-text)">{{ category.name }}</span>
-          <button
-            v-if="editingId === category.id"
-            type="button"
-            :disabled="submitting"
-            class="shrink-0 text-sm font-semibold text-(--color-accent) disabled:opacity-40"
-            @click="saveEdit"
-          >
-            ذخیره
-          </button>
-          <button
-            v-else
-            type="button"
-            :disabled="submitting"
-            class="shrink-0 rounded-lg p-1.5 text-(--color-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-accent) disabled:opacity-40"
-            title="ویرایش"
-            @click="startEdit(category)"
-          >
-            <AppIcon name="pencil" :size="15" />
-          </button>
+
+          <template v-if="confirmingId === category.id">
+            <span class="min-w-0 flex-1 truncate text-sm font-semibold text-(--tone-danger-text)">
+              «{{ category.name }}» حذف شود؟
+            </span>
+            <button
+              data-testid="confirm-delete"
+              type="button"
+              :disabled="submitting"
+              class="shrink-0 text-sm font-semibold text-(--tone-danger-text) disabled:opacity-40"
+              @click="confirmDelete"
+            >
+              حذف
+            </button>
+            <button
+              data-testid="cancel-delete"
+              type="button"
+              :disabled="submitting"
+              class="shrink-0 text-sm font-semibold text-(--color-muted) disabled:opacity-40"
+              @click="confirmingId = null"
+            >
+              انصراف
+            </button>
+          </template>
+
+          <template v-else>
+            <input
+              v-if="editingId === category.id"
+              v-model="editName"
+              maxlength="60"
+              class="min-w-0 flex-1 rounded-lg border border-(--color-border) p-1.5 text-sm"
+            />
+            <span v-else class="min-w-0 flex-1 truncate text-sm font-semibold text-(--color-text)">{{ category.name }}</span>
+            <button
+              v-if="editingId === category.id"
+              type="button"
+              :disabled="submitting"
+              class="shrink-0 text-sm font-semibold text-(--color-accent) disabled:opacity-40"
+              @click="saveEdit"
+            >
+              ذخیره
+            </button>
+            <template v-else>
+              <button
+                type="button"
+                :disabled="submitting"
+                class="shrink-0 rounded-lg p-1.5 text-(--color-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-accent) disabled:opacity-40"
+                title="ویرایش"
+                @click="startEdit(category)"
+              >
+                <AppIcon name="pencil" :size="15" />
+              </button>
+              <button
+                data-testid="delete-category"
+                type="button"
+                :disabled="submitting"
+                class="shrink-0 rounded-lg p-1.5 text-(--color-muted) transition-colors hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text) disabled:opacity-40"
+                title="حذف"
+                @click="askDelete(category)"
+              >
+                <AppIcon name="x" :size="15" />
+              </button>
+            </template>
+          </template>
         </AppCard>
       </div>
     </div>
