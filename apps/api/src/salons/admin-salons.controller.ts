@@ -48,7 +48,7 @@ export class AdminSalonsController {
 
   @Patch(':id/status')
   @UseInterceptors(AuditInterceptor)
-  @AuditAction('salon.status.set', 'salon') // already present from the audit task -- keep
+  @AuditAction('salon.status.set', 'salon')
   async setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AdminSalonStatusDto) {
     const patch: Partial<Salon> = {
       status: dto.status,
