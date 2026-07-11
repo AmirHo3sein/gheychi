@@ -1,0 +1,11 @@
+**/node_modules
+**/.turbo
+**/dist
+**/.output
+**/.nuxt
+**/coverage
+**/test-results
+**/playwright-report
+.git
+.vscode
+*.log
