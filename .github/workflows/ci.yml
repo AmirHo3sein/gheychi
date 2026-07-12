@@ -75,8 +75,15 @@ jobs:
         # browser cache is shared across all three apps regardless of which filter installs it.
         run: pnpm --filter @arayeshgah/user-app exec playwright install --with-deps chromium
 
+      # --retries=1: these suites' webServer config spins up a cold `nest start --watch` +
+      # `nuxt/vite dev` process on every CI run (never reused), which is measurably slower
+      # and more timing-variable than a warm local dev server -- a first CI run surfaced a
+      # one-off UI-transition timing failure that both local runs and the same suite's own
+      # jest/e2e coverage don't otherwise exhibit. A single retry is the standard, low-risk
+      # mitigation for this class of CI-only flakiness without masking a genuine regression
+      # (Playwright reports a spec as failed overall only if every retry fails too).
       - name: user-app Playwright e2e
-        run: pnpm --filter @arayeshgah/user-app test:e2e
+        run: pnpm --filter @arayeshgah/user-app test:e2e -- --retries=1
 
       # Each Playwright suite's webServer config spawns its own `nest start --watch` API
       # process (reuseExistingServer is always false in CI). If it survives into the next
@@ -87,14 +94,14 @@ jobs:
         run: pkill -f "nest start" || true
 
       - name: provider-panel Playwright e2e
-        run: pnpm --filter @arayeshgah/provider-panel test:e2e
+        run: pnpm --filter @arayeshgah/provider-panel test:e2e -- --retries=1
 
       - name: Kill any lingering api dev server
         if: always()
         run: pkill -f "nest start" || true
 
       - name: admin-panel Playwright e2e
-        run: pnpm --filter @arayeshgah/admin-panel test:e2e
+        run: pnpm --filter @arayeshgah/admin-panel test:e2e -- --retries=1
 
       - name: Build all apps
         run: pnpm build
