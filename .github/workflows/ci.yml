@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: arayeshgah
+          POSTGRES_PASSWORD: arayeshgah
+          POSTGRES_DB: arayeshgah
+        ports:
+          - "5544:5432"
+        options: >-
+          --health-cmd "pg_isready -U arayeshgah"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - "6381:6379"
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare Postgres databases
+        env:
+          PGPASSWORD: arayeshgah
+        run: |
+          psql -h localhost -p 5544 -U arayeshgah -d arayeshgah -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          psql -h localhost -p 5544 -U arayeshgah -d postgres -c "CREATE DATABASE arayeshgah_test;"
+          psql -h localhost -p 5544 -U arayeshgah -d arayeshgah_test -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+
+      - name: Create apps/api/.env for dev-mode servers (used by Playwright e2e)
+        run: cp .env.example apps/api/.env
+
+      - name: Backend unit tests
+        run: pnpm --filter @arayeshgah/api test
+
+      - name: Backend e2e tests
+        run: pnpm --filter @arayeshgah/api test:e2e
+
+      - name: Frontend unit/component tests
+        run: |
+          pnpm --filter @arayeshgah/user-app test
+          pnpm --filter @arayeshgah/provider-panel test
+          pnpm --filter @arayeshgah/admin-panel test
+
+      - name: Install Playwright browsers
+        # `playwright` isn't a root dependency (only a devDependency of the three frontend
+        # workspaces), so `pnpm exec` needs a --filter to find the binary. The downloaded
+        # browser cache is shared across all three apps regardless of which filter installs it.
+        run: pnpm --filter @arayeshgah/user-app exec playwright install --with-deps chromium
+
+      - name: user-app Playwright e2e
+        run: pnpm --filter @arayeshgah/user-app test:e2e
+
+      - name: provider-panel Playwright e2e
+        run: pnpm --filter @arayeshgah/provider-panel test:e2e
+
+      - name: admin-panel Playwright e2e
+        run: pnpm --filter @arayeshgah/admin-panel test:e2e
+
+      - name: Build all apps
+        run: pnpm build
