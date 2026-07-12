@@ -16,7 +16,7 @@ RUN pnpm turbo run build --filter=@arayeshgah/api
 
 FROM node:20-alpine AS runner
 WORKDIR /app
-RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 apiuser
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 --ingroup nodejs apiuser
 COPY --from=installer --chown=apiuser:nodejs /app .
 USER apiuser
 EXPOSE 3002
