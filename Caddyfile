@@ -1,0 +1,32 @@
+{
+	email {$ACME_EMAIL}
+}
+
+(security_headers) {
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}
+
+{$DOMAIN_APEX}, www.{$DOMAIN_APEX} {
+	import security_headers
+	reverse_proxy user-app:3003
+}
+
+{$DOMAIN_API} {
+	import security_headers
+	reverse_proxy api:3002
+}
+
+{$DOMAIN_PANEL} {
+	import security_headers
+	reverse_proxy provider-panel:80
+}
+
+{$DOMAIN_ADMIN} {
+	import security_headers
+	reverse_proxy admin-panel:80
+}
