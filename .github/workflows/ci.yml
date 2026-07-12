@@ -78,8 +78,20 @@ jobs:
       - name: user-app Playwright e2e
         run: pnpm --filter @arayeshgah/user-app test:e2e
 
+      # Each Playwright suite's webServer config spawns its own `nest start --watch` API
+      # process (reuseExistingServer is always false in CI). If it survives into the next
+      # suite, its own background @nestjs/schedule cron jobs race that suite's global-setup
+      # (which drops/recreates the schema and re-runs migrations), querying a table mid-migration.
+      - name: Kill any lingering api dev server
+        if: always()
+        run: pkill -f "nest start" || true
+
       - name: provider-panel Playwright e2e
         run: pnpm --filter @arayeshgah/provider-panel test:e2e
+
+      - name: Kill any lingering api dev server
+        if: always()
+        run: pkill -f "nest start" || true
 
       - name: admin-panel Playwright e2e
         run: pnpm --filter @arayeshgah/admin-panel test:e2e
