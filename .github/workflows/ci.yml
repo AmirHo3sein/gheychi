@@ -76,16 +76,28 @@ jobs:
         run: pnpm --filter @arayeshgah/user-app exec playwright install --with-deps chromium
 
       # continue-on-error: 01-happy-path.spec.ts (pre-existing, from Plan 4) fails
-      # deterministically in a fresh CI environment -- even with --retries=1, it fails at a
-      # different step each time in the OTP-verify -> profile-completion transition. This is
-      # a real bug in that test/app flow's CI-environment timing, not anything this CI
-      # workflow itself got wrong (backend unit+e2e, all 3 frontend unit suites, and the other
-      # two Playwright suites all pass clean). Marked non-blocking rather than silently
-      # dropped so the rest of the pipeline can go green; tracked as a follow-up to actually
-      # root-cause the login/profile-completion race in a real CI environment.
+      # intermittently in a fresh CI environment -- confirmed via trace/network
+      # investigation to be a hard browser reload back to /login moments after profile
+      # completion succeeds (valid session cookie, user correctly recognized as logged in
+      # server-side -- not an auth bug). Two real, independently-valuable bugs were found
+      # and fixed along the way (a stale-auth-probe race in auth.global.ts, and an
+      # unkeyed-form DOM-reuse risk in login.vue), but neither fix alone resolved this
+      # specific CI symptom -- see the investigation notes in CLAUDE.md's Known Gaps for
+      # what was ruled out. Marked non-blocking rather than silently dropped so the rest of
+      # the pipeline can go green; the trace/video capture below (added during this
+      # investigation) should make the next attempt faster.
       - name: user-app Playwright e2e
         continue-on-error: true
         run: pnpm --filter @arayeshgah/user-app exec playwright test --retries=1
+
+      - name: Upload user-app Playwright trace/video on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: user-app-playwright-report
+          path: apps/user-app/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
 
       # Each Playwright suite's webServer config spawns its own `nest start --watch` API
       # process (reuseExistingServer is always false in CI). If it survives into the next

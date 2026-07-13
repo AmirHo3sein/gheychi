@@ -23,7 +23,12 @@ export default defineConfig({
   // to special-case its first interaction.
   timeout: 60_000,
   expect: { timeout: 20_000 },
-  use: { baseURL: 'http://localhost:3003' },
+  use: {
+    baseURL: 'http://localhost:3003',
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
+  },
   webServer: [
     {
       command: 'pnpm --filter @arayeshgah/api dev',
