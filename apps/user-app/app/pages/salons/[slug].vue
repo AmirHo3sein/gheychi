@@ -114,14 +114,19 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
 </script>
 
 <template>
-  <div class="p-4 space-y-6">
-    <SalonGallery :photos="page!.photos" />
+  <!-- Top-level guard, not just the `page!` assertions below: when the createError(404) throw
+       above rejects this component's async setup, Vue's Suspense still runs one render pass of
+       this template with `page` at its pre-fetch value (undefined) before the rejection is
+       handled. Without this v-if, that pass throws inside the render function itself (an
+       unhandled rejection, not the createError) -- see blog/[slug].vue, which this mirrors. -->
+  <div v-if="page" class="p-4 space-y-6">
+    <SalonGallery :photos="page.photos" />
 
     <div class="flex items-start justify-between">
       <div>
-        <h1 class="text-xl font-bold">{{ page!.salon.name }}</h1>
-        <p class="text-sm">⭐ {{ Number(page!.salon.ratingAvg).toFixed(1) }} ({{ page!.salon.ratingCount }})</p>
-        <p class="text-sm">{{ page!.salon.address }}</p>
+        <h1 class="text-xl font-bold">{{ page.salon.name }}</h1>
+        <p class="text-sm">⭐ {{ Number(page.salon.ratingAvg).toFixed(1) }} ({{ page.salon.ratingCount }})</p>
+        <p class="text-sm">{{ page.salon.address }}</p>
       </div>
       <button
         type="button"
@@ -136,7 +141,7 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
     <section>
       <h2 class="font-bold mb-2">خدمات</h2>
       <ul class="space-y-2">
-        <li v-for="service in page!.services" :key="service.id">
+        <li v-for="service in page.services" :key="service.id">
           <NuxtLink :to="`/booking/${slug}/${service.id}`" class="flex justify-between rounded-lg bg-(--color-surface-card) p-3 text-sm">
             <span>{{ service.name }} ({{ service.durationMin }} دقیقه)</span>
             <span class="font-bold text-(--color-accent)">{{ service.price.toLocaleString('fa-IR') }} تومان</span>
@@ -148,13 +153,13 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
     <section>
       <h2 class="font-bold mb-2">ساعات کاری</h2>
       <ul class="text-sm space-y-1">
-        <li v-for="hour in page!.hours" :key="hour.weekday">
+        <li v-for="hour in page.hours" :key="hour.weekday">
           {{ WEEKDAY_NAMES[hour.weekday] }}: {{ hour.openTime.slice(0, 5) }} - {{ hour.closeTime.slice(0, 5) }}
         </li>
       </ul>
     </section>
 
-    <SalonReviews :reviews="page!.reviews" :can-report="canReport" @report="openReviewReport" />
+    <SalonReviews :reviews="page.reviews" :can-report="canReport" @report="openReviewReport" />
 
     <button
       v-if="canReport"
@@ -166,6 +171,6 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
       گزارش این سالن
     </button>
 
-    <ReportForm v-if="reportOpen" :salon-id="page!.salon.id" :review-id="reportReviewId" @close="closeReport" />
+    <ReportForm v-if="reportOpen" :salon-id="page.salon.id" :review-id="reportReviewId" @close="closeReport" />
   </div>
 </template>
