@@ -14,6 +14,7 @@ describe('SitemapBlogController', () => {
       where: { status: 'published' },
       select: ['slug', 'updatedAt'],
       order: { publishedAt: 'DESC' },
+      take: 50_000,
     });
     expect(result).toEqual([{ slug: 'rahnama-rang-mo', updatedAt: new Date('2026-07-09T10:00:00.000Z') }]);
   });
