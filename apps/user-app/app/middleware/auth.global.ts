@@ -12,7 +12,12 @@ export default defineNuxtRouteMiddleware(async (to) => {
     // apiFetch's own 401 handling from force-redirecting an anonymous visitor away from
     // a public page -- the explicit check below is the single place that decides that.
     const { data } = await apiFetch<SessionUser>('/auth/me', { silent: true, redirectOn401: false })
-    session.setUser(data)
+    // This probe can still be in flight when the user finishes an OTP login/profile
+    // completion elsewhere in the same session (those call session.setUser() directly,
+    // not through this middleware) -- on a slow connection or cold dev server, this
+    // probe's stale "still anonymous" result can resolve AFTER that newer, authoritative
+    // update. Only apply it if nothing more recent already has.
+    if (!session.checked) session.setUser(data)
   }
 
   if (!session.isLoggedIn && !isPublicRoute(to.path)) {

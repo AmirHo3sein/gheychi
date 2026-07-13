@@ -59,4 +59,29 @@ describe('auth.global middleware', () => {
     expect(fetchMock).not.toHaveBeenCalled()
     expect(navigateToMock).not.toHaveBeenCalled()
   })
+
+  it('does not let a slow initial probe clobber a session set elsewhere while the probe was still in flight', async () => {
+    // Reproduces a real race: this middleware's own /auth/me probe (fired on the very
+    // first navigation, while the session is still anonymous) can still be in flight
+    // when the user finishes an OTP login + profile-completion flow moments later --
+    // those call session.setUser() directly, outside this middleware. If the slow probe
+    // then resolves as still-anonymous, it must not overwrite the newer, authoritative
+    // logged-in state.
+    const session = useSessionStore()
+    let rejectProbe: (reason: unknown) => void = () => {}
+    fetchMock.mockReturnValue(new Promise((_resolve, reject) => { rejectProbe = reject }))
+
+    const middlewarePromise = authMiddleware(toRoute('/'), toRoute('/'))
+
+    // While the probe above is still pending, a more recent, authoritative update lands.
+    session.setUser({ id: '1', phone: '09120000000', name: 'Test', gender: 'male', role: 'customer' })
+
+    // The stale probe now resolves as it would for the anonymous visitor it was actually
+    // sent for -- a 401.
+    rejectProbe({ response: { status: 401 } })
+    await middlewarePromise
+
+    expect(session.isLoggedIn).toBe(true)
+    expect(navigateToMock).not.toHaveBeenCalled()
+  })
 })
