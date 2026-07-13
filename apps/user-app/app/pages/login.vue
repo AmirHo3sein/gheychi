@@ -59,21 +59,29 @@ async function completeProfile() {
     <div class="w-full max-w-sm space-y-4">
       <h1 class="text-xl font-bold text-center">ورود به آرایشگاه</h1>
 
-      <form v-if="step === 'phone'" class="space-y-3" @submit.prevent="requestOtp">
+      <!-- Every step's <form> gets its own :key. Without one, Vue's v-if/v-else-if patch
+      can reuse the same underlying <form> DOM node across a step transition (same tag,
+      same position) rather than destroying and recreating it -- observed via CI trace
+      investigation as a contributing factor in an intermittent CI-only failure where a
+      later step's submit click didn't reliably run its intended @submit.prevent handler.
+      Keying each form forces a clean unmount/remount (and fresh listener) on every
+      transition, which is the correct pattern regardless of that specific investigation's
+      outcome (see the CI flakiness note in CLAUDE.md's Known Gaps for the full context). -->
+      <form v-if="step === 'phone'" key="phone" class="space-y-3" @submit.prevent="requestOtp">
         <input v-model="phone" type="tel" placeholder="09xxxxxxxxx" class="w-full rounded-lg border p-3" required />
         <button type="submit" :disabled="submitting" class="w-full rounded-lg bg-(--color-accent) text-white p-3 font-semibold">
           دریافت کد
         </button>
       </form>
 
-      <form v-else-if="step === 'code'" class="space-y-3" @submit.prevent="verifyOtp">
+      <form v-else-if="step === 'code'" key="code" class="space-y-3" @submit.prevent="verifyOtp">
         <input v-model="code" inputmode="numeric" maxlength="6" placeholder="کد ۶ رقمی" class="w-full rounded-lg border p-3" required />
         <button type="submit" :disabled="submitting" class="w-full rounded-lg bg-(--color-accent) text-white p-3 font-semibold">
           تایید
         </button>
       </form>
 
-      <form v-else class="space-y-3" @submit.prevent="completeProfile">
+      <form v-else key="profile" class="space-y-3" @submit.prevent="completeProfile">
         <input v-model="name" type="text" placeholder="نام" class="w-full rounded-lg border p-3" required />
         <select v-model="gender" class="w-full rounded-lg border p-3" required>
           <option value="" disabled>جنسیت</option>
