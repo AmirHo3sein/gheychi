@@ -62,18 +62,23 @@ async function confirmBooking() {
 </script>
 
 <template>
-  <div class="p-4 space-y-4">
+  <!-- Top-level guard, not just the `page!` assertions below: when the createError(404) throw
+       above rejects this component's async setup, Vue's Suspense still runs one render pass of
+       this template with `page` at its pre-fetch value (undefined) before the rejection is
+       handled. Without this v-if, that pass throws inside the render function itself (an
+       unhandled rejection, not the createError) -- see blog/[slug].vue, which this mirrors. -->
+  <div v-if="page" class="p-4 space-y-4">
     <div>
-      <h1 class="text-lg font-bold">{{ page!.service.name }}</h1>
-      <p class="text-sm">{{ page!.salon.name }} — {{ page!.salon.address }}</p>
+      <h1 class="text-lg font-bold">{{ page.service.name }}</h1>
+      <p class="text-sm">{{ page.salon.name }} — {{ page.salon.address }}</p>
     </div>
 
-    <SlotPicker :salon-id="page!.salon.id" :service-id="serviceId" @select="selectedSlot = $event" />
+    <SlotPicker :salon-id="page.salon.id" :service-id="serviceId" @select="selectedSlot = $event" />
 
     <div v-if="selectedSlot" class="rounded-xl bg-(--color-surface-card) p-4 space-y-2 text-sm">
-      <p>قیمت کامل: {{ page!.service.price.toLocaleString('fa-IR') }} تومان</p>
+      <p>قیمت کامل: {{ page.service.price.toLocaleString('fa-IR') }} تومان</p>
       <p v-if="estimatedDeposit !== null">پیش‌پرداخت آنلاین: {{ estimatedDeposit.toLocaleString('fa-IR') }} تومان</p>
-      <p v-if="page!.terms">لغو رایگان تا {{ page!.terms.cancellationWindowHours }} ساعت قبل از نوبت</p>
+      <p v-if="page.terms">لغو رایگان تا {{ page.terms.cancellationWindowHours }} ساعت قبل از نوبت</p>
       <button
         type="button"
         data-testid="confirm-booking-button"

@@ -36,9 +36,19 @@ function stubPageLoad(bookingsBehavior: 'success' | { rejectWith: unknown }) {
 }
 
 describe('booking confirm page', () => {
+  // mountSuspended shares one Nuxt app instance across tests in this file, and every test
+  // here uses the same fixed slug/serviceId route params -- so without unmounting +
+  // clearing the cache, a later test's mount can silently reuse an earlier test's cached
+  // `booking-test-salon-svc-1` useAsyncData payload instead of re-fetching. Same pattern as
+  // blog-article.spec.ts.
+  let wrapper: Awaited<ReturnType<typeof mountSuspended>> | undefined
+
   beforeEach(() => {
     fetchMock.mockReset()
     vi.stubGlobal('$fetch', fetchStub)
+    wrapper?.unmount()
+    wrapper = undefined
+    clearNuxtData('booking-test-salon-svc-1')
   })
 
   afterEach(() => {
@@ -47,7 +57,7 @@ describe('booking confirm page', () => {
 
   it('shows a deposit estimate matching calculateDeposit()\'s formula (max(price*percent/100, minToman))', async () => {
     stubPageLoad('success')
-    const wrapper = await mountSuspended(BookingConfirmPage)
+    wrapper = await mountSuspended(BookingConfirmPage)
 
     await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
     await nextTick()
@@ -60,7 +70,7 @@ describe('booking confirm page', () => {
 
   it('on a 409 from POST /bookings, shows the conflict message and clears the selected slot', async () => {
     stubPageLoad({ rejectWith: { response: { status: 409 } } })
-    const wrapper = await mountSuspended(BookingConfirmPage)
+    wrapper = await mountSuspended(BookingConfirmPage)
 
     await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
     await nextTick()
@@ -72,5 +82,14 @@ describe('booking confirm page', () => {
     // The confirm sheet is only rendered while a slot is selected -- asserting it's gone
     // confirms selectedSlot was actually reset to null, not just that the message showed.
     expect(wrapper.find('[data-testid="confirm-booking-button"]').exists()).toBe(false)
+  })
+
+  it('throws the standard 404 for an unknown salon/service pair', async () => {
+    fetchMock.mockImplementation(async () => {
+      // Shape matches how ofetch surfaces an HTTP error response.
+      throw { response: { status: 404 } }
+    })
+
+    await expect(mountSuspended(BookingConfirmPage)).rejects.toMatchObject({ statusCode: 404 })
   })
 })
