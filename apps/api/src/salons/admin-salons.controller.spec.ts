@@ -1,18 +1,23 @@
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
+import { UsersService } from '../users/users.service';
 import { AdminSalonsController } from './admin-salons.controller';
 import { Salon } from './salon.entity';
 
 describe('AdminSalonsController.setStatus suspended_cause handling', () => {
   let controller: AdminSalonsController;
   let repo: { update: jest.Mock; findOneBy: jest.Mock };
+  let users: { findById: jest.Mock };
 
   beforeEach(() => {
     repo = {
       update: jest.fn().mockResolvedValue({ affected: 1 }),
       findOneBy: jest.fn().mockResolvedValue({ id: 's1' }),
     };
-    controller = new AdminSalonsController(repo as unknown as Repository<Salon>);
+    users = {
+      findById: jest.fn().mockResolvedValue({ id: 'owner-1', status: 'active' }),
+    };
+    controller = new AdminSalonsController(repo as unknown as Repository<Salon>, users as unknown as UsersService);
   });
 
   it('records suspended_cause=admin on a direct suspension', async () => {
@@ -65,5 +70,13 @@ describe('AdminSalonsController.setStatus suspended_cause handling', () => {
       { status: 'suspended', rejectionReason: 'تخلف مجدد', suspendedCause: 'admin' },
     );
     expect(result).toEqual({ id: 's1', status: 'suspended', suspendedCause: 'admin' });
+  });
+
+  it('refuses to approve a pending salon whose owner account is suspended', async () => {
+    repo.findOneBy.mockResolvedValueOnce({ id: 's1', ownerId: 'owner-1', status: 'pending' });
+    users.findById.mockResolvedValueOnce({ id: 'owner-1', status: 'suspended' });
+
+    await expect(controller.setStatus('s1', { status: 'approved' })).rejects.toBeInstanceOf(ConflictException);
+    expect(repo.update).not.toHaveBeenCalled();
   });
 });

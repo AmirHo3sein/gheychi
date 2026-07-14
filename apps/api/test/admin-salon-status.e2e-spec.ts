@@ -121,4 +121,39 @@ describe('Admin salon status transitions (e2e)', () => {
       .send({ status: 'approved' })
       .expect(403);
   });
+
+  it('409s an attempt to approve a pending salon whose owner account is suspended', async () => {
+    const ownerPhone = `0912224${Math.floor(1000 + Math.random() * 8999)}`;
+    const ownerCookie = await loginAs(app, ownerPhone);
+    const createRes = await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerCookie).send({
+      name: `Suspended Owner Salon ${ownerPhone}`,
+      genderTarget: 'women',
+      address: 'Somewhere St, No. 9',
+      city: 'Tehran',
+      lat: 35.7,
+      lng: 51.4,
+    });
+    const suspendedSalonId = createRes.body.id;
+
+    const meRes = await request(app.getHttpServer()).get('/api/auth/me').set('Cookie', ownerCookie).expect(200);
+    const ownerId = meRes.body.id;
+
+    await request(app.getHttpServer())
+      .patch(`/api/admin/users/${ownerId}/status`)
+      .set('Cookie', adminCookie)
+      .send({ status: 'suspended' })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .patch(`/api/admin/salons/${suspendedSalonId}/status`)
+      .set('Cookie', adminCookie)
+      .send({ status: 'approved' })
+      .expect(409);
+
+    const stillPending = await request(app.getHttpServer())
+      .get(`/api/admin/salons/${suspendedSalonId}`)
+      .set('Cookie', adminCookie)
+      .expect(200);
+    expect(stillPending.body.status).toBe('pending');
+  });
 });

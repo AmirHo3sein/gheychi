@@ -1,4 +1,4 @@
-import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Patch, Query, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, ConflictException, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Patch, Query, UseGuards, UseInterceptors } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuditAction } from '../audit/audit.decorator';
@@ -6,6 +6,7 @@ import { AuditInterceptor } from '../audit/audit.interceptor';
 import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { UsersService } from '../users/users.service';
 import { AdminSalonQueryDto } from './dto/admin-salon-query.dto';
 import { AdminSalonStatusDto } from './dto/admin-salon-status.dto';
 import { SetFeaturedDto } from './dto/admin-salon.dto';
@@ -15,7 +16,10 @@ import { Salon } from './salon.entity';
 @UseGuards(AuthGuard, RolesGuard)
 @Roles('admin')
 export class AdminSalonsController {
-  constructor(@InjectRepository(Salon) private readonly salons: Repository<Salon>) {}
+  constructor(
+    @InjectRepository(Salon) private readonly salons: Repository<Salon>,
+    private readonly users: UsersService,
+  ) {}
 
   @Get()
   async list(@Query() query: AdminSalonQueryDto) {
@@ -50,6 +54,14 @@ export class AdminSalonsController {
   @UseInterceptors(AuditInterceptor)
   @AuditAction('salon.status.set', 'salon')
   async setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AdminSalonStatusDto) {
+    if (dto.status === 'approved') {
+      const salon = await this.salons.findOneBy({ id });
+      if (!salon) throw new NotFoundException();
+      const owner = await this.users.findById(salon.ownerId);
+      if (owner?.status === 'suspended') {
+        throw new ConflictException('Cannot approve a salon whose owner account is suspended');
+      }
+    }
     const patch: Partial<Salon> = {
       status: dto.status,
       rejectionReason: dto.status === 'approved' ? null : (dto.reason ?? null),
