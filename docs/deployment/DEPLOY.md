@@ -30,10 +30,38 @@ This is a manual step by design — migrations never run automatically on contai
 
 Re-run `up -d` after pointing the relevant image tag(s) in `docker-compose.prod.yml` back at a previous `:<git-sha>` tag instead of `:latest`, then `docker compose -f docker-compose.prod.yml up -d <service>`.
 
+## Restoring a backup
+
+Download a specific dated backup from S3 (list what's available with `docker compose -f docker-compose.prod.yml exec backup mc ls s3backup/$S3_BUCKET/backups/` first):
+
+```bash
+docker compose -f docker-compose.prod.yml exec backup mc cp \
+  s3backup/$S3_BUCKET/backups/arayeshgah-2026-07-14T030000Z.dump /tmp/restore.dump
+```
+
+**Verify a backup restores cleanly, without touching the live database:**
+
+```bash
+docker compose -f docker-compose.prod.yml exec postgres createdb -U $DB_USER restore_check
+docker compose -f docker-compose.prod.yml exec backup pg_restore -h postgres -U $DB_USER -d restore_check /tmp/restore.dump
+# spot-check row counts against the live database here, then:
+docker compose -f docker-compose.prod.yml exec postgres dropdb -U $DB_USER restore_check
+```
+
+**Real disaster recovery (replaces the live database):**
+
+```bash
+docker compose -f docker-compose.prod.yml stop api
+docker compose -f docker-compose.prod.yml exec backup pg_restore -h postgres -U $DB_USER -d $DB_NAME --clean --if-exists /tmp/restore.dump
+docker compose -f docker-compose.prod.yml start api
+```
+
+Stopping `api` first avoids live writes racing the restore; `--clean --if-exists` drops existing objects before recreating them from the dump.
+
 ## Operational notes
 
 - **Never share raw `docker compose -f docker-compose.prod.yml config` output for troubleshooting.** Compose fully resolves and inlines every `env_file`-sourced variable for `api`, `user-app`, and `caddy` into that output — including secrets never referenced anywhere in the compose file itself (`JWT_SECRET`, `KAVENEGAR_API_KEY`, `ZARINPAL_MERCHANT_ID`, S3 credentials, `VAPID_PRIVATE_KEY`). This is standard, unavoidable Docker Compose behavior (not specific to this file) — if you need to share `config` output for debugging, redact it first.
-- **No database backup automation exists yet.** This is a known gap, not an oversight — see the design doc's Open Risks section. Set up a `pg_dump` cron (e.g., to the same S3 bucket already wired up below) before trusting this with real customer data long-term.
+- **Database backups run automatically.** The `backup` service dumps Postgres daily (03:00 UTC, plus once immediately whenever the stack starts) to `s3://$S3_BUCKET/backups/`, keeping 14 days. A failed backup logs loudly to `docker compose logs backup` rather than paging anyone — check it periodically. See "## Restoring a backup" below.
 
 ## Provider cutover checklist
 
