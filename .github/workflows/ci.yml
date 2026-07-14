@@ -75,19 +75,7 @@ jobs:
         # browser cache is shared across all three apps regardless of which filter installs it.
         run: pnpm --filter @arayeshgah/user-app exec playwright install --with-deps chromium
 
-      # continue-on-error: 01-happy-path.spec.ts (pre-existing, from Plan 4) fails
-      # intermittently in a fresh CI environment -- confirmed via trace/network
-      # investigation to be a hard browser reload back to /login moments after profile
-      # completion succeeds (valid session cookie, user correctly recognized as logged in
-      # server-side -- not an auth bug). Two real, independently-valuable bugs were found
-      # and fixed along the way (a stale-auth-probe race in auth.global.ts, and an
-      # unkeyed-form DOM-reuse risk in login.vue), but neither fix alone resolved this
-      # specific CI symptom -- see the investigation notes in CLAUDE.md's Known Gaps for
-      # what was ruled out. Marked non-blocking rather than silently dropped so the rest of
-      # the pipeline can go green; the trace/video capture below (added during this
-      # investigation) should make the next attempt faster.
       - name: user-app Playwright e2e
-        continue-on-error: true
         run: pnpm --filter @arayeshgah/user-app exec playwright test --retries=1
 
       - name: Upload user-app Playwright trace/video on failure

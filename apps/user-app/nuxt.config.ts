@@ -30,6 +30,19 @@ export default defineNuxtConfig({
   },
   vite: {
     plugins: [tailwindcss()],
+    server: {
+      // Vite's dependency optimizer only discovers a lazily-loaded route's dependencies the
+      // first time that route is actually visited (dynamic imports aren't part of the initial
+      // crawl). On a cold `nuxt dev` process, if the FIRST visit to '/' happens via an in-app
+      // client-side navigation (e.g. navigateTo('/') after login) rather than a fresh page
+      // load, discovering new deps there triggers a `full-reload` HMR message that Vite's
+      // client handles with a bare, path-less `location.reload()` -- if that fires before the
+      // in-app navigation's own history.pushState has committed, the reload lands back on the
+      // OLD url instead of the new one. Warming the home page here lets Vite crawl and
+      // pre-optimize its dependencies concurrently with the rest of dev-server startup, well
+      // before any real navigation reaches it.
+      warmup: { clientFiles: ['./app/pages/index.vue'] },
+    },
   },
   runtimeConfig: {
     public: {
