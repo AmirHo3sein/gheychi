@@ -43,7 +43,7 @@ docker compose -f docker-compose.prod.yml exec backup mc cp \
 
 ```bash
 docker compose -f docker-compose.prod.yml exec postgres createdb -U $DB_USER restore_check
-docker compose -f docker-compose.prod.yml exec backup pg_restore -h postgres -U $DB_USER -d restore_check /tmp/restore.dump
+docker compose -f docker-compose.prod.yml exec -e PGPASSWORD=$DB_PASS backup pg_restore -h postgres -U $DB_USER -d restore_check /tmp/restore.dump
 # spot-check row counts against the live database here, then:
 docker compose -f docker-compose.prod.yml exec postgres dropdb -U $DB_USER restore_check
 ```
@@ -52,7 +52,7 @@ docker compose -f docker-compose.prod.yml exec postgres dropdb -U $DB_USER resto
 
 ```bash
 docker compose -f docker-compose.prod.yml stop api
-docker compose -f docker-compose.prod.yml exec backup pg_restore -h postgres -U $DB_USER -d $DB_NAME --clean --if-exists /tmp/restore.dump
+docker compose -f docker-compose.prod.yml exec -e PGPASSWORD=$DB_PASS backup pg_restore -h postgres -U $DB_USER -d $DB_NAME --clean --if-exists /tmp/restore.dump
 docker compose -f docker-compose.prod.yml start api
 ```
 
