@@ -71,6 +71,17 @@ services:
     depends_on: [api, user-app, provider-panel, admin-panel]
     networks: [internal]
 
+  backup:
+    build:
+      context: .
+      dockerfile: docker/backup/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [internal]
+
 networks:
   internal:
 
