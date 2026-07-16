@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, In, Repository } from 'typeorm';
 import { isForeignKeyViolation, isUniqueViolation } from '../common/postgres-error-codes';
@@ -59,6 +59,8 @@ const EXTENSION_BY_MIME_TYPE: Record<string, string> = {
 
 @Injectable()
 export class ContentService {
+  private readonly logger = new Logger(ContentService.name);
+
   constructor(
     @InjectRepository(BlogPost) private readonly posts: Repository<BlogPost>,
     @InjectRepository(BlogCategory) private readonly categories: Repository<BlogCategory>,
@@ -70,11 +72,12 @@ export class ContentService {
       return await this.posts.save(
         this.posts.create({
           title: dto.title,
-          // Auto slug from the title (spec §3.2); stays editable via updatePost. The 'post'
-          // fallbackPrefix (Task 2) gives Persian titles a post-<hex> slug; makeSlug's
-          // random suffix makes collisions unlikely, but the DB UNIQUE stays the source of
-          // truth — 23505 translated below.
-          slug: makeSlug(dto.title, 'post'),
+          // An explicit dto.slug wins (atomic create-with-slug — same escape hatch as
+          // createCategory); otherwise auto slug from the title (spec §3.2), editable via
+          // updatePost. The 'post' fallbackPrefix (Task 2) gives Persian titles a
+          // post-<hex> slug; makeSlug's random suffix makes collisions unlikely, but the
+          // DB UNIQUE stays the source of truth — 23505 translated below.
+          slug: dto.slug ?? makeSlug(dto.title, 'post'),
           excerpt: dto.excerpt || null,
           bodyMarkdown: dto.bodyMarkdown,
           categoryId: dto.categoryId ?? null,
@@ -226,10 +229,16 @@ export class ContentService {
     post.coverImageKey = key;
     const saved = await this.posts.save(post);
     // Best-effort replace-cleanup AFTER the save: the DB row is the source of truth for
-    // the cover; an orphaned object after a failed delete is a harmless cleanup gap
-    // (same class of tradeoff as salon photo deletes).
+    // the cover; an orphaned object after a failed delete is a cleanup gap, not a
+    // user-visible bug (same class of tradeoff as salon photo deletes) -- so the failure
+    // is logged for observability but never fails the request.
     if (oldKey) {
-      await this.storage.delete(oldKey).catch(() => {});
+      await this.storage.delete(oldKey).catch((err) => {
+        this.logger.error(
+          `Failed to delete storage object ${oldKey} for blog post ${id} (replaced by ${key}) -- object may be orphaned`,
+          err instanceof Error ? err.stack : String(err),
+        );
+      });
     }
     return { ...saved, coverImageUrl: this.storage.publicUrl(key) };
   }
@@ -241,7 +250,13 @@ export class ContentService {
     if (!oldKey) return; // idempotent: nothing to clear
     post.coverImageKey = null;
     await this.posts.save(post);
-    await this.storage.delete(oldKey).catch(() => {});
+    // Best-effort: same logged-but-swallowed cleanup tradeoff as setCover() above.
+    await this.storage.delete(oldKey).catch((err) => {
+      this.logger.error(
+        `Failed to delete storage object ${oldKey} for blog post ${id} -- object may be orphaned`,
+        err instanceof Error ? err.stack : String(err),
+      );
+    });
   }
 
   async deletePost(id: string): Promise<void> {
@@ -251,9 +266,16 @@ export class ContentService {
     await this.posts.delete({ id });
     // Best-effort object cleanup after the row delete: the DB row is the source of
     // truth for what's public; an orphaned object after a storage failure is a
-    // harmless cleanup gap (same tradeoff as SalonPhotosController.remove()).
+    // cleanup gap, not a user-visible bug (same tradeoff as
+    // SalonPhotosController.remove()) -- so the failure is logged for observability
+    // but never fails the request.
     if (post.coverImageKey) {
-      await this.storage.delete(post.coverImageKey).catch(() => {});
+      await this.storage.delete(post.coverImageKey).catch((err) => {
+        this.logger.error(
+          `Failed to delete storage object ${post.coverImageKey} for deleted blog post ${id} -- object may be orphaned`,
+          err instanceof Error ? err.stack : String(err),
+        );
+      });
     }
   }
 

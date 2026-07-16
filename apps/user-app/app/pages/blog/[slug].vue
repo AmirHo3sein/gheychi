@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { renderMarkdown } from '../../utils/markdown'
+import { resolveBlogDescription } from '../../utils/markdown-excerpt'
 
 interface BlogArticle {
   id: string
@@ -36,9 +37,14 @@ const requestUrl = useRequestURL()
 const canonicalUrl = `${requestUrl.origin}/blog/${post.value.slug}`
 
 const seoTitle = post.value.ogTitle ?? post.value.title
-// When both SEO override and excerpt are null, no description meta tag is emitted at all --
-// accepted: an absent description beats an empty or misleading one.
-const seoDescription = post.value.metaDescription ?? post.value.excerpt ?? undefined
+// When both the SEO override and excerpt are null, fall back to a plain-text excerpt derived
+// from the raw markdown body (closes the Plan-8 fast-follow gap). An effectively-empty body
+// still emits no description tag at all rather than an empty one.
+const seoDescription = resolveBlogDescription(
+  post.value.metaDescription,
+  post.value.excerpt,
+  post.value.bodyMarkdown,
+)
 
 useSeoMeta({
   title: seoTitle,

@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import {
-  Body, Controller, Delete, Get, HttpCode, HttpStatus, Inject, NotFoundException, Param,
+  Body, Controller, Delete, Get, HttpCode, HttpStatus, Inject, Logger, NotFoundException, Param,
   ParseFilePipeBuilder, ParseUUIDPipe, Patch, Post, Req, UploadedFile, UseGuards, UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -22,6 +22,8 @@ const EXTENSION_BY_MIME_TYPE: Record<string, string> = {
 @Controller('salons/mine/photos')
 @UseGuards(AuthGuard, SalonOwnerGuard)
 export class SalonPhotosController {
+  private readonly logger = new Logger(SalonPhotosController.name);
+
   constructor(
     @InjectRepository(SalonPhoto) private readonly photos: Repository<SalonPhoto>,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
@@ -88,12 +90,18 @@ export class SalonPhotosController {
     if (!photo) throw new NotFoundException();
     await this.photos.delete({ id, salonId });
     // Best-effort: the DB row is the source of truth for what's shown in the gallery; an
-    // orphaned object left in storage after a delete failure is a harmless cleanup gap,
-    // not a user-visible bug (same class of tradeoff as this codebase's SMS/push sends).
+    // orphaned object left in storage after a delete failure is a cleanup gap, not a
+    // user-visible bug (same class of tradeoff as this codebase's SMS/push sends) -- so
+    // the failure is logged for observability but never fails the request.
     // Skip pre-migration rows whose storage_key defaulted to '' -- deleting that would
     // resolve to the uploads root directory itself.
     if (photo.storageKey) {
-      await this.storage.delete(photo.storageKey).catch(() => {});
+      await this.storage.delete(photo.storageKey).catch((err) => {
+        this.logger.error(
+          `Failed to delete storage object ${photo.storageKey} for salon photo ${photo.id} (salon ${salonId}) -- object may be orphaned`,
+          err instanceof Error ? err.stack : String(err),
+        );
+      });
     }
   }
 }
