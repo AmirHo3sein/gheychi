@@ -10,7 +10,13 @@ export interface PaymentVerifyResult {
   refId: string | null;
 }
 
+export interface PaymentRefundResult {
+  success: boolean;
+  refundRefId: string | null;
+}
+
 export interface PaymentGateway {
   requestPayment(amountToman: number, description: string, callbackUrl: string): Promise<PaymentRequestResult>;
   verifyPayment(authority: string, amountToman: number): Promise<PaymentVerifyResult>;
+  refundPayment(authority: string): Promise<PaymentRefundResult>;
 }

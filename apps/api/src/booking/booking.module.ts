@@ -47,7 +47,7 @@ import { ZarinpalGateway } from './zarinpal-payment.gateway';
       inject: [ConfigService],
       useFactory: (config: ConfigService) =>
         config.get('PAYMENT_GATEWAY') === 'zarinpal'
-          ? new ZarinpalGateway(config.getOrThrow('ZARINPAL_MERCHANT_ID'))
+          ? new ZarinpalGateway(config.getOrThrow('ZARINPAL_MERCHANT_ID'), config.getOrThrow('ZARINPAL_ACCESS_TOKEN'))
           : new MockPaymentGateway(),
     },
   ],
