@@ -210,3 +210,48 @@ describe('PaymentsService.handleCallback lost-CAS recovery', () => {
     expect(raise).not.toHaveBeenCalled();
   });
 });
+
+describe('PaymentsService.handleCallback verify-persist failure', () => {
+  it('raises a warning alert when persisting the verified payment fails, and still rethrows', async () => {
+    const raise = jest.fn().mockResolvedValue(undefined);
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PaymentsService,
+        {
+          provide: getRepositoryToken(Payment),
+          useValue: {
+            findOneBy: jest.fn().mockResolvedValue({
+              id: 'pay-1',
+              bookingId: 'booking-1',
+              authority: 'AUTH123',
+              amount: 200_000,
+              status: 'initiated',
+            }),
+            update: jest.fn(),
+          },
+        },
+        { provide: getRepositoryToken(Booking), useValue: { findOneBy: jest.fn() } },
+        // Zarinpal has already confirmed the charge (verify succeeds below); the
+        // transaction persisting paid/confirmed then fails -- the .catch must fire
+        // the verify-persist alert and still rethrow for the caller.
+        { provide: DataSource, useValue: { transaction: jest.fn().mockRejectedValue(new Error('db down')) } },
+        { provide: SalonsService, useValue: {} },
+        { provide: UsersService, useValue: { findById: jest.fn() } },
+        { provide: SMS_PROVIDER, useValue: { send: jest.fn() } },
+        {
+          provide: PAYMENT_GATEWAY,
+          useValue: { verifyPayment: jest.fn().mockResolvedValue({ success: true, refId: 'REF-1' }) },
+        },
+        { provide: PushService, useValue: { sendToUser: jest.fn() } },
+        { provide: AlertsService, useValue: { raise } },
+      ],
+    }).compile();
+    const service = moduleRef.get(PaymentsService);
+
+    await expect(service.handleCallback('AUTH123', 'OK')).rejects.toThrow('db down');
+
+    expect(raise).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'verify-persist:pay-1', severity: 'warning' }),
+    );
+  });
+});
