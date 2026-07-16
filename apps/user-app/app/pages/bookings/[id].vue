@@ -7,6 +7,7 @@ interface BookingDetail {
   priceSnapshot: number
   depositAmount: number
   status: string
+  refundStatus: 'pending' | 'done' | null
 }
 
 const route = useRoute()
@@ -29,6 +30,8 @@ if (!booking.value) {
     <p>{{ new Date(booking!.startsAt).toLocaleString('fa-IR') }}</p>
     <p>مبلغ کل: {{ booking!.priceSnapshot.toLocaleString('fa-IR') }} تومان</p>
     <p>پیش‌پرداخت: {{ booking!.depositAmount.toLocaleString('fa-IR') }} تومان</p>
+    <p v-if="booking!.refundStatus === 'pending'" class="text-(--color-accent)">بازگشت وجه در حال انجام است</p>
+    <p v-else-if="booking!.refundStatus === 'done'" class="text-(--color-accent)">وجه بازگردانده شد</p>
     <NuxtLink to="/bookings" class="block text-(--color-accent)">بازگشت به نوبت‌های من</NuxtLink>
   </div>
 </template>
