@@ -74,13 +74,17 @@ export class PaymentReconciliationJob {
             // Same reasoning in reverse: only cancel a booking that's still
             // pending_payment. If it already expired or was cancelled, there's
             // nothing left to do to it -- the payment simply gets marked failed
-            // (Zarinpal never captured anything).
+            // (Zarinpal never captured anything). The payment write carries the
+            // same 'initiated' guard as the success branch: a late OK callback
+            // can mark the payment paid between our verify returning failure and
+            // this transaction committing, and clobbering that 'paid' to 'failed'
+            // would vanish a genuinely captured deposit from earnings.
             await em.update(
               Booking,
               { id: payment.bookingId, status: 'pending_payment' },
               { status: 'cancelled_by_user' },
             );
-            await em.update(Payment, { id: payment.id }, { status: 'failed' });
+            await em.update(Payment, { id: payment.id, status: 'initiated' }, { status: 'failed' });
           }
         });
         reconciled++;

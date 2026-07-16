@@ -244,16 +244,29 @@ export class BookingsService {
           refund ? { status: 'refund_pending', refundRequestedAt: new Date() } : { status: 'paid' },
         );
       } else {
-        await em.update(Payment, { bookingId: booking.id }, { status: 'failed' });
+        // Guarded on 'initiated' as defense-in-depth: if a payment callback
+        // captures the money around this cancellation, the callback's own
+        // lost-CAS recovery (PaymentsService.handleCallback) queues the refund
+        // for a payment we marked 'failed' -- but this guard ensures we never
+        // clobber a payment that already progressed past 'initiated'.
+        await em.update(Payment, { bookingId: booking.id, status: 'initiated' }, { status: 'failed' });
       }
     });
 
     // Attempt the real refund immediately so the common case completes within this
-    // request (mock/happy path: customer sees the final state right away). attemptRefund
-    // never throws -- a gateway failure leaves the payment refund_pending and the
-    // cancellation response unaffected; RefundRetryJob self-heals it later.
+    // request (mock/happy path: customer sees the final state right away). The
+    // cancellation is already committed at this point, so NOTHING from the attempt
+    // may surface as an error response: attemptRefund catches gateway failures
+    // internally, but a transient DB error inside it can still throw -- swallow and
+    // log it here, leaving the payment refund_pending for RefundRetryJob to self-heal.
     if (refund && booking.status === 'confirmed') {
-      await this.paymentsService.attemptRefund(booking.id);
+      try {
+        await this.paymentsService.attemptRefund(booking.id);
+      } catch (err) {
+        this.logger.error(
+          `Inline refund attempt failed after cancelling booking ${booking.id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
 
     return (await this.bookings.findOneBy({ id: booking.id }))!;

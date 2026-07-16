@@ -118,3 +118,77 @@ describe('PaymentsService.attemptRefund', () => {
     expect(pushSend).not.toHaveBeenCalled();
   });
 });
+
+describe('PaymentsService.handleCallback lost-CAS recovery', () => {
+  let service: PaymentsService;
+  let paymentsFindOneBy: jest.Mock;
+  let paymentsUpdate: jest.Mock;
+  let verifyPayment: jest.Mock;
+
+  const INITIATED_PAYMENT = {
+    id: 'pay-1',
+    bookingId: 'booking-1',
+    authority: 'AUTH123',
+    amount: 200_000,
+    status: 'initiated',
+  };
+
+  beforeEach(async () => {
+    paymentsFindOneBy = jest.fn();
+    paymentsUpdate = jest.fn().mockResolvedValue({ affected: 1 });
+    verifyPayment = jest.fn().mockResolvedValue({ success: true, refId: 'REF-1' });
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PaymentsService,
+        { provide: getRepositoryToken(Payment), useValue: { findOneBy: paymentsFindOneBy, update: paymentsUpdate } },
+        { provide: getRepositoryToken(Booking), useValue: { findOneBy: jest.fn() } },
+        {
+          provide: DataSource,
+          // Every em.update returns affected=0, so the initiated->paid CAS inside
+          // handleCallback's transaction is always LOST -- exactly the state after a
+          // concurrent writer (duplicate callback or cancel()) beat this call.
+          useValue: {
+            transaction: jest.fn(async (cb: (em: unknown) => unknown) =>
+              cb({ update: jest.fn().mockResolvedValue({ affected: 0 }) }),
+            ),
+          },
+        },
+        { provide: SalonsService, useValue: {} },
+        { provide: UsersService, useValue: { findById: jest.fn() } },
+        { provide: SMS_PROVIDER, useValue: { send: jest.fn() } },
+        { provide: PAYMENT_GATEWAY, useValue: { verifyPayment } },
+        { provide: PushService, useValue: { sendToUser: jest.fn() } },
+      ],
+    }).compile();
+
+    service = moduleRef.get(PaymentsService);
+  });
+
+  it('queues an automatic refund when cancel() marked the payment failed mid-callback (captured money must not strand)', async () => {
+    // First read (pre-verify): still initiated. Re-read after losing the CAS:
+    // 'failed' -- cancel() committed while we were inside verifyPayment.
+    paymentsFindOneBy
+      .mockResolvedValueOnce({ ...INITIATED_PAYMENT })
+      .mockResolvedValueOnce({ ...INITIATED_PAYMENT, status: 'failed' });
+
+    const result = await service.handleCallback('AUTH123', 'OK');
+
+    expect(result).toEqual({ status: 'failed', bookingId: 'booking-1' });
+    expect(paymentsUpdate).toHaveBeenCalledWith(
+      { id: 'pay-1', status: 'failed' },
+      expect.objectContaining({ status: 'refund_pending', refId: 'REF-1', refundRequestedAt: expect.any(Date) }),
+    );
+  });
+
+  it('treats a lost CAS with the payment already paid as a benign duplicate callback', async () => {
+    paymentsFindOneBy
+      .mockResolvedValueOnce({ ...INITIATED_PAYMENT })
+      .mockResolvedValueOnce({ ...INITIATED_PAYMENT, status: 'paid' });
+
+    const result = await service.handleCallback('AUTH123', 'OK');
+
+    expect(result).toEqual({ status: 'success', bookingId: 'booking-1' });
+    expect(paymentsUpdate).not.toHaveBeenCalled();
+  });
+});

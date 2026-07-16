@@ -43,10 +43,17 @@ export class RefundRetryJob {
           `Payment ${payment.id} has been refund_pending since ${payment.refundRequestedAt.toISOString()} (over ${ESCALATE_AFTER_HOURS}h) -- needs operator attention`,
         );
       }
-      // attemptRefund never throws (it catches gateway errors internally), so one bad
-      // payment can't block the rest of the batch.
-      const outcome = await this.paymentsService.attemptRefund(payment.bookingId);
-      if (outcome === 'refunded') refunded++;
+      // attemptRefund catches gateway failures internally, but a transient DB error
+      // inside it can still throw -- one bad payment must not block the rest of the
+      // batch (same per-payment isolation policy as the reconciliation job).
+      try {
+        const outcome = await this.paymentsService.attemptRefund(payment.bookingId);
+        if (outcome === 'refunded') refunded++;
+      } catch (err) {
+        this.logger.error(
+          `Refund retry failed for payment ${payment.id} (booking ${payment.bookingId}): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
     return refunded;
   }

@@ -100,17 +100,43 @@ export class PaymentsService {
 
     if (transitioned) {
       await this.notifyConfirmed(payment.bookingId);
+      return { status: 'success', bookingId: payment.bookingId };
     }
 
+    // Losing the initiated->paid CAS has two very different causes. The benign,
+    // common one is a duplicate callback delivery -- the winning call already
+    // recorded 'paid' and sent the notification, so reporting success is correct.
+    // The dangerous one is cancel() winning a race against this callback: it
+    // committed booking->cancelled + payment->failed while we were inside
+    // verifyPayment, AFTER Zarinpal had already captured the money. Without
+    // recovery here the captured deposit would be stranded on a 'failed' payment
+    // that no background job ever revisits (reconciliation scans 'initiated',
+    // the refund retry job scans 'refund_pending') -- silent money loss. The
+    // status-guarded update below queues the refund exactly once even if this
+    // path itself races another writer.
+    const current = await this.payments.findOneBy({ id: payment.id });
+    if (current?.status === 'failed') {
+      this.logger.error(
+        `Payment ${payment.id} (authority ${authority}) was captured by Zarinpal but booking ${payment.bookingId} was cancelled mid-callback -- queueing automatic refund`,
+      );
+      await this.payments.update(
+        { id: payment.id, status: 'failed' },
+        { status: 'refund_pending', refId: verify.refId, refundRequestedAt: new Date() },
+      );
+      return { status: 'failed', bookingId: payment.bookingId };
+    }
     return { status: 'success', bookingId: payment.bookingId };
   }
 
   /**
    * The single consumer for refund_pending payments -- called inline by
    * BookingsService.cancel() right after its transaction commits, and by
-   * RefundRetryJob for anything that slipped through. Never throws: a gateway
-   * failure just leaves the payment refund_pending for the retry job's next
-   * tick. Idempotent at both layers -- the conditional UPDATE means only one
+   * RefundRetryJob for anything that slipped through. Gateway failures are
+   * caught internally (the payment just stays refund_pending for the retry
+   * job's next tick), but an unexpected error -- e.g. a transient DB failure in
+   * the reads/update below -- CAN still propagate, so callers for whom a throw
+   * must not surface (cancel(), the retry job's batch loop) wrap this call.
+   * Idempotent at both layers -- the conditional UPDATE means only one
    * concurrent attempt records the refund (and sends the one notification),
    * and the gateway treats a repeat refund of the same authority as success.
    */

@@ -140,7 +140,9 @@ describe('BookingsService.cancel', () => {
 
     await service.cancel('booking-1', 'customer-1');
 
-    expect(emUpdate).toHaveBeenCalledWith(Payment, { bookingId: 'booking-1' }, { status: 'failed' });
+    // The 'initiated' guard means a payment that progressed past initiated (a
+    // callback captured money mid-cancel) is never clobbered to 'failed'.
+    expect(emUpdate).toHaveBeenCalledWith(Payment, { bookingId: 'booking-1', status: 'initiated' }, { status: 'failed' });
     expect(attemptRefund).not.toHaveBeenCalled();
   });
 
@@ -151,5 +153,15 @@ describe('BookingsService.cancel', () => {
     const result = await service.cancel('booking-1', 'owner-1');
 
     expect(result).toBeDefined();
+  });
+
+  it('still succeeds the cancel when the inline refund attempt throws (cancellation is already committed)', async () => {
+    bookingsFindOneBy.mockResolvedValue({ ...BOOKING });
+    attemptRefund.mockRejectedValue(new Error('transient DB failure'));
+
+    const result = await service.cancel('booking-1', 'owner-1');
+
+    expect(result).toBeDefined();
+    expect(attemptRefund).toHaveBeenCalledWith('booking-1');
   });
 });
