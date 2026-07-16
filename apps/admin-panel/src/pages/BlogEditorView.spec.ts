@@ -27,10 +27,15 @@ const POST = {
   publishedAt: null as string | null,
 }
 
-// Dispatch by URL+method so every flow (initial GET, categories GET, create POST, slug
-// PATCH, publish POST, unpublish POST, DELETE) resolves independently of call order.
+// Dispatch by URL+method so every flow (initial GET, categories GET, create POST, publish
+// POST, unpublish POST, PATCH, DELETE) resolves independently of call order.
 function dispatchFetch(
-  options: { publishError?: { status: number; message: string }; initial?: Partial<typeof POST> } = {},
+  options: {
+    publishError?: { status: number; message: string }
+    createError?: { status: number; message: string }
+    updateError?: { status: number; message: string }
+    initial?: Partial<typeof POST>
+  } = {},
 ) {
   let current: Record<string, unknown> = { ...POST, ...options.initial }
   fetchMock.mockImplementation(async (path: string, opts?: { method?: string; body?: unknown }) => {
@@ -39,8 +44,12 @@ function dispatchFetch(
       return { data: [{ id: 1, name: 'مو', slug: 'mou' }], error: null }
     }
     if (method === 'GET' && path === '/admin/blog/posts/p1') return { data: { ...current }, error: null }
-    if (method === 'POST' && path === '/admin/blog/posts') return { data: { ...current }, error: null }
+    if (method === 'POST' && path === '/admin/blog/posts') {
+      if (options.createError) return { data: null, error: options.createError }
+      return { data: { ...current }, error: null }
+    }
     if (method === 'PATCH' && path === '/admin/blog/posts/p1') {
+      if (options.updateError) return { data: null, error: options.updateError }
       current = { ...current, ...(opts?.body as Record<string, unknown>) }
       return { data: { ...current }, error: null }
     }
@@ -125,7 +134,7 @@ describe('BlogEditorView', () => {
     expect(router.currentRoute.value.fullPath).toBe('/blog/p1')
   })
 
-  it('applies a manually edited slug with a follow-up PATCH after create', async () => {
+  it('sends a manually edited slug in the create body itself (no follow-up PATCH)', async () => {
     const { wrapper, router } = await mountAt('/blog/new')
 
     await wrapper.get('[data-testid="title-input"]').setValue('راهنمای مراقبت از مو')
@@ -135,11 +144,66 @@ describe('BlogEditorView', () => {
     await wrapper.get('[data-testid="save-button"]').trigger('click')
     await flushPromises()
 
-    expect(fetchMock).toHaveBeenCalledWith('/admin/blog/posts/p1', {
-      method: 'PATCH',
-      body: { slug: 'custom-slug' },
-    })
+    const createCall = fetchMock.mock.calls.find(([p]) => p === '/admin/blog/posts')
+    expect(createCall?.[1]).toMatchObject({ method: 'POST', body: { slug: 'custom-slug' } })
+    // Atomic create-with-slug: the old follow-up slug PATCH must not fire.
+    expect(fetchMock.mock.calls.some(([, o]) => (o as { method?: string } | undefined)?.method === 'PATCH')).toBe(
+      false,
+    )
     expect(router.currentRoute.value.fullPath).toBe('/blog/p1')
+  })
+
+  it('on a 409 slug conflict at create, stays on the form with state intact and an inline slug error', async () => {
+    dispatchFetch({ createError: { status: 409, message: 'این نامک قبلاً استفاده شده است' } })
+    const { wrapper, router } = await mountAt('/blog/new')
+
+    await wrapper.get('[data-testid="title-input"]').setValue('راهنمای مراقبت از مو')
+    await wrapper.get('[data-testid="body-input"]').setValue('متن مطلب')
+    await wrapper.get('[data-testid="slug-input"]').setValue('taken-slug')
+
+    await wrapper.get('[data-testid="save-button"]').trigger('click')
+    await flushPromises()
+
+    // Nothing was created, so no navigation — the admin keeps editing in place.
+    expect(router.currentRoute.value.fullPath).toBe('/blog/new')
+    expect(wrapper.get('[data-testid="slug-error"]').text()).toBe('این نامک قبلاً استفاده شده است')
+    // Form state survives and the save button is usable again (submitting reset).
+    expect((wrapper.get('[data-testid="title-input"]').element as HTMLInputElement).value).toBe(
+      'راهنمای مراقبت از مو',
+    )
+    expect((wrapper.get('[data-testid="slug-input"]').element as HTMLInputElement).value).toBe('taken-slug')
+    expect((wrapper.get('[data-testid="save-button"]').element as HTMLButtonElement).disabled).toBe(false)
+
+    // Editing the slug clears the inline error.
+    await wrapper.get('[data-testid="slug-input"]').setValue('taken-slug-2')
+    expect(wrapper.find('[data-testid="slug-error"]').exists()).toBe(false)
+  })
+
+  it('on a 409 slug conflict when editing an existing post, shows the inline slug error with state intact', async () => {
+    dispatchFetch({ updateError: { status: 409, message: 'این نامک قبلاً استفاده شده است' } })
+    const { wrapper, router } = await mountAt('/blog/p1')
+
+    await wrapper.get('[data-testid="slug-input"]').setValue('taken-slug')
+
+    await wrapper.get('[data-testid="save-button"]').trigger('click')
+    await flushPromises()
+
+    // The PATCH created/changed nothing, so the admin stays on the editor with the
+    // server's message inline (not just a toast).
+    expect(router.currentRoute.value.fullPath).toBe('/blog/p1')
+    expect(wrapper.get('[data-testid="slug-error"]').text()).toBe('این نامک قبلاً استفاده شده است')
+    // Form state survives -- no applyPost/reload reverted the edited slug -- and the save
+    // button is usable again (submitting reset).
+    expect(postLoads()).toBe(1) // initial load only
+    expect((wrapper.get('[data-testid="title-input"]').element as HTMLInputElement).value).toBe(
+      'راهنمای رنگ مو',
+    )
+    expect((wrapper.get('[data-testid="slug-input"]').element as HTMLInputElement).value).toBe('taken-slug')
+    expect((wrapper.get('[data-testid="save-button"]').element as HTMLButtonElement).disabled).toBe(false)
+
+    // Editing the slug clears the inline error.
+    await wrapper.get('[data-testid="slug-input"]').setValue('taken-slug-2')
+    expect(wrapper.find('[data-testid="slug-error"]').exists()).toBe(false)
   })
 
   it('publishes and reloads the post from the server', async () => {

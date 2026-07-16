@@ -11,6 +11,17 @@ export class CreateBlogPostDto {
   @Length(1, 200)
   title: string;
 
+  // Optional explicit slug — same escape hatch as CreateBlogCategoryDto.slug: omitted,
+  // the server derives one from the title (post-<hex> for Persian titles). Accepting it
+  // on create keeps the operation atomic — a 409 slug conflict creates nothing, instead
+  // of the old create-then-PATCH flow silently keeping the auto slug. Cap matches
+  // blog_posts.slug varchar(220).
+  @IsOptional()
+  @IsString()
+  @Matches(SLUG_PATTERN)
+  @MaxLength(220)
+  slug?: string;
+
   @IsString()
   @MinLength(1)
   bodyMarkdown: string;

@@ -47,6 +47,7 @@ const notFound = ref(false)
 const title = ref('')
 const slug = ref('')
 const slugDirty = ref(false)
+const slugError = ref('')
 const categoryId = ref<string | number>('')
 const authorName = ref('')
 const excerpt = ref('')
@@ -76,6 +77,7 @@ watch(title, (t) => {
 
 function onSlugInput() {
   slugDirty.value = true
+  slugError.value = ''
 }
 
 function toggleSeo() {
@@ -87,6 +89,7 @@ function applyPost(p: AdminBlogPost) {
   title.value = p.title
   slug.value = p.slug
   slugDirty.value = false
+  slugError.value = ''
   categoryId.value = p.categoryId ?? ''
   authorName.value = p.authorName ?? ''
   excerpt.value = p.excerpt ?? ''
@@ -137,26 +140,30 @@ async function save() {
   confirmingDelete.value = false
 
   if (isCreate.value) {
-    // Create never sends a slug -- the backend derives the authoritative one. A manually
-    // edited slug is applied with a follow-up PATCH; its 409 («این نامک قبلاً استفاده
-    // است») surfaces via the standard toast without losing the created draft.
-    const { data } = await apiFetch<AdminBlogPost>('/admin/blog/posts', { method: 'POST', body: basePayload() })
+    // A manually edited slug rides on the create itself, so the operation is atomic: a
+    // 409 («این نامک قبلاً استفاده شده است») creates nothing and the form stays intact.
+    // The un-edited client-side preview is never sent -- it keeps Persian characters and
+    // has no uniqueness suffix; the backend derives the authoritative slug instead.
+    const manualSlug = slugDirty.value ? slug.value.trim() : ''
+    const { data, error } = await apiFetch<AdminBlogPost>('/admin/blog/posts', {
+      method: 'POST',
+      body: { ...basePayload(), ...(manualSlug ? { slug: manualSlug } : {}) },
+    })
     if (data) {
-      if (slugDirty.value && slug.value.trim()) {
-        await apiFetch(`/admin/blog/posts/${data.id}`, { method: 'PATCH', body: { slug: slug.value.trim() } })
-      }
       submitting.value = false
       await router.replace(`/blog/${data.id}`)
       return
     }
+    if (error?.status === 409) slugError.value = error.message
   } else {
-    const { data } = await apiFetch<AdminBlogPost>(`/admin/blog/posts/${postId.value}`, {
+    const { data, error } = await apiFetch<AdminBlogPost>(`/admin/blog/posts/${postId.value}`, {
       method: 'PATCH',
       // An emptied slug field is skipped rather than sent: '' fails the backend's
       // SLUG_PATTERN with a raw class-validator message; the server keeps the old slug.
       body: { ...basePayload(), ...(slug.value.trim() ? { slug: slug.value.trim() } : {}) },
     })
     if (data) applyPost(data)
+    else if (error?.status === 409) slugError.value = error.message
   }
   submitting.value = false
 }
@@ -328,8 +335,11 @@ async function removeCover() {
                 class="w-full rounded-lg border border-(--color-border) p-2 text-left text-sm"
                 @input="onSlugInput"
               />
+              <p v-if="slugError" data-testid="slug-error" class="mt-1 text-xs text-(--tone-danger-text)">
+                {{ slugError }}
+              </p>
               <p v-if="isCreate" class="mt-1 text-xs text-(--color-muted)">
-                نامک نهایی هنگام ایجاد توسط سرور ساخته می‌شود؛ این فیلد فقط پیش‌نمایش است مگر آن را دستی ویرایش کنید.
+                تا وقتی این فیلد را دستی ویرایش نکنید فقط پیش‌نمایش است و نامک نهایی را سرور از روی عنوان می‌سازد؛ در صورت ویرایش، همین نامک ثبت می‌شود.
               </p>
               <p v-if="post?.status === 'published'" class="mt-1 text-xs text-(--tone-warning-text)">
                 تغییر نامک مطلب منتشرشده، آدرس عمومی آن را تغییر می‌دهد.

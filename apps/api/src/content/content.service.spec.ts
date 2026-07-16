@@ -153,6 +153,14 @@ describe('ContentService.createPost', () => {
     );
   });
 
+  it('honors an explicit dto.slug instead of deriving one from the title', async () => {
+    const { service, mocks } = await setup();
+
+    await service.createPost({ title: 'راهنمای رنگ مو', bodyMarkdown: '# متن', slug: 'rang-mou-custom' });
+
+    expect(mocks.postsRepo.create).toHaveBeenCalledWith(expect.objectContaining({ slug: 'rang-mou-custom' }));
+  });
+
   it('carries the optional content/SEO fields through', async () => {
     const { service, mocks } = await setup();
 
@@ -373,6 +381,16 @@ describe('blog post DTOs', () => {
     await expect(
       validate(plainToInstance(CreateBlogPostDto, { title: 'ترندهای رنگ مو', bodyMarkdown: '# متن' })),
     ).resolves.toEqual([]);
+  });
+
+  it('CreateBlogPostDto accepts an optional slug and rejects a malformed one', async () => {
+    await expect(
+      validate(plainToInstance(CreateBlogPostDto, { title: 'ترندها', bodyMarkdown: '#', slug: 'رنگ-مو-تابستان' })),
+    ).resolves.toEqual([]);
+    const errors = await validate(
+      plainToInstance(CreateBlogPostDto, { title: 'ترندها', bodyMarkdown: '#', slug: 'has space' }),
+    );
+    expect(errors.map((e) => e.property)).toContain('slug');
   });
 
   it('UpdateBlogPostDto accepts a Persian slug and rejects one with whitespace', async () => {

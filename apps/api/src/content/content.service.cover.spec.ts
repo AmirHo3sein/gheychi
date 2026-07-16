@@ -100,17 +100,22 @@ describe('ContentService.setCover', () => {
     expect(posts.save.mock.invocationCallOrder[0]).toBeLessThan(storage.delete.mock.invocationCallOrder[0]);
   });
 
-  it('tolerates a failing old-object delete (best-effort cleanup)', async () => {
+  it('tolerates a failing old-object delete (best-effort cleanup) and logs the orphan', async () => {
     const { service } = makeService({
       posts: {
         findOneBy: jest.fn().mockResolvedValue({ ...draftPost(), coverImageKey: 'blog/post-1/old.jpg' }),
       },
       storage: { delete: jest.fn().mockRejectedValue(new Error('storage down')) },
     });
+    const errorLog = jest.spyOn(service['logger'], 'error').mockImplementation(() => undefined);
 
     await expect(service.setCover('post-1', jpeg)).resolves.toMatchObject({
       coverImageKey: expect.stringMatching(/^blog\/post-1\//),
     });
+    expect(errorLog).toHaveBeenCalledWith(
+      expect.stringContaining('blog/post-1/old.jpg'),
+      expect.stringContaining('storage down'),
+    );
   });
 });
 
@@ -145,16 +150,21 @@ describe('ContentService.clearCover', () => {
     expect(storage.delete).not.toHaveBeenCalled();
   });
 
-  it('tolerates a failing object delete', async () => {
+  it('tolerates a failing object delete and logs the orphan', async () => {
     const { service, posts } = makeService({
       posts: {
         findOneBy: jest.fn().mockResolvedValue({ ...draftPost(), coverImageKey: 'blog/post-1/old.jpg' }),
       },
       storage: { delete: jest.fn().mockRejectedValue(new Error('storage down')) },
     });
+    const errorLog = jest.spyOn(service['logger'], 'error').mockImplementation(() => undefined);
 
     await expect(service.clearCover('post-1')).resolves.toBeUndefined();
     expect(posts.save).toHaveBeenCalled();
+    expect(errorLog).toHaveBeenCalledWith(
+      expect.stringContaining('blog/post-1/old.jpg'),
+      expect.stringContaining('storage down'),
+    );
   });
 });
 
@@ -202,5 +212,22 @@ describe('ContentService.deletePost cover cleanup', () => {
     await service.deletePost('post-1');
 
     expect(storage.delete).not.toHaveBeenCalled();
+  });
+
+  it('tolerates a failing cover delete and logs the orphan', async () => {
+    const { service, posts } = makeService({
+      posts: {
+        findOneBy: jest.fn().mockResolvedValue({ ...draftPost(), coverImageKey: 'blog/post-1/cover.jpg' }),
+      },
+      storage: { delete: jest.fn().mockRejectedValue(new Error('storage down')) },
+    });
+    const errorLog = jest.spyOn(service['logger'], 'error').mockImplementation(() => undefined);
+
+    await expect(service.deletePost('post-1')).resolves.toBeUndefined();
+    expect(posts.delete).toHaveBeenCalledWith({ id: 'post-1' });
+    expect(errorLog).toHaveBeenCalledWith(
+      expect.stringContaining('blog/post-1/cover.jpg'),
+      expect.stringContaining('storage down'),
+    );
   });
 });

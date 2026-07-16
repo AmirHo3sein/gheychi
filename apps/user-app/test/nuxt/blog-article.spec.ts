@@ -69,6 +69,20 @@ describe('blog article page', () => {
     expect(wrapper.find('a[href="/blog?category=hair"]').exists()).toBe(true)
   })
 
+  it('derives the description meta from the body when metaDescription and excerpt are both null', async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/blog/posts/healthy-hair-tips') return { ...ARTICLE, excerpt: null }
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    wrapper = await mountSuspended(BlogArticlePage)
+
+    // Head DOM writes are debounced by unhead, so poll rather than asserting synchronously.
+    await vi.waitFor(() => {
+      const meta = document.head.querySelector('meta[name="description"]')
+      expect(meta?.getAttribute('content')).toBe('شستشوی درست متن مقاله script alert(1) /script')
+    })
+  })
+
   it('throws the standard 404 for an unknown/unpublished slug', async () => {
     fetchMock.mockImplementation(async () => {
       // Shape matches how ofetch surfaces an HTTP error response.
