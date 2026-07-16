@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { LessThan } from 'typeorm';
+import { AlertsService } from '../alerts/alerts.service';
 import { Payment } from './payment.entity';
 import { PaymentsService } from './payments.service';
 import { RefundRetryJob } from './refund-retry.job';
@@ -9,16 +10,19 @@ describe('RefundRetryJob', () => {
   let job: RefundRetryJob;
   let paymentsFind: jest.Mock;
   let attemptRefund: jest.Mock;
+  let raise: jest.Mock;
 
   beforeEach(async () => {
     paymentsFind = jest.fn().mockResolvedValue([]);
     attemptRefund = jest.fn().mockResolvedValue('refunded');
+    raise = jest.fn().mockResolvedValue(undefined);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         RefundRetryJob,
         { provide: getRepositoryToken(Payment), useValue: { find: paymentsFind } },
         { provide: PaymentsService, useValue: { attemptRefund } },
+        { provide: AlertsService, useValue: { raise } },
       ],
     }).compile();
 
@@ -64,6 +68,9 @@ describe('RefundRetryJob', () => {
     await job.run();
 
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('pay-old'));
+    expect(raise).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'refund-stuck:pay-old', severity: 'critical' }),
+    );
   });
 
   it('does not escalate a payment still under the 24h threshold', async () => {
@@ -76,6 +83,7 @@ describe('RefundRetryJob', () => {
     await job.run();
 
     expect(errorSpy).not.toHaveBeenCalled();
+    expect(raise).not.toHaveBeenCalled();
   });
 
   it('continues the batch when one attemptRefund throws (per-payment isolation)', async () => {

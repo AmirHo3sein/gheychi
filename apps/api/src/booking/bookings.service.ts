@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import Redis from 'ioredis';
 import { DataSource, In, LessThan, MoreThan, Repository } from 'typeorm';
+import { AlertsService } from '../alerts/alerts.service';
 import { REDIS } from '../redis/redis.module';
 import { SalonService } from '../salons/salon-service.entity';
 import { Salon } from '../salons/salon.entity';
@@ -33,6 +34,7 @@ export class BookingsService {
     @Inject(REDIS) private readonly redis: Redis,
     @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
     private readonly paymentsService: PaymentsService,
+    private readonly alerts: AlertsService,
   ) {}
 
   async createHold(userId: string, dto: CreateBookingDto): Promise<{ booking: Booking; paymentUrl: string }> {
@@ -137,6 +139,12 @@ export class BookingsService {
       this.logger.error(
         `Failed to persist Zarinpal authority ${authority} for booking ${booking.id}: ${err instanceof Error ? err.message : String(err)}`,
       );
+      await this.alerts.raise({
+        key: `authority-persist:${booking.id}`,
+        severity: 'critical',
+        title: 'شناسه پرداخت ثبت نشد',
+        body: `شناسه پرداخت زرین‌پال برای رزرو ${booking.id} در پایگاه داده ثبت نشد و نیاز به تطبیق دستی دارد.`,
+      });
       throw err;
     }
 

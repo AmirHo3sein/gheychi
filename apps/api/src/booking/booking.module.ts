@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
+import { AlertsModule } from '../alerts/alerts.module';
 import { AuthModule } from '../auth/auth.module';
 import { PlatformConfigModule } from '../platform-config/platform-config.module';
 import { PushModule } from '../push/push.module';
@@ -30,6 +31,7 @@ import { ZarinpalGateway } from './zarinpal-payment.gateway';
     TypeOrmModule.forFeature([Booking, Payment]),
     SalonsModule,
     PlatformConfigModule,
+    AlertsModule,
     AuthModule,
     SmsModule,
     PushModule,

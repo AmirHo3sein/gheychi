@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
+import { AlertsService } from '../alerts/alerts.service';
 import { PushService } from '../push/push.service';
 import { SMS_PROVIDER, SmsProvider } from '../sms/sms.provider';
 import { SalonsService } from '../salons/salons.service';
@@ -25,6 +26,7 @@ export class PaymentsService {
     @Inject(SMS_PROVIDER) private readonly sms: SmsProvider,
     @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
     private readonly push: PushService,
+    private readonly alerts: AlertsService,
   ) {}
 
   async handleCallback(authority: string, status: string): Promise<{ status: CallbackOutcome; bookingId: string }> {
@@ -147,6 +149,12 @@ export class PaymentsService {
       // Shouldn't occur -- a captured payment always has an authority -- but if it
       // does, an automatic refund is impossible and an operator has to step in.
       this.logger.error(`Payment ${payment.id} is refund_pending but has no authority -- needs manual refund`);
+      await this.alerts.raise({
+        key: `refund-no-authority:${payment.id}`,
+        severity: 'critical',
+        title: 'بازپرداخت بدون شناسه پرداخت',
+        body: `پرداخت ${payment.id} در انتظار بازگشت وجه است اما شناسه (authority) ندارد؛ بازپرداخت خودکار ممکن نیست.`,
+      });
       return 'pending';
     }
 

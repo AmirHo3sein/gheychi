@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, Repository } from 'typeorm';
+import { AlertsService } from '../alerts/alerts.service';
 import { Payment } from './payment.entity';
 import { PaymentsService } from './payments.service';
 
@@ -20,6 +21,7 @@ export class RefundRetryJob {
   constructor(
     @InjectRepository(Payment) private readonly payments: Repository<Payment>,
     private readonly paymentsService: PaymentsService,
+    private readonly alerts: AlertsService,
   ) {}
 
   @Cron('*/5 * * * *')
@@ -42,6 +44,12 @@ export class RefundRetryJob {
         this.logger.error(
           `Payment ${payment.id} has been refund_pending since ${payment.refundRequestedAt.toISOString()} (over ${ESCALATE_AFTER_HOURS}h) -- needs operator attention`,
         );
+        await this.alerts.raise({
+          key: `refund-stuck:${payment.id}`,
+          severity: 'critical',
+          title: 'بازپرداخت معوق',
+          body: `بازگشت وجه پرداخت ${payment.id} بیش از ${ESCALATE_AFTER_HOURS} ساعت در انتظار مانده است و نیاز به بررسی دستی دارد.`,
+        });
       }
       // attemptRefund catches gateway failures internally, but a transient DB error
       // inside it can still throw -- one bad payment must not block the rest of the
