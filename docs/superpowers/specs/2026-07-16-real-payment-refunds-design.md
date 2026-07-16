@@ -37,7 +37,7 @@ initiated → paid → refund_pending → refunded
 - `refund_pending` — a refund is owed (cancel decided it, or reconciliation detected a late capture) but the gateway has not yet confirmed it.
 - `refunded` — **redefined**: the gateway confirmed the refund (`refund_ref_id` recorded). With the mock gateway this happens immediately.
 
-**Migration:** add nullable `refund_ref_id varchar` and `refunded_at timestamptz` to `payments`. `status` is already a plain varchar — no type change.
+**Migration:** add three nullable columns to `payments`: `refund_ref_id varchar`, `refunded_at timestamptz`, and `refund_requested_at timestamptz`. `refund_requested_at` is set by whichever producer marks the payment `refund_pending` — the `payments` table has no `updated_at`, and both the retry job's grace period and its 24-hour escalation need to know when the refund became owed. `status` is already a plain varchar — no type change.
 
 ## Gateway interface
 
