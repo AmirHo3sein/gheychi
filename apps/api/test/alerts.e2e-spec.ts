@@ -102,6 +102,12 @@ describe('Money-critical alerting (e2e)', () => {
   });
 
   it('the same condition does not alert twice inside the dedup window', async () => {
+    // Deliberately continues the previous test's scenario (its refund_pending payment
+    // and its first alert) -- the two its are one flow split for readability, so a
+    // failure here can also mean the previous test broke upstream. The isolation
+    // guarantee for the exact-count assertion below comes from e2e --runInBand plus
+    // this file's own resetDatabase(), not from the dedup key.
+    //
     // RefundRetryJob would re-detect the refused refund on its next tick; simulate by
     // re-running the inline attempt via a second cancel attempt being impossible, so
     // instead invoke the retry job directly after backdating the grace period.
