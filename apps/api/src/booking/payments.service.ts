@@ -7,7 +7,7 @@ import { SalonsService } from '../salons/salons.service';
 import { User } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
 import { Booking } from './booking.entity';
-import { PAYMENT_GATEWAY, PaymentGateway } from './payment-gateway';
+import { PAYMENT_GATEWAY, PaymentGateway, PaymentRefundResult } from './payment-gateway';
 import { Payment } from './payment.entity';
 
 export type CallbackOutcome = 'success' | 'failed' | 'already-confirmed';
@@ -103,6 +103,62 @@ export class PaymentsService {
     }
 
     return { status: 'success', bookingId: payment.bookingId };
+  }
+
+  /**
+   * The single consumer for refund_pending payments -- called inline by
+   * BookingsService.cancel() right after its transaction commits, and by
+   * RefundRetryJob for anything that slipped through. Never throws: a gateway
+   * failure just leaves the payment refund_pending for the retry job's next
+   * tick. Idempotent at both layers -- the conditional UPDATE means only one
+   * concurrent attempt records the refund (and sends the one notification),
+   * and the gateway treats a repeat refund of the same authority as success.
+   */
+  async attemptRefund(bookingId: string): Promise<'refunded' | 'pending' | 'skipped'> {
+    const payment = await this.payments.findOneBy({ bookingId });
+    if (!payment || payment.status !== 'refund_pending') return 'skipped';
+    if (!payment.authority) {
+      // Shouldn't occur -- a captured payment always has an authority -- but if it
+      // does, an automatic refund is impossible and an operator has to step in.
+      this.logger.error(`Payment ${payment.id} is refund_pending but has no authority -- needs manual refund`);
+      return 'pending';
+    }
+
+    let result: PaymentRefundResult;
+    try {
+      result = await this.gateway.refundPayment(payment.authority);
+    } catch (err) {
+      this.logger.error(
+        `Zarinpal refund threw for payment ${payment.id} (authority ${payment.authority}): ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return 'pending';
+    }
+    if (!result.success) {
+      this.logger.error(`Zarinpal refused the refund for payment ${payment.id} (authority ${payment.authority}) -- will retry`);
+      return 'pending';
+    }
+
+    const updated = await this.payments.update(
+      { id: payment.id, status: 'refund_pending' },
+      { status: 'refunded', refundRefId: result.refundRefId, refundedAt: new Date() },
+    );
+    // A losing concurrent attempt (inline cancel vs retry job) sees affected=0;
+    // the winner already recorded the refund and sent the notification.
+    if (!updated.affected) return 'skipped';
+
+    await this.notifyRefunded(payment.bookingId);
+    return 'refunded';
+  }
+
+  private async notifyRefunded(bookingId: string): Promise<void> {
+    const booking = await this.bookings.findOneBy({ id: bookingId });
+    if (!booking) return;
+    const customer = await this.usersService.findById(booking.userId);
+    if (!customer) return;
+    await this.notifyOne(customer, 'مبلغ ودیعه نوبت شما بازگردانده شد.', {
+      title: 'بازگشت وجه',
+      body: 'مبلغ ودیعه نوبت شما بازگردانده شد.',
+    });
   }
 
   private async markFailed(paymentId: string, bookingId: string): Promise<void> {
