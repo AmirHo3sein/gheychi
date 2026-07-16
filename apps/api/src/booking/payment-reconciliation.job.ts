@@ -45,16 +45,30 @@ export class PaymentReconciliationJob {
               // Zarinpal genuinely captured the money but the booking already moved
               // on (expired / cancelled) -- the customer must get it back. Queue an
               // automatic refund; RefundRetryJob performs it on its next tick.
-              this.logger.error(
-                `Payment ${payment.id} (authority ${payment.authority}) was confirmed by Zarinpal after its booking ${payment.bookingId} already left pending_payment -- queueing automatic refund`,
+              // Guarded on status 'initiated': if the customer's late callback won
+              // the race (handleCallback confirmed the booking and marked the
+              // payment paid between our verify and this transaction), affected is
+              // 0 and we must NOT queue a refund for a live booking.
+              const queued = await em.update(
+                Payment,
+                { id: payment.id, status: 'initiated' },
+                {
+                  status: 'refund_pending',
+                  refId: verify.refId,
+                  refundRequestedAt: new Date(),
+                },
               );
-              await em.update(Payment, { id: payment.id }, {
-                status: 'refund_pending',
-                refId: verify.refId,
-                refundRequestedAt: new Date(),
-              });
+              if (queued.affected) {
+                this.logger.error(
+                  `Payment ${payment.id} (authority ${payment.authority}) was confirmed by Zarinpal after its booking ${payment.bookingId} already left pending_payment -- queueing automatic refund`,
+                );
+              }
             } else {
-              await em.update(Payment, { id: payment.id }, { status: 'paid', refId: verify.refId });
+              await em.update(
+                Payment,
+                { id: payment.id, status: 'initiated' },
+                { status: 'paid', refId: verify.refId },
+              );
             }
           } else {
             // Same reasoning in reverse: only cancel a booking that's still

@@ -774,18 +774,34 @@ In `apps/api/src/booking/payment-reconciliation.job.ts`, replace the `verify.suc
               // Zarinpal genuinely captured the money but the booking already moved
               // on (expired / cancelled) -- the customer must get it back. Queue an
               // automatic refund; RefundRetryJob performs it on its next tick.
-              this.logger.error(
-                `Payment ${payment.id} (authority ${payment.authority}) was confirmed by Zarinpal after its booking ${payment.bookingId} already left pending_payment -- queueing automatic refund`,
+              // Guarded on status 'initiated': if the customer's late callback won
+              // the race (handleCallback confirmed the booking and marked the
+              // payment paid between our verify and this transaction), affected is
+              // 0 and we must NOT queue a refund for a live booking.
+              const queued = await em.update(
+                Payment,
+                { id: payment.id, status: 'initiated' },
+                {
+                  status: 'refund_pending',
+                  refId: verify.refId,
+                  refundRequestedAt: new Date(),
+                },
               );
-              await em.update(Payment, { id: payment.id }, {
-                status: 'refund_pending',
-                refId: verify.refId,
-                refundRequestedAt: new Date(),
-              });
+              if (queued.affected) {
+                this.logger.error(
+                  `Payment ${payment.id} (authority ${payment.authority}) was confirmed by Zarinpal after its booking ${payment.bookingId} already left pending_payment -- queueing automatic refund`,
+                );
+              }
             } else {
-              await em.update(Payment, { id: payment.id }, { status: 'paid', refId: verify.refId });
+              await em.update(
+                Payment,
+                { id: payment.id, status: 'initiated' },
+                { status: 'paid', refId: verify.refId },
+              );
             }
 ```
+
+Both `Payment` updates are conditioned on `status: 'initiated'` (matching the conditional-UPDATE race-safety convention used by `handleCallback` and `attemptRefund`): if the customer's late callback lands between the job's `verifyPayment()` and its transaction, `handleCallback` commits `paid`/`confirmed` first, the booking CAS sees `affected=0`, and an unguarded update here would flip a paid payment of a confirmed booking to `refund_pending` — issuing a real refund for a live booking. With the guard, the update is a no-op and no refund is queued or logged.
 
 - [ ] **Step 4: Run to verify it passes**
 
