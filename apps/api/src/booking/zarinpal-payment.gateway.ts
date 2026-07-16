@@ -114,10 +114,15 @@ export class ZarinpalGateway implements PaymentGateway {
    * POST /pg/v4/payment/refund.json with a Bearer personal access token
    * (generated in the Zarinpal panel -- separate from the merchant id).
    * Codes 100/101 are treated as success, mirroring verifyPayment's contract,
-   * so a repeat refund attempt after a crash is harmless (idempotent).
-   * VERIFY AGAINST ZARINPAL'S SANDBOX before taking real refunds -- the exact
-   * "already refunded" code must be confirmed there, same caveat as the class
-   * header note above.
+   * on the assumption that a repeat refund attempt after a crash is harmless.
+   * WARNING (2026-07-17 research): this endpoint matches Zarinpal's LEGACY
+   * REST refund contract, de-documented ~2023; the current official refund
+   * API is a GraphQL AddRefund mutation (different host, identifier, required
+   * amount, no numeric code), and Zarinpal permits ONE refund request per
+   * transaction -- so both the endpoint and the idempotency assumption are
+   * unverified and probably wrong. No sandbox covers refunds; before taking
+   * real refunds, execute docs/deployment/ZARINPAL-REFUND-VERIFICATION.md
+   * against production and rework this method per its findings.
    */
   async refundPayment(authority: string): Promise<PaymentRefundResult> {
     let res: Response;
