@@ -73,8 +73,9 @@ describe('Booking cancellation policy (e2e)', () => {
     expect(res.body.status).toBe('cancelled_by_user');
 
     const ds = app.get(DataSource);
-    const [payment] = await ds.query('SELECT status FROM payments WHERE id = $1', [paymentId]);
+    const [payment] = await ds.query('SELECT status, refund_ref_id FROM payments WHERE id = $1', [paymentId]);
     expect(payment.status).toBe('refunded');
+    expect(payment.refund_ref_id).toMatch(/^MOCKREFUND-/); // a real gateway refund happened, not just bookkeeping
   });
 
   it('forfeits the deposit when the user cancels inside the 24h window', async () => {
@@ -98,8 +99,9 @@ describe('Booking cancellation policy (e2e)', () => {
     expect(res.body.status).toBe('cancelled_by_salon');
 
     const ds = app.get(DataSource);
-    const [payment] = await ds.query('SELECT status FROM payments WHERE id = $1', [paymentId]);
+    const [payment] = await ds.query('SELECT status, refund_ref_id FROM payments WHERE id = $1', [paymentId]);
     expect(payment.status).toBe('refunded');
+    expect(payment.refund_ref_id).toMatch(/^MOCKREFUND-/); // a real gateway refund happened, not just bookkeeping
   });
 
   it('rejects cancellation by someone who is neither the customer nor the salon owner', async () => {
@@ -132,5 +134,22 @@ describe('Booking cancellation policy (e2e)', () => {
     const ds = app.get(DataSource);
     const [payment] = await ds.query('SELECT status FROM payments WHERE booking_id = $1', [created.body.booking.id]);
     expect(payment.status).toBe('failed');
+  });
+
+  it('leaves the payment refund_pending when the gateway refuses the refund, without failing the cancel', async () => {
+    const { bookingId, paymentId } = await bookAndConfirm(48);
+    const ds = app.get(DataSource);
+    // Force MockPaymentGateway.refundPayment to refuse by rewriting the authority
+    // to contain the sentinel it checks for.
+    await ds.query(`UPDATE payments SET authority = 'MOCK-REFUND-FAIL-' || authority WHERE id = $1`, [paymentId]);
+
+    await request(app.getHttpServer())
+      .post(`/api/bookings/${bookingId}/cancel`)
+      .set('Cookie', customerCookie)
+      .expect(201);
+
+    const [payment] = await ds.query('SELECT status, refund_ref_id FROM payments WHERE id = $1', [paymentId]);
+    expect(payment.status).toBe('refund_pending'); // owed, not yet issued -- RefundRetryJob picks it up
+    expect(payment.refund_ref_id).toBeNull();
   });
 });

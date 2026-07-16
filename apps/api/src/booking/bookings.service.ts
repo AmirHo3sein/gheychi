@@ -14,6 +14,7 @@ import { CreateBookingDto } from './dto/booking.dto';
 import { calculateDeposit } from './deposit.util';
 import { PAYMENT_GATEWAY, PaymentGateway } from './payment-gateway';
 import { Payment } from './payment.entity';
+import { PaymentsService } from './payments.service';
 
 const LOCK_TTL_MS = 5000;
 
@@ -31,6 +32,7 @@ export class BookingsService {
     private readonly nestConfig: ConfigService,
     @Inject(REDIS) private readonly redis: Redis,
     @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
+    private readonly paymentsService: PaymentsService,
   ) {}
 
   async createHold(userId: string, dto: CreateBookingDto): Promise<{ booking: Booking; paymentUrl: string }> {
@@ -216,15 +218,28 @@ export class BookingsService {
       }
       // A pending_payment booking never had a captured payment -- nothing to refund
       // or forfeit, so its payment is simply marked failed. A confirmed booking's
-      // deposit was genuinely captured; `refund` decides the payment's fate. Marking
-      // `refunded` here only records our own intent -- no real Zarinpal refund API
-      // call is made (see this plan's header note on why that's out of scope).
+      // deposit was genuinely captured; `refund` decides the payment's fate.
+      // refund_pending means "a real refund is owed" -- the inline attemptRefund()
+      // call after this transaction commits (or, failing that, RefundRetryJob)
+      // performs the actual Zarinpal refund and moves it to 'refunded'.
       if (booking.status === 'confirmed') {
-        await em.update(Payment, { bookingId: booking.id }, { status: refund ? 'refunded' : 'paid' });
+        await em.update(
+          Payment,
+          { bookingId: booking.id },
+          refund ? { status: 'refund_pending', refundRequestedAt: new Date() } : { status: 'paid' },
+        );
       } else {
         await em.update(Payment, { bookingId: booking.id }, { status: 'failed' });
       }
     });
+
+    // Attempt the real refund immediately so the common case completes within this
+    // request (mock/happy path: customer sees the final state right away). attemptRefund
+    // never throws -- a gateway failure leaves the payment refund_pending and the
+    // cancellation response unaffected; RefundRetryJob self-heals it later.
+    if (refund && booking.status === 'confirmed') {
+      await this.paymentsService.attemptRefund(booking.id);
+    }
 
     return (await this.bookings.findOneBy({ id: booking.id }))!;
   }
