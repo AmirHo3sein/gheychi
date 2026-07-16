@@ -2,11 +2,16 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, LessThan, Repository } from 'typeorm';
+import { AlertsService } from '../alerts/alerts.service';
 import { Booking } from './booking.entity';
 import { PAYMENT_GATEWAY, PaymentGateway } from './payment-gateway';
 import { Payment } from './payment.entity';
 
 const STALE_AFTER_MINUTES = 20;
+// The per-payment catch below fires on transient errors by design (retried
+// every 5 minutes) -- only a payment still 'initiated' a full day after
+// creation is no longer transient and worth paging an operator about.
+const STUCK_INITIATED_ALERT_HOURS = 24;
 
 @Injectable()
 export class PaymentReconciliationJob {
@@ -16,6 +21,7 @@ export class PaymentReconciliationJob {
     @InjectRepository(Payment) private readonly payments: Repository<Payment>,
     private readonly dataSource: DataSource,
     @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
+    private readonly alerts: AlertsService,
   ) {}
 
   @Cron('*/5 * * * *')
@@ -97,6 +103,12 @@ export class PaymentReconciliationJob {
         this.logger.error(
           `Failed to reconcile payment ${payment.id} (authority ${payment.authority}): ${err instanceof Error ? err.message : String(err)}`,
         );
+        if (Date.now() - payment.createdAt.getTime() > STUCK_INITIATED_ALERT_HOURS * 3_600_000) {
+          await this.alerts.notifyOps(
+            `payment-stuck:${payment.id}`,
+            `payment-stuck: payment ${payment.id} (booking ${payment.bookingId}) still initiated since ${payment.createdAt.toISOString()} despite reconciliation retries`,
+          );
+        }
       }
     }
     return reconciled;

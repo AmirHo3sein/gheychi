@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { AlertsService } from '../alerts/alerts.service';
 import { Booking } from './booking.entity';
 import { PAYMENT_GATEWAY } from './payment-gateway';
 import { Payment } from './payment.entity';
@@ -11,6 +12,7 @@ describe('PaymentReconciliationJob', () => {
   let paymentsFind: jest.Mock;
   let verifyPayment: jest.Mock;
   let emUpdate: jest.Mock;
+  let notifyOps: jest.Mock;
 
   const STALE_PAYMENT = {
     id: 'pay-1',
@@ -18,12 +20,14 @@ describe('PaymentReconciliationJob', () => {
     authority: 'AUTH123',
     amount: 200_000,
     status: 'initiated',
+    createdAt: new Date(Date.now() - 30 * 60_000), // 30 minutes old -- stale, but not alert-worthy
   };
 
   beforeEach(async () => {
     paymentsFind = jest.fn().mockResolvedValue([]);
     verifyPayment = jest.fn();
     emUpdate = jest.fn().mockResolvedValue({ affected: 1 });
+    notifyOps = jest.fn().mockResolvedValue(undefined);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -34,6 +38,7 @@ describe('PaymentReconciliationJob', () => {
           useValue: { transaction: jest.fn(async (cb: (em: unknown) => unknown) => cb({ update: emUpdate })) },
         },
         { provide: PAYMENT_GATEWAY, useValue: { verifyPayment } },
+        { provide: AlertsService, useValue: { notifyOps } },
       ],
     }).compile();
 
@@ -107,5 +112,29 @@ describe('PaymentReconciliationJob', () => {
     expect(reconciled).toBe(1);
     expect(verifyPayment).toHaveBeenCalledTimes(2);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('pay-1'));
+  });
+
+  it('pages an operator when a payment that keeps erroring is over 24h old', async () => {
+    jest.spyOn(job['logger'], 'error').mockImplementation();
+    paymentsFind.mockResolvedValue([
+      { ...STALE_PAYMENT, createdAt: new Date(Date.now() - 25 * 60 * 60_000) },
+    ]);
+    verifyPayment.mockRejectedValue(new Error('gateway down'));
+
+    await job.run();
+
+    expect(notifyOps).toHaveBeenCalledWith('payment-stuck:pay-1', expect.stringContaining('pay-1'));
+  });
+
+  it('does not page for an erroring payment younger than 24h (transient by design)', async () => {
+    jest.spyOn(job['logger'], 'error').mockImplementation();
+    paymentsFind.mockResolvedValue([
+      { ...STALE_PAYMENT, createdAt: new Date(Date.now() - 2 * 60 * 60_000) },
+    ]);
+    verifyPayment.mockRejectedValue(new Error('gateway down'));
+
+    await job.run();
+
+    expect(notifyOps).not.toHaveBeenCalled();
   });
 });

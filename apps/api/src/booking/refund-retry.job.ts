@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, Repository } from 'typeorm';
+import { AlertsService } from '../alerts/alerts.service';
 import { Payment } from './payment.entity';
 import { PaymentsService } from './payments.service';
 
@@ -20,6 +21,7 @@ export class RefundRetryJob {
   constructor(
     @InjectRepository(Payment) private readonly payments: Repository<Payment>,
     private readonly paymentsService: PaymentsService,
+    private readonly alerts: AlertsService,
   ) {}
 
   @Cron('*/5 * * * *')
@@ -41,6 +43,13 @@ export class RefundRetryJob {
       ) {
         this.logger.error(
           `Payment ${payment.id} has been refund_pending since ${payment.refundRequestedAt.toISOString()} (over ${ESCALATE_AFTER_HOURS}h) -- needs operator attention`,
+        );
+        // Re-pages daily (24h TTL) while the refund stays stuck. notifyOps
+        // never throws, so this cannot break the batch.
+        await this.alerts.notifyOps(
+          `refund-stuck:${payment.id}`,
+          `refund-stuck: payment ${payment.id} (booking ${payment.bookingId}) refund_pending since ${payment.refundRequestedAt.toISOString()}`,
+          { ttlSeconds: 86_400 },
         );
       }
       // attemptRefund catches gateway failures internally, but a transient DB error

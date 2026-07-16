@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { AlertsService } from '../alerts/alerts.service';
 import { PushService } from '../push/push.service';
 import { SMS_PROVIDER } from '../sms/sms.provider';
 import { SalonsService } from '../salons/salons.service';
@@ -18,6 +19,7 @@ describe('PaymentsService.attemptRefund', () => {
   let refundPayment: jest.Mock;
   let smsSend: jest.Mock;
   let pushSend: jest.Mock;
+  let notifyOps: jest.Mock;
 
   const REFUND_PENDING_PAYMENT = {
     id: 'pay-1',
@@ -33,6 +35,7 @@ describe('PaymentsService.attemptRefund', () => {
     refundPayment = jest.fn();
     smsSend = jest.fn().mockResolvedValue(undefined);
     pushSend = jest.fn().mockResolvedValue(undefined);
+    notifyOps = jest.fn().mockResolvedValue(undefined);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -45,6 +48,7 @@ describe('PaymentsService.attemptRefund', () => {
         { provide: SMS_PROVIDER, useValue: { send: smsSend } },
         { provide: PAYMENT_GATEWAY, useValue: { refundPayment } },
         { provide: PushService, useValue: { sendToUser: pushSend } },
+        { provide: AlertsService, useValue: { notifyOps } },
       ],
     }).compile();
 
@@ -65,6 +69,7 @@ describe('PaymentsService.attemptRefund', () => {
     );
     expect(smsSend).toHaveBeenCalledWith('09120000000', expect.any(String));
     expect(pushSend).toHaveBeenCalledWith('user-1', expect.objectContaining({ title: expect.any(String) }));
+    expect(notifyOps).not.toHaveBeenCalled();
   });
 
   it('skips a payment that is not refund_pending without touching the gateway', async () => {
@@ -87,6 +92,8 @@ describe('PaymentsService.attemptRefund', () => {
     expect(outcome).toBe('pending');
     expect(refundPayment).not.toHaveBeenCalled();
     expect(paymentsUpdate).not.toHaveBeenCalled();
+    // A refund with no authority can never succeed automatically -- pages an operator.
+    expect(notifyOps).toHaveBeenCalledWith('refund-no-authority:pay-1', expect.stringContaining('pay-1'));
   });
 
   it('leaves the payment pending when the gateway refuses the refund', async () => {
@@ -96,6 +103,8 @@ describe('PaymentsService.attemptRefund', () => {
     expect(outcome).toBe('pending');
     expect(paymentsUpdate).not.toHaveBeenCalled();
     expect(smsSend).not.toHaveBeenCalled();
+    // Retryable outcome, not an operator page -- the retry job re-attempts it.
+    expect(notifyOps).not.toHaveBeenCalled();
   });
 
   it('catches a gateway throw and leaves the payment pending (never propagates)', async () => {
@@ -104,6 +113,8 @@ describe('PaymentsService.attemptRefund', () => {
     const outcome = await service.attemptRefund('booking-1');
     expect(outcome).toBe('pending');
     expect(paymentsUpdate).not.toHaveBeenCalled();
+    // Retryable outcome, not an operator page -- the retry job re-attempts it.
+    expect(notifyOps).not.toHaveBeenCalled();
   });
 
   it('does not notify when a concurrent attempt already won the conditional update', async () => {
@@ -159,6 +170,7 @@ describe('PaymentsService.handleCallback lost-CAS recovery', () => {
         { provide: SMS_PROVIDER, useValue: { send: jest.fn() } },
         { provide: PAYMENT_GATEWAY, useValue: { verifyPayment } },
         { provide: PushService, useValue: { sendToUser: jest.fn() } },
+        { provide: AlertsService, useValue: { notifyOps: jest.fn() } },
       ],
     }).compile();
 

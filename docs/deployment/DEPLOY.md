@@ -76,6 +76,8 @@ The API ships with console/mock/local defaults so it runs with zero external cre
 
 After changing any of these, `docker compose -f docker-compose.prod.yml up -d api` (and `user-app` for the VAPID public key) to apply — no rebuild needed, these are all runtime env vars.
 
+**Operator alerting** (stuck refunds, refunds that can never auto-succeed, payments stuck in reconciliation for over 24 h) pages a human by SMS through the same `SMS_PROVIDER` — set `OPS_ALERT_PHONES` to a comma-separated list of operator 09x numbers to enable it. Degradation modes: with `OPS_ALERT_PHONES` empty (the default) every alert is a log line only (`[unrouted ops alert] …`); with phones set but `SMS_PROVIDER=console` the "SMS" also just prints to the API logs (a boot-time warning flags this combination). Each distinct condition re-alerts at most once per `OPS_ALERT_THROTTLE_HOURS` (default 6; the 24 h stuck-refund escalation re-pages daily), and `OPS_ALERT_HOURLY_CAP` (default 30) is a global SMS-per-hour circuit breaker bounding cost in a mass incident. All three vars are optional with safe defaults — the underlying `logger.error` lines remain the source of truth either way.
+
 ### Manual smoke test after cutover
 
 Real third-party credentials can't be exercised in CI — run these by hand once, in order:
