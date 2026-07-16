@@ -97,6 +97,12 @@ export class PaymentsService {
         this.logger.error(
           `Failed to persist paid/confirmed state for authority ${authority}, payment ${payment.id}, booking ${payment.bookingId}: ${err instanceof Error ? err.message : String(err)}`,
         );
+        void this.alerts.raise({
+          key: `verify-persist:${payment.id}`,
+          severity: 'warning',
+          title: 'ثبت پرداخت ناموفق',
+          body: `پرداخت ${payment.id} توسط زرین‌پال تایید شد اما ثبت آن در پایگاه داده ناموفق بود؛ تطبیق خودکار آن را اصلاح می‌کند.`,
+        });
         throw err;
       });
 
@@ -121,6 +127,12 @@ export class PaymentsService {
       this.logger.error(
         `Payment ${payment.id} (authority ${authority}) was captured by Zarinpal but booking ${payment.bookingId} was cancelled mid-callback -- queueing automatic refund`,
       );
+      await this.alerts.raise({
+        key: `late-capture:${payment.id}`,
+        severity: 'warning',
+        title: 'پرداخت پس از لغو رزرو',
+        body: `مبلغ پرداخت ${payment.id} پس از لغو رزرو ${payment.bookingId} دریافت شد؛ بازگشت وجه به‌صورت خودکار در صف قرار گرفت.`,
+      });
       await this.payments.update(
         { id: payment.id, status: 'failed' },
         { status: 'refund_pending', refId: verify.refId, refundRequestedAt: new Date() },
@@ -169,6 +181,12 @@ export class PaymentsService {
     }
     if (!result.success) {
       this.logger.error(`Zarinpal refused the refund for payment ${payment.id} (authority ${payment.authority}) -- will retry`);
+      await this.alerts.raise({
+        key: `refund-refused:${payment.id}`,
+        severity: 'warning',
+        title: 'بازپرداخت پذیرفته نشد',
+        body: `زرین‌پال بازگشت وجه پرداخت ${payment.id} را نپذیرفت؛ تلاش مجدد به‌صورت خودکار ادامه دارد.`,
+      });
       return 'pending';
     }
 

@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { AlertsService } from '../alerts/alerts.service';
 import { Booking } from './booking.entity';
 import { PAYMENT_GATEWAY } from './payment-gateway';
 import { Payment } from './payment.entity';
@@ -11,6 +12,7 @@ describe('PaymentReconciliationJob', () => {
   let paymentsFind: jest.Mock;
   let verifyPayment: jest.Mock;
   let emUpdate: jest.Mock;
+  let raise: jest.Mock;
 
   const STALE_PAYMENT = {
     id: 'pay-1',
@@ -24,6 +26,7 @@ describe('PaymentReconciliationJob', () => {
     paymentsFind = jest.fn().mockResolvedValue([]);
     verifyPayment = jest.fn();
     emUpdate = jest.fn().mockResolvedValue({ affected: 1 });
+    raise = jest.fn().mockResolvedValue(undefined);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -34,6 +37,7 @@ describe('PaymentReconciliationJob', () => {
           useValue: { transaction: jest.fn(async (cb: (em: unknown) => unknown) => cb({ update: emUpdate })) },
         },
         { provide: PAYMENT_GATEWAY, useValue: { verifyPayment } },
+        { provide: AlertsService, useValue: { raise } },
       ],
     }).compile();
 
@@ -49,6 +53,7 @@ describe('PaymentReconciliationJob', () => {
     expect(reconciled).toBe(1);
     expect(emUpdate).toHaveBeenCalledWith(Booking, { id: 'booking-1', status: 'pending_payment' }, { status: 'confirmed' });
     expect(emUpdate).toHaveBeenCalledWith(Payment, { id: 'pay-1', status: 'initiated' }, { status: 'paid', refId: 'REF-1' });
+    expect(raise).not.toHaveBeenCalled();
   });
 
   it('queues an automatic refund when the money was captured but the booking already moved on', async () => {
@@ -66,6 +71,9 @@ describe('PaymentReconciliationJob', () => {
       Payment,
       { id: 'pay-1', status: 'initiated' },
       expect.objectContaining({ status: 'refund_pending', refId: 'REF-1', refundRequestedAt: expect.any(Date) }),
+    );
+    expect(raise).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'late-capture:pay-1', severity: 'warning' }),
     );
   });
 
@@ -107,5 +115,8 @@ describe('PaymentReconciliationJob', () => {
     expect(reconciled).toBe(1);
     expect(verifyPayment).toHaveBeenCalledTimes(2);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('pay-1'));
+    expect(raise).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'reconcile-failed:pay-1', severity: 'warning' }),
+    );
   });
 });

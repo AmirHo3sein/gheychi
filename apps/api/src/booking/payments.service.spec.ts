@@ -104,6 +104,9 @@ describe('PaymentsService.attemptRefund', () => {
     expect(outcome).toBe('pending');
     expect(paymentsUpdate).not.toHaveBeenCalled();
     expect(smsSend).not.toHaveBeenCalled();
+    expect(raise).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'refund-refused:pay-1', severity: 'warning' }),
+    );
   });
 
   it('catches a gateway throw and leaves the payment pending (never propagates)', async () => {
@@ -190,6 +193,9 @@ describe('PaymentsService.handleCallback lost-CAS recovery', () => {
       { id: 'pay-1', status: 'failed' },
       expect.objectContaining({ status: 'refund_pending', refId: 'REF-1', refundRequestedAt: expect.any(Date) }),
     );
+    expect(raise).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'late-capture:pay-1', severity: 'warning' }),
+    );
   });
 
   it('treats a lost CAS with the payment already paid as a benign duplicate callback', async () => {
@@ -201,5 +207,6 @@ describe('PaymentsService.handleCallback lost-CAS recovery', () => {
 
     expect(result).toEqual({ status: 'success', bookingId: 'booking-1' });
     expect(paymentsUpdate).not.toHaveBeenCalled();
+    expect(raise).not.toHaveBeenCalled();
   });
 });
