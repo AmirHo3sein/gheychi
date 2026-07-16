@@ -36,29 +36,26 @@ export class PaymentReconciliationJob {
         const verify = await this.gateway.verifyPayment(payment.authority, payment.amount);
         await this.dataSource.transaction(async (em) => {
           if (verify.success) {
-            // The booking-hold TTL (15 min) is shorter than this job's stale
-            // threshold (20 min), so by the time a payment is old enough to land
-            // here, its booking has very likely ALREADY been expired by
-            // BookingExpiryJob -- this is the common case, not a rare race.
-            // Only resurrect a booking that's still genuinely pending_payment;
-            // if it already moved on (expired, or cancelled by either party),
-            // blindly flipping it back to confirmed would risk confirming a
-            // slot that may have since been rebooked by someone else. The
-            // payment still gets marked paid either way -- Zarinpal genuinely
-            // captured the money -- but a booking that already left
-            // pending_payment is logged for manual refund review instead of
-            // being silently resurrected.
             const result = await em.update(
               Booking,
               { id: payment.bookingId, status: 'pending_payment' },
               { status: 'confirmed' },
             );
             if (!result.affected) {
+              // Zarinpal genuinely captured the money but the booking already moved
+              // on (expired / cancelled) -- the customer must get it back. Queue an
+              // automatic refund; RefundRetryJob performs it on its next tick.
               this.logger.error(
-                `Payment ${payment.id} (authority ${payment.authority}) was confirmed by Zarinpal after its booking ${payment.bookingId} already left pending_payment -- needs manual refund review`,
+                `Payment ${payment.id} (authority ${payment.authority}) was confirmed by Zarinpal after its booking ${payment.bookingId} already left pending_payment -- queueing automatic refund`,
               );
+              await em.update(Payment, { id: payment.id }, {
+                status: 'refund_pending',
+                refId: verify.refId,
+                refundRequestedAt: new Date(),
+              });
+            } else {
+              await em.update(Payment, { id: payment.id }, { status: 'paid', refId: verify.refId });
             }
-            await em.update(Payment, { id: payment.id }, { status: 'paid', refId: verify.refId });
           } else {
             // Same reasoning in reverse: only cancel a booking that's still
             // pending_payment. If it already expired or was cancelled, there's
