@@ -205,12 +205,16 @@ export class BookingsService {
       // status above, both pass the check, and whichever commits last would
       // silently overwrite the other's outcome -- including making a caller's
       // own HTTP response reflect a status/refund decision that isn't actually
-      // the one persisted. Conditioning the update on the status still being
-      // cancellable means only the winner's write lands; the loser gets
-      // affected=0 and a clear 409 instead of a misleading 200.
+      // the one persisted. Conditioning the update on the exact status read
+      // above means only the winner's write lands; the loser gets affected=0
+      // and a clear 409 instead of a misleading 200. Guarding on the exact
+      // status (not merely "still cancellable") also covers a concurrent
+      // payment callback flipping pending_payment -> confirmed mid-cancel:
+      // the payment-fate branch below relies on that same stale read, so a
+      // status change must fail the CAS rather than mark a paid payment failed.
       const result = await em.update(
         Booking,
-        { id: booking.id, status: In(cancellableStatuses) },
+        { id: booking.id, status: booking.status },
         { status: newBookingStatus },
       );
       if (!result.affected) {
