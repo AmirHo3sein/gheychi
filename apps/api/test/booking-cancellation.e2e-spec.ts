@@ -77,6 +77,12 @@ describe('Booking cancellation policy (e2e)', () => {
     const [payment] = await ds.query('SELECT status, refund_ref_id FROM payments WHERE id = $1', [paymentId]);
     expect(payment.status).toBe('refunded');
     expect(payment.refund_ref_id).toMatch(/^MOCKREFUND-/); // a real gateway refund happened, not just bookkeeping
+
+    const detail = await request(app.getHttpServer())
+      .get(`/api/bookings/${bookingId}`)
+      .set('Cookie', customerCookie)
+      .expect(200);
+    expect(detail.body.refundStatus).toBe('done');
   });
 
   it('forfeits the deposit when the user cancels inside the 24h window', async () => {
@@ -89,6 +95,12 @@ describe('Booking cancellation policy (e2e)', () => {
     const ds = app.get(DataSource);
     const [payment] = await ds.query('SELECT status FROM payments WHERE id = $1', [paymentId]);
     expect(payment.status).toBe('paid'); // deposit stays with the salon, not refunded
+
+    const detail = await request(app.getHttpServer())
+      .get(`/api/bookings/${bookingId}`)
+      .set('Cookie', customerCookie)
+      .expect(200);
+    expect(detail.body.refundStatus).toBeNull();
   });
 
   it('always fully refunds when the salon cancels, regardless of timing', async () => {
@@ -152,6 +164,12 @@ describe('Booking cancellation policy (e2e)', () => {
     const [payment] = await ds.query('SELECT status, refund_ref_id FROM payments WHERE id = $1', [paymentId]);
     expect(payment.status).toBe('refund_pending'); // owed, not yet issued -- RefundRetryJob picks it up
     expect(payment.refund_ref_id).toBeNull();
+
+    const detail = await request(app.getHttpServer())
+      .get(`/api/bookings/${bookingId}`)
+      .set('Cookie', customerCookie)
+      .expect(200);
+    expect(detail.body.refundStatus).toBe('pending');
   });
 
   it('RefundRetryJob completes a refund the inline attempt could not', async () => {

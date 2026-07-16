@@ -157,11 +157,22 @@ export class BookingsService {
     return { paymentUrl };
   }
 
-  async findMine(userId: string, id: string): Promise<Booking & { salonName: string; serviceName: string }> {
+  async findMine(
+    userId: string,
+    id: string,
+  ): Promise<Booking & { salonName: string; serviceName: string; refundStatus: 'pending' | 'done' | null }> {
     const booking = await this.bookings.findOneBy({ id, userId });
     if (!booking) throw new NotFoundException('Booking not found');
     const [withNames] = await this.attachNames([booking]);
-    return withNames;
+    // Customer-facing refund state for the booking detail page: 'pending' = a refund
+    // is owed and being retried, 'done' = the gateway confirmed it, null = no refund
+    // in play (not cancelled, forfeited deposit, or never captured).
+    const payment = await this.payments.findOneBy({ bookingId: id });
+    const refundStatus =
+      payment?.status === 'refund_pending' ? ('pending' as const)
+      : payment?.status === 'refunded' ? ('done' as const)
+      : null;
+    return { ...withNames, refundStatus };
   }
 
   async listMine(userId: string): Promise<Array<Booking & { salonName: string; serviceName: string }>> {
