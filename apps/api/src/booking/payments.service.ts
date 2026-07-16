@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
+import { AlertsService } from '../alerts/alerts.service';
 import { PushService } from '../push/push.service';
 import { SMS_PROVIDER, SmsProvider } from '../sms/sms.provider';
 import { SalonsService } from '../salons/salons.service';
@@ -25,6 +26,7 @@ export class PaymentsService {
     @Inject(SMS_PROVIDER) private readonly sms: SmsProvider,
     @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
     private readonly push: PushService,
+    private readonly alerts: AlertsService,
   ) {}
 
   async handleCallback(authority: string, status: string): Promise<{ status: CallbackOutcome; bookingId: string }> {
@@ -95,6 +97,12 @@ export class PaymentsService {
         this.logger.error(
           `Failed to persist paid/confirmed state for authority ${authority}, payment ${payment.id}, booking ${payment.bookingId}: ${err instanceof Error ? err.message : String(err)}`,
         );
+        void this.alerts.raise({
+          key: `verify-persist:${payment.id}`,
+          severity: 'warning',
+          title: 'ثبت پرداخت ناموفق',
+          body: `پرداخت ${payment.id} توسط زرین‌پال تایید شد اما ثبت آن در پایگاه داده ناموفق بود؛ تطبیق خودکار آن را اصلاح می‌کند.`,
+        });
         throw err;
       });
 
@@ -119,6 +127,12 @@ export class PaymentsService {
       this.logger.error(
         `Payment ${payment.id} (authority ${authority}) was captured by Zarinpal but booking ${payment.bookingId} was cancelled mid-callback -- queueing automatic refund`,
       );
+      await this.alerts.raise({
+        key: `late-capture:${payment.id}`,
+        severity: 'warning',
+        title: 'پرداخت پس از لغو رزرو',
+        body: `مبلغ پرداخت ${payment.id} پس از لغو رزرو ${payment.bookingId} دریافت شد؛ بازگشت وجه به‌صورت خودکار در صف قرار گرفت.`,
+      });
       await this.payments.update(
         { id: payment.id, status: 'failed' },
         { status: 'refund_pending', refId: verify.refId, refundRequestedAt: new Date() },
@@ -147,6 +161,12 @@ export class PaymentsService {
       // Shouldn't occur -- a captured payment always has an authority -- but if it
       // does, an automatic refund is impossible and an operator has to step in.
       this.logger.error(`Payment ${payment.id} is refund_pending but has no authority -- needs manual refund`);
+      await this.alerts.raise({
+        key: `refund-no-authority:${payment.id}`,
+        severity: 'critical',
+        title: 'بازپرداخت بدون شناسه پرداخت',
+        body: `پرداخت ${payment.id} در انتظار بازگشت وجه است اما شناسه (authority) ندارد؛ بازپرداخت خودکار ممکن نیست.`,
+      });
       return 'pending';
     }
 
@@ -161,6 +181,12 @@ export class PaymentsService {
     }
     if (!result.success) {
       this.logger.error(`Zarinpal refused the refund for payment ${payment.id} (authority ${payment.authority}) -- will retry`);
+      await this.alerts.raise({
+        key: `refund-refused:${payment.id}`,
+        severity: 'warning',
+        title: 'بازپرداخت پذیرفته نشد',
+        body: `زرین‌پال بازگشت وجه پرداخت ${payment.id} را نپذیرفت؛ تلاش مجدد به‌صورت خودکار ادامه دارد.`,
+      });
       return 'pending';
     }
 

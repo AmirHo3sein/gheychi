@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { AlertsService } from '../alerts/alerts.service';
 import { PushService } from '../push/push.service';
 import { SMS_PROVIDER } from '../sms/sms.provider';
 import { SalonsService } from '../salons/salons.service';
@@ -18,6 +19,7 @@ describe('PaymentsService.attemptRefund', () => {
   let refundPayment: jest.Mock;
   let smsSend: jest.Mock;
   let pushSend: jest.Mock;
+  let raise: jest.Mock;
 
   const REFUND_PENDING_PAYMENT = {
     id: 'pay-1',
@@ -33,6 +35,7 @@ describe('PaymentsService.attemptRefund', () => {
     refundPayment = jest.fn();
     smsSend = jest.fn().mockResolvedValue(undefined);
     pushSend = jest.fn().mockResolvedValue(undefined);
+    raise = jest.fn().mockResolvedValue(undefined);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -45,6 +48,7 @@ describe('PaymentsService.attemptRefund', () => {
         { provide: SMS_PROVIDER, useValue: { send: smsSend } },
         { provide: PAYMENT_GATEWAY, useValue: { refundPayment } },
         { provide: PushService, useValue: { sendToUser: pushSend } },
+        { provide: AlertsService, useValue: { raise } },
       ],
     }).compile();
 
@@ -65,6 +69,7 @@ describe('PaymentsService.attemptRefund', () => {
     );
     expect(smsSend).toHaveBeenCalledWith('09120000000', expect.any(String));
     expect(pushSend).toHaveBeenCalledWith('user-1', expect.objectContaining({ title: expect.any(String) }));
+    expect(raise).not.toHaveBeenCalled();
   });
 
   it('skips a payment that is not refund_pending without touching the gateway', async () => {
@@ -87,6 +92,9 @@ describe('PaymentsService.attemptRefund', () => {
     expect(outcome).toBe('pending');
     expect(refundPayment).not.toHaveBeenCalled();
     expect(paymentsUpdate).not.toHaveBeenCalled();
+    expect(raise).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'refund-no-authority:pay-1', severity: 'critical' }),
+    );
   });
 
   it('leaves the payment pending when the gateway refuses the refund', async () => {
@@ -96,6 +104,9 @@ describe('PaymentsService.attemptRefund', () => {
     expect(outcome).toBe('pending');
     expect(paymentsUpdate).not.toHaveBeenCalled();
     expect(smsSend).not.toHaveBeenCalled();
+    expect(raise).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'refund-refused:pay-1', severity: 'warning' }),
+    );
   });
 
   it('catches a gateway throw and leaves the payment pending (never propagates)', async () => {
@@ -124,6 +135,7 @@ describe('PaymentsService.handleCallback lost-CAS recovery', () => {
   let paymentsFindOneBy: jest.Mock;
   let paymentsUpdate: jest.Mock;
   let verifyPayment: jest.Mock;
+  let raise: jest.Mock;
 
   const INITIATED_PAYMENT = {
     id: 'pay-1',
@@ -137,6 +149,7 @@ describe('PaymentsService.handleCallback lost-CAS recovery', () => {
     paymentsFindOneBy = jest.fn();
     paymentsUpdate = jest.fn().mockResolvedValue({ affected: 1 });
     verifyPayment = jest.fn().mockResolvedValue({ success: true, refId: 'REF-1' });
+    raise = jest.fn().mockResolvedValue(undefined);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -159,6 +172,7 @@ describe('PaymentsService.handleCallback lost-CAS recovery', () => {
         { provide: SMS_PROVIDER, useValue: { send: jest.fn() } },
         { provide: PAYMENT_GATEWAY, useValue: { verifyPayment } },
         { provide: PushService, useValue: { sendToUser: jest.fn() } },
+        { provide: AlertsService, useValue: { raise } },
       ],
     }).compile();
 
@@ -179,6 +193,9 @@ describe('PaymentsService.handleCallback lost-CAS recovery', () => {
       { id: 'pay-1', status: 'failed' },
       expect.objectContaining({ status: 'refund_pending', refId: 'REF-1', refundRequestedAt: expect.any(Date) }),
     );
+    expect(raise).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'late-capture:pay-1', severity: 'warning' }),
+    );
   });
 
   it('treats a lost CAS with the payment already paid as a benign duplicate callback', async () => {
@@ -190,5 +207,51 @@ describe('PaymentsService.handleCallback lost-CAS recovery', () => {
 
     expect(result).toEqual({ status: 'success', bookingId: 'booking-1' });
     expect(paymentsUpdate).not.toHaveBeenCalled();
+    expect(raise).not.toHaveBeenCalled();
+  });
+});
+
+describe('PaymentsService.handleCallback verify-persist failure', () => {
+  it('raises a warning alert when persisting the verified payment fails, and still rethrows', async () => {
+    const raise = jest.fn().mockResolvedValue(undefined);
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PaymentsService,
+        {
+          provide: getRepositoryToken(Payment),
+          useValue: {
+            findOneBy: jest.fn().mockResolvedValue({
+              id: 'pay-1',
+              bookingId: 'booking-1',
+              authority: 'AUTH123',
+              amount: 200_000,
+              status: 'initiated',
+            }),
+            update: jest.fn(),
+          },
+        },
+        { provide: getRepositoryToken(Booking), useValue: { findOneBy: jest.fn() } },
+        // Zarinpal has already confirmed the charge (verify succeeds below); the
+        // transaction persisting paid/confirmed then fails -- the .catch must fire
+        // the verify-persist alert and still rethrow for the caller.
+        { provide: DataSource, useValue: { transaction: jest.fn().mockRejectedValue(new Error('db down')) } },
+        { provide: SalonsService, useValue: {} },
+        { provide: UsersService, useValue: { findById: jest.fn() } },
+        { provide: SMS_PROVIDER, useValue: { send: jest.fn() } },
+        {
+          provide: PAYMENT_GATEWAY,
+          useValue: { verifyPayment: jest.fn().mockResolvedValue({ success: true, refId: 'REF-1' }) },
+        },
+        { provide: PushService, useValue: { sendToUser: jest.fn() } },
+        { provide: AlertsService, useValue: { raise } },
+      ],
+    }).compile();
+    const service = moduleRef.get(PaymentsService);
+
+    await expect(service.handleCallback('AUTH123', 'OK')).rejects.toThrow('db down');
+
+    expect(raise).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'verify-persist:pay-1', severity: 'warning' }),
+    );
   });
 });

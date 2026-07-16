@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { AlertsService } from '../alerts/alerts.service';
 import { REDIS } from '../redis/redis.module';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
 import { PAYMENT_GATEWAY } from './payment-gateway';
@@ -35,6 +36,7 @@ describe('BookingsService.getEarnings', () => {
         { provide: REDIS, useValue: {} },
         { provide: PAYMENT_GATEWAY, useValue: {} },
         { provide: PaymentsService, useValue: { attemptRefund: jest.fn() } },
+        { provide: AlertsService, useValue: { raise: jest.fn() } },
       ],
     }).compile();
 
@@ -106,6 +108,7 @@ describe('BookingsService.cancel', () => {
         { provide: REDIS, useValue: {} },
         { provide: PAYMENT_GATEWAY, useValue: {} },
         { provide: PaymentsService, useValue: { attemptRefund } },
+        { provide: AlertsService, useValue: { raise: jest.fn() } },
       ],
     }).compile();
 
@@ -163,5 +166,55 @@ describe('BookingsService.cancel', () => {
 
     expect(result).toBeDefined();
     expect(attemptRefund).toHaveBeenCalledWith('booking-1');
+  });
+});
+
+describe('BookingsService.retryPayment authority persist failure', () => {
+  let service: BookingsService;
+  let bookingsFindOneBy: jest.Mock;
+  let salonsFindOneBy: jest.Mock;
+  let paymentsUpdate: jest.Mock;
+  let requestPayment: jest.Mock;
+  let raise: jest.Mock;
+
+  beforeEach(async () => {
+    bookingsFindOneBy = jest.fn().mockResolvedValue({
+      id: 'booking-1',
+      userId: 'customer-1',
+      salonId: 'salon-1',
+      status: 'pending_payment',
+      depositAmount: 100_000,
+    });
+    salonsFindOneBy = jest.fn().mockResolvedValue({ id: 'salon-1', name: 'Test Salon', ownerId: 'owner-1' });
+    paymentsUpdate = jest.fn().mockRejectedValue(new Error('db down'));
+    requestPayment = jest.fn().mockResolvedValue({ authority: 'AUTH-NEW', paymentUrl: 'https://pay.example/AUTH-NEW' });
+    raise = jest.fn().mockResolvedValue(undefined);
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        BookingsService,
+        { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy } },
+        { provide: getRepositoryToken(Payment), useValue: { update: paymentsUpdate } },
+        { provide: getRepositoryToken(Salon), useValue: { findOneBy: salonsFindOneBy } },
+        { provide: getRepositoryToken(SalonService), useValue: {} },
+        { provide: DataSource, useValue: {} },
+        { provide: PlatformConfigService, useValue: {} },
+        { provide: ConfigService, useValue: { getOrThrow: jest.fn().mockReturnValue('http://localhost:3002') } },
+        { provide: REDIS, useValue: {} },
+        { provide: PAYMENT_GATEWAY, useValue: { requestPayment } },
+        { provide: PaymentsService, useValue: { attemptRefund: jest.fn() } },
+        { provide: AlertsService, useValue: { raise } },
+      ],
+    }).compile();
+
+    service = moduleRef.get(BookingsService);
+  });
+
+  it('raises a critical alert when persisting a fresh Zarinpal authority fails (orphaned chargeable session)', async () => {
+    await expect(service.retryPayment('customer-1', 'booking-1')).rejects.toThrow('db down');
+
+    expect(raise).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'authority-persist:booking-1', severity: 'critical' }),
+    );
   });
 });

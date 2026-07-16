@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminNotificationsModule } from './admin-notifications/admin-notifications.module';
+import { AlertsModule } from './alerts/alerts.module';
 import { AuthModule } from './auth/auth.module';
 import { BookingModule } from './booking/booking.module';
 import { CatalogModule } from './catalog/catalog.module';
@@ -39,6 +40,7 @@ import { SearchModule } from './search/search.module';
     ScheduleModule.forRoot(),
     RedisModule,
     PlatformConfigModule,
+    AlertsModule,
     AuthModule,
     CatalogModule,
     SalonsModule,

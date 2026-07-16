@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, LessThan, Repository } from 'typeorm';
+import { AlertsService } from '../alerts/alerts.service';
 import { Booking } from './booking.entity';
 import { PAYMENT_GATEWAY, PaymentGateway } from './payment-gateway';
 import { Payment } from './payment.entity';
@@ -16,6 +17,7 @@ export class PaymentReconciliationJob {
     @InjectRepository(Payment) private readonly payments: Repository<Payment>,
     private readonly dataSource: DataSource,
     @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
+    private readonly alerts: AlertsService,
   ) {}
 
   @Cron('*/5 * * * *')
@@ -62,6 +64,12 @@ export class PaymentReconciliationJob {
                 this.logger.error(
                   `Payment ${payment.id} (authority ${payment.authority}) was confirmed by Zarinpal after its booking ${payment.bookingId} already left pending_payment -- queueing automatic refund`,
                 );
+                await this.alerts.raise({
+                  key: `late-capture:${payment.id}`,
+                  severity: 'warning',
+                  title: 'پرداخت پس از انقضای رزرو',
+                  body: `مبلغ پرداخت ${payment.id} پس از خروج رزرو ${payment.bookingId} از حالت انتظار دریافت شد؛ بازگشت وجه به‌صورت خودکار در صف قرار گرفت.`,
+                });
               }
             } else {
               await em.update(
@@ -97,6 +105,12 @@ export class PaymentReconciliationJob {
         this.logger.error(
           `Failed to reconcile payment ${payment.id} (authority ${payment.authority}): ${err instanceof Error ? err.message : String(err)}`,
         );
+        await this.alerts.raise({
+          key: `reconcile-failed:${payment.id}`,
+          severity: 'warning',
+          title: 'تطبیق پرداخت ناموفق',
+          body: `تطبیق پرداخت ${payment.id} با خطا مواجه شد و در اجرای بعدی دوباره تلاش می‌شود.`,
+        });
       }
     }
     return reconciled;
