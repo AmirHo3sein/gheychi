@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
+import { RefundRetryJob } from '../src/booking/refund-retry.job';
 import { loginAs } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
@@ -151,5 +152,30 @@ describe('Booking cancellation policy (e2e)', () => {
     const [payment] = await ds.query('SELECT status, refund_ref_id FROM payments WHERE id = $1', [paymentId]);
     expect(payment.status).toBe('refund_pending'); // owed, not yet issued -- RefundRetryJob picks it up
     expect(payment.refund_ref_id).toBeNull();
+  });
+
+  it('RefundRetryJob completes a refund the inline attempt could not', async () => {
+    const { bookingId, paymentId } = await bookAndConfirm(48);
+    const ds = app.get(DataSource);
+    // First make the refund fail inline...
+    await ds.query(`UPDATE payments SET authority = 'MOCK-REFUND-FAIL-' || authority WHERE id = $1`, [paymentId]);
+    await request(app.getHttpServer()).post(`/api/bookings/${bookingId}/cancel`).set('Cookie', customerCookie).expect(201);
+    let [payment] = await ds.query('SELECT status FROM payments WHERE id = $1', [paymentId]);
+    expect(payment.status).toBe('refund_pending');
+
+    // ...then heal the authority (gateway outage over), backdate past the grace period, and retry.
+    await ds.query(
+      `UPDATE payments SET authority = replace(authority, 'MOCK-REFUND-FAIL-', ''), refund_requested_at = now() - interval '10 minutes' WHERE id = $1`,
+      [paymentId],
+    );
+    const job = app.get(RefundRetryJob);
+    const refunded = await job.run();
+    // >= rather than === : in a slow run, the earlier MOCK-REFUND-FAIL test's row can
+    // age past the grace period and be (harmlessly, unsuccessfully) retried here too.
+    expect(refunded).toBeGreaterThanOrEqual(1);
+
+    [payment] = await ds.query('SELECT status, refund_ref_id FROM payments WHERE id = $1', [paymentId]);
+    expect(payment.status).toBe('refunded');
+    expect(payment.refund_ref_id).toMatch(/^MOCKREFUND-/);
   });
 });
