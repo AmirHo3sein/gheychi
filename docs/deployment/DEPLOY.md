@@ -70,7 +70,7 @@ The API ships with console/mock/local defaults so it runs with zero external cre
 | Concern | Env vars |
 |---|---|
 | SMS (Kavenegar) | `SMS_PROVIDER=kavenegar`, `KAVENEGAR_API_KEY`, `KAVENEGAR_OTP_TEMPLATE` |
-| Payments (Zarinpal) | `PAYMENT_GATEWAY=zarinpal`, `ZARINPAL_MERCHANT_ID` |
+| Payments (Zarinpal) | `PAYMENT_GATEWAY=zarinpal`, `ZARINPAL_MERCHANT_ID`, `ZARINPAL_ACCESS_TOKEN` (panel-issued personal access token, used for refund API auth — the API refuses to start in zarinpal mode without it) |
 | Storage (S3-compatible) | `STORAGE_PROVIDER=s3`, `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_PUBLIC_BASE_URL` |
 | Push (Web Push) | `PUSH_PROVIDER=webpush`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` — generate a keypair with `npx web-push generate-vapid-keys` and also set the public half as `NUXT_PUBLIC_VAPID_PUBLIC_KEY` |
 

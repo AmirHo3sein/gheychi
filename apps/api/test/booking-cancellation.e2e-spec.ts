@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
+import { RefundRetryJob } from '../src/booking/refund-retry.job';
 import { loginAs } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
@@ -73,8 +74,15 @@ describe('Booking cancellation policy (e2e)', () => {
     expect(res.body.status).toBe('cancelled_by_user');
 
     const ds = app.get(DataSource);
-    const [payment] = await ds.query('SELECT status FROM payments WHERE id = $1', [paymentId]);
+    const [payment] = await ds.query('SELECT status, refund_ref_id FROM payments WHERE id = $1', [paymentId]);
     expect(payment.status).toBe('refunded');
+    expect(payment.refund_ref_id).toMatch(/^MOCKREFUND-/); // a real gateway refund happened, not just bookkeeping
+
+    const detail = await request(app.getHttpServer())
+      .get(`/api/bookings/${bookingId}`)
+      .set('Cookie', customerCookie)
+      .expect(200);
+    expect(detail.body.refundStatus).toBe('done');
   });
 
   it('forfeits the deposit when the user cancels inside the 24h window', async () => {
@@ -87,6 +95,12 @@ describe('Booking cancellation policy (e2e)', () => {
     const ds = app.get(DataSource);
     const [payment] = await ds.query('SELECT status FROM payments WHERE id = $1', [paymentId]);
     expect(payment.status).toBe('paid'); // deposit stays with the salon, not refunded
+
+    const detail = await request(app.getHttpServer())
+      .get(`/api/bookings/${bookingId}`)
+      .set('Cookie', customerCookie)
+      .expect(200);
+    expect(detail.body.refundStatus).toBeNull();
   });
 
   it('always fully refunds when the salon cancels, regardless of timing', async () => {
@@ -98,8 +112,9 @@ describe('Booking cancellation policy (e2e)', () => {
     expect(res.body.status).toBe('cancelled_by_salon');
 
     const ds = app.get(DataSource);
-    const [payment] = await ds.query('SELECT status FROM payments WHERE id = $1', [paymentId]);
+    const [payment] = await ds.query('SELECT status, refund_ref_id FROM payments WHERE id = $1', [paymentId]);
     expect(payment.status).toBe('refunded');
+    expect(payment.refund_ref_id).toMatch(/^MOCKREFUND-/); // a real gateway refund happened, not just bookkeeping
   });
 
   it('rejects cancellation by someone who is neither the customer nor the salon owner', async () => {
@@ -132,5 +147,53 @@ describe('Booking cancellation policy (e2e)', () => {
     const ds = app.get(DataSource);
     const [payment] = await ds.query('SELECT status FROM payments WHERE booking_id = $1', [created.body.booking.id]);
     expect(payment.status).toBe('failed');
+  });
+
+  it('leaves the payment refund_pending when the gateway refuses the refund, without failing the cancel', async () => {
+    const { bookingId, paymentId } = await bookAndConfirm(48);
+    const ds = app.get(DataSource);
+    // Force MockPaymentGateway.refundPayment to refuse by rewriting the authority
+    // to contain the sentinel it checks for.
+    await ds.query(`UPDATE payments SET authority = 'MOCK-REFUND-FAIL-' || authority WHERE id = $1`, [paymentId]);
+
+    await request(app.getHttpServer())
+      .post(`/api/bookings/${bookingId}/cancel`)
+      .set('Cookie', customerCookie)
+      .expect(201);
+
+    const [payment] = await ds.query('SELECT status, refund_ref_id FROM payments WHERE id = $1', [paymentId]);
+    expect(payment.status).toBe('refund_pending'); // owed, not yet issued -- RefundRetryJob picks it up
+    expect(payment.refund_ref_id).toBeNull();
+
+    const detail = await request(app.getHttpServer())
+      .get(`/api/bookings/${bookingId}`)
+      .set('Cookie', customerCookie)
+      .expect(200);
+    expect(detail.body.refundStatus).toBe('pending');
+  });
+
+  it('RefundRetryJob completes a refund the inline attempt could not', async () => {
+    const { bookingId, paymentId } = await bookAndConfirm(48);
+    const ds = app.get(DataSource);
+    // First make the refund fail inline...
+    await ds.query(`UPDATE payments SET authority = 'MOCK-REFUND-FAIL-' || authority WHERE id = $1`, [paymentId]);
+    await request(app.getHttpServer()).post(`/api/bookings/${bookingId}/cancel`).set('Cookie', customerCookie).expect(201);
+    let [payment] = await ds.query('SELECT status FROM payments WHERE id = $1', [paymentId]);
+    expect(payment.status).toBe('refund_pending');
+
+    // ...then heal the authority (gateway outage over), backdate past the grace period, and retry.
+    await ds.query(
+      `UPDATE payments SET authority = replace(authority, 'MOCK-REFUND-FAIL-', ''), refund_requested_at = now() - interval '10 minutes' WHERE id = $1`,
+      [paymentId],
+    );
+    const job = app.get(RefundRetryJob);
+    const refunded = await job.run();
+    // >= rather than === : in a slow run, the earlier MOCK-REFUND-FAIL test's row can
+    // age past the grace period and be (harmlessly, unsuccessfully) retried here too.
+    expect(refunded).toBeGreaterThanOrEqual(1);
+
+    [payment] = await ds.query('SELECT status, refund_ref_id FROM payments WHERE id = $1', [paymentId]);
+    expect(payment.status).toBe('refunded');
+    expect(payment.refund_ref_id).toMatch(/^MOCKREFUND-/);
   });
 });

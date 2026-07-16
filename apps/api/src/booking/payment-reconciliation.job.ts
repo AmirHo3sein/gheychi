@@ -36,40 +36,55 @@ export class PaymentReconciliationJob {
         const verify = await this.gateway.verifyPayment(payment.authority, payment.amount);
         await this.dataSource.transaction(async (em) => {
           if (verify.success) {
-            // The booking-hold TTL (15 min) is shorter than this job's stale
-            // threshold (20 min), so by the time a payment is old enough to land
-            // here, its booking has very likely ALREADY been expired by
-            // BookingExpiryJob -- this is the common case, not a rare race.
-            // Only resurrect a booking that's still genuinely pending_payment;
-            // if it already moved on (expired, or cancelled by either party),
-            // blindly flipping it back to confirmed would risk confirming a
-            // slot that may have since been rebooked by someone else. The
-            // payment still gets marked paid either way -- Zarinpal genuinely
-            // captured the money -- but a booking that already left
-            // pending_payment is logged for manual refund review instead of
-            // being silently resurrected.
             const result = await em.update(
               Booking,
               { id: payment.bookingId, status: 'pending_payment' },
               { status: 'confirmed' },
             );
             if (!result.affected) {
-              this.logger.error(
-                `Payment ${payment.id} (authority ${payment.authority}) was confirmed by Zarinpal after its booking ${payment.bookingId} already left pending_payment -- needs manual refund review`,
+              // Zarinpal genuinely captured the money but the booking already moved
+              // on (expired / cancelled) -- the customer must get it back. Queue an
+              // automatic refund; RefundRetryJob performs it on its next tick.
+              // Guarded on status 'initiated': if the customer's late callback won
+              // the race (handleCallback confirmed the booking and marked the
+              // payment paid between our verify and this transaction), affected is
+              // 0 and we must NOT queue a refund for a live booking.
+              const queued = await em.update(
+                Payment,
+                { id: payment.id, status: 'initiated' },
+                {
+                  status: 'refund_pending',
+                  refId: verify.refId,
+                  refundRequestedAt: new Date(),
+                },
+              );
+              if (queued.affected) {
+                this.logger.error(
+                  `Payment ${payment.id} (authority ${payment.authority}) was confirmed by Zarinpal after its booking ${payment.bookingId} already left pending_payment -- queueing automatic refund`,
+                );
+              }
+            } else {
+              await em.update(
+                Payment,
+                { id: payment.id, status: 'initiated' },
+                { status: 'paid', refId: verify.refId },
               );
             }
-            await em.update(Payment, { id: payment.id }, { status: 'paid', refId: verify.refId });
           } else {
             // Same reasoning in reverse: only cancel a booking that's still
             // pending_payment. If it already expired or was cancelled, there's
             // nothing left to do to it -- the payment simply gets marked failed
-            // (Zarinpal never captured anything).
+            // (Zarinpal never captured anything). The payment write carries the
+            // same 'initiated' guard as the success branch: a late OK callback
+            // can mark the payment paid between our verify returning failure and
+            // this transaction committing, and clobbering that 'paid' to 'failed'
+            // would vanish a genuinely captured deposit from earnings.
             await em.update(
               Booking,
               { id: payment.bookingId, status: 'pending_payment' },
               { status: 'cancelled_by_user' },
             );
-            await em.update(Payment, { id: payment.id }, { status: 'failed' });
+            await em.update(Payment, { id: payment.id, status: 'initiated' }, { status: 'failed' });
           }
         });
         reconciled++;

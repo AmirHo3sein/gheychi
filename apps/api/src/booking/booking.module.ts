@@ -20,6 +20,7 @@ import { Payment } from './payment.entity';
 import { PaymentReconciliationJob } from './payment-reconciliation.job';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
+import { RefundRetryJob } from './refund-retry.job';
 import { SalonBookingsController } from './salon-bookings.controller';
 import { SalonEarningsController } from './salon-earnings.controller';
 import { ZarinpalGateway } from './zarinpal-payment.gateway';
@@ -42,12 +43,13 @@ import { ZarinpalGateway } from './zarinpal-payment.gateway';
     BookingExpiryJob,
     BookingReminderJob,
     PaymentReconciliationJob,
+    RefundRetryJob,
     {
       provide: PAYMENT_GATEWAY,
       inject: [ConfigService],
       useFactory: (config: ConfigService) =>
         config.get('PAYMENT_GATEWAY') === 'zarinpal'
-          ? new ZarinpalGateway(config.getOrThrow('ZARINPAL_MERCHANT_ID'))
+          ? new ZarinpalGateway(config.getOrThrow('ZARINPAL_MERCHANT_ID'), config.getOrThrow('ZARINPAL_ACCESS_TOKEN'))
           : new MockPaymentGateway(),
     },
   ],

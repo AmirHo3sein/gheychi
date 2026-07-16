@@ -14,6 +14,7 @@ import { CreateBookingDto } from './dto/booking.dto';
 import { calculateDeposit } from './deposit.util';
 import { PAYMENT_GATEWAY, PaymentGateway } from './payment-gateway';
 import { Payment } from './payment.entity';
+import { PaymentsService } from './payments.service';
 
 const LOCK_TTL_MS = 5000;
 
@@ -31,6 +32,7 @@ export class BookingsService {
     private readonly nestConfig: ConfigService,
     @Inject(REDIS) private readonly redis: Redis,
     @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
+    private readonly paymentsService: PaymentsService,
   ) {}
 
   async createHold(userId: string, dto: CreateBookingDto): Promise<{ booking: Booking; paymentUrl: string }> {
@@ -155,11 +157,22 @@ export class BookingsService {
     return { paymentUrl };
   }
 
-  async findMine(userId: string, id: string): Promise<Booking & { salonName: string; serviceName: string }> {
+  async findMine(
+    userId: string,
+    id: string,
+  ): Promise<Booking & { salonName: string; serviceName: string; refundStatus: 'pending' | 'done' | null }> {
     const booking = await this.bookings.findOneBy({ id, userId });
     if (!booking) throw new NotFoundException('Booking not found');
     const [withNames] = await this.attachNames([booking]);
-    return withNames;
+    // Customer-facing refund state for the booking detail page: 'pending' = a refund
+    // is owed and being retried, 'done' = the gateway confirmed it, null = no refund
+    // in play (not cancelled, forfeited deposit, or never captured).
+    const payment = await this.payments.findOneBy({ bookingId: id });
+    const refundStatus =
+      payment?.status === 'refund_pending' ? ('pending' as const)
+      : payment?.status === 'refunded' ? ('done' as const)
+      : null;
+    return { ...withNames, refundStatus };
   }
 
   async listMine(userId: string): Promise<Array<Booking & { salonName: string; serviceName: string }>> {
@@ -203,12 +216,16 @@ export class BookingsService {
       // status above, both pass the check, and whichever commits last would
       // silently overwrite the other's outcome -- including making a caller's
       // own HTTP response reflect a status/refund decision that isn't actually
-      // the one persisted. Conditioning the update on the status still being
-      // cancellable means only the winner's write lands; the loser gets
-      // affected=0 and a clear 409 instead of a misleading 200.
+      // the one persisted. Conditioning the update on the exact status read
+      // above means only the winner's write lands; the loser gets affected=0
+      // and a clear 409 instead of a misleading 200. Guarding on the exact
+      // status (not merely "still cancellable") also covers a concurrent
+      // payment callback flipping pending_payment -> confirmed mid-cancel:
+      // the payment-fate branch below relies on that same stale read, so a
+      // status change must fail the CAS rather than mark a paid payment failed.
       const result = await em.update(
         Booking,
-        { id: booking.id, status: In(cancellableStatuses) },
+        { id: booking.id, status: booking.status },
         { status: newBookingStatus },
       );
       if (!result.affected) {
@@ -216,15 +233,41 @@ export class BookingsService {
       }
       // A pending_payment booking never had a captured payment -- nothing to refund
       // or forfeit, so its payment is simply marked failed. A confirmed booking's
-      // deposit was genuinely captured; `refund` decides the payment's fate. Marking
-      // `refunded` here only records our own intent -- no real Zarinpal refund API
-      // call is made (see this plan's header note on why that's out of scope).
+      // deposit was genuinely captured; `refund` decides the payment's fate.
+      // refund_pending means "a real refund is owed" -- the inline attemptRefund()
+      // call after this transaction commits (or, failing that, RefundRetryJob)
+      // performs the actual Zarinpal refund and moves it to 'refunded'.
       if (booking.status === 'confirmed') {
-        await em.update(Payment, { bookingId: booking.id }, { status: refund ? 'refunded' : 'paid' });
+        await em.update(
+          Payment,
+          { bookingId: booking.id },
+          refund ? { status: 'refund_pending', refundRequestedAt: new Date() } : { status: 'paid' },
+        );
       } else {
-        await em.update(Payment, { bookingId: booking.id }, { status: 'failed' });
+        // Guarded on 'initiated' as defense-in-depth: if a payment callback
+        // captures the money around this cancellation, the callback's own
+        // lost-CAS recovery (PaymentsService.handleCallback) queues the refund
+        // for a payment we marked 'failed' -- but this guard ensures we never
+        // clobber a payment that already progressed past 'initiated'.
+        await em.update(Payment, { bookingId: booking.id, status: 'initiated' }, { status: 'failed' });
       }
     });
+
+    // Attempt the real refund immediately so the common case completes within this
+    // request (mock/happy path: customer sees the final state right away). The
+    // cancellation is already committed at this point, so NOTHING from the attempt
+    // may surface as an error response: attemptRefund catches gateway failures
+    // internally, but a transient DB error inside it can still throw -- swallow and
+    // log it here, leaving the payment refund_pending for RefundRetryJob to self-heal.
+    if (refund && booking.status === 'confirmed') {
+      try {
+        await this.paymentsService.attemptRefund(booking.id);
+      } catch (err) {
+        this.logger.error(
+          `Inline refund attempt failed after cancelling booking ${booking.id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
 
     return (await this.bookings.findOneBy({ id: booking.id }))!;
   }

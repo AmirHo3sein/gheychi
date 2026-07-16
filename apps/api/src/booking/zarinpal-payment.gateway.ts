@@ -1,8 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PaymentGateway, PaymentRequestResult, PaymentVerifyResult } from './payment-gateway';
+import { PaymentGateway, PaymentRefundResult, PaymentRequestResult, PaymentVerifyResult } from './payment-gateway';
 
 const REQUEST_URL = 'https://payment.zarinpal.com/pg/v4/payment/request.json';
 const VERIFY_URL = 'https://payment.zarinpal.com/pg/v4/payment/verify.json';
+const REFUND_URL = 'https://payment.zarinpal.com/pg/v4/payment/refund.json';
 const STARTPAY_URL = 'https://payment.zarinpal.com/pg/StartPay';
 const TOMAN_TO_RIAL = 10;
 const ZARINPAL_TIMEOUT_MS = 10_000;
@@ -14,6 +15,11 @@ interface ZarinpalRequestResponse {
 
 interface ZarinpalVerifyResponse {
   data: { code: number; ref_id: number; message: string } | null;
+  errors: unknown;
+}
+
+interface ZarinpalRefundResponse {
+  data: { code: number; message: string; ref_id?: number; session?: number; iban?: string } | null;
   errors: unknown;
 }
 
@@ -29,7 +35,10 @@ interface ZarinpalVerifyResponse {
 export class ZarinpalGateway implements PaymentGateway {
   private readonly logger = new Logger(ZarinpalGateway.name);
 
-  constructor(private readonly merchantId: string) {}
+  constructor(
+    private readonly merchantId: string,
+    private readonly accessToken: string,
+  ) {}
 
   async requestPayment(amountToman: number, description: string, callbackUrl: string): Promise<PaymentRequestResult> {
     let res: Response;
@@ -98,5 +107,44 @@ export class ZarinpalGateway implements PaymentGateway {
       return { success: true, refId: String(body.data.ref_id) };
     }
     return { success: false, refId: null };
+  }
+
+  /**
+   * Refunds the full captured amount of a transaction by its authority.
+   * POST /pg/v4/payment/refund.json with a Bearer personal access token
+   * (generated in the Zarinpal panel -- separate from the merchant id).
+   * Codes 100/101 are treated as success, mirroring verifyPayment's contract,
+   * so a repeat refund attempt after a crash is harmless (idempotent).
+   * VERIFY AGAINST ZARINPAL'S SANDBOX before taking real refunds -- the exact
+   * "already refunded" code must be confirmed there, same caveat as the class
+   * header note above.
+   */
+  async refundPayment(authority: string): Promise<PaymentRefundResult> {
+    let res: Response;
+    let body: ZarinpalRefundResponse;
+    try {
+      res = await fetch(REFUND_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.accessToken}` },
+        signal: AbortSignal.timeout(ZARINPAL_TIMEOUT_MS),
+        body: JSON.stringify({ merchant_id: this.merchantId, authority }),
+      });
+      body = (await res.json()) as ZarinpalRefundResponse;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Zarinpal refund failed for authority ${authority}: ${message}`);
+      throw new Error(`Zarinpal refund failed: ${message}`);
+    }
+    // Same policy as verifyPayment: a decline-shaped answer (normal HTTP, non-success
+    // code) returns success:false; an infrastructure failure (non-ok HTTP) throws so
+    // callers leave the payment refund_pending for the retry job.
+    if (!res.ok) {
+      this.logger.error(`Zarinpal refund returned HTTP ${res.status} for authority ${authority}: ${JSON.stringify(body.errors ?? body.data)}`);
+      throw new Error(`Zarinpal refund failed: HTTP ${res.status} ${JSON.stringify(body.errors ?? body.data)}`);
+    }
+    if (body.data?.code === 100 || body.data?.code === 101) {
+      return { success: true, refundRefId: body.data.ref_id != null ? String(body.data.ref_id) : null };
+    }
+    return { success: false, refundRefId: null };
   }
 }

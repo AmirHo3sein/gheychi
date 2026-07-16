@@ -118,7 +118,7 @@ describe('Payment reconciliation job (e2e)', () => {
     expect(booking.body.status).toBe('pending_payment');
   });
 
-  it('does not resurrect an already-expired booking, but still marks the payment paid if Zarinpal confirms it', async () => {
+  it('does not resurrect an already-expired booking; the captured payment is queued for automatic refund', async () => {
     const created = await request(app.getHttpServer())
       .post('/api/bookings')
       .set('Cookie', customerCookie)
@@ -144,7 +144,8 @@ describe('Payment reconciliation job (e2e)', () => {
       .expect(200);
     expect(booking.body.status).toBe('expired'); // not silently resurrected to confirmed
 
-    const [payment] = await ds.query('SELECT status FROM payments WHERE booking_id = $1', [created.body.booking.id]);
-    expect(payment.status).toBe('paid'); // Zarinpal genuinely captured the money -- flagged for manual review, not discarded
+    const [payment] = await ds.query('SELECT status, refund_requested_at FROM payments WHERE booking_id = $1', [created.body.booking.id]);
+    expect(payment.status).toBe('refund_pending'); // Zarinpal captured money for a dead booking -- refund it, don't just log
+    expect(payment.refund_requested_at).not.toBeNull();
   });
 });
