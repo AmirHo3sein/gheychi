@@ -49,6 +49,9 @@ export class RefundRetryJob {
           severity: 'critical',
           title: 'بازپرداخت معوق',
           body: `بازگشت وجه پرداخت ${payment.id} بیش از ${ESCALATE_AFTER_HOURS} ساعت در انتظار مانده است و نیاز به بررسی دستی دارد.`,
+          // Re-page daily while stuck, not every default dedup window -- a >24h
+          // stuck refund is already escalated; more than one page a day is noise.
+          dedupHours: 24,
         });
       }
       // attemptRefund catches gateway failures internally, but a transient DB error

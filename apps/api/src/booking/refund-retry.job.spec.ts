@@ -69,7 +69,7 @@ describe('RefundRetryJob', () => {
 
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('pay-old'));
     expect(raise).toHaveBeenCalledWith(
-      expect.objectContaining({ key: 'refund-stuck:pay-old', severity: 'critical' }),
+      expect.objectContaining({ key: 'refund-stuck:pay-old', severity: 'critical', dedupHours: 24 }),
     );
   });
 
