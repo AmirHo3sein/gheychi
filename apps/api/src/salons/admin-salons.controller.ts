@@ -10,6 +10,8 @@ import { UsersService } from '../users/users.service';
 import { AdminSalonQueryDto } from './dto/admin-salon-query.dto';
 import { AdminSalonStatusDto } from './dto/admin-salon-status.dto';
 import { SetFeaturedDto } from './dto/admin-salon.dto';
+import { PortfolioItem } from './portfolio-item.entity';
+import { SalonStory } from './salon-story.entity';
 import { Salon } from './salon.entity';
 
 @Controller('admin/salons')
@@ -18,6 +20,8 @@ import { Salon } from './salon.entity';
 export class AdminSalonsController {
   constructor(
     @InjectRepository(Salon) private readonly salons: Repository<Salon>,
+    @InjectRepository(SalonStory) private readonly stories: Repository<SalonStory>,
+    @InjectRepository(PortfolioItem) private readonly portfolioItems: Repository<PortfolioItem>,
     private readonly users: UsersService,
   ) {}
 
@@ -48,6 +52,21 @@ export class AdminSalonsController {
     const salon = await this.salons.findOneBy({ id });
     if (!salon) throw new NotFoundException();
     return salon;
+  }
+
+  // Moderation views: ALL rows, including removed and expired ones — the public
+  // approved-only gate does not apply here, so an admin can inspect the content of a
+  // pending/suspended salon and the evidence behind a report on already-hidden rows.
+  @Get(':id/stories')
+  async listStories(@Param('id', ParseUUIDPipe) id: string) {
+    await this.requireSalon(id);
+    return this.stories.find({ where: { salonId: id }, order: { createdAt: 'ASC' } });
+  }
+
+  @Get(':id/portfolio')
+  async listPortfolio(@Param('id', ParseUUIDPipe) id: string) {
+    await this.requireSalon(id);
+    return this.portfolioItems.find({ where: { salonId: id }, order: { sortOrder: 'ASC', createdAt: 'ASC' } });
   }
 
   @Patch(':id/status')
@@ -89,5 +108,10 @@ export class AdminSalonsController {
     );
     if (!result.affected) throw new NotFoundException();
     return this.salons.findOneBy({ id });
+  }
+
+  private async requireSalon(id: string): Promise<void> {
+    const salon = await this.salons.findOneBy({ id });
+    if (!salon) throw new NotFoundException();
   }
 }

@@ -26,6 +26,15 @@ export class Salon {
   @Column({ type: 'text', nullable: true })
   description: string | null;
 
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  tagline: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  about: string | null;
+
+  @Column({ name: 'instagram_handle', type: 'varchar', length: 30, nullable: true })
+  instagramHandle: string | null;
+
   @Column({ name: 'gender_target', type: 'varchar' })
   genderTarget: GenderTarget;
 

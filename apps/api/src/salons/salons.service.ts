@@ -47,7 +47,12 @@ export class SalonsService {
   async updateMine(ownerId: string, dto: UpdateSalonDto): Promise<Salon> {
     const salon = await this.findMine(ownerId);
     const { lat, lng, ...rest } = dto;
-    Object.assign(salon, rest);
+    // The validation pipe's plainToInstance defines EVERY dto field as an own property
+    // (undefined when the client omitted it, ES2022 class-field semantics). Assigning
+    // those undefineds onto the loaded entity makes repo.save() report null for columns
+    // its UPDATE never touched -- the response would claim a field was cleared when the
+    // DB kept it. Clearing is explicit: the dto transforms '' to null; absent stays put.
+    Object.assign(salon, Object.fromEntries(Object.entries(rest).filter(([, value]) => value !== undefined)));
     if (lat !== undefined && lng !== undefined) {
       salon.location = { type: 'Point', coordinates: [lng, lat] };
     }

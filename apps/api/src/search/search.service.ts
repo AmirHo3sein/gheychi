@@ -15,6 +15,7 @@ export interface SearchResult {
   minPrice: number | null;
   coverPhoto: string | null;
   isFeatured: boolean;
+  hasActiveStory: boolean;
 }
 
 const FEATURED_CAP = 2;
@@ -39,7 +40,9 @@ export class SearchService {
            WHERE ss.salon_id = s.id AND ss.is_active
              AND ($5::int IS NULL OR ss.category_id = $5)) AS min_price,
         (SELECT sp.url FROM salon_photos sp
-           WHERE sp.salon_id = s.id ORDER BY sp.is_cover DESC, sp.sort_order ASC LIMIT 1) AS cover_photo
+           WHERE sp.salon_id = s.id ORDER BY sp.is_cover DESC, sp.sort_order ASC LIMIT 1) AS cover_photo,
+        EXISTS (SELECT 1 FROM salon_stories st
+           WHERE st.salon_id = s.id AND st.status = 'published' AND st.expires_at > now()) AS has_active_story
       FROM salons s
       WHERE s.status = 'approved'
         AND s.gender_target = $3
@@ -67,6 +70,7 @@ export class SearchService {
       minPrice: r.min_price === null ? null : Number(r.min_price),
       coverPhoto: (r.cover_photo as string) ?? null,
       isFeatured: r.is_featured as boolean,
+      hasActiveStory: r.has_active_story as boolean,
     }));
 
     // The query already orders featured salons first (each group internally sorted by

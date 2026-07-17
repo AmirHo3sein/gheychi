@@ -54,6 +54,8 @@ const upcomingBookings = computed(() =>
 const QUICK_LINKS: Array<{ to: string; label: string; icon: IconName }> = [
   { to: '/hours', label: 'ساعات کاری', icon: 'hours' },
   { to: '/photos', label: 'تصاویر', icon: 'photos' },
+  { to: '/stories', label: 'استوری‌ها', icon: 'stories' },
+  { to: '/portfolio', label: 'نمونه کارها', icon: 'portfolio' },
   { to: '/settings', label: 'تنظیمات', icon: 'settings' },
 ]
 </script>

@@ -2,17 +2,26 @@ import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
 
 export class CreateReportDto {
-  // Exactly one of salonId/reviewId identifies the target. Each is required (and must
-  // be a UUID) whenever the other is absent — so "neither" fails validation on both
-  // properties here. The "both provided" case skips both @ValidateIf branches and is
-  // rejected in ReportsService.create() with a 400 instead.
-  @ValidateIf((o: CreateReportDto) => o.reviewId === undefined)
+  // Exactly one of salonId/reviewId/storyId/portfolioItemId identifies the target.
+  // Each is required (and must be a UUID) whenever all its siblings are absent — so
+  // "none" fails validation on every property here. Any "more than one" combination
+  // skips every @ValidateIf branch and is rejected in ReportsService.create() with
+  // a 400 instead.
+  @ValidateIf((o: CreateReportDto) => o.reviewId === undefined && o.storyId === undefined && o.portfolioItemId === undefined)
   @IsUUID()
   salonId?: string;
 
-  @ValidateIf((o: CreateReportDto) => o.salonId === undefined)
+  @ValidateIf((o: CreateReportDto) => o.salonId === undefined && o.storyId === undefined && o.portfolioItemId === undefined)
   @IsUUID()
   reviewId?: string;
+
+  @ValidateIf((o: CreateReportDto) => o.salonId === undefined && o.reviewId === undefined && o.portfolioItemId === undefined)
+  @IsUUID()
+  storyId?: string;
+
+  @ValidateIf((o: CreateReportDto) => o.salonId === undefined && o.reviewId === undefined && o.storyId === undefined)
+  @IsUUID()
+  portfolioItemId?: string;
 
   @IsString()
   @MinLength(5)

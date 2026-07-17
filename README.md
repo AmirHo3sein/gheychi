@@ -135,6 +135,10 @@ Closes the six trust-and-safety gaps carried since Plans 5/6 — no new product 
 - The salon-side effect of a user-suspension cascade is not separately audited (only the `user.status.set` row exists) — deliberate; reconstructing a salon's status timeline from audit rows alone has that gap.
 - Admin notifications are one shared queue (read = handled for everyone), not per-admin state — deliberate MVP cut.
 
+## Salon showcase — stories, profile, portfolio (2026-07-17)
+
+Salon owners can now present themselves: Instagram-style **stories** (image-only, 24-hour lifetime enforced as a DB-clock SQL predicate with an hourly storage-GC cron; cap 10 active), a richer **profile** (`tagline`, «درباره سالن» free text, Instagram handle — all optional, edited in the provider panel's settings), and a **portfolio** of sample works (captioned, optionally linked to a bookable service, cap 40, reorderable). Customers see them on the salon page (story ring + full-screen tap-through viewer, portfolio grid with «رزرو این خدمت» booking pills) and story rings on search cards (`hasActiveStory`); provider panel manages them at `/stories` and `/portfolio`; admins get per-salon content tabs with reversible remove/restore (audited) and the verified-customer report flow extends to both content types (`reports.target_type` survives content deletion, so evidence handling stays coherent). Spec + execution record: `docs/superpowers/specs/2026-07-17-salon-showcase-design.md`, `docs/superpowers/plans/2026-07-17-salon-showcase.md`. Cuts: no video, no story feed, no view counts, hardcoded TTL/caps.
+
 ## Blog / content CMS (Plan 8)
 
 A Persian content-marketing blog: admins author Markdown articles in the admin panel, and the user-app serves them as SEO-optimized public pages that pull organic search traffic toward salon discovery. Spec: `docs/superpowers/specs/2026-07-10-plan-8-blog-cms-design.md`. This is the "backend module + admin editor + public pages" subsystem deferred since Plan 4.

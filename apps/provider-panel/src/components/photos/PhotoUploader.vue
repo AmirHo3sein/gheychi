@@ -4,14 +4,20 @@ import { ref } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { useApi } from '@/composables/useApi'
 
-interface SalonPhoto {
-  id: string
-  url: string
-  isCover: boolean
-  sortOrder: number
-}
+const props = withDefaults(
+  defineProps<{
+    /** API path receiving the multipart POST. The default keeps PhotosView's original behavior. */
+    endpoint?: string
+    /** Extra text fields appended to the multipart form alongside `file` (e.g. caption/serviceId). */
+    extraFields?: Record<string, string>
+  }>(),
+  { endpoint: '/salons/mine/photos', extraFields: () => ({}) },
+)
 
-const emit = defineEmits<{ uploaded: [photo: SalonPhoto] }>()
+// The created row's shape depends on the target endpoint (photo vs. story vs. portfolio
+// item) -- the uploader just relays whatever the API returned; callers type their own
+// @uploaded handler, so the payload is deliberately `any`.
+const emit = defineEmits<{ uploaded: [item: any] }>()
 const { apiFetch } = useApi()
 const error = ref('')
 const uploading = ref(false)
@@ -31,11 +37,15 @@ async function onFileChange(event: Event) {
   uploading.value = true
   const form = new FormData()
   form.append('file', file)
-  const { data, error: apiError } = await apiFetch<SalonPhoto>('/salons/mine/photos', { method: 'POST', body: form })
+  for (const [key, value] of Object.entries(props.extraFields)) form.append(key, value)
+  const { data, error: apiError } = await apiFetch<object>(props.endpoint, { method: 'POST', body: form })
   uploading.value = false
   input.value = ''
   if (apiError || !data) {
-    error.value = 'بارگذاری تصویر ناموفق بود.'
+    // A 409 is a business-rule rejection with a Persian message from the API (the
+    // story/portfolio caps) -- surface it verbatim. The photos endpoint has no cap,
+    // so the default-endpoint (PhotosView) failure text is unchanged.
+    error.value = apiError?.status === 409 && apiError.message ? apiError.message : 'بارگذاری تصویر ناموفق بود.'
     return
   }
   emit('uploaded', data)

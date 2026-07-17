@@ -15,6 +15,7 @@ defineProps<{
     >
       تبلیغ
     </span>
+    <!-- Thin accent ring = the salon has at least one active story (SSR-rendered cue). -->
     <NuxtImg
       v-if="salon.coverPhoto"
       provider="arvancloud"
@@ -22,10 +23,17 @@ defineProps<{
       width="80"
       height="80"
       loading="lazy"
+      data-testid="salon-thumb"
       class="h-20 w-20 flex-shrink-0 rounded-lg object-cover"
+      :class="salon.hasActiveStory ? 'ring-2 ring-(--color-accent)' : undefined"
       :alt="salon.name"
     />
-    <div v-else class="h-20 w-20 flex-shrink-0 rounded-lg bg-(--color-surface)" />
+    <div
+      v-else
+      data-testid="salon-thumb"
+      class="h-20 w-20 flex-shrink-0 rounded-lg bg-(--color-surface)"
+      :class="salon.hasActiveStory ? 'ring-2 ring-(--color-accent)' : undefined"
+    />
     <div class="flex-1 text-sm">
       <h3 class="font-bold">{{ salon.name }}</h3>
       <p>⭐ {{ salon.ratingAvg.toFixed(1) }} ({{ salon.ratingCount }}) · {{ salon.distanceKm.toFixed(1) }} کیلومتر</p>
