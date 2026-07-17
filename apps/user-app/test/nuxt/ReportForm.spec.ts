@@ -68,6 +68,40 @@ describe('ReportForm', () => {
     )
   })
 
+  it('targets the story when storyId is passed', async () => {
+    fetchMock.mockResolvedValue({ id: 'rep1' })
+    const wrapper = await mountSuspended(ReportForm, { props: { salonId: 's1', storyId: 'st1' } })
+
+    expect(wrapper.get('h2').text()).toBe('گزارش این استوری')
+
+    await wrapper.find('[data-testid="report-reason-input"]').setValue(VALID_REASON)
+    await wrapper.find('[data-testid="submit-report-button"]').trigger('click')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/reports',
+      expect.objectContaining({ method: 'POST', body: { storyId: 'st1', reason: VALID_REASON } }),
+    )
+  })
+
+  it('targets the portfolio item when portfolioItemId is passed', async () => {
+    fetchMock.mockResolvedValue({ id: 'rep1' })
+    const wrapper = await mountSuspended(ReportForm, {
+      props: { salonId: 's1', portfolioItemId: 'pf1' },
+    })
+
+    expect(wrapper.get('h2').text()).toBe('گزارش این نمونه کار')
+
+    await wrapper.find('[data-testid="report-reason-input"]').setValue(VALID_REASON)
+    await wrapper.find('[data-testid="submit-report-button"]').trigger('click')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/reports',
+      expect.objectContaining({ method: 'POST', body: { portfolioItemId: 'pf1', reason: VALID_REASON } }),
+    )
+  })
+
   it('shows the duplicate-report toast on a 409 and closes', async () => {
     fetchMock.mockRejectedValue({ response: { status: 409 }, statusMessage: 'Conflict' })
     const wrapper = await mountSuspended(ReportForm, { props: { salonId: 's1' } })

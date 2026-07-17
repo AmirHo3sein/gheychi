@@ -2,6 +2,8 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { UsersService } from '../users/users.service';
 import { AdminSalonsController } from './admin-salons.controller';
+import { PortfolioItem } from './portfolio-item.entity';
+import { SalonStory } from './salon-story.entity';
 import { Salon } from './salon.entity';
 
 describe('AdminSalonsController.setStatus suspended_cause handling', () => {
@@ -17,7 +19,12 @@ describe('AdminSalonsController.setStatus suspended_cause handling', () => {
     users = {
       findById: jest.fn().mockResolvedValue({ id: 'owner-1', status: 'active' }),
     };
-    controller = new AdminSalonsController(repo as unknown as Repository<Salon>, users as unknown as UsersService);
+    controller = new AdminSalonsController(
+      repo as unknown as Repository<Salon>,
+      { find: jest.fn() } as unknown as Repository<SalonStory>,
+      { find: jest.fn() } as unknown as Repository<PortfolioItem>,
+      users as unknown as UsersService,
+    );
   });
 
   it('records suspended_cause=admin on a direct suspension', async () => {

@@ -10,6 +10,26 @@ export interface SearchResult {
   minPrice: number | null
   coverPhoto: string | null
   isFeatured: boolean
+  hasActiveStory: boolean
+}
+
+/** Public story shape from GET /salons/:slug/stories (published, unexpired only). */
+export interface SalonStoryItem {
+  id: string
+  url: string
+  caption: string | null
+  serviceId: string | null
+  createdAt: string
+  expiresAt: string
+}
+
+/** Public portfolio shape from GET /salons/:slug/portfolio (published only). */
+export interface SalonPortfolioItem {
+  id: string
+  url: string
+  caption: string | null
+  serviceId: string | null
+  sortOrder: number
 }
 
 export interface BlogCategory {

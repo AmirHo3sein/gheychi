@@ -22,6 +22,13 @@ const report = {
   reviewId: null,
   reviewRating: null,
   reviewComment: null,
+  targetType: 'salon',
+  storyId: null,
+  storyUrl: null,
+  storyCaption: null,
+  portfolioItemId: null,
+  portfolioItemUrl: null,
+  portfolioItemCaption: null,
   resolutionNote: null,
   createdAt: '2026-07-10T08:00:00.000Z',
 }
@@ -47,7 +54,7 @@ describe('ReportsView', () => {
   it('quotes the reported review when the report targets a review', async () => {
     fetchMock.mockResolvedValue({
       data: {
-        items: [{ ...report, reviewId: 'rev1', reviewRating: 1, reviewComment: 'برخورد بسیار بد بود' }],
+        items: [{ ...report, targetType: 'review', reviewId: 'rev1', reviewRating: 1, reviewComment: 'برخورد بسیار بد بود' }],
         total: 1,
         page: 1,
         pageSize: 10,
@@ -61,12 +68,100 @@ describe('ReportsView', () => {
     expect(wrapper.get('[data-testid="quoted-review"]').text()).toContain('برخورد بسیار بد بود')
   })
 
-  it('does not render a quoted review block for salon-targeted reports', async () => {
+  it('does not render any quoted content block for salon-targeted reports', async () => {
     fetchMock.mockResolvedValue({ data: { items: [{ ...report }], total: 1, page: 1, pageSize: 10 }, error: null })
     const wrapper = mount(ReportsView, mountOptions)
     await flushPromises()
 
     expect(wrapper.find('[data-testid="quoted-review"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="quoted-story"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="quoted-portfolio-item"]').exists()).toBe(false)
+  })
+
+  it('shows the reported story thumbnail and caption when the row carries them', async () => {
+    fetchMock.mockResolvedValue({
+      data: {
+        items: [
+          { ...report, targetType: 'story', storyId: 'st1', storyUrl: 'http://cdn.example/story1.jpg', storyCaption: 'کوتاهی مو' },
+        ],
+        total: 1,
+        page: 1,
+        pageSize: 10,
+      },
+      error: null,
+    })
+    const wrapper = mount(ReportsView, mountOptions)
+    await flushPromises()
+
+    const quoted = wrapper.get('[data-testid="quoted-story"]')
+    expect(quoted.get('img').attributes('src')).toBe('http://cdn.example/story1.jpg')
+    expect(quoted.text()).toContain('کوتاهی مو')
+    expect(quoted.text()).not.toContain('منقضی شده')
+  })
+
+  it('falls back to an expired placeholder when the reported story content is gone', async () => {
+    // The real post-deletion shape: ON DELETE SET NULL nulled the storyId FK (provider
+    // self-delete or expiry GC) and only targetType still says this targeted a story.
+    fetchMock.mockResolvedValue({
+      data: {
+        items: [{ ...report, targetType: 'story', storyId: null, storyUrl: null, storyCaption: null }],
+        total: 1,
+        page: 1,
+        pageSize: 10,
+      },
+      error: null,
+    })
+    const wrapper = mount(ReportsView, mountOptions)
+    await flushPromises()
+
+    const quoted = wrapper.get('[data-testid="quoted-story"]')
+    expect(quoted.find('img').exists()).toBe(false)
+    expect(quoted.text()).toContain('منقضی شده')
+  })
+
+  it('shows the reported portfolio item thumbnail and caption when the row carries them', async () => {
+    fetchMock.mockResolvedValue({
+      data: {
+        items: [
+          {
+            ...report,
+            targetType: 'portfolio',
+            portfolioItemId: 'p1',
+            portfolioItemUrl: 'http://cdn.example/work1.jpg',
+            portfolioItemCaption: 'رنگ و مش',
+          },
+        ],
+        total: 1,
+        page: 1,
+        pageSize: 10,
+      },
+      error: null,
+    })
+    const wrapper = mount(ReportsView, mountOptions)
+    await flushPromises()
+
+    const quoted = wrapper.get('[data-testid="quoted-portfolio-item"]')
+    expect(quoted.get('img').attributes('src')).toBe('http://cdn.example/work1.jpg')
+    expect(quoted.text()).toContain('رنگ و مش')
+  })
+
+  it('falls back to an expired placeholder when the reported portfolio item is gone', async () => {
+    // Same post-deletion shape as the story case: FK nulled, targetType survives.
+    fetchMock.mockResolvedValue({
+      data: {
+        items: [{ ...report, targetType: 'portfolio', portfolioItemId: null, portfolioItemUrl: null, portfolioItemCaption: null }],
+        total: 1,
+        page: 1,
+        pageSize: 10,
+      },
+      error: null,
+    })
+    const wrapper = mount(ReportsView, mountOptions)
+    await flushPromises()
+
+    const quoted = wrapper.get('[data-testid="quoted-portfolio-item"]')
+    expect(quoted.find('img').exists()).toBe(false)
+    expect(quoted.text()).toContain('منقضی شده')
   })
 
   it('reloads the list after a successful resolve, so the card leaves the open queue', async () => {

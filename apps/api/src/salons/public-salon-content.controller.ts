@@ -1,8 +1,10 @@
 import { Controller, Get, Param } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { PortfolioItem } from './portfolio-item.entity';
 import { SalonService } from './salon-service.entity';
 import { SalonPhoto } from './salon-photo.entity';
+import { SalonStory } from './salon-story.entity';
 import { SalonsService } from './salons.service';
 import { WorkingHour } from './working-hour.entity';
 
@@ -13,6 +15,8 @@ export class PublicSalonContentController {
     @InjectRepository(SalonService) private readonly services: Repository<SalonService>,
     @InjectRepository(WorkingHour) private readonly hours: Repository<WorkingHour>,
     @InjectRepository(SalonPhoto) private readonly photos: Repository<SalonPhoto>,
+    @InjectRepository(SalonStory) private readonly stories: Repository<SalonStory>,
+    @InjectRepository(PortfolioItem) private readonly portfolio: Repository<PortfolioItem>,
   ) {}
 
   private async requireSalonId(slug: string): Promise<string> {
@@ -36,5 +40,32 @@ export class PublicSalonContentController {
   async listPhotos(@Param('slug') slug: string) {
     const salonId = await this.requireSalonId(slug);
     return this.photos.find({ where: { salonId }, order: { isCover: 'DESC', sortOrder: 'ASC' } });
+  }
+
+  @Get('stories')
+  async listStories(@Param('slug') slug: string) {
+    const salonId = await this.requireSalonId(slug);
+    // Expiry is a DB-clock predicate (the same clock that stamped expires_at at
+    // insert), so a story vanishes at exactly 24h with no cron or app-clock drift.
+    const rows = await this.stories
+      .createQueryBuilder('story')
+      .where('story.salon_id = :salonId', { salonId })
+      .andWhere("story.status = 'published'")
+      .andWhere('story.expires_at > now()')
+      .orderBy('story.created_at', 'ASC')
+      .getMany();
+    return rows.map(({ id, url, caption, serviceId, createdAt, expiresAt }) => ({
+      id, url, caption, serviceId, createdAt, expiresAt,
+    }));
+  }
+
+  @Get('portfolio')
+  async listPortfolio(@Param('slug') slug: string) {
+    const salonId = await this.requireSalonId(slug);
+    const rows = await this.portfolio.find({
+      where: { salonId, status: 'published' },
+      order: { sortOrder: 'ASC', createdAt: 'ASC' },
+    });
+    return rows.map(({ id, url, caption, serviceId, sortOrder }) => ({ id, url, caption, serviceId, sortOrder }));
   }
 }

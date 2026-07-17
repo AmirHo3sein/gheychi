@@ -46,6 +46,16 @@ export function reviewStatusLabel(status: string): LabelEntry {
   return REVIEW_STATUS[status] ?? { label: status, tone: 'neutral' }
 }
 
+// Shared by salon stories and portfolio items (both carry the same two-state enum).
+const SHOWCASE_STATUS: Record<string, LabelEntry> = {
+  published: { label: 'منتشر شده', tone: 'success' },
+  removed: { label: 'حذف شده', tone: 'danger' },
+}
+
+export function showcaseStatusLabel(status: string): LabelEntry {
+  return SHOWCASE_STATUS[status] ?? { label: status, tone: 'neutral' }
+}
+
 export function userStatusLabel(status: string): LabelEntry {
   return USER_STATUS[status] ?? { label: status, tone: 'neutral' }
 }
@@ -71,6 +81,8 @@ export function blogPostStatusLabel(status: string): LabelEntry {
 const AUDIT_ACTION: Record<string, LabelEntry> = {
   'salon.status.set': { label: 'تغییر وضعیت آرایشگاه', tone: 'warning' },
   'salon.featured.set': { label: 'تغییر نشان ویژه', tone: 'info' },
+  'salon.story.status.set': { label: 'تعدیل استوری', tone: 'warning' },
+  'salon.portfolio.status.set': { label: 'تعدیل نمونه کار', tone: 'warning' },
   'user.status.set': { label: 'تغییر وضعیت کاربر', tone: 'danger' },
   'review.moderate': { label: 'تعدیل نظر', tone: 'warning' },
   'category.create': { label: 'ایجاد دسته‌بندی', tone: 'success' },
@@ -97,6 +109,8 @@ const AUDIT_TARGET_TYPE: Record<string, string> = {
   salon: 'آرایشگاه',
   user: 'کاربر',
   review: 'نظر',
+  story: 'استوری',
+  portfolioitem: 'نمونه کار',
   category: 'دسته‌بندی',
   config: 'تنظیمات',
   report: 'گزارش',

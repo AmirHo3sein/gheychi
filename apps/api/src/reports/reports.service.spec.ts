@@ -7,6 +7,8 @@ import { DataSource, QueryFailedError } from 'typeorm';
 import { AdminNotificationsService } from '../admin-notifications/admin-notifications.service';
 import { Booking } from '../booking/booking.entity';
 import { Review } from '../reviews/review.entity';
+import { PortfolioItem } from '../salons/portfolio-item.entity';
+import { SalonStory } from '../salons/salon-story.entity';
 import { CreateReportDto } from './dto/report.dto';
 import { Report } from './report.entity';
 import { ReportsService } from './reports.service';
@@ -30,6 +32,8 @@ interface Mocks {
     createQueryBuilder: jest.Mock;
   };
   reviewsRepo: { findOneBy: jest.Mock };
+  storiesRepo: { findOneBy: jest.Mock };
+  portfolioRepo: { findOneBy: jest.Mock };
   bookingsRepo: { countBy: jest.Mock };
   em: { create: jest.Mock; save: jest.Mock };
   transaction: jest.Mock;
@@ -60,6 +64,8 @@ async function setup(): Promise<{ service: ReportsService; mocks: Mocks }> {
       createQueryBuilder: jest.fn().mockReturnValue(qb),
     },
     reviewsRepo: { findOneBy: jest.fn() },
+    storiesRepo: { findOneBy: jest.fn() },
+    portfolioRepo: { findOneBy: jest.fn() },
     bookingsRepo: { countBy: jest.fn() },
     em,
     transaction: jest.fn(async (cb: (em: unknown) => Promise<unknown>) => cb(em)),
@@ -72,6 +78,8 @@ async function setup(): Promise<{ service: ReportsService; mocks: Mocks }> {
       ReportsService,
       { provide: getRepositoryToken(Report), useValue: mocks.reportsRepo },
       { provide: getRepositoryToken(Review), useValue: mocks.reviewsRepo },
+      { provide: getRepositoryToken(SalonStory), useValue: mocks.storiesRepo },
+      { provide: getRepositoryToken(PortfolioItem), useValue: mocks.portfolioRepo },
       { provide: getRepositoryToken(Booking), useValue: mocks.bookingsRepo },
       { provide: DataSource, useValue: { transaction: mocks.transaction } },
       { provide: AdminNotificationsService, useValue: { emit: mocks.emit } },
@@ -114,6 +122,9 @@ describe('ReportsService.create', () => {
       reporterId: 'user-1',
       salonId: 'salon-1',
       reviewId: null,
+      storyId: null,
+      portfolioItemId: null,
+      targetType: 'salon',
       reason: 'سالن تمیز نبود و رزرو رعایت نشد',
       status: 'open',
     });
@@ -133,7 +144,55 @@ describe('ReportsService.create', () => {
     });
     expect(mocks.em.save).toHaveBeenCalledWith(
       Report,
-      expect.objectContaining({ salonId: 'salon-9', reviewId: 'review-9' }),
+      expect.objectContaining({ salonId: 'salon-9', reviewId: 'review-9', targetType: 'review' }),
+    );
+  });
+
+  it('derives the salon from the story when storyId is the target', async () => {
+    const { service, mocks } = await setup();
+    mocks.storiesRepo.findOneBy.mockResolvedValue({ id: 'story-3', salonId: 'salon-3' });
+    mocks.bookingsRepo.countBy.mockResolvedValue(1);
+
+    await service.create('user-1', { storyId: 'story-3', reason: 'محتوای نامناسب در استوری' });
+
+    expect(mocks.bookingsRepo.countBy).toHaveBeenCalledWith({
+      userId: 'user-1',
+      salonId: 'salon-3',
+      status: 'completed',
+    });
+    expect(mocks.em.save).toHaveBeenCalledWith(
+      Report,
+      expect.objectContaining({
+        salonId: 'salon-3',
+        storyId: 'story-3',
+        reviewId: null,
+        portfolioItemId: null,
+        targetType: 'story',
+      }),
+    );
+  });
+
+  it('derives the salon from the portfolio item when portfolioItemId is the target', async () => {
+    const { service, mocks } = await setup();
+    mocks.portfolioRepo.findOneBy.mockResolvedValue({ id: 'item-4', salonId: 'salon-4' });
+    mocks.bookingsRepo.countBy.mockResolvedValue(1);
+
+    await service.create('user-1', { portfolioItemId: 'item-4', reason: 'محتوای نامناسب در نمونه کار' });
+
+    expect(mocks.bookingsRepo.countBy).toHaveBeenCalledWith({
+      userId: 'user-1',
+      salonId: 'salon-4',
+      status: 'completed',
+    });
+    expect(mocks.em.save).toHaveBeenCalledWith(
+      Report,
+      expect.objectContaining({
+        salonId: 'salon-4',
+        portfolioItemId: 'item-4',
+        reviewId: null,
+        storyId: null,
+        targetType: 'portfolio',
+      }),
     );
   });
 
@@ -144,6 +203,26 @@ describe('ReportsService.create', () => {
     await expect(service.create('user-1', { reviewId: 'review-9', reason: 'این دیدگاه توهین‌آمیز است' })).rejects.toBeInstanceOf(
       NotFoundException,
     );
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it('404s when the reported story does not exist', async () => {
+    const { service, mocks } = await setup();
+    mocks.storiesRepo.findOneBy.mockResolvedValue(null);
+
+    await expect(service.create('user-1', { storyId: 'story-9', reason: 'محتوای نامناسب در استوری' })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it('404s when the reported portfolio item does not exist', async () => {
+    const { service, mocks } = await setup();
+    mocks.portfolioRepo.findOneBy.mockResolvedValue(null);
+
+    await expect(
+      service.create('user-1', { portfolioItemId: 'item-9', reason: 'محتوای نامناسب در نمونه کار' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
@@ -167,7 +246,16 @@ describe('ReportsService.create', () => {
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
-  it('400s when neither salonId nor reviewId is provided', async () => {
+  it('400s when a story and a portfolio item are both provided', async () => {
+    const { service, mocks } = await setup();
+
+    await expect(
+      service.create('user-1', { storyId: 'story-3', portfolioItemId: 'item-4', reason: 'هر دو هدف با هم' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it('400s when no target is provided', async () => {
     const { service, mocks } = await setup();
 
     await expect(service.create('user-1', { reason: 'بدون هدف مشخص' })).rejects.toBeInstanceOf(BadRequestException);
@@ -221,7 +309,7 @@ describe('ReportsService.create', () => {
 
     await expect(service.create('user-1', { salonId: '', reviewId: '', reason: 'بدون هدف مشخص' })).rejects.toMatchObject({
       constructor: BadRequestException,
-      message: 'دقیقاً یکی از سالن یا دیدگاه باید به‌عنوان هدف گزارش مشخص شود',
+      message: 'دقیقاً یکی از سالن، دیدگاه، استوری یا نمونه کار باید به‌عنوان هدف گزارش مشخص شود',
     });
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
@@ -251,10 +339,12 @@ describe('ReportsService.create', () => {
 });
 
 describe('CreateReportDto', () => {
-  it('fails validation when neither target is provided', async () => {
+  it('fails validation when no target is provided', async () => {
     const dto = plainToInstance(CreateReportDto, { reason: 'اطلاعات سالن نادرست است' });
     const errors = await validate(dto);
-    expect(errors.map((e) => e.property)).toEqual(expect.arrayContaining(['salonId', 'reviewId']));
+    expect(errors.map((e) => e.property)).toEqual(
+      expect.arrayContaining(['salonId', 'reviewId', 'storyId', 'portfolioItemId']),
+    );
   });
 
   it('passes with only a salonId', async () => {
@@ -271,6 +361,28 @@ describe('CreateReportDto', () => {
       reason: 'این دیدگاه توهین‌آمیز است',
     });
     await expect(validate(dto)).resolves.toEqual([]);
+  });
+
+  it('passes with only a storyId', async () => {
+    const dto = plainToInstance(CreateReportDto, {
+      storyId: '2c4b8f9e-1a2b-4c3d-8e4f-5a6b7c8d9e0f',
+      reason: 'محتوای نامناسب در استوری',
+    });
+    await expect(validate(dto)).resolves.toEqual([]);
+  });
+
+  it('passes with only a portfolioItemId', async () => {
+    const dto = plainToInstance(CreateReportDto, {
+      portfolioItemId: '2c4b8f9e-1a2b-4c3d-8e4f-5a6b7c8d9e0f',
+      reason: 'محتوای نامناسب در نمونه کار',
+    });
+    await expect(validate(dto)).resolves.toEqual([]);
+  });
+
+  it('fails on a non-uuid storyId', async () => {
+    const dto = plainToInstance(CreateReportDto, { storyId: 'not-a-uuid', reason: 'محتوای نامناسب در استوری' });
+    const errors = await validate(dto);
+    expect(errors.map((e) => e.property)).toContain('storyId');
   });
 
   it('fails on a reason shorter than 5 characters', async () => {

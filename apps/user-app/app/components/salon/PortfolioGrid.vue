@@ -1,0 +1,123 @@
+<!-- apps/user-app/app/components/salon/PortfolioGrid.vue -->
+<script setup lang="ts">
+import type { SalonPortfolioItem } from '../../utils/types'
+import { lockBodyScroll } from '../../utils/scroll-lock'
+
+const props = defineProps<{
+  items: SalonPortfolioItem[]
+  services: { id: string; name: string }[]
+  slug: string
+  salonId: string
+  /** Same eligibility flag as the salon page's report button (completed booking). */
+  canReport?: boolean
+}>()
+
+const lightboxItem = ref<SalonPortfolioItem | null>(null)
+const reportOpen = ref(false)
+
+// The booking pill only renders when the item's linked service is one of the page's
+// already-fetched (bookable) services -- a stale serviceId simply shows no pill.
+const lightboxService = computed(() => {
+  const serviceId = lightboxItem.value?.serviceId
+  if (!serviceId) return null
+  return props.services.find((service) => service.id === serviceId) ?? null
+})
+
+let unlockScroll: (() => void) | undefined
+
+function openLightbox(item: SalonPortfolioItem) {
+  lightboxItem.value = item
+  // Overlay covers the page -- freeze background scroll (restored on close/unmount).
+  unlockScroll ??= lockBodyScroll()
+}
+
+function closeLightbox() {
+  lightboxItem.value = null
+  reportOpen.value = false
+  unlockScroll?.()
+  unlockScroll = undefined
+}
+
+onBeforeUnmount(() => {
+  unlockScroll?.()
+})
+</script>
+
+<template>
+  <section>
+    <h2 class="font-bold mb-2">نمونه کارها</h2>
+    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <button
+        v-for="item in items"
+        :key="item.id"
+        type="button"
+        data-testid="portfolio-item"
+        class="text-start"
+        @click="openLightbox(item)"
+      >
+        <NuxtImg
+          provider="arvancloud"
+          :src="item.url"
+          width="300"
+          height="300"
+          loading="lazy"
+          class="aspect-square w-full rounded-xl object-cover"
+          :alt="item.caption ?? ''"
+        />
+        <p v-if="item.caption" class="mt-1 text-xs opacity-70">{{ item.caption }}</p>
+      </button>
+    </div>
+
+    <div
+      v-if="lightboxItem"
+      data-testid="portfolio-lightbox"
+      class="fixed inset-0 bg-black/80 flex items-center justify-center overscroll-contain p-4 z-50"
+      @click.self="closeLightbox"
+    >
+      <div class="w-full max-w-sm space-y-3 text-center">
+        <NuxtImg
+          provider="arvancloud"
+          :src="lightboxItem.url"
+          width="600"
+          height="600"
+          class="max-h-[70vh] w-full rounded-xl object-contain"
+          :alt="lightboxItem.caption ?? ''"
+        />
+        <p v-if="lightboxItem.caption" class="text-sm text-white">{{ lightboxItem.caption }}</p>
+        <NuxtLink
+          v-if="lightboxService"
+          :to="`/booking/${slug}/${lightboxService.id}`"
+          data-testid="portfolio-booking-pill"
+          class="inline-block rounded-full bg-(--color-accent) px-4 py-2 text-sm font-semibold text-white"
+        >
+          رزرو این خدمت
+        </NuxtLink>
+        <button
+          v-if="canReport"
+          type="button"
+          data-testid="portfolio-report-button"
+          class="text-xs text-white/70 underline"
+          @click="reportOpen = true"
+        >
+          گزارش این نمونه کار
+        </button>
+        <button
+          type="button"
+          data-testid="portfolio-lightbox-close"
+          class="w-full text-sm text-white"
+          @click="closeLightbox"
+        >
+          بستن
+        </button>
+      </div>
+    </div>
+
+    <!-- Renders above the lightbox (same z-index, later in the DOM). -->
+    <ReportForm
+      v-if="reportOpen && lightboxItem"
+      :salon-id="salonId"
+      :portfolio-item-id="lightboxItem.id"
+      @close="reportOpen = false"
+    />
+  </section>
+</template>

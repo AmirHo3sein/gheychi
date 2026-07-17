@@ -29,6 +29,18 @@ interface ReportRow {
   reviewId: string | null
   reviewRating: number | null
   reviewComment: string | null
+  // Set server-side from the resolved target at creation. Unlike the FKs below, it
+  // survives the ON DELETE SET NULL cascade -- so it (never the nullable FKs) is what
+  // discriminates which quoted-content block a report renders.
+  targetType: 'salon' | 'review' | 'story' | 'portfolio'
+  // Story/portfolio context is nullable by construction: the FK is ON DELETE SET NULL,
+  // so a provider delete or the expiry GC nulls it and only the report text survives.
+  storyId: string | null
+  storyUrl: string | null
+  storyCaption: string | null
+  portfolioItemId: string | null
+  portfolioItemUrl: string | null
+  portfolioItemCaption: string | null
   resolutionNote: string | null
   createdAt: string
 }
@@ -128,6 +140,33 @@ watch(page, load)
             نظر گزارش‌شده — امتیاز {{ report.reviewRating ?? '—' }}
           </p>
           <p class="text-sm text-(--color-text)">{{ report.reviewComment ?? '(بدون متن)' }}</p>
+        </div>
+
+        <!-- Gated on targetType, NOT the storyId FK: ON DELETE SET NULL nulls the FK when
+             the provider deletes the story or the expiry GC collects it, and that is exactly
+             when the «منقضی شده» placeholder must still identify the report as story-targeted. -->
+        <div v-if="report.targetType === 'story'" data-testid="quoted-story" class="mt-3 rounded-xl bg-(--color-border-soft) p-3">
+          <p class="mb-1 flex items-center gap-1.5 text-xs font-semibold text-(--color-muted)">
+            <AppIcon name="sparkles" :size="13" />
+            استوری گزارش‌شده
+          </p>
+          <template v-if="report.storyUrl">
+            <img :src="report.storyUrl" alt="" class="h-24 w-24 rounded-lg object-cover" />
+            <p v-if="report.storyCaption" class="mt-2 text-sm text-(--color-text)">{{ report.storyCaption }}</p>
+          </template>
+          <p v-else class="text-sm text-(--color-muted)">منقضی شده</p>
+        </div>
+
+        <div v-if="report.targetType === 'portfolio'" data-testid="quoted-portfolio-item" class="mt-3 rounded-xl bg-(--color-border-soft) p-3">
+          <p class="mb-1 flex items-center gap-1.5 text-xs font-semibold text-(--color-muted)">
+            <AppIcon name="brush" :size="13" />
+            نمونه کار گزارش‌شده
+          </p>
+          <template v-if="report.portfolioItemUrl">
+            <img :src="report.portfolioItemUrl" alt="" class="h-24 w-24 rounded-lg object-cover" />
+            <p v-if="report.portfolioItemCaption" class="mt-2 text-sm text-(--color-text)">{{ report.portfolioItemCaption }}</p>
+          </template>
+          <p v-else class="text-sm text-(--color-muted)">منقضی شده</p>
         </div>
 
         <div v-if="report.resolutionNote" class="mt-3 rounded-xl bg-(--color-border-soft) p-3">

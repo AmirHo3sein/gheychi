@@ -14,6 +14,7 @@ describe('Reports — lifecycle (e2e)', () => {
   let salonSlug: string;
   let serviceId: string;
   let reportId: string;
+  let reportedStoryId: string;
 
   beforeAll(async () => {
     await resetDatabase();
@@ -109,6 +110,7 @@ describe('Reports — lifecycle (e2e)', () => {
     expect(res.body.status).toBe('open');
     expect(res.body.salonId).toBe(salonId);
     expect(res.body.reviewId).toBeNull();
+    expect(res.body.targetType).toBe('salon');
     reportId = res.body.id;
   });
 
@@ -135,7 +137,8 @@ describe('Reports — lifecycle (e2e)', () => {
 
   it('wrote exactly one report_created notification — the duplicate rolled back with its report', async () => {
     // Count holds because resetDatabase() gives this file a fresh schema and, at this point in the
-    // describe, exactly one report has been created; the review-targeted report later adds a second row.
+    // describe, exactly one report has been created; the story/portfolio/review-targeted reports
+    // later in the file each add another row.
     const ds = app.get(DataSource);
     const rows = await ds.query(`SELECT type, title, body, link, read_at FROM admin_notifications WHERE type = 'report_created'`);
     expect(rows).toHaveLength(1);
@@ -159,6 +162,7 @@ describe('Reports — lifecycle (e2e)', () => {
     expect(item.salonName).toBe('Report Test Salon');
     expect(item.salonSlug).toBe(salonSlug);
     expect(item.reporterPhone).toBe('09152220002');
+    expect(item.targetType).toBe('salon');
     expect(item.reviewRating).toBeNull();
     expect(item.reviewComment).toBeNull();
   });
@@ -206,6 +210,92 @@ describe('Reports — lifecycle (e2e)', () => {
     expect(resolved.body.items[0].id).toBe(reportId);
   });
 
+  it('404s a report for a nonexistent story', () =>
+    request(app.getHttpServer())
+      .post('/api/reports')
+      .set('Cookie', customerCookie)
+      .send({ storyId: '00000000-0000-4000-8000-000000000099', reason: 'محتوای نامناسب در استوری' })
+      .expect(404));
+
+  it('reports a story, deriving the salon and surfacing the story context in the admin queue', async () => {
+    const ds = app.get(DataSource);
+    const [{ id: storyId }] = await ds.query(
+      `INSERT INTO salon_stories (salon_id, url, storage_key, caption, expires_at)
+       VALUES ($1, 'http://x/uploads/story.jpg', 'salons/x/stories/a.jpg', 'کوتاهی مو', now() + interval '24 hours')
+       RETURNING id`,
+      [salonId],
+    );
+    reportedStoryId = storyId;
+
+    const res = await request(app.getHttpServer())
+      .post('/api/reports')
+      .set('Cookie', customerCookie)
+      .send({ storyId, reason: 'محتوای نامناسب در استوری' })
+      .expect(201);
+    expect(res.body.salonId).toBe(salonId);
+    expect(res.body.storyId).toBe(storyId);
+    expect(res.body.reviewId).toBeNull();
+    expect(res.body.portfolioItemId).toBeNull();
+    expect(res.body.targetType).toBe('story');
+
+    const list = await request(app.getHttpServer()).get('/api/admin/reports').set('Cookie', adminCookie).expect(200);
+    const item = list.body.items.find((i: { id: string }) => i.id === res.body.id);
+    expect(item).toBeDefined();
+    expect(item.storyId).toBe(storyId);
+    expect(item.targetType).toBe('story');
+    expect(item.storyUrl).toBe('http://x/uploads/story.jpg');
+    expect(item.storyCaption).toBe('کوتاهی مو');
+    expect(item.portfolioItemUrl).toBeNull();
+    expect(item.portfolioItemCaption).toBeNull();
+
+    // The rebuilt dedup index keys COALESCE-per-target: a second open report on the
+    // SAME story from the same reporter still collides (409)…
+    await request(app.getHttpServer())
+      .post('/api/reports')
+      .set('Cookie', customerCookie)
+      .send({ storyId, reason: 'گزارش تکراری برای همین استوری' })
+      .expect(409);
+  });
+
+  it('allows coexisting open reports on different targets at the same salon (rebuilt dedup index)', async () => {
+    // …while a portfolio report from the same reporter at the same salon — alongside
+    // the still-open story report — inserts cleanly instead of colliding on salon_id.
+    const ds = app.get(DataSource);
+    const [{ id: portfolioItemId }] = await ds.query(
+      `INSERT INTO portfolio_items (salon_id, url, storage_key, caption)
+       VALUES ($1, 'http://x/uploads/work.jpg', 'salons/x/portfolio/a.jpg', 'نمونه رنگ مو')
+       RETURNING id`,
+      [salonId],
+    );
+
+    const res = await request(app.getHttpServer())
+      .post('/api/reports')
+      .set('Cookie', customerCookie)
+      .send({ portfolioItemId, reason: 'محتوای نامناسب در نمونه کار' })
+      .expect(201);
+    expect(res.body.salonId).toBe(salonId);
+    expect(res.body.portfolioItemId).toBe(portfolioItemId);
+    expect(res.body.storyId).toBeNull();
+    expect(res.body.targetType).toBe('portfolio');
+
+    const list = await request(app.getHttpServer()).get('/api/admin/reports').set('Cookie', adminCookie).expect(200);
+    const item = list.body.items.find((i: { id: string }) => i.id === res.body.id);
+    expect(item.portfolioItemUrl).toBe('http://x/uploads/work.jpg');
+    expect(item.portfolioItemCaption).toBe('نمونه رنگ مو');
+    expect(item.storyUrl).toBeNull();
+  });
+
+  it('400s a report naming both a story and a portfolio item', () =>
+    request(app.getHttpServer())
+      .post('/api/reports')
+      .set('Cookie', customerCookie)
+      .send({
+        storyId: '00000000-0000-4000-8000-000000000098',
+        portfolioItemId: '00000000-0000-4000-8000-000000000097',
+        reason: 'هر دو هدف با هم',
+      })
+      .expect(400));
+
   it('reports a review, deriving the salon and surfacing the review in the admin queue', async () => {
     const bookingId = await bookPayAndComplete(48);
     const reviewRes = await request(app.getHttpServer())
@@ -221,11 +311,91 @@ describe('Reports — lifecycle (e2e)', () => {
       .expect(201);
     expect(res.body.salonId).toBe(salonId);
     expect(res.body.reviewId).toBe(reviewRes.body.id);
+    expect(res.body.targetType).toBe('review');
 
     const list = await request(app.getHttpServer()).get('/api/admin/reports').set('Cookie', adminCookie).expect(200);
     const item = list.body.items.find((i: { id: string }) => i.id === res.body.id);
     expect(item).toBeDefined();
     expect(item.reviewRating).toBe(1);
     expect(item.reviewComment).toBe('توهین‌آمیز');
+  });
+
+  // ---- SET NULL cascade vs open-report dedup index (regression: provider deletes) ----
+
+  it('provider deletes a reported story while the same reporter holds an open salon report — 204, report survives as an orphaned story report', async () => {
+    // The reporter's original salon report was resolved above, so a fresh open
+    // salon-target report — signature (reporter, salon, 0, 0, 0) — inserts cleanly.
+    await request(app.getHttpServer())
+      .post('/api/reports')
+      .set('Cookie', customerCookie)
+      .send({ salonId, reason: 'گزارش تازه درباره خود سالن' })
+      .expect(201);
+
+    // Deleting the reported story FK-nulls reports.story_id. Under an index without
+    // the orphaned-content exclusion, the nulled tuple would collide with the open
+    // salon report above and Postgres would abort the DELETE with 23505 (a 500).
+    await request(app.getHttpServer())
+      .delete(`/api/salons/mine/stories/${reportedStoryId}`)
+      .set('Cookie', ownerCookie)
+      .expect(204);
+
+    // The report row survives: reason kept, story_id nulled, and target_type still
+    // says 'story' — the only remaining discriminator after the cascade.
+    const list = await request(app.getHttpServer()).get('/api/admin/reports').set('Cookie', adminCookie).expect(200);
+    const orphan = list.body.items.find(
+      (i: { reason: string }) => i.reason === 'محتوای نامناسب در استوری',
+    );
+    expect(orphan).toBeDefined();
+    expect(orphan.status).toBe('open');
+    expect(orphan.storyId).toBeNull();
+    expect(orphan.storyUrl).toBeNull();
+    expect(orphan.targetType).toBe('story');
+  });
+
+  it('deleting two reported stories sequentially succeeds — both orphaned reports collapse to identical null signatures', async () => {
+    const ds = app.get(DataSource);
+    const rows: { id: string }[] = await ds.query(
+      `INSERT INTO salon_stories (salon_id, url, storage_key, expires_at)
+       SELECT $1, 'http://x/uploads/s' || g || '.jpg', 'salons/x/stories/s' || g || '.jpg', now() + interval '24 hours'
+       FROM generate_series(1, 2) g
+       RETURNING id`,
+      [salonId],
+    );
+    const [storyOne, storyTwo] = rows.map((r) => r.id);
+
+    const reportOne = await request(app.getHttpServer())
+      .post('/api/reports')
+      .set('Cookie', customerCookie)
+      .send({ storyId: storyOne, reason: 'استوری اول نامناسب است' })
+      .expect(201);
+    const reportTwo = await request(app.getHttpServer())
+      .post('/api/reports')
+      .set('Cookie', customerCookie)
+      .send({ storyId: storyTwo, reason: 'استوری دوم نامناسب است' })
+      .expect(201);
+
+    // First delete orphans reportOne to (reporter, salon, 0, 0, 0); the second delete
+    // would produce an IDENTICAL tuple for reportTwo — only the target_type exclusion
+    // in reports_open_target_uidx keeps both cascades (and the salon report from the
+    // previous test) from colliding.
+    await request(app.getHttpServer())
+      .delete(`/api/salons/mine/stories/${storyOne}`)
+      .set('Cookie', ownerCookie)
+      .expect(204);
+    await request(app.getHttpServer())
+      .delete(`/api/salons/mine/stories/${storyTwo}`)
+      .set('Cookie', ownerCookie)
+      .expect(204);
+
+    const surviving = await ds.query(
+      `SELECT story_id, target_type, status FROM reports WHERE id = ANY($1::uuid[]) ORDER BY created_at`,
+      [[reportOne.body.id, reportTwo.body.id]],
+    );
+    expect(surviving).toHaveLength(2);
+    for (const row of surviving) {
+      expect(row.story_id).toBeNull();
+      expect(row.target_type).toBe('story');
+      expect(row.status).toBe('open');
+    }
   });
 });

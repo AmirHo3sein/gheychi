@@ -72,6 +72,7 @@ describe('Search (e2e)', () => {
     expect(res.body[0].distanceKm).toBeLessThan(0.1);
     expect(res.body[1].distanceKm).toBeGreaterThan(1.5);
     expect(res.body[0].minPrice).toBe(500000);
+    expect(res.body[0].hasActiveStory).toBe(false);
   });
 
   it('respects the radius', async () => {
@@ -134,4 +135,26 @@ describe('Search (e2e)', () => {
       .get('/api/search')
       .query({ lat: ANCHOR.lat, lng: ANCHOR.lng })
       .expect(400));
+
+  it('flags hasActiveStory only for an unexpired published story', async () => {
+    const ds = app.get(DataSource);
+    // near: active published story; far: one expired + one removed-but-unexpired story --
+    // neither may count (the EXISTS predicate is status='published' AND expires_at > now()).
+    await ds.query(`
+      INSERT INTO salon_stories (salon_id, url, storage_key, status, expires_at) VALUES
+        ('10000000-0000-4000-8000-000000000001', 'http://x/uploads/a.jpg', 'salons/n/stories/a.jpg',
+         'published', now() + interval '23 hours'),
+        ('10000000-0000-4000-8000-000000000002', 'http://x/uploads/b.jpg', 'salons/f/stories/b.jpg',
+         'published', now() - interval '1 minute'),
+        ('10000000-0000-4000-8000-000000000002', 'http://x/uploads/c.jpg', 'salons/f/stories/c.jpg',
+         'removed', now() + interval '23 hours')`);
+
+    const res = await request(app.getHttpServer())
+      .get('/api/search')
+      .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women' })
+      .expect(200);
+    const bySlug = Object.fromEntries(res.body.map((s: { slug: string; hasActiveStory: boolean }) => [s.slug, s.hasActiveStory]));
+    expect(bySlug['near-salon']).toBe(true);
+    expect(bySlug['far-salon']).toBe(false);
+  });
 });

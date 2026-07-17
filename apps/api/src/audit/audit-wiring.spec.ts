@@ -5,6 +5,7 @@ import { AdminConfigController } from '../platform-config/admin-config.controlle
 import { AdminReportsController } from '../reports/admin-reports.controller';
 import { AdminReviewsController } from '../reviews/admin-reviews.controller';
 import { AdminSalonsController } from '../salons/admin-salons.controller';
+import { AdminShowcaseController } from '../salons/admin-showcase.controller';
 import { AdminUsersController } from '../users/admin-users.controller';
 import { AUDIT_ACTION } from './audit.decorator';
 import { AuditInterceptor } from './audit.interceptor';
@@ -25,6 +26,18 @@ describe('admin mutation audit wiring', () => {
       handler: AdminSalonsController.prototype.setFeatured,
       action: 'salon.featured.set',
       targetType: 'salon',
+    },
+    {
+      label: 'story status',
+      handler: AdminShowcaseController.prototype.setStoryStatus,
+      action: 'salon.story.status.set',
+      targetType: 'story',
+    },
+    {
+      label: 'portfolio status',
+      handler: AdminShowcaseController.prototype.setPortfolioStatus,
+      action: 'salon.portfolio.status.set',
+      targetType: 'portfolioitem',
     },
     {
       label: 'user status',
