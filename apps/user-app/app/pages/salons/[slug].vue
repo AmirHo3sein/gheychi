@@ -197,12 +197,19 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
           <!-- This page only ever renders an approved salon (the API's findPublicBySlug
                gates on status:'approved'), so this badge makes an already-true fact
                visible rather than asserting a new check. The one accent-colored element
-               on this page (One Seal Rule) -- prices below are deliberately neutral. -->
+               on this page (One Seal Rule) -- prices below are deliberately neutral.
+               Text is --color-text, not accent: plain --color-accent on accent-soft measured
+               2.64:1 (light) / 2.73:1 (dark), both failing WCAG AA -- --color-text passes with
+               a large margin in both modes (same fix already applied on profile.vue/bookings
+               for the equivalent accent-soft-background pattern). The icon stays accent-strong
+               for the background-tint's remaining accent signal; it does not fully clear the
+               non-text 3:1 threshold in dark mode against this specific soft background, a
+               smaller residual gap left for a follow-up token pass rather than blocking this. -->
           <span
             data-testid="salon-verified-badge"
-            class="inline-flex items-center gap-1 rounded-full bg-(--color-accent-soft) px-2 py-1 text-xs font-bold text-(--color-accent)"
+            class="inline-flex items-center gap-1 rounded-full bg-(--color-accent-soft) px-2 py-1 text-xs font-bold text-(--color-text)"
           >
-            <BaseIcon name="shield" :size="14" />
+            <BaseIcon name="shield" :size="14" class="text-(--color-accent-strong)" />
             سالن تایید شده
           </span>
         </div>

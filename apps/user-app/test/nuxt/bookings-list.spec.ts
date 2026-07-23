@@ -101,7 +101,7 @@ describe('bookings list page', () => {
     expect(badges).toHaveLength(3)
 
     expect(badges[0]!.text()).toContain('در انتظار پرداخت')
-    expect(badges[0]!.classes()).toContain('text-(--color-accent-strong)')
+    expect(badges[0]!.classes()).toContain('text-(--color-text)')
 
     expect(badges[1]!.text()).toContain('انجام شده')
     expect(badges[1]!.classes()).toContain('text-(--color-success)')

@@ -24,8 +24,11 @@ const loading = ref(true)
 const reviewingBooking = ref<BookingItem | null>(null)
 
 const STATUS_META: Record<BookingItem['status'], { label: string; icon: IconName; badgeClass: string }> = {
-  pending_payment: { label: 'در انتظار پرداخت', icon: 'clock', badgeClass: 'bg-(--color-accent-soft) text-(--color-accent-strong)' },
-  confirmed: { label: 'تایید شده', icon: 'check-circle', badgeClass: 'bg-(--color-accent-soft) text-(--color-accent-strong)' },
+  // text-(--color-text), not accent-strong: accent-strong on accent-soft is 4.88:1 in light
+  // mode (passes) but only 2.11:1 in dark mode (fails WCAG AA) -- found during the profile.vue
+  // fix pass, same root cause, verified via the WCAG relative-luminance formula.
+  pending_payment: { label: 'در انتظار پرداخت', icon: 'clock', badgeClass: 'bg-(--color-accent-soft) text-(--color-text)' },
+  confirmed: { label: 'تایید شده', icon: 'check-circle', badgeClass: 'bg-(--color-accent-soft) text-(--color-text)' },
   completed: { label: 'انجام شده', icon: 'check-circle', badgeClass: 'bg-(--color-success)/10 text-(--color-success)' },
   cancelled_by_user: { label: 'لغو شده توسط شما', icon: 'x', badgeClass: 'bg-(--color-danger-soft) text-(--color-danger)' },
   cancelled_by_salon: { label: 'لغو شده توسط سالن', icon: 'x', badgeClass: 'bg-(--color-danger-soft) text-(--color-danger)' },

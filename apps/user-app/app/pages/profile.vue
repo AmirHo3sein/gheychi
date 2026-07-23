@@ -9,18 +9,44 @@ const favorites = ref<FavoriteSalon[]>([])
 const name = ref(session.user?.name ?? '')
 const gender = ref(session.user?.gender ?? 'female')
 const savingProfile = ref(false)
+const nameError = ref('')
 
 onMounted(async () => {
-  await refreshStatus()
-  const { data } = await apiFetch<FavoriteSalon[]>('/favorites', { silent: true })
-  favorites.value = data ?? []
+  // refreshStatus() (push-subscription status) and the favorites fetch are independent --
+  // no need to serialize them.
+  const [, favoritesResult] = await Promise.all([
+    refreshStatus(),
+    apiFetch<FavoriteSalon[]>('/favorites', { silent: true }),
+  ])
+  favorites.value = favoritesResult.data ?? []
+})
+
+// Mirrors the API's name-length constraint (2-100 chars) so an invalid name never leaves
+// the client -- otherwise the server's class-validator error message (English) would reach
+// the user through the generic apiFetch toast in an all-Persian UI.
+function validateName(): boolean {
+  const trimmed = name.value.trim()
+  if (trimmed.length < 2 || trimmed.length > 100) {
+    nameError.value = 'نام باید بین ۲ تا ۱۰۰ نویسه باشد'
+    return false
+  }
+  nameError.value = ''
+  return true
+}
+
+watch(name, () => {
+  if (nameError.value) nameError.value = ''
 })
 
 async function saveProfile() {
+  if (!validateName()) return
   savingProfile.value = true
   const { data } = await apiFetch('/auth/profile', { method: 'PATCH', body: { name: name.value, gender: gender.value } })
   savingProfile.value = false
-  if (data) session.setUser(data as typeof session.user)
+  if (data) {
+    session.setUser(data as typeof session.user)
+    useToast().push('تغییرات ذخیره شد')
+  }
 }
 
 async function togglePush() {
@@ -33,52 +59,70 @@ async function logout() {
   session.setUser(null)
   await navigateTo('/login')
 }
+
+useSeoMeta({ title: 'پروفایل — آرایشگاه' })
 </script>
 
 <template>
   <div class="p-4 space-y-6">
-    <section class="space-y-2">
+    <section class="space-y-3">
       <h1 class="text-lg font-bold">پروفایل</h1>
-      <p class="text-sm">{{ session.user?.phone }}</p>
-      <input v-model="name" type="text" placeholder="نام" class="w-full rounded-lg border p-2 text-sm" />
-      <select v-model="gender" class="w-full rounded-lg border p-2 text-sm">
-        <option value="female">زن</option>
-        <option value="male">مرد</option>
-      </select>
-      <button type="button" :disabled="savingProfile" class="rounded-lg bg-(--color-accent) text-white px-4 py-2 text-sm" @click="saveProfile">
-        ذخیره
-      </button>
+      <p class="text-sm text-(--color-text-muted)">{{ session.user?.phone }}</p>
+      <form class="space-y-4" @submit.prevent="saveProfile">
+        <BaseInput v-model="name" type="text" label="نام" placeholder="نام" :maxlength="100" required :error="nameError" />
+        <BaseSelect v-model="gender" label="جنسیت" required>
+          <option value="female">زن</option>
+          <option value="male">مرد</option>
+        </BaseSelect>
+        <BaseButton type="submit" :loading="savingProfile">ذخیره</BaseButton>
+      </form>
     </section>
 
     <section v-if="pushSupported" class="flex items-center justify-between">
       <span class="text-sm">اعلان‌های نوبت</span>
-      <button type="button" class="rounded-full px-3 py-1 text-sm" :class="isSubscribed ? 'bg-(--color-accent) text-white' : 'bg-(--color-surface-card)'" @click="togglePush">
+      <button
+        type="button"
+        :aria-pressed="isSubscribed"
+        class="rounded-full px-3 py-1 text-sm font-medium transition-colors"
+        :class="isSubscribed ? 'bg-(--color-accent-soft) text-(--color-text)' : 'bg-(--color-surface-subtle) text-(--color-text-muted)'"
+        @click="togglePush"
+      >
         {{ isSubscribed ? 'فعال' : 'غیرفعال' }}
       </button>
     </section>
 
     <section class="space-y-2">
       <h2 class="font-bold">کیف پول</h2>
-      <NuxtLink to="/account/wallet" class="block rounded-lg bg-(--color-surface-card) p-3 text-sm text-(--color-accent)">
-        مشاهده موجودی و تراکنش‌ها
+      <NuxtLink to="/account/wallet" class="block">
+        <BaseCard class="flex items-center justify-between text-(--color-text)">
+          <span class="text-sm">مشاهده موجودی و تراکنش‌ها</span>
+          <BaseIcon name="chevron-back" :size="18" class="text-(--color-text-muted)" />
+        </BaseCard>
       </NuxtLink>
     </section>
 
     <section class="space-y-2">
       <h2 class="font-bold">دعوت از دوستان</h2>
-      <NuxtLink to="/account/referral" class="block rounded-lg bg-(--color-surface-card) p-3 text-sm text-(--color-accent)">
-        کد معرفی و دعوت‌های من
+      <NuxtLink to="/account/referral" class="block">
+        <BaseCard class="flex items-center justify-between text-(--color-text)">
+          <span class="text-sm">کد معرفی و دعوت‌های من</span>
+          <BaseIcon name="chevron-back" :size="18" class="text-(--color-text-muted)" />
+        </BaseCard>
       </NuxtLink>
     </section>
 
     <section class="space-y-2">
       <h2 class="font-bold">سالن‌های ذخیره شده</h2>
-      <p v-if="!favorites.length" class="text-sm">سالنی ذخیره نکرده‌اید</p>
-      <NuxtLink v-for="salon in favorites" :key="salon.id" :to="`/salons/${salon.slug}`" class="block rounded-lg bg-(--color-surface-card) p-3 text-sm">
-        {{ salon.name }} — {{ salon.city }}
-      </NuxtLink>
+      <p v-if="!favorites.length" class="text-sm text-(--color-text-muted)">سالنی ذخیره نکرده‌اید</p>
+      <div v-else class="space-y-2">
+        <NuxtLink v-for="salon in favorites" :key="salon.id" :to="`/salons/${salon.slug}`" class="block">
+          <BaseCard class="text-sm text-(--color-text)">{{ salon.name }} — {{ salon.city }}</BaseCard>
+        </NuxtLink>
+      </div>
     </section>
 
-    <button type="button" class="text-sm text-(--color-ad)" @click="logout">خروج از حساب</button>
+    <div class="pt-2 text-center">
+      <BaseButton variant="danger" @click="logout">خروج از حساب</BaseButton>
+    </div>
   </div>
 </template>
