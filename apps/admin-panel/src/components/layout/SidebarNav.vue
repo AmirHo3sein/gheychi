@@ -7,11 +7,16 @@ const LINKS: { to: string; label: string; icon: IconName }[] = [
   { to: '/', label: 'داشبورد', icon: 'dashboard' },
   { to: '/salons', label: 'آرایشگاه‌ها', icon: 'salons' },
   { to: '/reviews', label: 'نظرات', icon: 'reviews' },
+  { to: '/worker-ratings', label: 'امتیاز کارمندان', icon: 'worker-ratings' },
   { to: '/reports', label: 'گزارش‌ها', icon: 'flag' },
   { to: '/categories', label: 'دسته‌بندی‌ها', icon: 'categories' },
+  { to: '/coupons', label: 'کدهای تخفیف', icon: 'coupon' },
+  { to: '/wallet', label: 'کیف پول', icon: 'wallet' },
+  { to: '/referrals', label: 'معرفی‌ها', icon: 'user-plus' },
   { to: '/blog', label: 'بلاگ', icon: 'newspaper' },
   { to: '/users', label: 'کاربران', icon: 'users' },
   { to: '/audit-log', label: 'تاریخچه اقدامات', icon: 'history' },
+  { to: '/referrals/settings', label: 'تنظیمات معرفی', icon: 'gift' },
   { to: '/config', label: 'تنظیمات', icon: 'config' },
 ]
 
@@ -21,8 +26,18 @@ const route = useRoute()
 // because the layout's own route ('/') is a shared ancestor in every child route's `matched`
 // array -- a classic gotcha with an empty-path index route. Exact string comparison for the
 // dashboard root, prefix match for everything else (so /salons/:id still highlights "Salons").
+//
+// The prefix match alone would double-highlight '/referrals' when on '/referrals/settings'
+// (a sibling nav item, not a detail sub-route of the referrals list, unlike /salons/:id which
+// has no competing static link in LINKS) -- so a prefix match yields to any other link in this
+// same list that matches the current path with a longer (more specific) prefix.
 function isActive(to: string): boolean {
-  return to === '/' ? route.path === '/' : route.path === to || route.path.startsWith(`${to}/`)
+  if (to === '/') return route.path === '/'
+  if (route.path === to) return true
+  if (!route.path.startsWith(`${to}/`)) return false
+  return !LINKS.some(
+    (link) => link.to !== to && link.to.length > to.length && (route.path === link.to || route.path.startsWith(`${link.to}/`)),
+  )
 }
 </script>
 

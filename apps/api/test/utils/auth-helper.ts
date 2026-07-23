@@ -6,17 +6,39 @@ import { Repository } from 'typeorm';
 import { REDIS } from '../../src/redis/redis.module';
 import { User } from '../../src/users/user.entity';
 
-/** Full OTP login; returns the session cookie string for use with .set('Cookie', ...) */
-export async function loginAs(app: INestApplication, phone: string): Promise<string> {
+/**
+ * Full OTP login; returns the session cookie string for use with .set('Cookie', ...).
+ * `extra` is merged into the verify-otp body (e.g. `{ referralCode: 'ABC12345' }`) --
+ * every existing call site keeps working unchanged since it's optional.
+ */
+export async function loginAs(app: INestApplication, phone: string, extra: Record<string, unknown> = {}): Promise<string> {
   const redis = app.get<Redis>(REDIS);
   await redis.del(`otp:rl:${phone}`);
   await request(app.getHttpServer()).post('/api/auth/request-otp').send({ phone }).expect(201);
   const code = await redis.get(`otp:${phone}`);
   const res = await request(app.getHttpServer())
     .post('/api/auth/verify-otp')
-    .send({ phone, code })
+    .send({ phone, code, ...extra })
     .expect(201);
   return res.get('Set-Cookie')!.find((c: string) => c.startsWith('session='))!;
+}
+
+/** Same as loginAs, but returns the full verify-otp response body instead of just the cookie. */
+export async function verifyOtpAndLogin(
+  app: INestApplication,
+  phone: string,
+  extra: Record<string, unknown> = {},
+): Promise<{ cookie: string; body: Record<string, unknown> }> {
+  const redis = app.get<Redis>(REDIS);
+  await redis.del(`otp:rl:${phone}`);
+  await request(app.getHttpServer()).post('/api/auth/request-otp').send({ phone }).expect(201);
+  const code = await redis.get(`otp:${phone}`);
+  const res = await request(app.getHttpServer())
+    .post('/api/auth/verify-otp')
+    .send({ phone, code, ...extra })
+    .expect(201);
+  const cookie = res.get('Set-Cookie')!.find((c: string) => c.startsWith('session='))!;
+  return { cookie, body: res.body };
 }
 
 /**

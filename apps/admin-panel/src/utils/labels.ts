@@ -68,6 +68,79 @@ export function genderTargetLabel(gender: string): string {
   return GENDER_TARGET[gender] ?? gender
 }
 
+const WALLET_TRANSACTION_TYPE: Record<string, LabelEntry> = {
+  admin_adjustment: { label: 'تعدیل دستی', tone: 'info' },
+  referral_reward: { label: 'پاداش معرفی', tone: 'success' },
+  referral_reversal: { label: 'برگشت پاداش معرفی', tone: 'danger' },
+}
+
+export function walletTransactionTypeLabel(type: string): LabelEntry {
+  return WALLET_TRANSACTION_TYPE[type] ?? { label: type, tone: 'neutral' }
+}
+
+const WALLET_CURRENCY: Record<string, string> = {
+  toman: 'تومان',
+  points: 'امتیاز',
+}
+
+export function currencyLabel(currency: string): string {
+  return WALLET_CURRENCY[currency] ?? currency
+}
+
+const REFERRAL_STATUS: Record<string, LabelEntry> = {
+  awaiting_qualifying_event: { label: 'در انتظار رویداد', tone: 'warning' },
+  // Slice 4: reachable now that tryGrantReward grants wallet-kind rewards but skips
+  // discount-kind ones (percent_discount/fixed_discount, not supported until slice 5) --
+  // one beneficiary side has a granted referral_rewards row, the other is still pending
+  // on a future slice. Not a placeholder -- see referral.entity.ts's ReferralStatus note.
+  partially_granted: { label: 'اعطای جزئی پاداش', tone: 'info' },
+  reward_granted: { label: 'پاداش اعطا شد', tone: 'success' },
+  expired: { label: 'منقضی شده', tone: 'neutral' },
+  cancelled: { label: 'لغو شده', tone: 'danger' },
+}
+
+export function referralStatusLabel(status: string): LabelEntry {
+  return REFERRAL_STATUS[status] ?? { label: status, tone: 'neutral' }
+}
+
+const REFERRAL_TYPE: Record<string, string> = {
+  user: 'کاربر عادی',
+  salon_owner: 'صاحب سالن',
+  worker: 'کارمند',
+}
+
+export function referralTypeLabel(type: string): string {
+  return REFERRAL_TYPE[type] ?? type
+}
+
+const REWARD_KIND: Record<string, string> = {
+  wallet_credit: 'اعتبار کیف پول',
+  percent_discount: 'تخفیف درصدی',
+  fixed_discount: 'تخفیف مبلغ ثابت',
+  cashback: 'بازگشت وجه',
+  loyalty_points: 'امتیاز وفاداری',
+}
+
+export function rewardKindLabel(kind: string): string {
+  return REWARD_KIND[kind] ?? kind
+}
+
+/** Unit suffix for a reward's numeric value/max fields, driven by its kind. */
+export function rewardKindUnit(kind: string): string {
+  if (kind === 'percent_discount') return '٪'
+  if (kind === 'loyalty_points') return 'امتیاز'
+  return 'تومان'
+}
+
+const QUALIFYING_EVENT: Record<string, string> = {
+  first_completed_booking: 'اولین نوبت تکمیل‌شده',
+  first_paid_booking: 'اولین نوبت پرداخت‌شده',
+}
+
+export function qualifyingEventLabel(event: string): string {
+  return QUALIFYING_EVENT[event] ?? event
+}
+
 const BLOG_POST_STATUS: Record<string, LabelEntry> = {
   draft: { label: 'پیش‌نویس', tone: 'neutral' },
   published: { label: 'منتشرشده', tone: 'success' },
@@ -99,6 +172,9 @@ const AUDIT_ACTION: Record<string, LabelEntry> = {
   'blogcategory.create': { label: 'ایجاد دسته‌بندی بلاگ', tone: 'success' },
   'blogcategory.update': { label: 'ویرایش دسته‌بندی بلاگ', tone: 'info' },
   'blogcategory.delete': { label: 'حذف دسته‌بندی بلاگ', tone: 'danger' },
+  'wallet.adjust': { label: 'تعدیل موجودی کیف پول', tone: 'warning' },
+  'referral-reward-type.update': { label: 'ویرایش نوع پاداش معرفی', tone: 'info' },
+  'referral.cancel': { label: 'لغو معرفی', tone: 'danger' },
 }
 
 // Canonical list of the audited action names -- filter dropdowns and tests derive from
@@ -116,6 +192,9 @@ const AUDIT_TARGET_TYPE: Record<string, string> = {
   report: 'گزارش',
   post: 'مطلب بلاگ',
   blogcategory: 'دسته‌بندی بلاگ',
+  wallet: 'کیف پول',
+  'referral-reward-type': 'نوع پاداش معرفی',
+  referral: 'معرفی',
 }
 
 const REPORT_STATUS: Record<string, LabelEntry> = {

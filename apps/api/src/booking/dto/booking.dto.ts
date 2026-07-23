@@ -1,4 +1,4 @@
-import { IsIn, IsISO8601, IsUUID } from 'class-validator';
+import { IsIn, IsISO8601, IsOptional, IsString, IsUUID, Length } from 'class-validator';
 
 export class AvailabilityQueryDto {
   @IsUUID()
@@ -14,6 +14,11 @@ export class CreateBookingDto {
 
   @IsISO8601()
   startsAt: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 30)
+  couponCode?: string;
 }
 
 export class UpdateBookingStatusDto {

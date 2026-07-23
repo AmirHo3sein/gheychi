@@ -1,8 +1,9 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuditModule } from '../audit/audit.module';
+import { ReferralsModule } from '../referrals/referrals.module';
 import { Salon } from '../salons/salon.entity';
 import { SmsModule } from '../sms/sms.module';
 import { AdminUsersController } from '../users/admin-users.controller';
@@ -20,6 +21,12 @@ import { RolesGuard } from './roles.guard';
     SmsModule,
     AuditModule,
     TypeOrmModule.forFeature([User, Salon]),
+    // Genuine bidirectional dependency (see the matching comment in
+    // referrals.module.ts): AuthController.verifyOtp needs ReferralsService to redeem
+    // a referral code inside the registration transaction, and ReferralsModule's own
+    // controllers need AuthGuard/RolesGuard from this module. forwardRef() on both
+    // sides breaks the resulting require-cycle.
+    forwardRef(() => ReferralsModule),
     JwtModule.registerAsync({
       global: true,
       inject: [ConfigService],

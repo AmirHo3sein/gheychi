@@ -6,13 +6,19 @@ import { InjectRepository } from '@nestjs/typeorm';
 import Redis from 'ioredis';
 import { DataSource, In, LessThan, MoreThan, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
+import { isUniqueViolation } from '../common/postgres-error-codes';
+import { CouponRedemption } from '../coupons/coupon-redemption.entity';
+import { CouponsService } from '../coupons/coupons.service';
 import { REDIS } from '../redis/redis.module';
 import { SalonService } from '../salons/salon-service.entity';
 import { Salon } from '../salons/salon.entity';
+import { Worker } from '../salons/worker.entity';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
+import { ReferralsService } from '../referrals/referrals.service';
 import { Booking, BookingStatus } from './booking.entity';
 import { CreateBookingDto } from './dto/booking.dto';
 import { calculateDeposit } from './deposit.util';
+import { DiscountCandidate, resolveBestPriceWithWinner } from './discount.util';
 import { PAYMENT_GATEWAY, PaymentGateway } from './payment-gateway';
 import { Payment } from './payment.entity';
 import { PaymentsService } from './payments.service';
@@ -28,6 +34,7 @@ export class BookingsService {
     @InjectRepository(Payment) private readonly payments: Repository<Payment>,
     @InjectRepository(Salon) private readonly salons: Repository<Salon>,
     @InjectRepository(SalonService) private readonly services: Repository<SalonService>,
+    @InjectRepository(Worker) private readonly workers: Repository<Worker>,
     private readonly dataSource: DataSource,
     private readonly config: PlatformConfigService,
     private readonly nestConfig: ConfigService,
@@ -35,6 +42,8 @@ export class BookingsService {
     @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
     private readonly paymentsService: PaymentsService,
     private readonly alerts: AlertsService,
+    private readonly couponsService: CouponsService,
+    private readonly referralsService: ReferralsService,
   ) {}
 
   async createHold(userId: string, dto: CreateBookingDto): Promise<{ booking: Booking; paymentUrl: string }> {
@@ -77,9 +86,34 @@ export class BookingsService {
         });
         if (overlapping >= salon.capacity) throw new ConflictException('Slot no longer available');
 
+        // Passing `em` activates the row-lock/race-safety path inside
+        // resolveAndValidate -- this is the real, money-moving redemption attempt,
+        // not the read-only preview.
+        const coupon = dto.couponCode
+          ? await this.couponsService.resolveAndValidate(dto.couponCode, dto.salonId, userId, em)
+          : null;
+        // Best-discount-wins: if both a per-service discount and a coupon apply, the
+        // one producing the LOWER resulting price is used -- they never stack/multiply.
+        // A coupon is now either percent- or fixed-toman-kind (Slice 6); the service's
+        // own discount is always percent-kind (unchanged). resolveBestPriceWithWinner
+        // compares resulting prices across both kinds and also reports which single
+        // candidate actually won, which is what decides which of the two mutually
+        // exclusive audit columns below (discountPercent / discountFixedAmount) gets
+        // populated on the booking.
+        const serviceCandidate: DiscountCandidate =
+          service.discountPercent !== null ? { kind: 'percent', value: service.discountPercent } : null;
+        const couponCandidate: DiscountCandidate = coupon
+          ? coupon.discountPercent !== null
+            ? { kind: 'percent', value: coupon.discountPercent }
+            : { kind: 'fixed', value: coupon.discountFixedAmount! }
+          : null;
+        const { finalPrice, winner } = resolveBestPriceWithWinner(service.price, [serviceCandidate, couponCandidate]);
+        const discountPercent = winner?.kind === 'percent' ? winner.value : null;
+        const discountFixedAmount = winner?.kind === 'fixed' ? winner.value : null;
+
         const depositPercent = await this.config.getDepositPercent();
         const depositMin = await this.config.getDepositMinToman();
-        const deposit = calculateDeposit(service.price, depositPercent, depositMin);
+        const deposit = calculateDeposit(finalPrice, depositPercent, depositMin);
 
         const savedBooking = await em.save(
           Booking,
@@ -89,9 +123,17 @@ export class BookingsService {
             serviceId: dto.serviceId,
             startsAt,
             endsAt,
-            priceSnapshot: service.price,
+            priceSnapshot: finalPrice,
             depositAmount: deposit,
             status: 'pending_payment',
+            couponId: coupon ? coupon.id : null,
+            // Both service.discountPercent and coupon.discountPercent/discountFixedAmount
+            // are DB-CHECK-constrained to be strictly positive whenever non-null, so
+            // `winner` (if present) always carries a genuinely positive value here --
+            // no need for the old ">0" guard now that presence is tracked explicitly.
+            discountPercent,
+            discountFixedAmount,
+            originalPriceSnapshot: winner !== null ? service.price : null,
           }),
         );
         await em.save(
@@ -103,6 +145,29 @@ export class BookingsService {
             status: 'initiated',
           }),
         );
+
+        if (coupon) {
+          try {
+            await em.save(
+              CouponRedemption,
+              em.create(CouponRedemption, {
+                couponId: coupon.id,
+                userId,
+                bookingId: savedBooking.id,
+                discountAmount: service.price - finalPrice,
+              }),
+            );
+          } catch (err) {
+            // The UNIQUE(coupon_id, user_id) constraint is the actual race-safety
+            // backstop for "one redemption per user per code" -- resolveAndValidate's
+            // own already-used check above is a best-effort pre-check that can lose a
+            // genuine concurrent-request race, so this insert is where that race is
+            // finally, authoritatively closed.
+            if (isUniqueViolation(err)) throw new BadRequestException('شما قبلا از این کد تخفیف استفاده کرده‌اید');
+            throw err;
+          }
+        }
+
         return { booking: savedBooking, depositAmount: deposit };
       });
       booking = result.booking;
@@ -168,7 +233,9 @@ export class BookingsService {
   async findMine(
     userId: string,
     id: string,
-  ): Promise<Booking & { salonName: string; serviceName: string; refundStatus: 'pending' | 'done' | null }> {
+  ): Promise<
+    Booking & { salonName: string; serviceName: string; workerName: string | null; refundStatus: 'pending' | 'done' | null }
+  > {
     const booking = await this.bookings.findOneBy({ id, userId });
     if (!booking) throw new NotFoundException('Booking not found');
     const [withNames] = await this.attachNames([booking]);
@@ -183,7 +250,9 @@ export class BookingsService {
     return { ...withNames, refundStatus };
   }
 
-  async listMine(userId: string): Promise<Array<Booking & { salonName: string; serviceName: string }>> {
+  async listMine(
+    userId: string,
+  ): Promise<Array<Booking & { salonName: string; serviceName: string; workerName: string | null }>> {
     const bookings = await this.bookings.find({ where: { userId }, order: { startsAt: 'DESC' } });
     return this.attachNames(bookings);
   }
@@ -280,25 +349,50 @@ export class BookingsService {
     return (await this.bookings.findOneBy({ id: booking.id }))!;
   }
 
-  private async attachNames(bookings: Booking[]): Promise<Array<Booking & { salonName: string; serviceName: string }>> {
+  private async attachNames(
+    bookings: Booking[],
+  ): Promise<Array<Booking & { salonName: string; serviceName: string; workerName: string | null }>> {
     if (bookings.length === 0) return [];
     const salonIds = [...new Set(bookings.map((b) => b.salonId))];
     const serviceIds = [...new Set(bookings.map((b) => b.serviceId))];
-    const [salonRows, serviceRows] = await Promise.all([
+    const workerIds = [...new Set(bookings.map((b) => b.workerId).filter((id): id is string => id !== null))];
+    const [salonRows, serviceRows, workerRows] = await Promise.all([
       this.salons.find({ where: { id: In(salonIds) } }),
       this.services.find({ where: { id: In(serviceIds) } }),
+      workerIds.length ? this.workers.find({ where: { id: In(workerIds) } }) : Promise.resolve([]),
     ]);
     const salonNameById = new Map(salonRows.map((s) => [s.id, s.name]));
     const serviceNameById = new Map(serviceRows.map((s) => [s.id, s.name]));
+    const workerNameById = new Map(workerRows.map((w) => [w.id, w.name]));
     return bookings.map((b) => ({
       ...b,
       salonName: salonNameById.get(b.salonId) ?? 'Unknown salon',
       serviceName: serviceNameById.get(b.serviceId) ?? 'Unknown service',
+      workerName: b.workerId ? (workerNameById.get(b.workerId) ?? null) : null,
     }));
   }
 
-  listForSalon(salonId: string): Promise<Booking[]> {
-    return this.bookings.find({ where: { salonId }, order: { startsAt: 'DESC' } });
+  async listForSalon(salonId: string): Promise<Array<Booking & { salonName: string; serviceName: string; workerName: string | null }>> {
+    const bookings = await this.bookings.find({ where: { salonId }, order: { startsAt: 'DESC' } });
+    return this.attachNames(bookings);
+  }
+
+  async assignWorker(
+    salonId: string,
+    bookingId: string,
+    workerId: string,
+  ): Promise<Booking & { salonName: string; serviceName: string; workerName: string | null }> {
+    const worker = await this.workers.findOneBy({ id: workerId, salonId });
+    if (!worker) throw new NotFoundException('Worker not found');
+    if (!worker.active) throw new BadRequestException('این کارمند غیرفعال است');
+
+    const booking = await this.bookings.findOneBy({ id: bookingId, salonId });
+    if (!booking) throw new NotFoundException('Booking not found');
+
+    await this.bookings.update({ id: bookingId }, { workerId });
+    const updated = (await this.bookings.findOneBy({ id: bookingId }))!;
+    const [withNames] = await this.attachNames([updated]);
+    return withNames;
   }
 
   async getEarnings(salonId: string): Promise<{
@@ -347,6 +441,23 @@ export class BookingsService {
     if (!result.affected) {
       throw new ConflictException('Booking status changed before this update could be applied');
     }
+
+    // The first-completed-booking referral trigger (R6). Only on 'completed' -- a
+    // no-show is not a qualifying event. tryGrantReward already never throws and
+    // internally alerts on real failures; this try/catch is an extra guard so a
+    // referral-granting bug can never fail the status update response itself, matching
+    // this codebase's existing policy for every other non-critical side effect wired
+    // into a money/booking-adjacent flow.
+    if (status === 'completed') {
+      try {
+        await this.referralsService.tryGrantReward(booking.userId, booking.id, 'completed');
+      } catch (err) {
+        this.logger.error(
+          `tryGrantReward threw for booking ${booking.id} (user ${booking.userId}) after marking it completed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
     return (await this.bookings.findOneBy({ id: bookingId }))!;
   }
 }

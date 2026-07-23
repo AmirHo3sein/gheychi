@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { PushService } from '../push/push.service';
+import { ReferralsService } from '../referrals/referrals.service';
 import { SMS_PROVIDER, SmsProvider } from '../sms/sms.provider';
 import { SalonsService } from '../salons/salons.service';
 import { User } from '../users/user.entity';
@@ -27,6 +28,7 @@ export class PaymentsService {
     @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
     private readonly push: PushService,
     private readonly alerts: AlertsService,
+    private readonly referralsService: ReferralsService,
   ) {}
 
   async handleCallback(authority: string, status: string): Promise<{ status: CallbackOutcome; bookingId: string }> {
@@ -80,7 +82,7 @@ export class PaymentsService {
         const result = await em.update(
           Payment,
           { id: payment.id, status: 'initiated' },
-          { status: 'paid', refId: verify.refId },
+          { status: 'paid', refId: verify.refId, paidAt: new Date() },
         );
         if (!result.affected) return false;
         await em.update(Booking, { id: payment.bookingId }, { status: 'confirmed' });
@@ -199,6 +201,20 @@ export class PaymentsService {
     if (!updated.affected) return 'skipped';
 
     await this.notifyRefunded(payment.bookingId);
+
+    // The refund itself already committed and is the priority -- a failure reversing
+    // any referral reward tied to this booking must never surface as a failed refund.
+    // reverseIfNeeded is internally try/catch'd and alerts on real failures, but guard
+    // here too as defense-in-depth (matches this method's existing policy for every
+    // other post-refund side effect).
+    try {
+      await this.referralsService.reverseIfNeeded(payment.bookingId);
+    } catch (err) {
+      this.logger.error(
+        `Referral reward reversal check failed after refunding payment ${payment.id} (booking ${payment.bookingId}): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
     return 'refunded';
   }
 

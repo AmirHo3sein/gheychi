@@ -1,13 +1,26 @@
 // apps/admin-panel/src/utils/labels.spec.ts
 import { describe, expect, it } from 'vitest'
-import { AUDIT_ACTION_KEYS, auditActionLabel, blogPostStatusLabel, reportStatusLabel, showcaseStatusLabel } from './labels'
+import {
+  AUDIT_ACTION_KEYS,
+  auditActionLabel,
+  blogPostStatusLabel,
+  qualifyingEventLabel,
+  referralStatusLabel,
+  referralTypeLabel,
+  reportStatusLabel,
+  rewardKindLabel,
+  rewardKindUnit,
+  showcaseStatusLabel,
+} from './labels'
 
 describe('auditActionLabel', () => {
-  it('maps every one of the twenty audited actions to a Farsi label', () => {
+  it('maps every one of the twenty-one audited actions to a Farsi label', () => {
     // 9 from Plan 7 + 6 post.* + 3 blogcategory.* from Plan 8 + 2 showcase
-    // (story/portfolio status) from the salon-showcase plan. This length guard is
+    // (story/portfolio status) from the salon-showcase plan + 1 wallet.adjust from the
+    // referral-and-rating system's Slice 2 (Wallet Ledger) + 2 (referral-reward-type.update,
+    // referral.cancel) from Slice 3 (Referral codes + tracking). This length guard is
     // deliberate: adding a backend @AuditAction without a Farsi label must fail here.
-    expect(AUDIT_ACTION_KEYS).toHaveLength(20)
+    expect(AUDIT_ACTION_KEYS).toHaveLength(23)
     for (const action of AUDIT_ACTION_KEYS) {
       const entry = auditActionLabel(action)
       // A mapped entry never falls back to the raw dotted action name.
@@ -52,5 +65,60 @@ describe('reportStatusLabel', () => {
 
   it('falls back to the raw value for unknown statuses', () => {
     expect(reportStatusLabel('weird')).toEqual({ label: 'weird', tone: 'neutral' })
+  })
+})
+
+describe('referralStatusLabel', () => {
+  it('maps the five referral statuses', () => {
+    expect(referralStatusLabel('awaiting_qualifying_event')).toEqual({ label: 'در انتظار رویداد', tone: 'warning' })
+    // 'partially_granted' (Slice 4): one beneficiary side got its (wallet-kind) reward,
+    // the other side's kind isn't grantable until slice 5 -- a real, reachable status,
+    // not a placeholder (referral.entity.ts's ReferralStatus doc comment).
+    expect(referralStatusLabel('partially_granted')).toEqual({ label: 'اعطای جزئی پاداش', tone: 'info' })
+    expect(referralStatusLabel('reward_granted')).toEqual({ label: 'پاداش اعطا شد', tone: 'success' })
+    expect(referralStatusLabel('expired')).toEqual({ label: 'منقضی شده', tone: 'neutral' })
+    expect(referralStatusLabel('cancelled')).toEqual({ label: 'لغو شده', tone: 'danger' })
+  })
+
+  it('falls back to the raw value for unknown statuses', () => {
+    expect(referralStatusLabel('weird')).toEqual({ label: 'weird', tone: 'neutral' })
+  })
+})
+
+describe('referralTypeLabel', () => {
+  it('maps the three referral types', () => {
+    expect(referralTypeLabel('user')).toBe('کاربر عادی')
+    expect(referralTypeLabel('salon_owner')).toBe('صاحب سالن')
+    expect(referralTypeLabel('worker')).toBe('کارمند')
+  })
+
+  it('falls back to the raw value for an unknown type', () => {
+    expect(referralTypeLabel('weird')).toBe('weird')
+  })
+})
+
+describe('rewardKindLabel / rewardKindUnit', () => {
+  it('maps every reward kind to a Farsi label and the correct unit', () => {
+    expect(rewardKindLabel('wallet_credit')).toBe('اعتبار کیف پول')
+    expect(rewardKindUnit('wallet_credit')).toBe('تومان')
+    expect(rewardKindLabel('percent_discount')).toBe('تخفیف درصدی')
+    expect(rewardKindUnit('percent_discount')).toBe('٪')
+    expect(rewardKindLabel('fixed_discount')).toBe('تخفیف مبلغ ثابت')
+    expect(rewardKindUnit('fixed_discount')).toBe('تومان')
+    expect(rewardKindLabel('cashback')).toBe('بازگشت وجه')
+    expect(rewardKindUnit('cashback')).toBe('تومان')
+    expect(rewardKindLabel('loyalty_points')).toBe('امتیاز وفاداری')
+    expect(rewardKindUnit('loyalty_points')).toBe('امتیاز')
+  })
+})
+
+describe('qualifyingEventLabel', () => {
+  it('maps the two qualifying events', () => {
+    expect(qualifyingEventLabel('first_completed_booking')).toBe('اولین نوبت تکمیل‌شده')
+    expect(qualifyingEventLabel('first_paid_booking')).toBe('اولین نوبت پرداخت‌شده')
+  })
+
+  it('falls back to the raw value for an unknown event', () => {
+    expect(qualifyingEventLabel('weird')).toBe('weird')
   })
 })

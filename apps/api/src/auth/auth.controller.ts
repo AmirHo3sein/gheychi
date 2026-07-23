@@ -1,8 +1,11 @@
 import {
-  Body, Controller, ForbiddenException, Get, HttpCode, Inject, Patch, Post, Req, Res, UnauthorizedException, UseGuards,
+  Body, Controller, ForbiddenException, Get, HttpCode, Inject, Logger, Patch, Post, Req, Res, UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Request, Response } from 'express';
+import { DataSource } from 'typeorm';
+import { ReferralApplyStatus, ReferralsService } from '../referrals/referrals.service';
 import { SMS_PROVIDER, SmsProvider } from '../sms/sms.provider';
 import { User } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
@@ -19,10 +22,14 @@ function publicUser(user: User) {
 
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private readonly otp: OtpService,
     private readonly users: UsersService,
     private readonly jwt: JwtService,
+    private readonly referrals: ReferralsService,
+    private readonly dataSource: DataSource,
     @Inject(SMS_PROVIDER) private readonly sms: SmsProvider,
   ) {}
 
@@ -38,7 +45,52 @@ export class AuthController {
     const valid = await this.otp.verify(dto.phone, dto.code);
     if (!valid) throw new UnauthorizedException('Invalid or expired code');
 
-    const { user, isNew } = await this.users.findOrCreateByPhone(dto.phone);
+    let user: User;
+    let isNew: boolean;
+    let referralStatus: ReferralApplyStatus | undefined;
+
+    if (dto.referralCode) {
+      // Wrapped in one transaction so the new user row and its referral redemption
+      // commit atomically -- ReferralsService.applyReferralAtRegistration relies on
+      // running inside this same transaction (spec section 3/4).
+      const result = await this.dataSource.transaction(async (em) => {
+        const created = await this.users.findOrCreateByPhone(dto.phone, em);
+        let status: ReferralApplyStatus | undefined;
+
+        if (created.isNew) {
+          // referralCode is only ever read here, structurally unreachable for an
+          // existing account (R2). A SAVEPOINT wraps the ENTIRE call (not just the
+          // service's own internal insert) so that literally any unexpected failure
+          // inside referral resolution -- not just the one unique-violation race the
+          // service itself handles -- rolls back cleanly without poisoning this
+          // transaction. Registration must NEVER fail because of a referral-code
+          // problem (spec section 4).
+          await em.query('SAVEPOINT registration_referral');
+          try {
+            const applied = await this.referrals.applyReferralAtRegistration(created.user.id, dto.referralCode!, em);
+            status = applied.status;
+            await em.query('RELEASE SAVEPOINT registration_referral');
+          } catch (err) {
+            await em.query('ROLLBACK TO SAVEPOINT registration_referral');
+            this.logger.error(
+              `Referral code application failed for new user ${created.user.id}: ` +
+                (err instanceof Error ? err.message : String(err)),
+            );
+            status = 'invalid_code';
+          }
+        }
+
+        return { ...created, referralStatus: status };
+      });
+      user = result.user;
+      isNew = result.isNew;
+      referralStatus = result.referralStatus;
+    } else {
+      const created = await this.users.findOrCreateByPhone(dto.phone);
+      user = created.user;
+      isNew = created.isNew;
+    }
+
     if (user.status === 'suspended') throw new ForbiddenException('This account has been suspended');
     const token = await this.jwt.signAsync({ sub: user.id, role: user.role });
     res.cookie(SESSION_COOKIE, token, {
@@ -47,7 +99,11 @@ export class AuthController {
       secure: process.env.NODE_ENV === 'production',
       maxAge: THIRTY_DAYS_MS,
     });
-    return { user: publicUser(user), isNewUser: isNew };
+    return {
+      user: publicUser(user),
+      isNewUser: isNew,
+      ...(referralStatus !== undefined ? { referralStatus } : {}),
+    };
   }
 
   @Get('me')

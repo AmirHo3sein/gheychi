@@ -56,6 +56,8 @@ const QUICK_LINKS: Array<{ to: string; label: string; icon: IconName }> = [
   { to: '/photos', label: 'تصاویر', icon: 'photos' },
   { to: '/stories', label: 'استوری‌ها', icon: 'stories' },
   { to: '/portfolio', label: 'نمونه کارها', icon: 'portfolio' },
+  { to: '/coupons', label: 'کدهای تخفیف', icon: 'coupons' },
+  { to: '/team', label: 'تیم', icon: 'team' },
   { to: '/settings', label: 'تنظیمات', icon: 'settings' },
 ]
 </script>

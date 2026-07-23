@@ -3,6 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { PushService } from '../push/push.service';
+import { ReferralsService } from '../referrals/referrals.service';
 import { SMS_PROVIDER } from '../sms/sms.provider';
 import { SalonsService } from '../salons/salons.service';
 import { UsersService } from '../users/users.service';
@@ -20,6 +21,7 @@ describe('PaymentsService.attemptRefund', () => {
   let smsSend: jest.Mock;
   let pushSend: jest.Mock;
   let raise: jest.Mock;
+  let reverseIfNeeded: jest.Mock;
 
   const REFUND_PENDING_PAYMENT = {
     id: 'pay-1',
@@ -36,6 +38,7 @@ describe('PaymentsService.attemptRefund', () => {
     smsSend = jest.fn().mockResolvedValue(undefined);
     pushSend = jest.fn().mockResolvedValue(undefined);
     raise = jest.fn().mockResolvedValue(undefined);
+    reverseIfNeeded = jest.fn().mockResolvedValue(undefined);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -49,6 +52,7 @@ describe('PaymentsService.attemptRefund', () => {
         { provide: PAYMENT_GATEWAY, useValue: { refundPayment } },
         { provide: PushService, useValue: { sendToUser: pushSend } },
         { provide: AlertsService, useValue: { raise } },
+        { provide: ReferralsService, useValue: { reverseIfNeeded } },
       ],
     }).compile();
 
@@ -70,6 +74,17 @@ describe('PaymentsService.attemptRefund', () => {
     expect(smsSend).toHaveBeenCalledWith('09120000000', expect.any(String));
     expect(pushSend).toHaveBeenCalledWith('user-1', expect.objectContaining({ title: expect.any(String) }));
     expect(raise).not.toHaveBeenCalled();
+    expect(reverseIfNeeded).toHaveBeenCalledWith('booking-1');
+  });
+
+  it('still reports a successful refund even if the referral-reversal check throws', async () => {
+    paymentsFindOneBy.mockResolvedValue({ ...REFUND_PENDING_PAYMENT });
+    refundPayment.mockResolvedValue({ success: true, refundRefId: 'RR-1' });
+    reverseIfNeeded.mockRejectedValue(new Error('reversal check blew up'));
+
+    const outcome = await service.attemptRefund('booking-1');
+
+    expect(outcome).toBe('refunded'); // the refund itself already committed -- priority
   });
 
   it('skips a payment that is not refund_pending without touching the gateway', async () => {
@@ -173,6 +188,7 @@ describe('PaymentsService.handleCallback lost-CAS recovery', () => {
         { provide: PAYMENT_GATEWAY, useValue: { verifyPayment } },
         { provide: PushService, useValue: { sendToUser: jest.fn() } },
         { provide: AlertsService, useValue: { raise } },
+        { provide: ReferralsService, useValue: { reverseIfNeeded: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
@@ -244,6 +260,7 @@ describe('PaymentsService.handleCallback verify-persist failure', () => {
         },
         { provide: PushService, useValue: { sendToUser: jest.fn() } },
         { provide: AlertsService, useValue: { raise } },
+        { provide: ReferralsService, useValue: { reverseIfNeeded: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
     const service = moduleRef.get(PaymentsService);

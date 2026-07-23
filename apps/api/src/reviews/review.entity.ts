@@ -1,6 +1,10 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
-export type ReviewStatus = 'published' | 'rejected';
+// 'withdrawn' is a customer-initiated soft-delete (DELETE /api/reviews/:id, within the
+// edit window) -- distinct from an admin 'rejected' moderation call. No DB CHECK
+// constraint on this column (reviews.status is plain varchar(20)), so widening this
+// enum needed no migration.
+export type ReviewStatus = 'published' | 'rejected' | 'withdrawn';
 
 @Entity('reviews')
 export class Review {

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { Gender, User } from './user.entity';
 
 @Injectable()
@@ -11,10 +11,16 @@ export class UsersService {
     return this.repo.findOneBy({ id });
   }
 
-  async findOrCreateByPhone(phone: string): Promise<{ user: User; isNew: boolean }> {
-    const existing = await this.repo.findOneBy({ phone });
+  /**
+   * `em` is passed by verify-otp's referral-code path (AuthController) so the new
+   * user row and its referral redemption commit atomically in one transaction;
+   * omitted by every other caller, which just uses the injected repository directly.
+   */
+  async findOrCreateByPhone(phone: string, em?: EntityManager): Promise<{ user: User; isNew: boolean }> {
+    const repo = em ? em.getRepository(User) : this.repo;
+    const existing = await repo.findOneBy({ phone });
     if (existing) return { user: existing, isNew: false };
-    const user = await this.repo.save(this.repo.create({ phone }));
+    const user = await repo.save(repo.create({ phone }));
     return { user, isNew: true };
   }
 

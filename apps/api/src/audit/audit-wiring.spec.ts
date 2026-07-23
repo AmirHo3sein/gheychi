@@ -2,11 +2,13 @@ import 'reflect-metadata';
 import { AdminCategoriesController } from '../catalog/admin-categories.controller';
 import { AdminBlogController } from '../content/admin-blog.controller';
 import { AdminConfigController } from '../platform-config/admin-config.controller';
+import { AdminReferralRewardTypesController, AdminReferralsController } from '../referrals/admin-referrals.controller';
 import { AdminReportsController } from '../reports/admin-reports.controller';
 import { AdminReviewsController } from '../reviews/admin-reviews.controller';
 import { AdminSalonsController } from '../salons/admin-salons.controller';
 import { AdminShowcaseController } from '../salons/admin-showcase.controller';
 import { AdminUsersController } from '../users/admin-users.controller';
+import { AdminWalletController } from '../wallet/admin-wallet.controller';
 import { AUDIT_ACTION } from './audit.decorator';
 import { AuditInterceptor } from './audit.interceptor';
 
@@ -134,6 +136,24 @@ describe('admin mutation audit wiring', () => {
       handler: AdminBlogController.prototype.uploadCover,
       action: 'post.cover.set',
       targetType: 'post',
+    },
+    {
+      label: 'wallet adjust',
+      handler: AdminWalletController.prototype.adjust,
+      action: 'wallet.adjust',
+      targetType: 'wallet',
+    },
+    {
+      label: 'referral reward type update',
+      handler: AdminReferralRewardTypesController.prototype.update,
+      action: 'referral-reward-type.update',
+      targetType: 'referral-reward-type',
+    },
+    {
+      label: 'referral cancel',
+      handler: AdminReferralsController.prototype.cancel,
+      action: 'referral.cancel',
+      targetType: 'referral',
     },
   ];
 

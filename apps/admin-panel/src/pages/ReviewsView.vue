@@ -33,6 +33,13 @@ interface ReviewRow {
   comment: string | null
   status: 'published' | 'rejected'
   salonReply: string | null
+  // JUDGMENT CALL / KNOWN GAP: ReviewsService.listForAdmin() (apps/api/src/reviews/reviews.service.ts)
+  // currently returns bare Review rows with no join onto worker_ratings -- there is no
+  // backend field to read here yet. Declared optional so this renders nothing until the
+  // list endpoint is extended to include it (see WorkerRatingsView.vue's header comment
+  // for the matching gap on the moderation-queue side), rather than assuming a shape that
+  // doesn't exist and silently breaking when it stays absent.
+  workerRating?: { score: number; workerName: string } | null
 }
 
 interface ReviewListResponse {
@@ -142,6 +149,22 @@ watch(page, load)
             <span class="tnum mr-1 text-sm font-bold text-(--color-text)">{{ review.rating }}.0</span>
           </div>
           <StatusBadge :label="reviewStatusLabel(review.status).label" :tone="reviewStatusLabel(review.status).tone" />
+        </div>
+
+        <div v-if="review.workerRating" class="mt-2.5 flex items-center gap-1.5 text-sm text-(--color-muted)">
+          <AppIcon name="worker-ratings" :size="15" />
+          <span>امتیاز کارمند ({{ review.workerRating.workerName }}):</span>
+          <span class="flex items-center gap-0.5 text-(--color-accent)">
+            <AppIcon
+              v-for="n in 5"
+              :key="n"
+              name="star"
+              :size="13"
+              :fill="n <= review.workerRating.score ? 'currentColor' : 'none'"
+              :class="n > review.workerRating.score && 'text-(--color-border)'"
+            />
+          </span>
+          <span class="tnum font-bold text-(--color-text)">{{ review.workerRating.score }}.0</span>
         </div>
 
         <p v-if="review.comment" class="mt-3 text-sm leading-6 text-(--color-text)">{{ review.comment }}</p>

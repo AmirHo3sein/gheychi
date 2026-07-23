@@ -31,6 +31,9 @@ export class SalonService {
   @Column({ name: 'is_active', default: true })
   isActive: boolean;
 
+  @Column({ name: 'discount_percent', type: 'int', nullable: true })
+  discountPercent: number | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 }

@@ -40,6 +40,10 @@ export class PlatformConfigService {
     return this.getNumber('reminder_lead_hours');
   }
 
+  getReviewEditWindowHours(): Promise<number> {
+    return this.getNumber('review_edit_window_hours');
+  }
+
   listAll(): Promise<PlatformConfig[]> {
     return this.repo.find({ order: { key: 'ASC' } });
   }

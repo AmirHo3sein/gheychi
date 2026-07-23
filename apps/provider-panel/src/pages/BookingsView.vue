@@ -12,10 +12,18 @@ interface Booking {
   serviceId: string
   startsAt: string
   status: string
+  workerId: string | null
+  workerName: string | null
+}
+interface Worker {
+  id: string
+  name: string
+  active: boolean
 }
 
 const { apiFetch } = useApi()
 const bookings = ref<Booking[]>([])
+const workers = ref<Worker[]>([])
 const loading = ref(true)
 
 async function load() {
@@ -24,7 +32,13 @@ async function load() {
   loading.value = false
 }
 
-onMounted(load)
+onMounted(async () => {
+  const [, workersRes] = await Promise.all([
+    load(),
+    apiFetch<Worker[]>('/salons/mine/workers', { silent: true }),
+  ])
+  workers.value = (workersRes.data ?? []).filter((w) => w.active)
+})
 
 async function markStatus(id: string, status: 'completed' | 'no_show') {
   await apiFetch(`/salons/mine/bookings/${id}`, { method: 'PATCH', body: { status } })
@@ -35,6 +49,19 @@ async function cancelBooking(id: string) {
   if (!confirm('لغو این نوبت ممکن است مشمول جریمه شود. ادامه می‌دهید؟')) return
   await apiFetch(`/bookings/${id}/cancel`, { method: 'POST' })
   await load()
+}
+
+async function assignWorker(booking: Booking, event: Event) {
+  const workerId = (event.target as HTMLSelectElement).value
+  if (!workerId) return
+  const { data } = await apiFetch<Booking>(`/salons/mine/bookings/${booking.id}/assign-worker`, {
+    method: 'PATCH',
+    body: { workerId },
+  })
+  if (data) {
+    booking.workerId = data.workerId
+    booking.workerName = data.workerName
+  }
 }
 </script>
 
@@ -48,6 +75,18 @@ async function cancelBooking(id: string) {
       <div class="flex items-center justify-between">
         <p class="tnum text-sm font-semibold text-(--color-text)">{{ new Date(b.startsAt).toLocaleString('fa-IR') }}</p>
         <StatusBadge :label="bookingStatusLabel(b.status).label" :tone="bookingStatusLabel(b.status).tone" />
+      </div>
+      <div v-if="b.status === 'confirmed' && workers.length > 0">
+        <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">تخصیص کارمند</label>
+        <select
+          :value="b.workerId ?? ''"
+          data-testid="assign-worker"
+          class="native-select w-full rounded-lg border border-(--color-border) bg-(--color-surface) p-1.5 text-sm"
+          @change="assignWorker(b, $event)"
+        >
+          <option value="">بدون تخصیص کارمند</option>
+          <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
+        </select>
       </div>
       <div v-if="b.status === 'confirmed'" class="flex gap-2">
         <button

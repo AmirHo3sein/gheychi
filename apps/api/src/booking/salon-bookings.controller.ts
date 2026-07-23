@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Req, UseGuards } fr
 import { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { SalonOwnerGuard } from '../salons/salon-owner.guard';
+import { AssignWorkerDto } from '../salons/dto/worker.dto';
 import { BookingsService } from './bookings.service';
 import { UpdateBookingStatusDto } from './dto/booking.dto';
 
@@ -22,5 +23,14 @@ export class SalonBookingsController {
     @Body() dto: UpdateBookingStatusDto,
   ) {
     return this.bookings.updateStatus(req.salonId!, id, dto.status);
+  }
+
+  @Patch(':id/assign-worker')
+  assignWorker(
+    @Req() req: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AssignWorkerDto,
+  ) {
+    return this.bookings.assignWorker(req.salonId!, id, dto.workerId);
   }
 }

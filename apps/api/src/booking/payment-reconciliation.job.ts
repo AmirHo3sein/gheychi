@@ -75,7 +75,7 @@ export class PaymentReconciliationJob {
               await em.update(
                 Payment,
                 { id: payment.id, status: 'initiated' },
-                { status: 'paid', refId: verify.refId },
+                { status: 'paid', refId: verify.refId, paidAt: new Date() },
               );
             }
           } else {

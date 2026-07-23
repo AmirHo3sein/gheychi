@@ -4,7 +4,7 @@ import {
   LayoutDashboard, CalendarClock, Tag, Star, Wallet, Settings2, LogOut, Check, X, ChevronLeft, ChevronRight,
   CircleUser, Building2, TriangleAlert, Plus, Pencil, Trash2, Scissors, Palette, Droplet, Gem, Sparkles,
   Paintbrush, Eye, Zap, Phone, Lock, Sun, Moon, RotateCcw, Images, Clock, MapPin, Upload, ImageOff, Store,
-  CircleFadingPlus, GalleryHorizontalEnd, ChevronUp, ChevronDown,
+  CircleFadingPlus, GalleryHorizontalEnd, ChevronUp, ChevronDown, Percent, Users,
 } from '@lucide/vue'
 
 const ICONS = {
@@ -49,6 +49,8 @@ const ICONS = {
   'image-off': ImageOff,
   'map-pin': MapPin,
   store: Store,
+  coupons: Percent,
+  team: Users,
 } as const
 
 export type IconName = keyof typeof ICONS

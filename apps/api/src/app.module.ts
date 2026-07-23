@@ -8,15 +8,18 @@ import { AuthModule } from './auth/auth.module';
 import { BookingModule } from './booking/booking.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { ContentModule } from './content/content.module';
+import { CouponsModule } from './coupons/coupons.module';
 import { FavoritesModule } from './favorites/favorites.module';
 import { HealthController } from './health/health.controller';
 import { PlatformConfigModule } from './platform-config/platform-config.module';
 import { PushModule } from './push/push.module';
 import { RedisModule } from './redis/redis.module';
+import { ReferralsModule } from './referrals/referrals.module';
 import { ReportsModule } from './reports/reports.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { SalonsModule } from './salons/salons.module';
 import { SearchModule } from './search/search.module';
+import { WalletModule } from './wallet/wallet.module';
 
 @Module({
   imports: [
@@ -45,6 +48,7 @@ import { SearchModule } from './search/search.module';
     CatalogModule,
     SalonsModule,
     BookingModule,
+    CouponsModule,
     SearchModule,
     ReviewsModule,
     ReportsModule,
@@ -52,6 +56,8 @@ import { SearchModule } from './search/search.module';
     PushModule,
     AdminNotificationsModule,
     ContentModule,
+    WalletModule,
+    ReferralsModule,
   ],
   controllers: [HealthController],
 })

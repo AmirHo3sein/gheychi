@@ -3,8 +3,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { AlertsModule } from '../alerts/alerts.module';
 import { AuthModule } from '../auth/auth.module';
+import { CouponsModule } from '../coupons/coupons.module';
 import { PlatformConfigModule } from '../platform-config/platform-config.module';
 import { PushModule } from '../push/push.module';
+import { ReferralsModule } from '../referrals/referrals.module';
 import { SalonsModule } from '../salons/salons.module';
 import { SmsModule } from '../sms/sms.module';
 import { UsersModule } from '../users/users.module';
@@ -21,6 +23,7 @@ import { Payment } from './payment.entity';
 import { PaymentReconciliationJob } from './payment-reconciliation.job';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
+import { ReferralGrantJob } from './referral-grant.job';
 import { RefundRetryJob } from './refund-retry.job';
 import { SalonBookingsController } from './salon-bookings.controller';
 import { SalonEarningsController } from './salon-earnings.controller';
@@ -30,12 +33,17 @@ import { ZarinpalGateway } from './zarinpal-payment.gateway';
   imports: [
     TypeOrmModule.forFeature([Booking, Payment]),
     SalonsModule,
+    CouponsModule,
     PlatformConfigModule,
     AlertsModule,
     AuthModule,
     SmsModule,
     PushModule,
     UsersModule,
+    // ReferralsModule has no dependency back on BookingModule (its tryGrantReward/
+    // reverseIfNeeded read payments/bookings via raw SQL, not TypeORM entities) --
+    // this is a plain one-directional import, no forwardRef needed.
+    ReferralsModule,
   ],
   controllers: [AvailabilityController, BookingsController, PaymentsController, SalonBookingsController, SalonEarningsController],
   providers: [
@@ -46,6 +54,7 @@ import { ZarinpalGateway } from './zarinpal-payment.gateway';
     BookingReminderJob,
     PaymentReconciliationJob,
     RefundRetryJob,
+    ReferralGrantJob,
     {
       provide: PAYMENT_GATEWAY,
       inject: [ConfigService],

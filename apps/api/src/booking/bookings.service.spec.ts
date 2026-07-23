@@ -1,10 +1,13 @@
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
+import { CouponsService } from '../coupons/coupons.service';
 import { REDIS } from '../redis/redis.module';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
+import { ReferralsService } from '../referrals/referrals.service';
 import { PAYMENT_GATEWAY } from './payment-gateway';
 import { Booking } from './booking.entity';
 import { Payment } from './payment.entity';
@@ -12,6 +15,7 @@ import { BookingsService } from './bookings.service';
 import { PaymentsService } from './payments.service';
 import { Salon } from '../salons/salon.entity';
 import { SalonService } from '../salons/salon-service.entity';
+import { Worker } from '../salons/worker.entity';
 
 describe('BookingsService.getEarnings', () => {
   let service: BookingsService;
@@ -30,6 +34,7 @@ describe('BookingsService.getEarnings', () => {
         { provide: getRepositoryToken(Payment), useValue: { find: paymentsFind } },
         { provide: getRepositoryToken(Salon), useValue: {} },
         { provide: getRepositoryToken(SalonService), useValue: {} },
+        { provide: getRepositoryToken(Worker), useValue: {} },
         { provide: DataSource, useValue: {} },
         { provide: PlatformConfigService, useValue: { getCommissionPercent: jest.fn().mockResolvedValue(10) } },
         { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
@@ -37,6 +42,8 @@ describe('BookingsService.getEarnings', () => {
         { provide: PAYMENT_GATEWAY, useValue: {} },
         { provide: PaymentsService, useValue: { attemptRefund: jest.fn() } },
         { provide: AlertsService, useValue: { raise: jest.fn() } },
+        { provide: CouponsService, useValue: { resolveAndValidate: jest.fn() } },
+        { provide: ReferralsService, useValue: { tryGrantReward: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
@@ -99,6 +106,7 @@ describe('BookingsService.cancel', () => {
         { provide: getRepositoryToken(Payment), useValue: {} },
         { provide: getRepositoryToken(Salon), useValue: { findOneBy: salonsFindOneBy } },
         { provide: getRepositoryToken(SalonService), useValue: {} },
+        { provide: getRepositoryToken(Worker), useValue: {} },
         { provide: DataSource, useValue: { transaction: jest.fn((cb: (em: unknown) => unknown) => cb({ update: emUpdate })) } },
         {
           provide: PlatformConfigService,
@@ -109,6 +117,8 @@ describe('BookingsService.cancel', () => {
         { provide: PAYMENT_GATEWAY, useValue: {} },
         { provide: PaymentsService, useValue: { attemptRefund } },
         { provide: AlertsService, useValue: { raise: jest.fn() } },
+        { provide: CouponsService, useValue: { resolveAndValidate: jest.fn() } },
+        { provide: ReferralsService, useValue: { tryGrantReward: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
@@ -197,6 +207,7 @@ describe('BookingsService.retryPayment authority persist failure', () => {
         { provide: getRepositoryToken(Payment), useValue: { update: paymentsUpdate } },
         { provide: getRepositoryToken(Salon), useValue: { findOneBy: salonsFindOneBy } },
         { provide: getRepositoryToken(SalonService), useValue: {} },
+        { provide: getRepositoryToken(Worker), useValue: {} },
         { provide: DataSource, useValue: {} },
         { provide: PlatformConfigService, useValue: {} },
         { provide: ConfigService, useValue: { getOrThrow: jest.fn().mockReturnValue('http://localhost:3002') } },
@@ -204,6 +215,8 @@ describe('BookingsService.retryPayment authority persist failure', () => {
         { provide: PAYMENT_GATEWAY, useValue: { requestPayment } },
         { provide: PaymentsService, useValue: { attemptRefund: jest.fn() } },
         { provide: AlertsService, useValue: { raise } },
+        { provide: CouponsService, useValue: { resolveAndValidate: jest.fn() } },
+        { provide: ReferralsService, useValue: { tryGrantReward: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
@@ -216,5 +229,204 @@ describe('BookingsService.retryPayment authority persist failure', () => {
     expect(raise).toHaveBeenCalledWith(
       expect.objectContaining({ key: 'authority-persist:booking-1', severity: 'critical' }),
     );
+  });
+});
+
+describe('BookingsService.assignWorker', () => {
+  let service: BookingsService;
+  let workersFindOneBy: jest.Mock;
+  let workersFind: jest.Mock;
+  let bookingsFindOneBy: jest.Mock;
+  let bookingsUpdate: jest.Mock;
+
+  beforeEach(async () => {
+    workersFindOneBy = jest.fn();
+    // attachNames() enriches the returned booking with workerName -- see
+    // BookingsService.assignWorker, which now mirrors listMine/findMine's
+    // enrichment so the provider-panel's assign-worker response actually carries
+    // the name it expects.
+    workersFind = jest.fn().mockResolvedValue([{ id: 'worker-1', name: 'Sara' }]);
+    bookingsFindOneBy = jest.fn();
+    bookingsUpdate = jest.fn().mockResolvedValue({ affected: 1 });
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        BookingsService,
+        { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy, update: bookingsUpdate } },
+        { provide: getRepositoryToken(Payment), useValue: {} },
+        { provide: getRepositoryToken(Salon), useValue: { find: jest.fn().mockResolvedValue([]) } },
+        { provide: getRepositoryToken(SalonService), useValue: { find: jest.fn().mockResolvedValue([]) } },
+        { provide: getRepositoryToken(Worker), useValue: { findOneBy: workersFindOneBy, find: workersFind } },
+        { provide: DataSource, useValue: {} },
+        { provide: PlatformConfigService, useValue: {} },
+        { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
+        { provide: REDIS, useValue: {} },
+        { provide: PAYMENT_GATEWAY, useValue: {} },
+        { provide: PaymentsService, useValue: { attemptRefund: jest.fn() } },
+        { provide: AlertsService, useValue: { raise: jest.fn() } },
+        { provide: CouponsService, useValue: { resolveAndValidate: jest.fn() } },
+        { provide: ReferralsService, useValue: { tryGrantReward: jest.fn().mockResolvedValue(undefined) } },
+      ],
+    }).compile();
+
+    service = moduleRef.get(BookingsService);
+  });
+
+  it('404s when the worker does not belong to the caller salon', async () => {
+    workersFindOneBy.mockResolvedValue(null);
+
+    await expect(service.assignWorker('salon-1', 'booking-1', 'worker-9')).rejects.toBeInstanceOf(NotFoundException);
+    expect(workersFindOneBy).toHaveBeenCalledWith({ id: 'worker-9', salonId: 'salon-1' });
+    expect(bookingsFindOneBy).not.toHaveBeenCalled();
+    expect(bookingsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('400s when the worker belongs to the salon but is inactive', async () => {
+    workersFindOneBy.mockResolvedValue({ id: 'worker-1', salonId: 'salon-1', active: false });
+
+    await expect(service.assignWorker('salon-1', 'booking-1', 'worker-1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(bookingsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('404s when the booking does not belong to the caller salon', async () => {
+    workersFindOneBy.mockResolvedValue({ id: 'worker-1', salonId: 'salon-1', active: true });
+    bookingsFindOneBy.mockResolvedValueOnce(null);
+
+    await expect(service.assignWorker('salon-1', 'booking-9', 'worker-1')).rejects.toBeInstanceOf(NotFoundException);
+    expect(bookingsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('assigns the worker to the booking when both belong to the caller salon and the worker is active', async () => {
+    workersFindOneBy.mockResolvedValue({ id: 'worker-1', salonId: 'salon-1', active: true });
+    bookingsFindOneBy
+      .mockResolvedValueOnce({ id: 'booking-1', salonId: 'salon-1' })
+      .mockResolvedValueOnce({ id: 'booking-1', salonId: 'salon-1', workerId: 'worker-1' });
+
+    const result = await service.assignWorker('salon-1', 'booking-1', 'worker-1');
+
+    expect(bookingsUpdate).toHaveBeenCalledWith({ id: 'booking-1' }, { workerId: 'worker-1' });
+    expect(result.workerId).toBe('worker-1');
+    expect(result.workerName).toBe('Sara');
+  });
+});
+
+describe('BookingsService.listMine / findMine -- workerName enrichment', () => {
+  let service: BookingsService;
+  let bookingsFind: jest.Mock;
+  let bookingsFindOneBy: jest.Mock;
+  let salonsFind: jest.Mock;
+  let servicesFind: jest.Mock;
+  let workersFind: jest.Mock;
+  let paymentsFindOneBy: jest.Mock;
+
+  beforeEach(async () => {
+    bookingsFind = jest.fn();
+    bookingsFindOneBy = jest.fn();
+    salonsFind = jest.fn().mockResolvedValue([{ id: 'salon-1', name: 'Salon One' }]);
+    servicesFind = jest.fn().mockResolvedValue([{ id: 'service-1', name: 'Cut' }]);
+    workersFind = jest.fn().mockResolvedValue([{ id: 'worker-1', name: 'Sara' }]);
+    paymentsFindOneBy = jest.fn().mockResolvedValue(null);
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        BookingsService,
+        { provide: getRepositoryToken(Booking), useValue: { find: bookingsFind, findOneBy: bookingsFindOneBy } },
+        { provide: getRepositoryToken(Payment), useValue: { findOneBy: paymentsFindOneBy } },
+        { provide: getRepositoryToken(Salon), useValue: { find: salonsFind } },
+        { provide: getRepositoryToken(SalonService), useValue: { find: servicesFind } },
+        { provide: getRepositoryToken(Worker), useValue: { find: workersFind } },
+        { provide: DataSource, useValue: {} },
+        { provide: PlatformConfigService, useValue: {} },
+        { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
+        { provide: REDIS, useValue: {} },
+        { provide: PAYMENT_GATEWAY, useValue: {} },
+        { provide: PaymentsService, useValue: { attemptRefund: jest.fn() } },
+        { provide: AlertsService, useValue: { raise: jest.fn() } },
+        { provide: CouponsService, useValue: { resolveAndValidate: jest.fn() } },
+        { provide: ReferralsService, useValue: { tryGrantReward: jest.fn().mockResolvedValue(undefined) } },
+      ],
+    }).compile();
+
+    service = moduleRef.get(BookingsService);
+  });
+
+  it('resolves workerName for a booking with a worker assigned', async () => {
+    bookingsFind.mockResolvedValue([
+      { id: 'booking-1', salonId: 'salon-1', serviceId: 'service-1', workerId: 'worker-1' },
+    ]);
+
+    const [result] = await service.listMine('customer-1');
+
+    expect(workersFind).toHaveBeenCalled();
+    expect(result.workerName).toBe('Sara');
+  });
+
+  it('leaves workerName null and skips the worker lookup entirely for a booking with no worker', async () => {
+    bookingsFind.mockResolvedValue([{ id: 'booking-1', salonId: 'salon-1', serviceId: 'service-1', workerId: null }]);
+
+    const [result] = await service.listMine('customer-1');
+
+    expect(workersFind).not.toHaveBeenCalled();
+    expect(result.workerName).toBeNull();
+  });
+});
+
+describe('BookingsService.updateStatus -- first-completed-booking referral trigger', () => {
+  let service: BookingsService;
+  let bookingsFindOneBy: jest.Mock;
+  let bookingsUpdate: jest.Mock;
+  let tryGrantReward: jest.Mock;
+
+  const CONFIRMED_BOOKING = { id: 'booking-1', userId: 'customer-1', salonId: 'salon-1', status: 'confirmed' };
+
+  beforeEach(async () => {
+    bookingsFindOneBy = jest.fn().mockResolvedValue({ ...CONFIRMED_BOOKING });
+    bookingsUpdate = jest.fn().mockResolvedValue({ affected: 1 });
+    tryGrantReward = jest.fn().mockResolvedValue(undefined);
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        BookingsService,
+        { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy, update: bookingsUpdate } },
+        { provide: getRepositoryToken(Payment), useValue: {} },
+        { provide: getRepositoryToken(Salon), useValue: {} },
+        { provide: getRepositoryToken(SalonService), useValue: {} },
+        { provide: getRepositoryToken(Worker), useValue: {} },
+        { provide: DataSource, useValue: {} },
+        { provide: PlatformConfigService, useValue: {} },
+        { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
+        { provide: REDIS, useValue: {} },
+        { provide: PAYMENT_GATEWAY, useValue: {} },
+        { provide: PaymentsService, useValue: { attemptRefund: jest.fn() } },
+        { provide: AlertsService, useValue: { raise: jest.fn() } },
+        { provide: CouponsService, useValue: { resolveAndValidate: jest.fn() } },
+        { provide: ReferralsService, useValue: { tryGrantReward } },
+      ],
+    }).compile();
+
+    service = moduleRef.get(BookingsService);
+  });
+
+  it("calls tryGrantReward('completed') after successfully marking a booking completed", async () => {
+    await service.updateStatus('salon-1', 'booking-1', 'completed');
+
+    expect(tryGrantReward).toHaveBeenCalledWith('customer-1', 'booking-1', 'completed');
+  });
+
+  it('does NOT call tryGrantReward for a no_show -- only completed is a qualifying event', async () => {
+    await service.updateStatus('salon-1', 'booking-1', 'no_show');
+
+    expect(tryGrantReward).not.toHaveBeenCalled();
+  });
+
+  it('still returns the updated booking even when tryGrantReward throws (never fails the status update response)', async () => {
+    tryGrantReward.mockRejectedValue(new Error('referral granting blew up'));
+
+    const result = await service.updateStatus('salon-1', 'booking-1', 'completed');
+
+    expect(result).toBeDefined();
+    expect(tryGrantReward).toHaveBeenCalled();
   });
 });

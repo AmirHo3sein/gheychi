@@ -14,6 +14,15 @@ export class VerifyOtpDto {
   @IsString()
   @Length(6, 6)
   code: string;
+
+  // Only ever read on the isNew branch of registration (R2) -- structurally
+  // unavailable to an already-existing account, so there's no separate "already
+  // registered" check to get wrong. Never fails registration on its own; see
+  // AuthController.verifyOtp.
+  @IsOptional()
+  @IsString()
+  @Length(1, 20)
+  referralCode?: string;
 }
 
 export class UpdateProfileDto {

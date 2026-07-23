@@ -52,7 +52,11 @@ describe('PaymentReconciliationJob', () => {
 
     expect(reconciled).toBe(1);
     expect(emUpdate).toHaveBeenCalledWith(Booking, { id: 'booking-1', status: 'pending_payment' }, { status: 'confirmed' });
-    expect(emUpdate).toHaveBeenCalledWith(Payment, { id: 'pay-1', status: 'initiated' }, { status: 'paid', refId: 'REF-1' });
+    expect(emUpdate).toHaveBeenCalledWith(
+      Payment,
+      { id: 'pay-1', status: 'initiated' },
+      expect.objectContaining({ status: 'paid', refId: 'REF-1', paidAt: expect.any(Date) }),
+    );
     expect(raise).not.toHaveBeenCalled();
   });
 
