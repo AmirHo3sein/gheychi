@@ -17,6 +17,9 @@ const submitting = ref(false)
 const reasonLength = computed(() => reason.value.trim().length)
 const isValid = computed(() => reasonLength.value >= 5 && reasonLength.value <= 500)
 
+const reasonId = useId()
+const counterId = useId()
+
 const title = computed(() => {
   if (props.reviewId) return 'گزارش این نظر'
   if (props.storyId) return 'گزارش این استوری'
@@ -63,21 +66,38 @@ async function submit() {
 function close() {
   emit('close')
 }
+
+const dialogRoot = ref<HTMLElement | null>(null)
+const { titleId } = useDialog(dialogRoot, { onClose: close })
 </script>
 
 <template>
   <div class="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-    <div class="bg-(--color-surface-card) rounded-xl p-4 w-full max-w-sm space-y-3">
-      <h2 class="font-bold">{{ title }}</h2>
-      <textarea
-        v-model="reason"
-        data-testid="report-reason-input"
-        placeholder="دلیل گزارش (حداقل ۵ کاراکتر)"
-        maxlength="500"
-        rows="4"
-        class="w-full rounded-lg border p-2 text-sm"
-      />
-      <p data-testid="report-reason-counter" class="text-xs opacity-70">
+    <div
+      ref="dialogRoot"
+      role="dialog"
+      aria-modal="true"
+      :aria-labelledby="titleId"
+      tabindex="-1"
+      class="bg-(--color-surface-card) rounded-xl p-4 w-full max-w-sm space-y-3 outline-none"
+    >
+      <h2 :id="titleId" class="font-bold">{{ title }}</h2>
+      <div>
+        <label :for="reasonId" class="mb-1 block text-xs text-(--color-text-muted)">
+          دلیل گزارش (حداقل ۵ کاراکتر)
+        </label>
+        <textarea
+          :id="reasonId"
+          v-model="reason"
+          data-testid="report-reason-input"
+          placeholder="دلیل گزارش (حداقل ۵ کاراکتر)"
+          maxlength="500"
+          rows="4"
+          :aria-describedby="counterId"
+          class="w-full rounded-lg border p-2 text-sm"
+        />
+      </div>
+      <p :id="counterId" data-testid="report-reason-counter" aria-live="polite" class="text-xs opacity-70">
         {{ reasonLength.toLocaleString('fa-IR') }} / ۵۰۰
       </p>
       <button

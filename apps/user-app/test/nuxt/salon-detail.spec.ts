@@ -22,7 +22,10 @@ const SALON = {
   tagline: 'زیبایی با ما',
   about: 'خط اول درباره سالن\nخط دوم درباره سالن',
   instagramHandle: 'nemune.salon',
+  location: { type: 'Point', coordinates: [51.389, 35.6892] },
 }
+
+const TERMS = { depositPercent: 20, depositMinToman: 50000, cancellationWindowHours: 24 }
 
 const SERVICES = [
   { id: 'svc1', name: 'کوتاهی مو', description: null, price: 300000, durationMin: 45 },
@@ -44,6 +47,7 @@ function mockEndpoints(overrides: { salon?: Record<string, unknown>; portfolio?:
     if (path === '/salons/test-salon/portfolio') return overrides.portfolio ?? PORTFOLIO
     if (path === '/salons/test-salon/stories') return []
     if (path === '/salons/test-salon/workers') return []
+    if (path === '/platform-config/booking-terms') return TERMS
     throw new Error(`unexpected fetch path in test: ${path}`)
   })
 }
@@ -139,5 +143,52 @@ describe('salon detail page', () => {
       const meta = document.head.querySelector('meta[name="description"]')
       expect(meta?.getAttribute('content')).toBe('سالن زیبایی نمونه — خیابان ولیعصر')
     })
+  })
+
+  it('shows the approval badge and a one-line deposit disclosure sourced from booking-terms', async () => {
+    mockEndpoints()
+    wrapper = await mountSuspended(SalonDetailPage)
+
+    expect(wrapper.get('[data-testid="salon-verified-badge"]').text()).toContain('تایید شده')
+    // Every result on this page is already API-gated to status:'approved' -- the
+    // disclosure's numbers must come from the fetched terms, not be hardcoded. Numerals
+    // render as Persian digits via toLocaleString('fa-IR'), matching the rest of the page.
+    expect(wrapper.text()).toContain(`٪${(20).toLocaleString('fa-IR')}`)
+    expect(wrapper.text()).toContain((50000).toLocaleString('fa-IR'))
+  })
+
+  it('renders a single-pin map near the address from the salon location', async () => {
+    mockEndpoints()
+    wrapper = await mountSuspended(SalonDetailPage)
+
+    expect(wrapper.find('[data-testid="salon-map"]').exists()).toBe(true)
+  })
+
+  it('toggles aria-pressed on the favorite button', async () => {
+    mockEndpoints()
+    wrapper = await mountSuspended(SalonDetailPage)
+
+    const button = wrapper.get('[data-testid="favorite-button"]')
+    expect(button.attributes('aria-pressed')).toBe('false')
+  })
+
+  it('shows an empty-state instead of a bare header when there are no services', async () => {
+    mockEndpoints({ salon: {} })
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/salons/test-salon') return SALON
+      if (path === '/salons/test-salon/services') return []
+      if (path === '/salons/test-salon/hours') return []
+      if (path === '/salons/test-salon/photos') return []
+      if (path === '/salons/s1/reviews') return []
+      if (path === '/salons/test-salon/portfolio') return []
+      if (path === '/salons/test-salon/stories') return []
+      if (path === '/salons/test-salon/workers') return []
+      if (path === '/platform-config/booking-terms') return TERMS
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    wrapper = await mountSuspended(SalonDetailPage)
+
+    expect(wrapper.get('[data-testid="services-empty"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="hours-empty"]').exists()).toBe(true)
   })
 })

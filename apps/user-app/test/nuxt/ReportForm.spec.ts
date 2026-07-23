@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { flushPromises } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import ReportForm from '../../app/components/salon/ReportForm.vue'
 
 // Same pattern as ReviewPromptModal.spec.ts / useApi.spec.ts: `$fetch` is a real
@@ -139,5 +140,74 @@ describe('ReportForm', () => {
 
     expect(toasts.value.at(-1)?.message).toBe('ثبت گزارش ناموفق بود؛ لطفا دوباره تلاش کنید')
     expect(wrapper.emitted('close')).toBeUndefined()
+  })
+
+  it('exposes dialog semantics: role=dialog, aria-modal, and aria-labelledby pointing at its own heading', async () => {
+    const wrapper = await mountSuspended(ReportForm, { props: { salonId: 's1' } })
+
+    const dialog = wrapper.find('[role="dialog"]')
+    expect(dialog.exists()).toBe(true)
+    expect(dialog.attributes('aria-modal')).toBe('true')
+
+    const labelledBy = dialog.attributes('aria-labelledby')
+    expect(labelledBy).toBeTruthy()
+    const heading = wrapper.get('h2')
+    expect(heading.attributes('id')).toBe(labelledBy)
+  })
+
+  it('moves focus into the dialog on mount', async () => {
+    const wrapper = await mountSuspended(ReportForm, { props: { salonId: 's1' }, attachTo: document.body })
+    await nextTick()
+
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="report-reason-input"]').element)
+  })
+
+  it('traps Tab focus within the dialog and restores focus to the trigger on close', async () => {
+    const trigger = document.createElement('button')
+    document.body.appendChild(trigger)
+    trigger.focus()
+    expect(document.activeElement).toBe(trigger)
+
+    const wrapper = await mountSuspended(ReportForm, { props: { salonId: 's1' }, attachTo: document.body })
+    await nextTick()
+
+    const textarea = wrapper.get('[data-testid="report-reason-input"]').element as HTMLElement
+    const closeButton = wrapper.get('[data-testid="report-close-button"]').element as HTMLElement
+    // Submit is disabled while the reason is empty, so it's excluded from the trap
+    // -- the reachable set is exactly [textarea, close button].
+    expect(document.activeElement).toBe(textarea)
+
+    closeButton.focus()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    expect(document.activeElement).toBe(textarea)
+
+    textarea.focus()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }))
+    expect(document.activeElement).toBe(closeButton)
+
+    wrapper.unmount()
+    expect(document.activeElement).toBe(trigger)
+    trigger.remove()
+  })
+
+  it('closes on Escape', async () => {
+    const wrapper = await mountSuspended(ReportForm, { props: { salonId: 's1' } })
+    await nextTick()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+
+  it('gives the reason textarea an accessible name and wires the counter as a live region', async () => {
+    const wrapper = await mountSuspended(ReportForm, { props: { salonId: 's1' } })
+
+    const textarea = wrapper.get('[data-testid="report-reason-input"]')
+    const label = wrapper.get('label')
+    expect(label.attributes('for')).toBe(textarea.attributes('id'))
+    expect(textarea.attributes('id')).toBeTruthy()
+
+    const counter = wrapper.get('[data-testid="report-reason-counter"]')
+    expect(counter.attributes('aria-live')).toBe('polite')
+    expect(textarea.attributes('aria-describedby')).toBe(counter.attributes('id'))
   })
 })

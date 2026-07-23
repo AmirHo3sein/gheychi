@@ -18,11 +18,12 @@ defineProps<{ workers: WorkerItem[] }>()
         v-for="worker in workers"
         :key="worker.id"
         data-testid="salon-team-member"
-        class="flex items-center justify-between rounded-lg bg-(--color-surface-card) p-3 text-sm"
+        class="flex items-center justify-between rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-3 text-sm shadow-(--shadow-sm)"
       >
         <span>{{ worker.name }}</span>
-        <span v-if="worker.ratingCount" class="text-(--color-text-muted)">
-          ⭐ {{ Number(worker.ratingAvg).toFixed(1) }} ({{ worker.ratingCount }})
+        <span v-if="worker.ratingCount" class="flex items-center gap-1 text-(--color-text-muted)">
+          <BaseIcon name="star" :size="14" />
+          {{ Number(worker.ratingAvg).toFixed(1) }} ({{ worker.ratingCount }})
         </span>
         <span v-else class="text-(--color-text-muted)">بدون امتیاز</span>
       </li>

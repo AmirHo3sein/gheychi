@@ -5,7 +5,7 @@ defineProps<{ photos: { id: string; url: string }[] }>()
 <template>
   <div v-if="photos.length" class="flex gap-2 overflow-x-auto">
     <NuxtImg
-      v-for="photo in photos"
+      v-for="(photo, index) in photos"
       :key="photo.id"
       provider="arvancloud"
       :src="photo.url"
@@ -13,7 +13,7 @@ defineProps<{ photos: { id: string; url: string }[] }>()
       height="200"
       loading="lazy"
       class="h-48 w-70 flex-shrink-0 rounded-xl object-cover"
-      alt=""
+      :alt="`تصویر گالری سالن ${index + 1}`"
     />
   </div>
   <div v-else class="h-48 rounded-xl bg-(--color-surface-card) flex items-center justify-center text-sm">

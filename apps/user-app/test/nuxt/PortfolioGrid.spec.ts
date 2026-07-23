@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { flushPromises } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import PortfolioGrid from '../../app/components/salon/PortfolioGrid.vue'
 
 // Same pattern as ReportForm.spec.ts: `$fetch` is a real globalThis binding, stubbed
@@ -125,6 +126,58 @@ describe('PortfolioGrid', () => {
       }),
     )
     // ReportForm emitted close on success -- the form is gone, the lightbox remains.
+    expect(wrapper.find('[data-testid="report-reason-input"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="portfolio-lightbox"]').exists()).toBe(true)
+  })
+
+  it('exposes dialog semantics on the lightbox: role=dialog, aria-modal, aria-labelledby', async () => {
+    const wrapper = await mountSuspended(PortfolioGrid, { props: BASE_PROPS })
+    await wrapper.findAll('[data-testid="portfolio-item"]')[0]!.trigger('click')
+
+    const dialog = wrapper.find('[role="dialog"]')
+    expect(dialog.exists()).toBe(true)
+    expect(dialog.attributes('aria-modal')).toBe('true')
+    const labelledBy = dialog.attributes('aria-labelledby')
+    expect(labelledBy).toBeTruthy()
+    expect(dialog.get('h2').attributes('id')).toBe(labelledBy)
+  })
+
+  it('moves focus into the lightbox on open and restores it to the trigger on close', async () => {
+    const wrapper = await mountSuspended(PortfolioGrid, { props: BASE_PROPS, attachTo: document.body })
+    const trigger = wrapper.findAll('[data-testid="portfolio-item"]')[0]!
+    ;(trigger.element as HTMLElement).focus()
+    await trigger.trigger('click')
+    await nextTick()
+
+    // Booking pill (link) is the first focusable element inside the lightbox panel.
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="portfolio-booking-pill"]').element)
+
+    await wrapper.get('[data-testid="portfolio-lightbox-close"]').trigger('click')
+    expect(document.activeElement).toBe(trigger.element)
+  })
+
+  it('closes the lightbox on Escape (previously a no-op bug)', async () => {
+    const wrapper = await mountSuspended(PortfolioGrid, { props: BASE_PROPS })
+    await wrapper.findAll('[data-testid="portfolio-item"]')[0]!.trigger('click')
+    expect(wrapper.find('[data-testid="portfolio-lightbox"]').exists()).toBe(true)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="portfolio-lightbox"]').exists()).toBe(false)
+  })
+
+  it('suspends the lightbox Escape handling while the nested report dialog is open', async () => {
+    fetchMock.mockResolvedValue({ id: 'rep1' })
+    const wrapper = await mountSuspended(PortfolioGrid, { props: { ...BASE_PROPS, canReport: true } })
+    await wrapper.findAll('[data-testid="portfolio-item"]')[0]!.trigger('click')
+    await wrapper.get('[data-testid="portfolio-report-button"]').trigger('click')
+    await nextTick()
+
+    // Escape now belongs to ReportForm's own dialog -- it closes the form, not the lightbox.
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await nextTick()
+
     expect(wrapper.find('[data-testid="report-reason-input"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="portfolio-lightbox"]').exists()).toBe(true)
   })

@@ -41,6 +41,10 @@ function closeLightbox() {
 onBeforeUnmount(() => {
   unlockScroll?.()
 })
+
+const dialogRoot = ref<HTMLElement | null>(null)
+// Paused while the embedded ReportForm (its own nested dialog) is open on top.
+const { titleId } = useDialog(dialogRoot, { onClose: closeLightbox, enabled: () => !reportOpen.value })
 </script>
 
 <template>
@@ -62,9 +66,9 @@ onBeforeUnmount(() => {
           height="300"
           loading="lazy"
           class="aspect-square w-full rounded-xl object-cover"
-          :alt="item.caption ?? ''"
+          :alt="item.caption || 'نمونه کار سالن'"
         />
-        <p v-if="item.caption" class="mt-1 text-xs opacity-70">{{ item.caption }}</p>
+        <p v-if="item.caption" class="mt-1 text-xs text-(--color-text-muted)">{{ item.caption }}</p>
       </button>
     </div>
 
@@ -74,14 +78,22 @@ onBeforeUnmount(() => {
       class="fixed inset-0 bg-black/80 flex items-center justify-center overscroll-contain p-4 z-50"
       @click.self="closeLightbox"
     >
-      <div class="w-full max-w-sm space-y-3 text-center">
+      <div
+        ref="dialogRoot"
+        role="dialog"
+        aria-modal="true"
+        :aria-labelledby="titleId"
+        tabindex="-1"
+        class="w-full max-w-sm space-y-3 text-center outline-none"
+      >
+        <h2 :id="titleId" class="sr-only">نمایش نمونه کار</h2>
         <NuxtImg
           provider="arvancloud"
           :src="lightboxItem.url"
           width="600"
           height="600"
           class="max-h-[70vh] w-full rounded-xl object-contain"
-          :alt="lightboxItem.caption ?? ''"
+          :alt="lightboxItem.caption || 'نمونه کار سالن'"
         />
         <p v-if="lightboxItem.caption" class="text-sm text-white">{{ lightboxItem.caption }}</p>
         <NuxtLink

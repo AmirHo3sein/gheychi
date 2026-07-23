@@ -3,6 +3,7 @@ import type { SalonPortfolioItem, SalonStoryItem } from '../../utils/types'
 import { resolveSalonDescription } from '../../utils/salon-seo'
 import { readStorySeen } from '../../utils/story-seen'
 import { applyDiscount } from '../../utils/discount'
+import { geoJsonToLatLng } from '../../utils/geo'
 
 interface Salon {
   id: string
@@ -15,12 +16,16 @@ interface Salon {
   tagline: string | null
   about: string | null
   instagramHandle: string | null
+  location: { type: 'Point'; coordinates: [number, number] }
 }
 interface SalonServiceItem { id: string; name: string; description: string | null; price: number; durationMin: number; discountPercent: number | null }
 interface WorkingHourItem { weekday: number; openTime: string; closeTime: string }
 interface PhotoItem { id: string; url: string }
 interface ReviewItem { id: string; rating: number; comment: string | null; salonReply: string | null; createdAt: string }
 interface WorkerItem { id: string; name: string; ratingAvg: string | number; ratingCount: number }
+// Mirrors booking/[slug]/[serviceId].vue's local interface -- kept in sync with that
+// page's shape rather than shared, matching this codebase's per-file DTO convention.
+interface BookingTerms { depositPercent: number; depositMinToman: number; cancellationWindowHours: number }
 
 const route = useRoute()
 const slug = route.params.slug as string
@@ -31,13 +36,14 @@ const { data: page } = await useAsyncData(`salon-${slug}`, async () => {
   const salonRes = await apiFetch<Salon>(`/salons/${slug}`, { silent: true })
   if (!salonRes.data) return null
 
-  const [servicesRes, hoursRes, photosRes, reviewsRes, portfolioRes, workersRes] = await Promise.all([
+  const [servicesRes, hoursRes, photosRes, reviewsRes, portfolioRes, workersRes, termsRes] = await Promise.all([
     apiFetch<SalonServiceItem[]>(`/salons/${slug}/services`, { silent: true }),
     apiFetch<WorkingHourItem[]>(`/salons/${slug}/hours`, { silent: true }),
     apiFetch<PhotoItem[]>(`/salons/${slug}/photos`, { silent: true }),
     apiFetch<ReviewItem[]>(`/salons/${salonRes.data.id}/reviews`, { silent: true }),
     apiFetch<SalonPortfolioItem[]>(`/salons/${slug}/portfolio`, { silent: true }),
     apiFetch<WorkerItem[]>(`/salons/${slug}/workers`, { silent: true }),
+    apiFetch<BookingTerms>('/platform-config/booking-terms', { silent: true }),
   ])
 
   return {
@@ -48,6 +54,7 @@ const { data: page } = await useAsyncData(`salon-${slug}`, async () => {
     reviews: reviewsRes.data ?? [],
     portfolio: portfolioRes.data ?? [],
     workers: workersRes.data ?? [],
+    terms: termsRes.data,
   }
 })
 
@@ -88,6 +95,19 @@ useHead({
       }).replace(/[<]/g, '\\u003c'),
     },
   ],
+})
+
+// A single-item shape for SalonMap.client.vue, which is built for the multi-salon search
+// map (index.vue) -- distanceKm isn't meaningful on a single salon's own profile and is
+// unused by the component's marker/popup logic, so a placeholder value satisfies its prop
+// type without touching that component for a value it never reads.
+const salonMapData = computed(() => {
+  const coords = geoJsonToLatLng(page.value!.salon.location.coordinates)
+  return {
+    salons: [{ id: page.value!.salon.id, name: page.value!.salon.name, slug, distanceKm: 0 }],
+    center: coords,
+    salonCoords: { [page.value!.salon.id]: coords },
+  }
 })
 
 const isFavorited = ref(false)
@@ -170,45 +190,89 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
 
     <SalonGallery :photos="page.photos" />
 
-    <div class="flex items-start justify-between">
-      <div>
-        <h1 class="text-xl font-bold">{{ page.salon.name }}</h1>
-        <p v-if="page.salon.tagline" data-testid="salon-tagline" class="text-sm opacity-70">{{ page.salon.tagline }}</p>
-        <p class="text-sm">⭐ {{ Number(page.salon.ratingAvg).toFixed(1) }} ({{ page.salon.ratingCount }})</p>
-        <p class="text-sm">{{ page.salon.address }}</p>
+    <div class="flex items-start justify-between gap-3">
+      <div class="min-w-0">
+        <div class="flex flex-wrap items-center gap-2">
+          <h1 class="text-xl font-bold text-(--color-text)">{{ page.salon.name }}</h1>
+          <!-- This page only ever renders an approved salon (the API's findPublicBySlug
+               gates on status:'approved'), so this badge makes an already-true fact
+               visible rather than asserting a new check. The one accent-colored element
+               on this page (One Seal Rule) -- prices below are deliberately neutral. -->
+          <span
+            data-testid="salon-verified-badge"
+            class="inline-flex items-center gap-1 rounded-full bg-(--color-accent-soft) px-2 py-1 text-xs font-bold text-(--color-accent)"
+          >
+            <BaseIcon name="shield" :size="14" />
+            سالن تایید شده
+          </span>
+        </div>
+        <p v-if="page.salon.tagline" data-testid="salon-tagline" class="mt-1 text-sm text-(--color-text-muted)">{{ page.salon.tagline }}</p>
+        <p class="mt-1 flex items-center gap-1 text-sm text-(--color-text-muted)">
+          <BaseIcon name="star" :size="14" />
+          {{ Number(page.salon.ratingAvg).toFixed(1) }} ({{ page.salon.ratingCount }})
+        </p>
+        <p class="mt-1 flex items-center gap-1 text-sm text-(--color-text-muted)">
+          <BaseIcon name="map-pin" :size="14" />
+          {{ page.salon.address }}
+        </p>
         <a
           v-if="page.salon.instagramHandle"
           :href="`https://instagram.com/${page.salon.instagramHandle}`"
           target="_blank"
           rel="noopener nofollow"
           data-testid="instagram-chip"
-          class="mt-2 inline-flex items-center gap-1 rounded-full bg-(--color-surface-card) px-3 py-1 text-xs"
+          class="mt-2 inline-flex items-center gap-1.5 rounded-full border border-(--color-border) bg-(--color-surface-card) px-3 py-3.5 text-xs text-(--color-text) transition-colors hover:bg-(--color-surface-subtle)"
         >
-          اینستاگرام <span dir="ltr" class="opacity-70">@{{ page.salon.instagramHandle }}</span>
+          <BaseIcon name="instagram" :size="14" />
+          اینستاگرام <span dir="ltr" class="text-(--color-text-muted)">@{{ page.salon.instagramHandle }}</span>
         </a>
       </div>
       <button
         type="button"
         :disabled="favoriteBusy"
-        class="rounded-full bg-(--color-surface-card) px-3 py-2 text-sm"
+        :aria-pressed="isFavorited"
+        data-testid="favorite-button"
+        class="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-3 text-sm font-medium transition-colors disabled:opacity-60"
+        :class="isFavorited
+          ? 'bg-(--color-danger-soft) text-(--color-danger)'
+          : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) hover:text-(--color-text)'"
         @click="toggleFavorite"
       >
-        {{ isFavorited ? '♥ ذخیره شده' : '♡ ذخیره' }}
+        <BaseIcon name="heart" :size="16" />
+        {{ isFavorited ? 'ذخیره شده' : 'ذخیره' }}
       </button>
     </div>
 
+    <LazySalonMap
+      data-testid="salon-map"
+      :salons="salonMapData.salons"
+      :center="salonMapData.center"
+      :salon-coords="salonMapData.salonCoords"
+    />
+
     <section v-if="page.salon.about" data-testid="salon-about">
-      <h2 class="font-bold mb-2">درباره سالن</h2>
+      <h2 class="mb-2 text-xl font-bold text-(--color-text)">درباره سالن</h2>
       <!-- Plain text by design: interpolation only (never v-html), line breaks preserved. -->
       <p class="text-sm whitespace-pre-line">{{ page.salon.about }}</p>
     </section>
 
     <section>
-      <h2 class="font-bold mb-2">خدمات</h2>
-      <ul class="space-y-2">
+      <h2 class="mb-2 text-xl font-bold text-(--color-text)">خدمات</h2>
+      <p class="mb-3 flex items-start gap-1.5 text-xs text-(--color-text-muted)">
+        <BaseIcon name="shield" :size="14" class="mt-0.5 shrink-0" />
+        <span v-if="page.terms">
+          برای تضمین نوبت، پیش‌پرداخت آنلاین معادل ٪{{ page.terms.depositPercent.toLocaleString('fa-IR') }} مبلغ خدمت
+          (حداقل {{ page.terms.depositMinToman.toLocaleString('fa-IR') }} تومان) دریافت می‌شود.
+        </span>
+        <span v-else>برای تضمین نوبت، پیش‌پرداخت آنلاین دریافت می‌شود.</span>
+      </p>
+      <ul v-if="page.services.length" class="space-y-2">
         <li v-for="service in page.services" :key="service.id">
-          <NuxtLink :to="`/booking/${slug}/${service.id}`" class="flex items-center justify-between rounded-lg bg-(--color-surface-card) p-3 text-sm">
-            <span>{{ service.name }} ({{ service.durationMin }} دقیقه)</span>
+          <NuxtLink
+            :to="`/booking/${slug}/${service.id}`"
+            class="flex items-center justify-between gap-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 text-sm shadow-(--shadow-sm) transition-shadow hover:shadow-(--shadow-md)"
+          >
+            <span class="text-(--color-text)">{{ service.name }} ({{ service.durationMin }} دقیقه)</span>
             <span class="flex items-center gap-2">
               <span
                 v-if="service.discountPercent"
@@ -218,9 +282,9 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
               </span>
               <span class="flex flex-col items-end leading-tight">
                 <span v-if="service.discountPercent" class="text-xs text-(--color-text-muted) line-through">
-                  {{ service.price.toLocaleString('fa-IR') }}
+                  {{ service.price.toLocaleString('fa-IR') }} تومان
                 </span>
-                <span class="font-bold text-(--color-accent)">
+                <span class="font-bold text-(--color-text)">
                   {{ applyDiscount(service.price, service.discountPercent).toLocaleString('fa-IR') }} تومان
                 </span>
               </span>
@@ -228,6 +292,13 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
           </NuxtLink>
         </li>
       </ul>
+      <p
+        v-else
+        data-testid="services-empty"
+        class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-6 text-center text-sm text-(--color-text-muted)"
+      >
+        در حال حاضر خدمتی برای رزرو ثبت نشده است
+      </p>
     </section>
 
     <PortfolioGrid
@@ -240,12 +311,13 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
     />
 
     <section>
-      <h2 class="font-bold mb-2">ساعات کاری</h2>
-      <ul class="text-sm space-y-1">
+      <h2 class="mb-2 text-xl font-bold text-(--color-text)">ساعات کاری</h2>
+      <ul v-if="page.hours.length" class="text-sm space-y-1 text-(--color-text)">
         <li v-for="hour in page.hours" :key="hour.weekday">
           {{ WEEKDAY_NAMES[hour.weekday] }}: {{ hour.openTime.slice(0, 5) }} - {{ hour.closeTime.slice(0, 5) }}
         </li>
       </ul>
+      <p v-else data-testid="hours-empty" class="text-sm text-(--color-text-muted)">ساعات کاری ثبت نشده است</p>
     </section>
 
     <SalonTeam :workers="page.workers" />
@@ -264,7 +336,7 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
 
     <ReportForm v-if="reportOpen" :salon-id="page.salon.id" :review-id="reportReviewId" @close="closeReport" />
 
-    <StoryViewer
+    <LazyStoryViewer
       v-if="viewerOpen && stories.length"
       :stories="stories"
       :services="page.services"

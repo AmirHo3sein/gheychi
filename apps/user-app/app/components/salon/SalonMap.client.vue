@@ -36,8 +36,21 @@ function popupHtml(salon: { name: string; slug: string }, coords: { lat: number;
   `
 }
 
-onMounted(() => {
-  if (!mapEl.value) return
+let unmounted = false
+
+function initMap() {
+  if (unmounted) return
+  if (!mapEl.value) {
+    // When this component is created as part of an ancestor Suspense boundary's
+    // initial resolve (e.g. mounted unconditionally on first render of an async-setup
+    // page, as opposed to index.vue's post-interaction v-if toggle), Vue can invoke
+    // this onMounted hook a tick before the template ref is actually committed to the
+    // DOM -- confirmed live: mapEl.value is null here, then non-null one nextTick()
+    // later. Retrying once after a tick covers that race without affecting the normal
+    // (already-attached) case, where this branch is never taken.
+    nextTick(initMap)
+    return
+  }
 
   mapInstance = L.map(mapEl.value, { zoomControl: true }).setView([props.center.lat, props.center.lng], 13)
 
@@ -53,9 +66,12 @@ onMounted(() => {
     if (!coords) continue
     L.marker([coords.lat, coords.lng]).addTo(mapInstance).bindPopup(popupHtml(salon, coords))
   }
-})
+}
+
+onMounted(initMap)
 
 onBeforeUnmount(() => {
+  unmounted = true
   mapInstance?.remove()
   mapInstance = null
 })

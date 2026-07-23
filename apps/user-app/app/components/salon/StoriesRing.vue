@@ -17,7 +17,16 @@ const hasUnseen = computed(() => hasUnseenStories(props.lastSeen, newestStoryCre
 </script>
 
 <template>
-  <button type="button" data-testid="stories-ring" class="flex flex-col items-center gap-1" @click="$emit('open')">
+  <!-- Single explicit aria-label rather than letting the accessible name assemble from the
+       cover-photo alt + the "استوری" caption below -- the photo is a decorative preview
+       thumbnail of a control whose action is already fully described here. -->
+  <button
+    type="button"
+    data-testid="stories-ring"
+    aria-label="مشاهده استوری‌های سالن"
+    class="flex flex-col items-center gap-1"
+    @click="$emit('open')"
+  >
     <span
       class="rounded-full p-[3px]"
       :class="hasUnseen ? 'bg-gradient-to-tr from-(--color-accent) to-(--color-ad)' : 'bg-(--color-surface-card) opacity-60'"
@@ -32,8 +41,10 @@ const hasUnseen = computed(() => hasUnseenStories(props.lastSeen, newestStoryCre
         class="block h-16 w-16 rounded-full border-2 border-(--color-surface) object-cover"
         alt=""
       />
-      <span v-else class="flex h-16 w-16 items-center justify-center rounded-full border-2 border-(--color-surface) bg-(--color-surface-card) text-xl">✦</span>
+      <span v-else class="flex h-16 w-16 items-center justify-center rounded-full border-2 border-(--color-surface) bg-(--color-surface-card) text-(--color-text-muted)">
+        <BaseIcon name="sparkles" :size="22" />
+      </span>
     </span>
-    <span class="text-xs">استوری</span>
+    <span aria-hidden="true" class="text-xs">استوری</span>
   </button>
 </template>

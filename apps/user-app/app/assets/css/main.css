@@ -14,7 +14,13 @@
   --color-surface-card: #FFFFFF;
   --color-surface-subtle: #EAF5F3;
   --color-text: #0B4F4A;
-  --color-text-muted: #5B8783;
+  /* Darkened from the original #5B8783 (hue/saturation preserved, lightness reduced) --
+     the original only reached ~4.0:1 against --color-surface-card and ~3.8:1 against
+     --color-surface, failing WCAG AA's 4.5:1 for secondary text. #4C716D verified via
+     the sRGB-to-linear + relative-luminance + contrast-ratio formulas at 5.40:1 (card)
+     and 5.15:1 (surface). Dark mode's --color-text-muted (#B3A3B0) already passes
+     (~6.9:1) and is untouched. */
+  --color-text-muted: #4C716D;
   --color-border: #DCEDEA;
   --color-accent: #0EA89B;
   /* accent-strong/accent-deep are the fill/hover pair for white-text-on-accent surfaces
