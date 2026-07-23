@@ -62,7 +62,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="mapEl" class="h-96 w-full rounded-xl" />
+  <div ref="mapEl" class="h-96 w-full overflow-hidden rounded-2xl" />
 </template>
 
 <style>

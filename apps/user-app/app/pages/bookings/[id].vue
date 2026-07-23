@@ -3,6 +3,7 @@ interface BookingDetail {
   id: string
   salonName: string
   serviceName: string
+  workerName: string | null
   startsAt: string
   priceSnapshot: number
   depositAmount: number
@@ -27,6 +28,7 @@ if (!booking.value) {
   <div class="p-4 space-y-2 text-sm">
     <h1 class="text-lg font-bold">{{ booking!.salonName }}</h1>
     <p>{{ booking!.serviceName }}</p>
+    <p v-if="booking!.workerName">کارمند: {{ booking!.workerName }}</p>
     <p>{{ new Date(booking!.startsAt).toLocaleString('fa-IR') }}</p>
     <p>مبلغ کل: {{ booking!.priceSnapshot.toLocaleString('fa-IR') }} تومان</p>
     <p>پیش‌پرداخت: {{ booking!.depositAmount.toLocaleString('fa-IR') }} تومان</p>

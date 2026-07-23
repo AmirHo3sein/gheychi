@@ -12,21 +12,73 @@
   /* Light mode -- "Teal Trust" */
   --color-surface: #F4FBFA;
   --color-surface-card: #FFFFFF;
+  --color-surface-subtle: #EAF5F3;
   --color-text: #0B4F4A;
+  --color-text-muted: #5B8783;
+  --color-border: #DCEDEA;
   --color-accent: #0EA89B;
+  /* accent-strong/accent-deep are the fill/hover pair for white-text-on-accent surfaces
+     (BaseButton primary, selected chips/toggles) -- verified >=4.5:1 against white (WCAG AA).
+     Plain --color-accent (#0EA89B) only reaches 2.96:1 as a fill, so it stays reserved for
+     rings, borders, and text-on-light-background uses, never as a background under white text. */
+  --color-accent-strong: #0F766E;
+  --color-accent-deep: #115E59;
+  --color-accent-soft: #E3F6F3;
   --color-ad: #FF7A45;
+  /* ad-strong: contrast-safe fill for white text on the "ad" color (e.g. the featured-salon
+     badge) -- plain --color-ad is 2.59:1 as a fill, kept only for text-on-light-background uses. */
+  --color-ad-strong: #C2410C;
+  --color-danger: #DC4747;
+  /* Same white-text-on-fill fix as accent/ad above -- plain --color-danger is 4.17:1 as a
+     fill (fails 4.5:1), found while fixing BaseButton's primary variant. */
+  --color-danger-strong: #B91C1C;
+  --color-danger-soft: #FCEAEA;
+  --color-success: #1E9E6B;
+
+  --shadow-color: 178 45% 20%;
+  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.06), 0 1px 1px hsl(var(--shadow-color) / 0.04);
+  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.16), 0 2px 6px -2px hsl(var(--shadow-color) / 0.08);
+  --shadow-lg: 0 24px 48px -16px hsl(var(--shadow-color) / 0.22), 0 8px 16px -4px hsl(var(--shadow-color) / 0.1);
 }
 
 .dark {
   --color-surface: #151217;
   --color-surface-card: #211D24;
+  --color-surface-subtle: #2A2530;
   --color-text: #F5F0F2;
+  --color-text-muted: #B3A3B0;
+  --color-border: #38323D;
   --color-accent: #7A3FF2;
+  /* See the light-mode comment above: accent-strong/accent-deep are the verified-safe fill
+     pair for white text (dark accent's resting shade, 5.50:1, already passed unfixed --
+     it's #9463F5's ORIGINAL role as the hover shade that failed at 3.92:1). */
+  --color-accent-strong: #6D28D9;
+  --color-accent-deep: #5B21B6;
+  --color-accent-soft: #2C2140;
   --color-ad: #F24F8D;
+  --color-ad-strong: #BE185D;
+  --color-danger: #F2645C;
+  --color-danger-strong: #9F1239;
+  --color-danger-soft: #3A2229;
+  --color-success: #3FC98A;
+
+  --shadow-color: 275 55% 4%;
+  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.4), 0 1px 1px hsl(var(--shadow-color) / 0.3);
+  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.55), 0 2px 6px -2px hsl(var(--shadow-color) / 0.4);
+  --shadow-lg: 0 24px 48px -16px hsl(var(--shadow-color) / 0.65), 0 8px 16px -4px hsl(var(--shadow-color) / 0.5);
 }
 
 html, body {
   background-color: var(--color-surface);
   color: var(--color-text);
   font-family: var(--font-sans);
+}
+
+/* Consistent focus treatment for every interactive element -- replaces the
+   browser default outline (which clips awkwardly on rounded inputs/buttons)
+   without removing focus visibility entirely. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
 }

@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-23T00:00:00.000Z",
+  "title": "Design System: Arayeshgah",
+  "extensions": {
+    "colorMeta": {
+      "accent-teal": {
+        "role": "primary",
+        "displayName": "Certified Teal",
+        "canonical": "#0EA89B",
+        "tonalRamp": ["#053A35", "#0A5850", "#0F7A6E", "#0EA89B", "#3DC4B7", "#7AD9CF", "#B3EBE4", "#E3F6F3"]
+      },
+      "accent-violet": {
+        "role": "primary",
+        "displayName": "Notarized Violet",
+        "canonical": "#7A3FF2",
+        "tonalRamp": ["#150A26", "#2A1450", "#442080", "#6030C9", "#7A3FF2", "#9463F5", "#C3A3F8", "#E8DDFC"]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Warm Paper",
+        "canonical": "#F4FBFA",
+        "tonalRamp": ["#0C0F0E", "#151F1D", "#1F2F2C", "#2E4744", "#5E7C79", "#A4C4C1", "#D5E9E7", "#F4FBFA"]
+      },
+      "surface-dark": {
+        "role": "neutral",
+        "displayName": "Ink Violet",
+        "canonical": "#151217",
+        "tonalRamp": ["#0A0810", "#151217", "#211D24", "#332C3A", "#544A5C", "#7C7086", "#B0A5B8", "#E8E2EB"]
+      },
+      "danger": {
+        "role": "error",
+        "displayName": "Ledger Red",
+        "canonical": "#DC4747",
+        "tonalRamp": ["#450F0F", "#701A1A", "#A32828", "#DC4747", "#E67373", "#EF9E9E", "#F6C7C7", "#FCEAEA"]
+      },
+      "success": {
+        "role": "success",
+        "displayName": "Cleared Green",
+        "canonical": "#1E9E6B",
+        "tonalRamp": ["#083626", "#0F5A3E", "#157C57", "#1E9E6B", "#4CBB8C", "#84D3AF", "#B8E7D2", "#E3F5EC"]
+      }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Rare, large-scale marketing/Persuade-mode moments only (e.g. login hero copy) -- not routine page titles." },
+      "title": { "displayName": "Title", "purpose": "Step/section headers -- the 'where you are' heading, used at the top of every distinct screen or step." },
+      "body": { "displayName": "Body", "purpose": "Default reading copy." },
+      "label": { "displayName": "Label", "purpose": "Form labels, buttons, compact UI text -- the most-used size in the app." },
+      "caption": { "displayName": "Caption", "purpose": "Helper text, inline validation, timestamps." }
+    },
+    "shadows": [
+      { "name": "shadow-sm", "value": "0 1px 2px hsl(var(--shadow-color) / 0.06), 0 1px 1px hsl(var(--shadow-color) / 0.04)", "purpose": "Resting elevation for a card or the primary button at rest." },
+      { "name": "shadow-md", "value": "0 8px 24px -8px hsl(var(--shadow-color) / 0.16), 0 2px 6px -2px hsl(var(--shadow-color) / 0.08)", "purpose": "Hover/emphasis elevation, currently only the primary button's hover state." },
+      { "name": "shadow-lg", "value": "0 24px 48px -16px hsl(var(--shadow-color) / 0.22), 0 8px 16px -4px hsl(var(--shadow-color) / 0.1)", "purpose": "Reserved for the highest-elevation surface in a view (modal, sheet) -- defined, not yet used." }
+    ],
+    "motion": [
+      { "name": "press-scale", "value": "transform: scale(0.98)", "purpose": "Tactile press-down feedback on :active for buttons; disabled buttons opt out via disabled:active:scale-100." },
+      { "name": "duration-standard", "value": "150ms", "purpose": "Default transition duration for button color/shadow/transform changes (transition-all duration-150)." },
+      { "name": "step-fade", "value": "opacity 0.18s ease, transform 0.18s ease (4px vertical offset)", "purpose": "Multi-step form transition between keyed steps, established in login.vue." }
+    ],
+    "breakpoints": [
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single primary action on a screen -- accent fill, deepens on hover.",
+      "html": "<button class=\"ds-btn-primary\">پرداخت و رزرو</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--color-accent); color: #FFFFFF; font-weight: 600; font-size: 0.875rem; padding: 10px 16px; border-radius: 12px; border: none; box-shadow: var(--shadow-sm); transition: all 150ms; cursor: pointer; } .ds-btn-primary:hover { background: var(--color-accent-strong); box-shadow: var(--shadow-md); } .ds-btn-primary:active { transform: scale(0.98); } .ds-btn-primary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; } .ds-btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Second-priority action alongside a primary.",
+      "html": "<button class=\"ds-btn-secondary\">انصراف</button>",
+      "css": ".ds-btn-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--color-surface-subtle); color: var(--color-text); font-weight: 600; font-size: 0.875rem; padding: 10px 16px; border-radius: 12px; border: none; transition: all 150ms; cursor: pointer; } .ds-btn-secondary:hover { background: var(--color-border); } .ds-btn-secondary:active { transform: scale(0.98); } .ds-btn-secondary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Standard field, with icon-prefixed and error-state examples.",
+      "html": "<div class=\"ds-field\"><label class=\"ds-label\">شماره موبایل</label><input class=\"ds-input\" type=\"tel\" placeholder=\"09xxxxxxxxx\" /></div>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 6px; } .ds-label { font-size: 0.875rem; font-weight: 500; color: var(--color-text-muted); } .ds-input { width: 100%; border-radius: 12px; border: 1px solid var(--color-border); background: var(--color-surface-card); color: var(--color-text); padding: 12px 16px; font-size: 1rem; transition: border-color 150ms, box-shadow 150ms; } .ds-input::placeholder { color: color-mix(in srgb, var(--color-text-muted) 60%, transparent); } .ds-input:focus { outline: none; border-color: var(--color-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 30%, transparent); }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Elevated content container -- bordered, flat at rest, static (no hover shadow change).",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-title\">جزئیات رزرو</div><div class=\"ds-card-body\">سالن زیبایی آفتاب &middot; ۱۴:۳۰ &middot; ۴۵۰,۰۰۰ تومان</div></div>",
+      "css": ".ds-card { border-radius: 16px; border: 1px solid var(--color-border); background: var(--color-surface-card); box-shadow: var(--shadow-sm); padding: 16px; } .ds-card-title { font-size: 1.25rem; font-weight: 700; color: var(--color-text); margin-bottom: 8px; } .ds-card-body { font-size: 1rem; color: var(--color-text-muted); }"
+    },
+    {
+      "name": "Step Indicator",
+      "kind": "custom",
+      "refersTo": "step-indicator",
+      "description": "Signature multi-step progress bar, established in login.vue.",
+      "html": "<div class=\"ds-steps\"><span class=\"ds-step ds-step-filled\"></span><span class=\"ds-step ds-step-filled\"></span><span class=\"ds-step\"></span></div>",
+      "css": ".ds-steps { display: flex; align-items: center; gap: 6px; } .ds-step { height: 6px; flex: 1; border-radius: 9999px; background: var(--color-border); transition: background-color 300ms; } .ds-step-filled { background: var(--color-accent); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Verified Ledger",
+    "overview": "Arayeshgah's job is to make trust legible at a glance -- a review only exists because a booking actually happened, a deposit is real money already moving, a salon only appears because a human already checked it. The visual system should read the same way: precise, confident, and quietly official, like a stamped receipt rather than a marketing flyer. Color is used deliberately and sparingly -- the accent appears as a seal of approval on the one thing that matters on a given screen (the primary action, the verified badge, the price that's about to be charged), not as ambient decoration. Edges are clean and deliberate; nothing about the interface should feel soft, vague, or negotiable, because the product itself isn't. This is a mobile-first system, built for budget Android hardware and unreliable networks, not a demo device. It avoids the generic AI-SaaS tells on sight: no Inter, no purple-to-blue gradients, no cards nested in cards, no rounded-square icon tile floating above every heading. Vazirmatn carries the whole system; RTL is the only reading direction this system knows.",
+    "keyCharacteristics": [
+      "A two-mode identity that fully re-themes, not just inverts: light is teal-accented (\"Certified Teal\"), dark is violet-accented (\"Notarized Violet\").",
+      "Restrained, purposeful shadow use -- elevation is a deliberate signal, never ambient texture.",
+      "Tactile, precise interaction: buttons compress slightly on press, hover deepens shadow and color together, focus rings are exact and confident.",
+      "One typeface, one accent per mode, a tight neutral scale -- clarity through restraint, not variety."
+    ],
+    "rules": [
+      { "name": "The One Seal Rule", "body": "The accent color appears on the single most important element of a screen -- the primary action, the verified badge, the thing the user is here to do -- never spread across navigation, backgrounds, or secondary controls.", "section": "colors" },
+      { "name": "The No Mode-Agnostic Color Rule", "body": "Every color in this system (except white text-on-accent) has a distinct light and dark value, defined by re-theming, not by inverting lightness alone. A new color token must ship with both.", "section": "colors" },
+      { "name": "The Weight-Over-Size Rule", "body": "Prefer stepping weight (500 to 700) before reaching for a larger size to establish hierarchy on a dense, mobile-first screen.", "section": "typography" },
+      { "name": "The Density-First Rule", "body": "Default to compact spacing (sm/md); reach for lg/xl only for an explicit section break or a Persuade-mode moment, never as the resting state of an Operate-mode screen.", "section": "layout" },
+      { "name": "The Elevation-Means-Something Rule", "body": "A shadow is never decorative. If a surface doesn't need to visually separate from its background or signal 'this is the important, pressable thing,' it gets a border, not a shadow.", "section": "elevation" },
+      { "name": "The Container-Softer-Than-Control Rule", "body": "A container's radius is always one step larger than the radius of the controls it contains -- never equal, never smaller.", "section": "shapes" },
+      { "name": "The No Physical-Direction Leak Rule", "body": "Every positioned element uses logical properties (start-/end-/ps-/pe-), never left/right, in an RTL-only system.", "section": "shapes" }
+    ],
+    "dos": [
+      "Do compose BaseButton/BaseInput/BaseCard/BaseSelect/BaseIcon for any new UI rather than hand-rolling equivalent markup.",
+      "Do use BaseIcon's existing SVG icon set instead of emoji glyphs, even where an emoji 'already works'.",
+      "Do define both a light and dark value for any new color token.",
+      "Do use logical CSS properties for any positioned or asymmetrically-padded element.",
+      "Do pair a shadow-depth change with a color change on hover for any primary/emphasis interactive element."
+    ],
+    "donts": [
+      "Don't add a second accent color or use the accent on more than one element's worth of emphasis per screen.",
+      "Don't use rounded-lg (8px) on a new component -- the system's control/container radii are 12px/16px.",
+      "Don't add ambient/decorative shadows to a static, non-elevated surface.",
+      "Don't hardcode a hex color inside an inline style or SVG data URI -- reference the CSS custom property so both themes stay correct.",
+      "Don't treat index.vue or AppHeader.vue's current styling as a valid reference for new work -- they predate this system and are documented as migration targets."
+    ]
+  }
+}

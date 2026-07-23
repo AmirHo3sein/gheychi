@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import type { IconName } from '~/components/ui/BaseIcon.vue'
+
 const { preference, setPreference, apply } = useTheme()
 
-const options: { value: 'light' | 'dark' | 'system'; label: string }[] = [
-  { value: 'light', label: '☀️' },
-  { value: 'dark', label: '🌙' },
-  { value: 'system', label: '💻' },
+const options: { value: 'light' | 'dark' | 'system'; icon: IconName; label: string }[] = [
+  { value: 'light', icon: 'sun', label: 'روشن' },
+  { value: 'dark', icon: 'moon', label: 'تاریک' },
+  { value: 'system', icon: 'monitor', label: 'سیستم' },
 ]
 
 // Re-sync the .dark class against the current cookie on mount: the inline anti-flash
@@ -14,16 +16,19 @@ onMounted(() => apply())
 </script>
 
 <template>
-  <div class="flex gap-1 rounded-full bg-(--color-surface-card) p-1">
+  <div class="flex gap-1 rounded-full border border-(--color-border) bg-(--color-surface-card) p-1" role="radiogroup" aria-label="حالت نمایش">
     <button
       v-for="opt in options"
       :key="opt.value"
       type="button"
-      class="rounded-full px-2 py-1 text-sm"
-      :class="{ 'bg-(--color-accent)': preference === opt.value }"
+      role="radio"
+      :aria-checked="preference === opt.value"
+      :aria-label="opt.label"
+      class="flex h-8 w-8 items-center justify-center rounded-full transition-colors"
+      :class="preference === opt.value ? 'bg-(--color-accent-strong) text-white' : 'text-(--color-text-muted) hover:bg-(--color-surface-subtle) hover:text-(--color-text)'"
       @click="setPreference(opt.value)"
     >
-      {{ opt.label }}
+      <BaseIcon :name="opt.icon" :size="16" />
     </button>
   </div>
 </template>

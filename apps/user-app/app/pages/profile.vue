@@ -58,6 +58,20 @@ async function logout() {
     </section>
 
     <section class="space-y-2">
+      <h2 class="font-bold">کیف پول</h2>
+      <NuxtLink to="/account/wallet" class="block rounded-lg bg-(--color-surface-card) p-3 text-sm text-(--color-accent)">
+        مشاهده موجودی و تراکنش‌ها
+      </NuxtLink>
+    </section>
+
+    <section class="space-y-2">
+      <h2 class="font-bold">دعوت از دوستان</h2>
+      <NuxtLink to="/account/referral" class="block rounded-lg bg-(--color-surface-card) p-3 text-sm text-(--color-accent)">
+        کد معرفی و دعوت‌های من
+      </NuxtLink>
+    </section>
+
+    <section class="space-y-2">
       <h2 class="font-bold">سالن‌های ذخیره شده</h2>
       <p v-if="!favorites.length" class="text-sm">سالنی ذخیره نکرده‌اید</p>
       <NuxtLink v-for="salon in favorites" :key="salon.id" :to="`/salons/${salon.slug}`" class="block rounded-lg bg-(--color-surface-card) p-3 text-sm">

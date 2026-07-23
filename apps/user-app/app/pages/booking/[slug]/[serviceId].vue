@@ -1,7 +1,28 @@
 <script setup lang="ts">
+import { applyDiscount } from '../../../utils/discount'
+
 interface Salon { id: string; name: string; address: string }
-interface SalonServiceItem { id: string; name: string; price: number; durationMin: number }
+interface SalonServiceItem { id: string; name: string; price: number; durationMin: number; discountPercent: number | null }
 interface BookingTerms { depositPercent: number; depositMinToman: number; cancellationWindowHours: number }
+
+/**
+ * Authoritative shape of POST /coupons/validate's 201 response (Slice 6:
+ * apps/api/src/coupons/coupon-validation.controller.ts). A coupon can now be either
+ * percent- or fixed-toman-kind, so `couponDiscountPercent`/`appliedDiscountPercent`
+ * are only ever populated when the relevant discount is actually percent-based --
+ * never fabricated as a percent equivalent of a fixed-toman amount.
+ */
+interface CouponValidationResult {
+  valid: true
+  couponDiscountPercent: number | null
+  couponDiscountKind: 'percent' | 'fixed'
+  couponDiscountValue: number
+  serviceDiscountPercent: number | null
+  appliedDiscountPercent: number | undefined
+  originalPrice: number
+  finalPrice: number
+  estimatedDeposit: number
+}
 
 const route = useRoute()
 const slug = route.params.slug as string
@@ -27,15 +48,84 @@ const selectedSlot = ref<string | null>(null)
 const submitting = ref(false)
 const submitError = ref('')
 
+const couponCode = ref('')
+const couponApplying = ref(false)
+const couponError = ref('')
+// Holds the last successfully-validated coupon plus the exact code string that produced
+// it -- the code is what confirmBooking() sends, not whatever couponCode currently holds,
+// since those two can diverge the instant a stale appliedCoupon is cleared below.
+const appliedCoupon = ref<(CouponValidationResult & { code: string }) | null>(null)
+
+// A coupon result is only valid for the exact code that produced it -- once the field is
+// edited, the previously-applied discount can no longer be trusted, so both must clear.
+watch(couponCode, () => {
+  if (appliedCoupon.value) appliedCoupon.value = null
+  if (couponError.value) couponError.value = ''
+})
+
+// The discount percent badge is ONLY shown once a coupon is applied when the winning
+// discount (service vs. coupon, whichever resulted in the lower price -- see
+// resolveBestPriceWithWinner() in apps/api/src/booking/discount.util.ts) was itself
+// percent-based. A fixed-toman coupon winning must never be displayed as a fabricated
+// percent -- `appliedDiscountPercent` is `undefined` from the server in exactly that
+// case, so this stays `null` and the badge simply doesn't render (the savings-amount
+// line below still shows, since it works for any discount kind).
+const activeDiscountPercent = computed(() => {
+  if (appliedCoupon.value) return appliedCoupon.value.appliedDiscountPercent ?? null
+  return page.value?.service.discountPercent ?? null
+})
+
+const displayPrice = computed(() => {
+  if (appliedCoupon.value) return appliedCoupon.value.finalPrice
+  if (!page.value) return 0
+  return applyDiscount(page.value.service.price, page.value.service.discountPercent)
+})
+
+// "You saved X toman" -- always correct regardless of discount kind (percent or
+// fixed), since it's derived from the two authoritative prices rather than from any
+// percent figure. Only meaningful once a coupon is applied and it actually won
+// against the service's own discount (i.e. finalPrice < originalPrice); a coupon that
+// didn't beat the service discount, or a service-only discount with no coupon
+// applied, has nothing coupon-specific worth calling out here.
+const couponSavings = computed(() => {
+  if (!appliedCoupon.value) return null
+  const savings = appliedCoupon.value.originalPrice - appliedCoupon.value.finalPrice
+  return savings > 0 ? savings : null
+})
+
 // Mirrors calculateDeposit() in apps/api/src/booking/deposit.util.ts -- this is a
-// display-only pre-submit estimate; the backend recomputes the real deposit from its
-// own platform-config values at submission time and is the sole source of truth, so a
-// mismatch here is a UX/trust issue, not a financial one. Keep in sync with that file.
+// display-only pre-submit estimate; the backend recomputes the real deposit from its own
+// platform-config values (and, if a coupon code is submitted, its own discount
+// resolution) at submission time and is the sole source of truth, so a mismatch here is a
+// UX/trust issue, not a financial one. Keep in sync with that file. Once a coupon has been
+// applied, the server-provided estimatedDeposit from /coupons/validate is authoritative
+// and used directly instead of this client-side duplication.
 const estimatedDeposit = computed(() => {
   if (!page.value?.terms) return null
-  const pct = Math.round((page.value.service.price * page.value.terms.depositPercent) / 100)
+  if (appliedCoupon.value) return appliedCoupon.value.estimatedDeposit
+  const discountedPrice = applyDiscount(page.value.service.price, page.value.service.discountPercent)
+  const pct = Math.round((discountedPrice * page.value.terms.depositPercent) / 100)
   return Math.max(pct, page.value.terms.depositMinToman)
 })
+
+async function applyCoupon() {
+  const code = couponCode.value.trim()
+  if (!code || !page.value) return
+  couponApplying.value = true
+  couponError.value = ''
+  const { data, error } = await apiFetch<CouponValidationResult>('/coupons/validate', {
+    method: 'POST',
+    body: { code, salonId: page.value.salon.id, serviceId },
+    silent: true,
+  })
+  couponApplying.value = false
+  if (error || !data) {
+    couponError.value = 'کد تخفیف نامعتبر است'
+    appliedCoupon.value = null
+    return
+  }
+  appliedCoupon.value = { ...data, code }
+}
 
 async function confirmBooking() {
   if (!selectedSlot.value) return
@@ -43,7 +133,12 @@ async function confirmBooking() {
   submitError.value = ''
   const { data, error } = await apiFetch<{ booking: { id: string }; paymentUrl: string }>('/bookings', {
     method: 'POST',
-    body: { salonId: page.value!.salon.id, serviceId, startsAt: selectedSlot.value },
+    body: {
+      salonId: page.value!.salon.id,
+      serviceId,
+      startsAt: selectedSlot.value,
+      couponCode: appliedCoupon.value ? appliedCoupon.value.code : undefined,
+    },
     silent: true,
   })
   submitting.value = false
@@ -75,10 +170,48 @@ async function confirmBooking() {
 
     <SlotPicker :salon-id="page.salon.id" :service-id="serviceId" @select="selectedSlot = $event" />
 
-    <div v-if="selectedSlot" class="rounded-xl bg-(--color-surface-card) p-4 space-y-2 text-sm">
-      <p>قیمت کامل: {{ page.service.price.toLocaleString('fa-IR') }} تومان</p>
+    <div v-if="selectedSlot" class="rounded-xl bg-(--color-surface-card) p-4 space-y-3 text-sm">
+      <div class="flex items-center justify-between">
+        <span>قیمت کامل</span>
+        <span class="flex items-center gap-2">
+          <span
+            v-if="activeDiscountPercent"
+            class="rounded-full bg-(--color-danger-soft) px-2 py-0.5 text-xs font-bold text-(--color-danger)"
+          >
+            ٪{{ activeDiscountPercent.toLocaleString('fa-IR') }} تخفیف
+          </span>
+          <span class="flex flex-col items-end leading-tight">
+            <span v-if="activeDiscountPercent" class="text-xs text-(--color-text-muted) line-through">
+              {{ page.service.price.toLocaleString('fa-IR') }}
+            </span>
+            <span class="font-bold text-(--color-accent)">{{ displayPrice.toLocaleString('fa-IR') }} تومان</span>
+          </span>
+        </span>
+      </div>
       <p v-if="estimatedDeposit !== null">پیش‌پرداخت آنلاین: {{ estimatedDeposit.toLocaleString('fa-IR') }} تومان</p>
       <p v-if="page.terms">لغو رایگان تا {{ page.terms.cancellationWindowHours }} ساعت قبل از نوبت</p>
+
+      <div class="space-y-2 border-t border-(--color-border) pt-3">
+        <div class="flex items-end gap-2">
+          <BaseInput
+            v-model="couponCode"
+            type="text"
+            label="کد تخفیف دارید؟"
+            placeholder="کد تخفیف (اختیاری)"
+            :error="couponError"
+            class="flex-1"
+          />
+          <BaseButton type="button" :loading="couponApplying" :disabled="!couponCode.trim()" @click="applyCoupon">
+            اعمال
+          </BaseButton>
+        </div>
+        <p v-if="appliedCoupon" class="flex items-center gap-1 text-xs text-(--color-success)">
+          <BaseIcon name="check-circle" :size="14" />
+          <span v-if="couponSavings">شما {{ couponSavings.toLocaleString('fa-IR') }} تومان صرفه‌جویی کردید</span>
+          <span v-else>کد تخفیف با موفقیت اعمال شد</span>
+        </p>
+      </div>
+
       <button
         type="button"
         data-testid="confirm-booking-button"

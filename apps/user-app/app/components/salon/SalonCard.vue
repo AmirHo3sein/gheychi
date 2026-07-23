@@ -7,11 +7,14 @@ defineProps<{
 </script>
 
 <template>
-  <NuxtLink :to="`/salons/${salon.slug}`" class="relative flex gap-3 rounded-xl bg-(--color-surface-card) p-3">
+  <NuxtLink
+    :to="`/salons/${salon.slug}`"
+    class="relative flex gap-4 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 shadow-(--shadow-sm) transition-shadow hover:shadow-(--shadow-md)"
+  >
     <span
       v-if="salon.isFeatured"
       data-testid="ad-badge"
-      class="absolute top-2 start-2 rounded-md bg-(--color-ad) px-1.5 py-0.5 text-[0.65rem] font-bold text-white"
+      class="absolute top-2 start-2 rounded-full bg-(--color-ad-strong) px-2 py-0.5 text-xs font-bold text-white"
     >
       تبلیغ
     </span>
@@ -24,20 +27,23 @@ defineProps<{
       height="80"
       loading="lazy"
       data-testid="salon-thumb"
-      class="h-20 w-20 flex-shrink-0 rounded-lg object-cover"
+      class="h-20 w-20 flex-shrink-0 rounded-xl object-cover"
       :class="salon.hasActiveStory ? 'ring-2 ring-(--color-accent)' : undefined"
       :alt="salon.name"
     />
     <div
       v-else
       data-testid="salon-thumb"
-      class="h-20 w-20 flex-shrink-0 rounded-lg bg-(--color-surface)"
+      class="h-20 w-20 flex-shrink-0 rounded-xl bg-(--color-surface)"
       :class="salon.hasActiveStory ? 'ring-2 ring-(--color-accent)' : undefined"
     />
     <div class="flex-1 text-sm">
-      <h3 class="font-bold">{{ salon.name }}</h3>
-      <p>⭐ {{ salon.ratingAvg.toFixed(1) }} ({{ salon.ratingCount }}) · {{ salon.distanceKm.toFixed(1) }} کیلومتر</p>
-      <p v-if="salon.minPrice">از {{ salon.minPrice.toLocaleString('fa-IR') }} تومان</p>
+      <h3 class="font-bold text-(--color-text)">{{ salon.name }}</h3>
+      <p class="mt-1 flex items-center gap-1 text-(--color-text-muted)">
+        <BaseIcon name="star" :size="14" />
+        {{ salon.ratingAvg.toFixed(1) }} ({{ salon.ratingCount }}) · {{ salon.distanceKm.toFixed(1) }} کیلومتر
+      </p>
+      <p v-if="salon.minPrice" class="mt-0.5 text-(--color-text-muted)">از {{ salon.minPrice.toLocaleString('fa-IR') }} تومان</p>
     </div>
   </NuxtLink>
 </template>

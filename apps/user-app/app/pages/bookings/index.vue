@@ -3,6 +3,7 @@ interface BookingItem {
   id: string
   salonName: string
   serviceName: string
+  workerName: string | null
   startsAt: string
   priceSnapshot: number
   status: 'pending_payment' | 'confirmed' | 'completed' | 'cancelled_by_user' | 'cancelled_by_salon' | 'expired' | 'no_show'
@@ -11,7 +12,7 @@ interface BookingItem {
 const { apiFetch } = useApi()
 const bookings = ref<BookingItem[]>([])
 const loading = ref(true)
-const reviewingBookingId = ref<string | null>(null)
+const reviewingBooking = ref<BookingItem | null>(null)
 
 const STATUS_LABELS: Record<BookingItem['status'], string> = {
   pending_payment: 'در انتظار پرداخت',
@@ -73,17 +74,17 @@ async function cancelBooking(id: string) {
         v-if="booking.status === 'completed'"
         type="button"
         class="text-(--color-accent)"
-        @click="reviewingBookingId = booking.id"
+        @click="reviewingBooking = booking"
       >
         ثبت نظر
       </button>
     </div>
 
     <ReviewPromptModal
-      v-if="reviewingBookingId"
-      :booking-id="reviewingBookingId"
-      @close="reviewingBookingId = null"
-      @submitted="reviewingBookingId = null"
+      v-if="reviewingBooking"
+      :booking-id="reviewingBooking.id"
+      :worker-name="reviewingBooking.workerName"
+      @close="reviewingBooking = null"
     />
   </div>
 </template>

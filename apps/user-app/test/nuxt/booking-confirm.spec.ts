@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { nextTick } from 'vue'
 import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
-import { flushPromises } from '@vue/test-utils'
+import { flushPromises, type DOMWrapper } from '@vue/test-utils'
 import BookingConfirmPage from '../../app/pages/booking/[slug]/[serviceId].vue'
 import SlotPicker from '../../app/components/booking/SlotPicker.vue'
 
@@ -21,12 +21,16 @@ const SERVICE = { id: 'svc-1', name: 'Haircut', price: 300_000, durationMin: 30 
 const TERMS = { depositPercent: 20, depositMinToman: 200_000, cancellationWindowHours: 24 }
 const SLOT_ISO = '2026-07-10T09:00:00.000Z'
 
-function stubPageLoad(bookingsBehavior: 'success' | { rejectWith: unknown }) {
+function stubPageLoad(
+  bookingsBehavior: 'success' | { rejectWith: unknown },
+  couponValidateResponse?: unknown,
+) {
   fetchMock.mockImplementation(async (path: string, opts?: { method?: string }) => {
     if (path === '/salons/test-salon') return SALON
     if (path === '/salons/test-salon/services') return [SERVICE]
     if (path === '/platform-config/booking-terms') return TERMS
     if (path === `/salons/${SALON.id}/availability`) return []
+    if (path === '/coupons/validate' && opts?.method === 'POST') return couponValidateResponse
     if (path === '/bookings' && opts?.method === 'POST') {
       if (bookingsBehavior === 'success') return { booking: { id: 'b1' }, paymentUrl: 'http://gateway.example/pay' }
       throw bookingsBehavior.rejectWith
@@ -91,5 +95,67 @@ describe('booking confirm page', () => {
     })
 
     await expect(mountSuspended(BookingConfirmPage)).rejects.toMatchObject({ statusCode: 404 })
+  })
+
+  // Slice 6 (fixed-amount coupon discounts): apps/api/src/coupons/coupon-validation.controller.ts's
+  // POST /coupons/validate response is discount-kind-aware -- these two tests pin the UI's
+  // reaction to each kind winning, per docs/superpowers/specs/2026-07-21-referral-and-rating-system-design.md §3.
+  it('shows the savings amount AND a percent badge when a percent-kind coupon wins', async () => {
+    stubPageLoad('success', {
+      valid: true,
+      couponDiscountPercent: 30,
+      couponDiscountKind: 'percent',
+      couponDiscountValue: 30,
+      serviceDiscountPercent: null,
+      appliedDiscountPercent: 30,
+      originalPrice: 300_000,
+      finalPrice: 210_000,
+      estimatedDeposit: 200_000,
+    })
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+    await wrapper.find('input').setValue('SAVE30')
+    await wrapper.findAll('button').find((b: DOMWrapper<Element>) => b.text() === 'اعمال')!.trigger('click')
+    await flushPromises()
+
+    // Savings amount: originalPrice - finalPrice = 90,000
+    expect(wrapper.text()).toContain('شما')
+    expect(wrapper.text()).toContain((90_000).toLocaleString('fa-IR'))
+    expect(wrapper.text()).toContain('صرفه‌جویی کردید')
+    // The percent badge is legitimate here since the WINNER was percent-kind.
+    expect(wrapper.text()).toContain('٪' + (30).toLocaleString('fa-IR'))
+  })
+
+  it('shows the savings amount but NO percent badge when a fixed-toman coupon wins (never fabricates a percent)', async () => {
+    stubPageLoad('success', {
+      valid: true,
+      couponDiscountPercent: null,
+      couponDiscountKind: 'fixed',
+      couponDiscountValue: 50_000,
+      serviceDiscountPercent: null,
+      appliedDiscountPercent: undefined,
+      originalPrice: 300_000,
+      finalPrice: 250_000,
+      estimatedDeposit: 200_000,
+    })
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+    await wrapper.find('input').setValue('SAVE50K')
+    await wrapper.findAll('button').find((b: DOMWrapper<Element>) => b.text() === 'اعمال')!.trigger('click')
+    await flushPromises()
+
+    // Savings amount: originalPrice - finalPrice = 50,000, always correct regardless of kind.
+    expect(wrapper.text()).toContain('شما')
+    expect(wrapper.text()).toContain((50_000).toLocaleString('fa-IR'))
+    expect(wrapper.text()).toContain('صرفه‌جویی کردید')
+    // No percent badge anywhere in the discount area -- must not fabricate a percent
+    // equivalent of a fixed-toman win. '٪' only ever appears in that badge (the coupon
+    // input's own label/placeholder use the word "تخفیف" without a percent sign, so
+    // asserting on '٪' specifically avoids a false failure from those).
+    expect(wrapper.text()).not.toContain('٪')
   })
 })

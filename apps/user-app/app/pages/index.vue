@@ -14,19 +14,20 @@ const sort = ref<'distance' | 'rating'>('distance')
 const coords = ref<{ lat: number; lng: number }>({ lat: CITY_CENTERS[0]!.lat, lng: CITY_CENTERS[0]!.lng })
 const selectedCity = ref(CITY_CENTERS[0]!.name)
 const loading = ref(true)
+const searchError = ref(false)
+const locating = ref(false)
 const view = ref<'list' | 'map'>('list')
 const salonCoords = ref<Record<string, { lat: number; lng: number }>>({})
 
 const searchGender = computed(() => toSearchGender(session.user?.gender))
 
-function selectCity(city: (typeof CITY_CENTERS)[number]) {
-  selectedCity.value = city.name
-  coords.value = { lat: city.lat, lng: city.lng }
-}
+let requestSeq = 0
 
 async function loadSalons() {
+  const seq = ++requestSeq
   loading.value = true
-  const { data } = await apiFetch<SearchResult[]>('/search', {
+  searchError.value = false
+  const { data, error } = await apiFetch<SearchResult[]>('/search', {
     query: {
       lat: coords.value.lat,
       lng: coords.value.lng,
@@ -36,29 +37,50 @@ async function loadSalons() {
     },
     silent: true,
   })
+  // A slower, now-superseded request landing after a newer one -- discard it so a fast
+  // double-tap on filters can never let a stale response overwrite a fresher result.
+  if (seq !== requestSeq) return
+  if (error) {
+    searchError.value = true
+    salons.value = []
+    loading.value = false
+    return
+  }
   salons.value = data ?? []
   loading.value = false
+}
+
+// Selecting a city only updates the search coordinates; the coords watch below is the
+// single place that actually re-runs the search, shared with the "near me" geolocation path.
+watch(selectedCity, (name) => {
+  const city = CITY_CENTERS.find((c) => c.name === name)
+  if (city) coords.value = { lat: city.lat, lng: city.lng }
+})
+
+function useMyLocation() {
+  if (!import.meta.client || !navigator.geolocation) return
+  locating.value = true
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      coords.value = { lat: pos.coords.latitude, lng: pos.coords.longitude }
+      locating.value = false
+    },
+    () => {
+      // Denied or unavailable -- silently stay on the already-selected city, no error UI
+      // needed for a purely optional convenience action.
+      locating.value = false
+    },
+    { timeout: 5000 },
+  )
 }
 
 onMounted(async () => {
   const { data } = await apiFetch<typeof categories.value>('/categories')
   categories.value = data ?? []
-
-  if (import.meta.client && navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        coords.value = { lat: pos.coords.latitude, lng: pos.coords.longitude }
-        loadSalons()
-      },
-      () => loadSalons(), // permission denied / unavailable -- fall back to the default city already in coords
-      { timeout: 5000 },
-    )
-  } else {
-    await loadSalons()
-  }
+  await loadSalons()
 })
 
-watch([selectedCategoryId, sort], loadSalons)
+watch([selectedCategoryId, sort, coords], loadSalons, { deep: true })
 
 async function loadCoordsForMap() {
   const missing = salons.value.filter((s) => !salonCoords.value[s.id])
@@ -80,44 +102,108 @@ watch(view, (v) => {
 </script>
 
 <template>
-  <div class="p-4 space-y-4">
-    <select :value="selectedCity" class="rounded-lg border p-2 text-sm" @change="(e: Event) => selectCity(CITY_CENTERS.find((c) => c.name === (e.target as HTMLSelectElement).value)!)">
+  <div class="mx-auto max-w-2xl space-y-4 p-4">
+    <div class="flex items-center justify-between gap-3">
+      <h1 class="text-xl font-bold text-(--color-text)">سالن‌های نزدیک شما</h1>
+      <BaseButton variant="ghost" size="md" :loading="locating" @click="useMyLocation">
+        <template #icon><BaseIcon name="map-pin" :size="16" /></template>
+        نزدیک من
+      </BaseButton>
+    </div>
+
+    <BaseSelect v-model="selectedCity" label="شهر">
       <option v-for="city in CITY_CENTERS" :key="city.name" :value="city.name">{{ city.name }}</option>
-    </select>
+    </BaseSelect>
 
-    <div class="flex gap-2 overflow-x-auto">
-      <button
-        type="button"
-        class="whitespace-nowrap rounded-full px-3 py-1 text-sm"
-        :class="selectedCategoryId === null ? 'bg-(--color-accent) text-white' : 'bg-(--color-surface-card)'"
-        @click="selectedCategoryId = null"
-      >
-        همه
-      </button>
-      <button
-        v-for="cat in categories"
-        :key="cat.id"
-        type="button"
-        class="whitespace-nowrap rounded-full px-3 py-1 text-sm"
-        :class="selectedCategoryId === cat.id ? 'bg-(--color-accent) text-white' : 'bg-(--color-surface-card)'"
-        @click="selectedCategoryId = cat.id"
-      >
-        {{ cat.name }}
-      </button>
-    </div>
-
-    <div class="flex gap-2">
-      <button type="button" class="rounded-full px-3 py-1 text-sm" :class="view === 'list' ? 'bg-(--color-accent) text-white' : 'bg-(--color-surface-card)'" @click="view = 'list'">لیست</button>
-      <button type="button" class="rounded-full px-3 py-1 text-sm" :class="view === 'map' ? 'bg-(--color-accent) text-white' : 'bg-(--color-surface-card)'" @click="view = 'map'">نقشه</button>
-    </div>
-
-    <SalonMap v-if="view === 'map'" :salons="salons" :center="coords" :salon-coords="salonCoords" />
-    <template v-else>
-      <p v-if="loading" class="text-sm text-center">در حال بارگذاری...</p>
-      <p v-else-if="!salons.length" class="text-sm text-center">سالنی در این منطقه پیدا نشد</p>
-      <div v-else class="space-y-3">
-        <SalonCard v-for="salon in salons" :key="salon.id" :salon="salon" />
+    <div class="relative -mx-4 px-4" style="mask-image: linear-gradient(to left, transparent, black 24px, black calc(100% - 24px), transparent); -webkit-mask-image: linear-gradient(to left, transparent, black 24px, black calc(100% - 24px), transparent);">
+      <div class="flex gap-2 overflow-x-auto pb-1" role="group" aria-label="دسته‌بندی خدمات">
+        <button
+          type="button"
+          :aria-pressed="selectedCategoryId === null"
+          class="min-h-9 shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors"
+          :class="selectedCategoryId === null
+            ? 'bg-(--color-accent-strong) text-white'
+            : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) hover:text-(--color-text)'"
+          @click="selectedCategoryId = null"
+        >
+          همه
+        </button>
+        <button
+          v-for="cat in categories"
+          :key="cat.id"
+          type="button"
+          :aria-pressed="selectedCategoryId === cat.id"
+          class="min-h-9 shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors"
+          :class="selectedCategoryId === cat.id
+            ? 'bg-(--color-accent-strong) text-white'
+            : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) hover:text-(--color-text)'"
+          @click="selectedCategoryId = cat.id"
+        >
+          {{ cat.name }}
+        </button>
       </div>
+    </div>
+
+    <div class="flex items-center justify-between gap-3">
+      <div class="flex gap-2" role="group" aria-label="نوع نمایش">
+        <button
+          type="button"
+          :aria-pressed="view === 'list'"
+          class="min-h-9 rounded-full px-4 py-2 text-sm font-medium transition-colors"
+          :class="view === 'list' ? 'bg-(--color-accent-strong) text-white' : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) hover:text-(--color-text)'"
+          @click="view = 'list'"
+        >
+          لیست
+        </button>
+        <button
+          type="button"
+          :aria-pressed="view === 'map'"
+          class="min-h-9 rounded-full px-4 py-2 text-sm font-medium transition-colors"
+          :class="view === 'map' ? 'bg-(--color-accent-strong) text-white' : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) hover:text-(--color-text)'"
+          @click="view = 'map'"
+        >
+          نقشه
+        </button>
+      </div>
+
+      <div class="flex gap-1 text-sm" role="group" aria-label="ترتیب نمایش">
+        <button
+          type="button"
+          :aria-pressed="sort === 'distance'"
+          class="rounded-lg px-2 py-1 transition-colors"
+          :class="sort === 'distance' ? 'text-(--color-accent-strong) font-semibold' : 'text-(--color-text-muted) hover:text-(--color-text)'"
+          @click="sort = 'distance'"
+        >
+          نزدیک‌ترین
+        </button>
+        <span class="text-(--color-border)">·</span>
+        <button
+          type="button"
+          :aria-pressed="sort === 'rating'"
+          class="rounded-lg px-2 py-1 transition-colors"
+          :class="sort === 'rating' ? 'text-(--color-accent-strong) font-semibold' : 'text-(--color-text-muted) hover:text-(--color-text)'"
+          @click="sort = 'rating'"
+        >
+          بهترین امتیاز
+        </button>
+      </div>
+    </div>
+
+    <LazySalonMap v-if="view === 'map'" :salons="salons" :center="coords" :salon-coords="salonCoords" />
+    <template v-else>
+      <p v-if="loading" role="status" class="py-8 text-center text-sm text-(--color-text-muted)">در حال بارگذاری...</p>
+      <div v-else-if="searchError" role="alert" class="flex flex-col items-center gap-3 rounded-2xl border border-(--color-danger-soft) bg-(--color-danger-soft) p-6 text-center">
+        <BaseIcon name="alert-circle" :size="20" class="text-(--color-danger)" />
+        <p class="text-sm text-(--color-text)">مشکلی در بارگذاری سالن‌ها پیش آمد.</p>
+        <BaseButton variant="secondary" size="md" @click="loadSalons">تلاش دوباره</BaseButton>
+      </div>
+      <p v-else-if="!salons.length" class="py-8 text-center text-sm text-(--color-text-muted)">سالنی در این منطقه پیدا نشد</p>
+      <template v-else>
+        <h2 class="sr-only">نتایج جستجو</h2>
+        <div class="space-y-3">
+          <SalonCard v-for="salon in salons" :key="salon.id" :salon="salon" />
+        </div>
+      </template>
     </template>
   </div>
 </template>

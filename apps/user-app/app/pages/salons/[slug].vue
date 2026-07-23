@@ -2,6 +2,7 @@
 import type { SalonPortfolioItem, SalonStoryItem } from '../../utils/types'
 import { resolveSalonDescription } from '../../utils/salon-seo'
 import { readStorySeen } from '../../utils/story-seen'
+import { applyDiscount } from '../../utils/discount'
 
 interface Salon {
   id: string
@@ -15,10 +16,11 @@ interface Salon {
   about: string | null
   instagramHandle: string | null
 }
-interface SalonServiceItem { id: string; name: string; description: string | null; price: number; durationMin: number }
+interface SalonServiceItem { id: string; name: string; description: string | null; price: number; durationMin: number; discountPercent: number | null }
 interface WorkingHourItem { weekday: number; openTime: string; closeTime: string }
 interface PhotoItem { id: string; url: string }
 interface ReviewItem { id: string; rating: number; comment: string | null; salonReply: string | null; createdAt: string }
+interface WorkerItem { id: string; name: string; ratingAvg: string | number; ratingCount: number }
 
 const route = useRoute()
 const slug = route.params.slug as string
@@ -29,12 +31,13 @@ const { data: page } = await useAsyncData(`salon-${slug}`, async () => {
   const salonRes = await apiFetch<Salon>(`/salons/${slug}`, { silent: true })
   if (!salonRes.data) return null
 
-  const [servicesRes, hoursRes, photosRes, reviewsRes, portfolioRes] = await Promise.all([
+  const [servicesRes, hoursRes, photosRes, reviewsRes, portfolioRes, workersRes] = await Promise.all([
     apiFetch<SalonServiceItem[]>(`/salons/${slug}/services`, { silent: true }),
     apiFetch<WorkingHourItem[]>(`/salons/${slug}/hours`, { silent: true }),
     apiFetch<PhotoItem[]>(`/salons/${slug}/photos`, { silent: true }),
     apiFetch<ReviewItem[]>(`/salons/${salonRes.data.id}/reviews`, { silent: true }),
     apiFetch<SalonPortfolioItem[]>(`/salons/${slug}/portfolio`, { silent: true }),
+    apiFetch<WorkerItem[]>(`/salons/${slug}/workers`, { silent: true }),
   ])
 
   return {
@@ -44,6 +47,7 @@ const { data: page } = await useAsyncData(`salon-${slug}`, async () => {
     photos: photosRes.data ?? [],
     reviews: reviewsRes.data ?? [],
     portfolio: portfolioRes.data ?? [],
+    workers: workersRes.data ?? [],
   }
 })
 
@@ -203,9 +207,24 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
       <h2 class="font-bold mb-2">خدمات</h2>
       <ul class="space-y-2">
         <li v-for="service in page.services" :key="service.id">
-          <NuxtLink :to="`/booking/${slug}/${service.id}`" class="flex justify-between rounded-lg bg-(--color-surface-card) p-3 text-sm">
+          <NuxtLink :to="`/booking/${slug}/${service.id}`" class="flex items-center justify-between rounded-lg bg-(--color-surface-card) p-3 text-sm">
             <span>{{ service.name }} ({{ service.durationMin }} دقیقه)</span>
-            <span class="font-bold text-(--color-accent)">{{ service.price.toLocaleString('fa-IR') }} تومان</span>
+            <span class="flex items-center gap-2">
+              <span
+                v-if="service.discountPercent"
+                class="rounded-full bg-(--color-danger-soft) px-2 py-0.5 text-xs font-bold text-(--color-danger)"
+              >
+                ٪{{ service.discountPercent.toLocaleString('fa-IR') }} تخفیف
+              </span>
+              <span class="flex flex-col items-end leading-tight">
+                <span v-if="service.discountPercent" class="text-xs text-(--color-text-muted) line-through">
+                  {{ service.price.toLocaleString('fa-IR') }}
+                </span>
+                <span class="font-bold text-(--color-accent)">
+                  {{ applyDiscount(service.price, service.discountPercent).toLocaleString('fa-IR') }} تومان
+                </span>
+              </span>
+            </span>
           </NuxtLink>
         </li>
       </ul>
@@ -228,6 +247,8 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
         </li>
       </ul>
     </section>
+
+    <SalonTeam :workers="page.workers" />
 
     <SalonReviews :reviews="page.reviews" :can-report="canReport" @report="openReviewReport" />
 

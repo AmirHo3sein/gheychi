@@ -43,6 +43,7 @@ function mockEndpoints(overrides: { salon?: Record<string, unknown>; portfolio?:
     if (path === '/salons/s1/reviews') return []
     if (path === '/salons/test-salon/portfolio') return overrides.portfolio ?? PORTFOLIO
     if (path === '/salons/test-salon/stories') return []
+    if (path === '/salons/test-salon/workers') return []
     throw new Error(`unexpected fetch path in test: ${path}`)
   })
 }
