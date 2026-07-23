@@ -34,7 +34,15 @@
   /* ad-strong: contrast-safe fill for white text on the "ad" color (e.g. the featured-salon
      badge) -- plain --color-ad is 2.59:1 as a fill, kept only for text-on-light-background uses. */
   --color-ad-strong: #C2410C;
-  --color-danger: #DC4747;
+  /* Darkened from the original #DC4747 (hue/saturation preserved, lightness reduced) --
+     the original only reached ~4.17:1 as TEXT against --color-surface-card and ~3.59:1
+     against --color-danger-soft, failing WCAG AA's 4.5:1 for text (this is a separate
+     role from --color-danger-strong below, which is the already-correct white-on-fill
+     token). #C0392B verified via the sRGB-to-linear + relative-luminance + contrast-ratio
+     formulas at 5.44:1 (surface-card) and 4.69:1 (danger-soft) -- both clear 4.5:1 with
+     margin. Dark mode's --color-danger (#F2645C) already passes as text (~5.3:1/4.7:1)
+     and is untouched. */
+  --color-danger: #C0392B;
   /* Same white-text-on-fill fix as accent/ad above -- plain --color-danger is 4.17:1 as a
      fill (fails 4.5:1), found while fixing BaseButton's primary variant. */
   --color-danger-strong: #B91C1C;

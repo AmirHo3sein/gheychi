@@ -35,6 +35,72 @@ describe('SlotPicker', () => {
     expect(wrapper.emitted('select')?.[0]).toEqual(['2026-07-11T09:00:00.000Z'])
   })
 
+  it('reflects the selectedSlot prop as the visually/ARIA-confirmed selected time button', async () => {
+    fetchMock.mockResolvedValue([
+      { date: '2026-07-11', slots: ['2026-07-11T09:00:00.000Z', '2026-07-11T09:30:00.000Z'] },
+    ])
+
+    const wrapper = await mountSuspended(SlotPicker, {
+      props: { salonId: 's1', serviceId: 'sv1', selectedSlot: '2026-07-11T09:00:00.000Z' },
+    })
+    const buttons = wrapper.findAll('[data-testid="slot-button"]')
+
+    expect(buttons[0]!.attributes('aria-pressed')).toBe('true')
+    expect(buttons[0]!.classes()).toContain('bg-(--color-accent-strong)')
+    expect(buttons[1]!.attributes('aria-pressed')).toBe('false')
+    expect(buttons[1]!.classes()).not.toContain('bg-(--color-accent-strong)')
+  })
+
+  it('has no selected time button, and aria-pressed=false on every one, when selectedSlot is unset', async () => {
+    fetchMock.mockResolvedValue([
+      { date: '2026-07-11', slots: ['2026-07-11T09:00:00.000Z', '2026-07-11T09:30:00.000Z'] },
+    ])
+
+    const wrapper = await mountSuspended(SlotPicker, { props: { salonId: 's1', serviceId: 'sv1' } })
+    const buttons = wrapper.findAll('[data-testid="slot-button"]')
+
+    for (const button of buttons) {
+      expect(button.attributes('aria-pressed')).toBe('false')
+      expect(button.classes()).not.toContain('bg-(--color-accent-strong)')
+    }
+  })
+
+  it('marks the selected date pill with aria-pressed and the accent-strong fill, unselected pills false', async () => {
+    fetchMock.mockResolvedValue([
+      { date: '2026-07-11', slots: ['2026-07-11T09:00:00.000Z'] },
+      { date: '2026-07-12', slots: ['2026-07-12T10:00:00.000Z'] },
+    ])
+
+    const wrapper = await mountSuspended(SlotPicker, { props: { salonId: 's1', serviceId: 'sv1' } })
+    const dateChips = wrapper.findAll('button').filter((b) => !b.attributes('data-testid'))
+
+    expect(dateChips[0]!.attributes('aria-pressed')).toBe('true')
+    expect(dateChips[0]!.classes()).toContain('bg-(--color-accent-strong)')
+    expect(dateChips[1]!.attributes('aria-pressed')).toBe('false')
+    expect(dateChips[1]!.classes()).not.toContain('bg-(--color-accent-strong)')
+
+    await dateChips[1]!.trigger('click')
+    expect(dateChips[0]!.attributes('aria-pressed')).toBe('false')
+    expect(dateChips[1]!.attributes('aria-pressed')).toBe('true')
+  })
+
+  it('meets the >=44px touch-target height on both date pills and time-slot buttons', async () => {
+    fetchMock.mockResolvedValue([
+      { date: '2026-07-11', slots: ['2026-07-11T09:00:00.000Z'] },
+    ])
+
+    const wrapper = await mountSuspended(SlotPicker, { props: { salonId: 's1', serviceId: 'sv1' } })
+    const dateChips = wrapper.findAll('button').filter((b) => !b.attributes('data-testid'))
+    const slotButtons = wrapper.findAll('[data-testid="slot-button"]')
+
+    expect(dateChips[0]!.classes()).toContain('min-h-11')
+    expect(slotButtons[0]!.classes()).toContain('min-h-11')
+    // rounded-lg (8px) is banned by the design system's control-radius scale; slot
+    // buttons must use rounded-xl (12px) instead.
+    expect(slotButtons[0]!.classes()).not.toContain('rounded-lg')
+    expect(slotButtons[0]!.classes()).toContain('rounded-xl')
+  })
+
   it('shows an empty state when no day has any slots', async () => {
     fetchMock.mockResolvedValue([{ date: '2026-07-10', slots: [] }])
     const wrapper = await mountSuspended(SlotPicker, { props: { salonId: 's1', serviceId: 'sv1' } })

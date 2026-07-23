@@ -16,6 +16,7 @@ withDefaults(
   <button
     :type="type"
     :disabled="disabled || loading"
+    :aria-busy="loading || disabled"
     class="inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-all duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100"
     :class="[
       block ? 'w-full' : '',

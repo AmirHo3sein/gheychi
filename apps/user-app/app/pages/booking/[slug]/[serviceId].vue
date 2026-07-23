@@ -148,7 +148,9 @@ async function confirmBooking() {
     // a local error message would just flash "an error occurred" right as the user is
     // being navigated away.
     if (error?.status === 401) return
-    submitError.value = error?.status === 409 ? 'این نوبت همین الان رزرو شد، لطفا زمان دیگری را انتخاب کنید' : 'خطایی رخ داد'
+    submitError.value = error?.status === 409
+      ? 'این نوبت همین الان رزرو شد، لطفا زمان دیگری را انتخاب کنید'
+      : 'خطایی رخ داد، لطفا دوباره تلاش کنید'
     selectedSlot.value = null
     return
   }
@@ -164,13 +166,21 @@ async function confirmBooking() {
        unhandled rejection, not the createError) -- see blog/[slug].vue, which this mirrors. -->
   <div v-if="page" class="p-4 space-y-4">
     <div>
-      <h1 class="text-lg font-bold">{{ page.service.name }}</h1>
+      <h1 class="text-xl font-bold text-(--color-text)">{{ page.service.name }}</h1>
       <p class="text-sm">{{ page.salon.name }} — {{ page.salon.address }}</p>
     </div>
 
-    <SlotPicker :salon-id="page.salon.id" :service-id="serviceId" @select="selectedSlot = $event" />
+    <!-- selected-slot feeds SlotPicker's own selectedSlot prop so it can render which slot is
+         actually selected (aria-pressed + accent-strong fill) rather than only emitting 'select'
+         with no feedback loop back in. -->
+    <SlotPicker
+      :salon-id="page.salon.id"
+      :service-id="serviceId"
+      :selected-slot="selectedSlot"
+      @select="selectedSlot = $event"
+    />
 
-    <div v-if="selectedSlot" class="rounded-xl bg-(--color-surface-card) p-4 space-y-3 text-sm">
+    <BaseCard v-if="selectedSlot" class="space-y-4 text-sm">
       <div class="flex items-center justify-between">
         <span>قیمت کامل</span>
         <span class="flex items-center gap-2">
@@ -184,48 +194,56 @@ async function confirmBooking() {
             <span v-if="activeDiscountPercent" class="text-xs text-(--color-text-muted) line-through">
               {{ page.service.price.toLocaleString('fa-IR') }}
             </span>
-            <span class="font-bold text-(--color-accent)">{{ displayPrice.toLocaleString('fa-IR') }} تومان</span>
+            <span class="font-bold text-(--color-text)">{{ displayPrice.toLocaleString('fa-IR') }} تومان</span>
           </span>
         </span>
       </div>
       <p v-if="estimatedDeposit !== null">پیش‌پرداخت آنلاین: {{ estimatedDeposit.toLocaleString('fa-IR') }} تومان</p>
-      <p v-if="page.terms">لغو رایگان تا {{ page.terms.cancellationWindowHours }} ساعت قبل از نوبت</p>
+      <p v-if="page.terms" class="text-(--color-text-muted)">لغو رایگان تا {{ page.terms.cancellationWindowHours }} ساعت قبل از نوبت</p>
+      <!-- Non-refundable-by-default disclosure (Product Principle #3) -- calm/muted, not
+           danger-red: this informs what happens after the free-cancel window, it doesn't
+           alarm. Numbers still come exclusively from /platform-config/booking-terms above. -->
+      <p v-if="page.terms" class="text-(--color-text-muted)">بعد از این زمان، پیش‌پرداخت قابل بازگشت نیست</p>
 
-      <div class="space-y-2 border-t border-(--color-border) pt-3">
+      <div class="space-y-2 border-t border-(--color-border) pt-4">
         <div class="flex items-end gap-2">
-          <BaseInput
-            v-model="couponCode"
-            type="text"
-            label="کد تخفیف دارید؟"
-            placeholder="کد تخفیف (اختیاری)"
-            :error="couponError"
-            class="flex-1"
-          />
-          <BaseButton type="button" :loading="couponApplying" :disabled="!couponCode.trim()" @click="applyCoupon">
+          <!-- role="alert" scoped to just the field (label+input+BaseInput's own error
+               message), not the whole row, so an invalid-coupon message is announced to
+               screen readers without also re-announcing the adjacent "اعمال" button. -->
+          <div role="alert" aria-live="assertive" class="flex-1">
+            <BaseInput
+              v-model="couponCode"
+              type="text"
+              label="کد تخفیف دارید؟"
+              placeholder="کد تخفیف (اختیاری)"
+              :error="couponError"
+            />
+          </div>
+          <BaseButton
+            type="button"
+            variant="secondary"
+            :loading="couponApplying"
+            :disabled="!couponCode.trim()"
+            @click="applyCoupon"
+          >
             اعمال
           </BaseButton>
         </div>
-        <p v-if="appliedCoupon" class="flex items-center gap-1 text-xs text-(--color-success)">
+        <p v-if="appliedCoupon" aria-live="polite" class="flex items-center gap-1 text-xs text-(--color-success)">
           <BaseIcon name="check-circle" :size="14" />
           <span v-if="couponSavings">شما {{ couponSavings.toLocaleString('fa-IR') }} تومان صرفه‌جویی کردید</span>
           <span v-else>کد تخفیف با موفقیت اعمال شد</span>
         </p>
       </div>
 
-      <button
-        type="button"
-        data-testid="confirm-booking-button"
-        :disabled="submitting"
-        class="w-full rounded-lg bg-(--color-accent) p-3 font-semibold text-white"
-        @click="confirmBooking"
-      >
-        {{ submitting ? 'در حال پردازش...' : 'پرداخت و رزرو' }}
-      </button>
-    </div>
+      <BaseButton block size="lg" data-testid="confirm-booking-button" :loading="submitting" @click="confirmBooking">
+        پرداخت و رزرو
+      </BaseButton>
+    </BaseCard>
 
     <!-- Deliberately outside the `selectedSlot` block above: confirmBooking() resets
     selectedSlot to null in the same branch that sets this message (e.g. on a 409), so
     nesting it inside that v-if would make the error disappear the instant it's set. -->
-    <p v-if="submitError" class="text-(--color-ad) text-sm">{{ submitError }}</p>
+    <p v-if="submitError" role="alert" aria-live="assertive" class="text-(--color-danger) text-sm">{{ submitError }}</p>
   </div>
 </template>

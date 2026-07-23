@@ -158,4 +158,94 @@ describe('booking confirm page', () => {
     // asserting on '٪' specifically avoids a false failure from those).
     expect(wrapper.text()).not.toContain('٪')
   })
+
+  // Product Principle #3 (a booking's financial commitment must never feel hidden or
+  // ambiguous) -- the page must disclose what happens AFTER the free-cancellation window,
+  // not just the positive "free cancel until X" case.
+  it('discloses that the deposit is non-refundable after the cancellation window', async () => {
+    stubPageLoad('success')
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+
+    expect(wrapper.text()).toContain(`لغو رایگان تا ${TERMS.cancellationWindowHours} ساعت قبل از نوبت`)
+    expect(wrapper.text()).toContain('پیش‌پرداخت قابل بازگشت نیست')
+  })
+
+  // Design-system migration: the pay button is BaseButton (not a hand-rolled <button>) and
+  // the price/coupon panel is BaseCard -- both give the "One Seal Rule" (only the pay
+  // button is accent-colored) and WCAG-contrast fixes for free, so pinning their presence
+  // guards against a future regression back to the hand-rolled markup.
+  it('renders the pay action as BaseButton in its loading state while submitting', async () => {
+    // The /bookings POST intentionally never resolves within this test -- it only needs to
+    // stay in-flight long enough to assert the loading state; nothing downstream of it is
+    // exercised here, so an unresolved promise is simplest.
+    fetchMock.mockImplementation(async (path: string, opts?: { method?: string }) => {
+      if (path === '/salons/test-salon') return SALON
+      if (path === '/salons/test-salon/services') return [SERVICE]
+      if (path === '/platform-config/booking-terms') return TERMS
+      if (path === `/salons/${SALON.id}/availability`) return []
+      if (path === '/bookings' && opts?.method === 'POST') return new Promise(() => {})
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+
+    const payButton = wrapper.find('[data-testid="confirm-booking-button"]')
+    expect(payButton.attributes('aria-busy')).toBe('false')
+
+    await payButton.trigger('click')
+    await nextTick()
+
+    expect(payButton.attributes('aria-busy')).toBe('true')
+    expect(payButton.attributes('disabled')).toBeDefined()
+  })
+
+  // A11y: the three dynamic status regions (coupon error, coupon success, submit error)
+  // must announce to screen readers, not just change visually.
+  it('marks the submit-error message as an assertive live region', async () => {
+    stubPageLoad({ rejectWith: { response: { status: 409 } } })
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+    await wrapper.find('[data-testid="confirm-booking-button"]').trigger('click')
+    await flushPromises()
+
+    const alertEl = wrapper.findAll('[role="alert"]').find((el: DOMWrapper<Element>) => el.text().includes('این نوبت همین الان رزرو شد'))
+    expect(alertEl).toBeTruthy()
+    expect(alertEl!.attributes('aria-live')).toBe('assertive')
+  })
+
+  it('marks the coupon field as an assertive live region and the coupon-success message as polite', async () => {
+    stubPageLoad('success', {
+      valid: true,
+      couponDiscountPercent: 30,
+      couponDiscountKind: 'percent',
+      couponDiscountValue: 30,
+      serviceDiscountPercent: null,
+      appliedDiscountPercent: 30,
+      originalPrice: 300_000,
+      finalPrice: 210_000,
+      estimatedDeposit: 200_000,
+    })
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+
+    // The coupon input sits inside a role="alert" wrapper so an invalid-coupon message is
+    // announced without needing to touch the shared BaseInput component.
+    expect(wrapper.find('input').element.closest('[role="alert"]')).toBeTruthy()
+
+    await wrapper.find('input').setValue('SAVE30')
+    await wrapper.findAll('button').find((b: DOMWrapper<Element>) => b.text() === 'اعمال')!.trigger('click')
+    await flushPromises()
+
+    const successEl = wrapper.findAll('[aria-live="polite"]').find((el: DOMWrapper<Element>) => el.text().includes('صرفه‌جویی کردید'))
+    expect(successEl).toBeTruthy()
+  })
 })

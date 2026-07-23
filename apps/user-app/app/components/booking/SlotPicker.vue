@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { pickDefaultDate, formatSlotTime, formatDateLabel, type DayAvailability } from '../../utils/slot-format'
 
-const props = defineProps<{ salonId: string; serviceId: string }>()
+// `selectedSlot` mirrors the parent's own `selectedSlot` ref (booking/[slug]/[serviceId].vue)
+// so this component can render which slot is actually selected -- previously the parent
+// tracked selection itself from the `select` emit but never fed it back in, leaving the
+// clicked button with zero visual/ARIA confirmation of its own selected state.
+const props = defineProps<{ salonId: string; serviceId: string; selectedSlot?: string | null }>()
 const emit = defineEmits<{ select: [iso: string] }>()
 
 const { apiFetch } = useApi()
@@ -32,17 +36,20 @@ function selectDate(date: string) {
 </script>
 
 <template>
-  <div v-if="loading" class="py-6 text-center text-sm">در حال بارگذاری...</div>
-  <div v-else-if="hasError" class="py-6 text-center text-sm">مشکلی پیش آمد، دوباره تلاش کنید</div>
-  <div v-else-if="!hasAnySlots" class="py-6 text-center text-sm">نوبت خالی — این سالن در ۱۴ روز آینده نوبت آزاد ندارد</div>
+  <div v-if="loading" class="py-6 text-center text-sm text-(--color-text-muted)">در حال بارگذاری...</div>
+  <div v-else-if="hasError" class="py-6 text-center text-sm text-(--color-text-muted)">مشکلی پیش آمد، دوباره تلاش کنید</div>
+  <div v-else-if="!hasAnySlots" class="py-6 text-center text-sm text-(--color-text-muted)">نوبت خالی — این سالن در ۱۴ روز آینده نوبت آزاد ندارد</div>
   <div v-else class="space-y-3">
     <div class="flex gap-2 overflow-x-auto">
       <button
         v-for="day in daysWithSlots"
         :key="day.date"
         type="button"
-        class="whitespace-nowrap rounded-full px-3 py-1 text-sm"
-        :class="selectedDate === day.date ? 'bg-(--color-accent) text-white' : 'bg-(--color-surface-card)'"
+        :aria-pressed="selectedDate === day.date"
+        class="inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-full px-4 text-sm font-medium transition-colors"
+        :class="selectedDate === day.date
+          ? 'bg-(--color-accent-strong) text-white'
+          : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text) hover:bg-(--color-surface-subtle)'"
         @click="selectDate(day.date)"
       >
         {{ formatDateLabel(day.date) }}
@@ -54,7 +61,11 @@ function selectDate(date: string) {
         :key="slot"
         type="button"
         data-testid="slot-button"
-        class="rounded-lg bg-(--color-surface-card) p-2 text-sm"
+        :aria-pressed="selectedSlot === slot"
+        class="inline-flex min-h-11 items-center justify-center rounded-xl border p-2 text-sm font-medium transition-colors"
+        :class="selectedSlot === slot
+          ? 'border-transparent bg-(--color-accent-strong) text-white'
+          : 'border-(--color-border) bg-(--color-surface-card) text-(--color-text) hover:bg-(--color-surface-subtle)'"
         @click="emit('select', slot)"
       >
         {{ formatSlotTime(slot) }}
