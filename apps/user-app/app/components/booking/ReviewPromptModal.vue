@@ -99,28 +99,54 @@ async function deleteReview() {
   deleting.value = false
   if (!error) phase.value = 'deleted'
 }
+
+function close() {
+  emit('close')
+}
+
+const dialogRoot = ref<HTMLElement | null>(null)
+const { titleId } = useDialog(dialogRoot, { onClose: close })
 </script>
 
 <template>
   <div class="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-    <BaseCard class="w-full max-w-sm space-y-3">
+    <div
+      ref="dialogRoot"
+      role="dialog"
+      aria-modal="true"
+      :aria-labelledby="titleId"
+      tabindex="-1"
+      class="w-full max-w-sm space-y-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 shadow-(--shadow-sm) outline-none"
+    >
       <template v-if="phase === 'already-reviewed'">
-        <p class="text-sm">شما قبلا برای این نوبت نظر ثبت کرده‌اید</p>
+        <h2 :id="titleId" class="text-sm font-bold">شما قبلا برای این نوبت نظر ثبت کرده‌اید</h2>
       </template>
 
       <template v-else-if="phase === 'deleted'">
-        <p class="text-sm">نظر شما حذف شد</p>
+        <h2 :id="titleId" class="text-sm font-bold">نظر شما حذف شد</h2>
       </template>
 
       <template v-else-if="phase === 'view'">
-        <h2 class="font-bold">نظر شما ثبت شد</h2>
-        <div class="flex gap-1 text-2xl" data-testid="view-salon-rating-stars" aria-hidden="true">
-          <span v-for="n in 5" :key="n">{{ n <= rating ? '⭐' : '☆' }}</span>
+        <h2 :id="titleId" class="font-bold">نظر شما ثبت شد</h2>
+        <div class="flex gap-1" data-testid="view-salon-rating-stars" aria-hidden="true">
+          <BaseIcon
+            v-for="n in 5"
+            :key="n"
+            name="star"
+            :size="24"
+            :class="n <= rating ? 'text-(--color-accent-strong)' : 'text-(--color-border)'"
+          />
         </div>
         <template v-if="hasWorker">
           <p class="text-sm text-(--color-text-muted)">امتیاز به {{ workerName }}</p>
-          <div class="flex gap-1 text-2xl" data-testid="view-worker-rating-stars" aria-hidden="true">
-            <span v-for="n in 5" :key="n">{{ n <= workerRating ? '⭐' : '☆' }}</span>
+          <div class="flex gap-1" data-testid="view-worker-rating-stars" aria-hidden="true">
+            <BaseIcon
+              v-for="n in 5"
+              :key="n"
+              name="star"
+              :size="24"
+              :class="n <= workerRating ? 'text-(--color-accent-strong)' : 'text-(--color-border)'"
+            />
           </div>
         </template>
         <p v-if="comment" class="text-sm text-(--color-text-muted)">{{ comment }}</p>
@@ -136,17 +162,29 @@ async function deleteReview() {
       </template>
 
       <template v-else-if="phase === 'edit'">
-        <h2 class="font-bold">ویرایش نظر</h2>
-        <div class="flex gap-1 text-2xl" data-testid="edit-salon-rating-stars">
-          <button v-for="n in 5" :key="n" type="button" @click="editRating = n">
-            {{ n <= editRating ? '⭐' : '☆' }}
+        <h2 :id="titleId" class="font-bold">ویرایش نظر</h2>
+        <div class="flex gap-1" data-testid="edit-salon-rating-stars">
+          <button
+            v-for="n in 5"
+            :key="n"
+            type="button"
+            :aria-label="`امتیاز ${n} از ۵ به سالن`"
+            @click="editRating = n"
+          >
+            <BaseIcon name="star" :size="24" :class="n <= editRating ? 'text-(--color-accent-strong)' : 'text-(--color-border)'" />
           </button>
         </div>
         <template v-if="hasWorker">
           <p class="text-sm text-(--color-text-muted)">امتیاز به {{ workerName }}</p>
-          <div class="flex gap-1 text-2xl" data-testid="edit-worker-rating-stars">
-            <button v-for="n in 5" :key="n" type="button" @click="editWorkerRating = n">
-              {{ n <= editWorkerRating ? '⭐' : '☆' }}
+          <div class="flex gap-1" data-testid="edit-worker-rating-stars">
+            <button
+              v-for="n in 5"
+              :key="n"
+              type="button"
+              :aria-label="`امتیاز ${n} از ۵ به ${workerName}`"
+              @click="editWorkerRating = n"
+            >
+              <BaseIcon name="star" :size="24" :class="n <= editWorkerRating ? 'text-(--color-accent-strong)' : 'text-(--color-border)'" />
             </button>
           </div>
         </template>
@@ -167,17 +205,29 @@ async function deleteReview() {
       </template>
 
       <template v-else>
-        <h2 class="font-bold">این نوبت چطور بود؟</h2>
-        <div class="flex gap-1 text-2xl" data-testid="salon-rating-stars">
-          <button v-for="n in 5" :key="n" type="button" @click="rating = n">
-            {{ n <= rating ? '⭐' : '☆' }}
+        <h2 :id="titleId" class="font-bold">این نوبت چطور بود؟</h2>
+        <div class="flex gap-1" data-testid="salon-rating-stars">
+          <button
+            v-for="n in 5"
+            :key="n"
+            type="button"
+            :aria-label="`امتیاز ${n} از ۵ به سالن`"
+            @click="rating = n"
+          >
+            <BaseIcon name="star" :size="24" :class="n <= rating ? 'text-(--color-accent-strong)' : 'text-(--color-border)'" />
           </button>
         </div>
         <template v-if="hasWorker">
           <p class="text-sm text-(--color-text-muted)">امتیاز به {{ workerName }}</p>
-          <div class="flex gap-1 text-2xl" data-testid="worker-rating-stars">
-            <button v-for="n in 5" :key="n" type="button" @click="workerRating = n">
-              {{ n <= workerRating ? '⭐' : '☆' }}
+          <div class="flex gap-1" data-testid="worker-rating-stars">
+            <button
+              v-for="n in 5"
+              :key="n"
+              type="button"
+              :aria-label="`امتیاز ${n} از ۵ به ${workerName}`"
+              @click="workerRating = n"
+            >
+              <BaseIcon name="star" :size="24" :class="n <= workerRating ? 'text-(--color-accent-strong)' : 'text-(--color-border)'" />
             </button>
           </div>
         </template>
@@ -192,7 +242,7 @@ async function deleteReview() {
         </BaseButton>
       </template>
 
-      <button type="button" class="w-full text-sm text-(--color-text-muted)" @click="emit('close')">بستن</button>
-    </BaseCard>
+      <button type="button" class="w-full text-sm text-(--color-text-muted)" @click="close">بستن</button>
+    </div>
   </div>
 </template>

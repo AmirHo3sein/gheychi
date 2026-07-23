@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { flushPromises } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import ReviewPromptModal from '../../app/components/booking/ReviewPromptModal.vue'
 
 // Same pattern as useApi.spec.ts / booking-confirm.spec.ts: `$fetch` is a real globalThis
@@ -109,7 +110,11 @@ describe('ReviewPromptModal', () => {
     const patchCall = fetchMock.mock.calls.find(([, options]) => options?.method === 'PATCH')
     expect(patchCall![0]).toBe('/reviews/r1')
     expect(patchCall![1]).toMatchObject({ body: expect.objectContaining({ rating: 2, workerRating: 5 }) })
-    expect(wrapper.find('[data-testid="view-salon-rating-stars"]').text()).toBe('⭐⭐☆☆☆')
+
+    const starIcons = wrapper.find('[data-testid="view-salon-rating-stars"]').findAll('svg')
+    expect(starIcons).toHaveLength(5)
+    const filled = starIcons.filter((icon) => icon.classes().some((c) => c.includes('accent-strong')))
+    expect(filled).toHaveLength(2)
   })
 
   it('deletes the review after confirmation and shows the deleted message', async () => {
@@ -144,5 +149,88 @@ describe('ReviewPromptModal', () => {
 
     expect(wrapper.text()).not.toContain('نظر شما حذف شد')
     expect(wrapper.find('[data-testid="edit-review-button"]').exists()).toBe(true)
+  })
+
+  it('exposes dialog semantics: role=dialog, aria-modal, and aria-labelledby pointing at the active phase heading', async () => {
+    const wrapper = await mountSuspended(ReviewPromptModal, { props: { bookingId: 'b1' } })
+
+    const dialog = wrapper.find('[role="dialog"]')
+    expect(dialog.exists()).toBe(true)
+    expect(dialog.attributes('aria-modal')).toBe('true')
+
+    const labelledBy = dialog.attributes('aria-labelledby')
+    expect(labelledBy).toBeTruthy()
+    const heading = wrapper.get('h2')
+    expect(heading.attributes('id')).toBe(labelledBy)
+    // Exactly one accessible label active at a time.
+    expect(wrapper.findAll('h2')).toHaveLength(1)
+  })
+
+  it('moves focus into the dialog on mount', async () => {
+    const wrapper = await mountSuspended(ReviewPromptModal, { props: { bookingId: 'b1' }, attachTo: document.body })
+    await nextTick()
+
+    const firstStar = wrapper.findAll('[data-testid="salon-rating-stars"] button')[0]!.element
+    expect(document.activeElement).toBe(firstStar)
+  })
+
+  it('traps Tab focus within the dialog and restores focus to the trigger on close', async () => {
+    const trigger = document.createElement('button')
+    document.body.appendChild(trigger)
+    trigger.focus()
+    expect(document.activeElement).toBe(trigger)
+
+    const wrapper = await mountSuspended(ReviewPromptModal, { props: { bookingId: 'b1' }, attachTo: document.body })
+    await nextTick()
+
+    const firstStar = wrapper.findAll('[data-testid="salon-rating-stars"] button')[0]!.element as HTMLElement
+    const closeButton = wrapper.findAll('button').find((b) => b.text() === 'بستن')!.element as HTMLElement
+    expect(document.activeElement).toBe(firstStar)
+
+    firstStar.focus()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }))
+    expect(document.activeElement).toBe(closeButton)
+
+    closeButton.focus()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    expect(document.activeElement).toBe(firstStar)
+
+    wrapper.unmount()
+    expect(document.activeElement).toBe(trigger)
+    trigger.remove()
+  })
+
+  it('closes on Escape', async () => {
+    const wrapper = await mountSuspended(ReviewPromptModal, { props: { bookingId: 'b1' } })
+    await nextTick()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+
+  it('gives every star-rating button an accessible name', async () => {
+    const wrapper = await mountSuspended(ReviewPromptModal, { props: { bookingId: 'b1', workerName: 'سارا محمدی' } })
+
+    const salonButtons = wrapper.findAll('[data-testid="salon-rating-stars"] button')
+    expect(salonButtons).toHaveLength(5)
+    salonButtons.forEach((button, i) => {
+      expect(button.attributes('aria-label')).toBe(`امتیاز ${i + 1} از ۵ به سالن`)
+    })
+
+    const workerButtons = wrapper.findAll('[data-testid="worker-rating-stars"] button')
+    expect(workerButtons).toHaveLength(5)
+    workerButtons.forEach((button, i) => {
+      expect(button.attributes('aria-label')).toBe(`امتیاز ${i + 1} از ۵ به سارا محمدی`)
+    })
+  })
+
+  it('renders star buttons as BaseIcon SVGs, not emoji glyphs', async () => {
+    const wrapper = await mountSuspended(ReviewPromptModal, { props: { bookingId: 'b1' } })
+
+    expect(wrapper.text()).not.toContain('⭐')
+    expect(wrapper.text()).not.toContain('☆')
+
+    const stars = wrapper.find('[data-testid="salon-rating-stars"]')
+    expect(stars.findAll('svg')).toHaveLength(5)
   })
 })

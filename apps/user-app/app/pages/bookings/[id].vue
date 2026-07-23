@@ -7,14 +7,18 @@ interface BookingDetail {
   startsAt: string
   priceSnapshot: number
   depositAmount: number
-  status: string
+  status: 'pending_payment' | 'confirmed' | 'completed' | 'cancelled_by_user' | 'cancelled_by_salon' | 'expired' | 'no_show'
   refundStatus: 'pending' | 'done' | null
 }
+
+// Mirrors bookings/index.vue's own const of the same name -- this codebase's
+// per-file DTO/const convention rather than a shared module.
+const CANCELLABLE_STATUSES: BookingDetail['status'][] = ['pending_payment', 'confirmed']
 
 const route = useRoute()
 const { apiFetch } = useApi()
 
-const { data: booking } = await useAsyncData(`booking-detail-${route.params.id}`, async () => {
+const { data: booking, refresh } = await useAsyncData(`booking-detail-${route.params.id}`, async () => {
   const { data } = await apiFetch<BookingDetail>(`/bookings/${route.params.id}`, { silent: true })
   return data
 })
@@ -22,18 +26,113 @@ const { data: booking } = await useAsyncData(`booking-detail-${route.params.id}`
 if (!booking.value) {
   throw createError({ statusCode: 404, statusMessage: 'Booking not found' })
 }
+
+const retrying = ref(false)
+
+async function retryPayment() {
+  if (!booking.value) return
+  retrying.value = true
+  const { data } = await apiFetch<{ paymentUrl: string }>(`/bookings/${booking.value.id}/retry-payment`, { method: 'POST' })
+  retrying.value = false
+  if (data) await navigateTo(data.paymentUrl, { external: true })
+}
+
+const cancelling = ref(false)
+
+// A simple, direct confirm rather than duplicating bookings/index.vue's dedicated
+// cancel-confirmation dialog (which surfaces a refund-outcome preview computed from
+// /platform-config/booking-terms) -- this page just needs capability parity, not
+// the exact same UI. Matches the native-confirm pattern already used for
+// deleteReview in ReviewPromptModal.vue.
+async function cancelBooking() {
+  if (!booking.value) return
+  if (!confirm('این نوبت لغو شود؟')) return
+  cancelling.value = true
+  const { error } = await apiFetch(`/bookings/${booking.value.id}/cancel`, { method: 'POST' })
+  cancelling.value = false
+  if (!error) await refresh()
+}
+
+const reviewOpen = ref(false)
 </script>
 
 <template>
-  <div class="p-4 space-y-2 text-sm">
-    <h1 class="text-lg font-bold">{{ booking!.salonName }}</h1>
-    <p>{{ booking!.serviceName }}</p>
-    <p v-if="booking!.workerName">کارمند: {{ booking!.workerName }}</p>
-    <p>{{ new Date(booking!.startsAt).toLocaleString('fa-IR') }}</p>
-    <p>مبلغ کل: {{ booking!.priceSnapshot.toLocaleString('fa-IR') }} تومان</p>
-    <p>پیش‌پرداخت: {{ booking!.depositAmount.toLocaleString('fa-IR') }} تومان</p>
-    <p v-if="booking!.refundStatus === 'pending'" class="text-(--color-accent)">بازگشت وجه در حال انجام است</p>
-    <p v-else-if="booking!.refundStatus === 'done'" class="text-(--color-accent)">وجه بازگردانده شد</p>
-    <NuxtLink to="/bookings" class="block text-(--color-accent)">بازگشت به نوبت‌های من</NuxtLink>
+  <!-- Top-level guard, not just the `booking!` assertions below: when the createError(404) throw
+       above rejects this component's async setup, Vue's Suspense still runs one render pass of
+       this template with `booking` at its pre-fetch value (undefined) before the rejection is
+       handled. Without this v-if, that pass throws inside the render function itself (an
+       unhandled rejection, not the createError) -- see salons/[slug].vue, which this mirrors. -->
+  <div v-if="booking" class="p-4 space-y-4">
+    <BaseCard class="space-y-2 text-sm">
+      <h1 class="text-lg font-bold text-(--color-text)">{{ booking.salonName }}</h1>
+      <p class="text-(--color-text)">{{ booking.serviceName }}</p>
+      <p v-if="booking.workerName" class="text-(--color-text-muted)">کارمند: {{ booking.workerName }}</p>
+      <p class="flex items-center gap-1.5 text-(--color-text-muted)">
+        <BaseIcon name="calendar" :size="14" />
+        {{ new Date(booking.startsAt).toLocaleString('fa-IR') }}
+      </p>
+      <div class="space-y-1 border-t border-(--color-border) pt-2">
+        <p>مبلغ کل: {{ booking.priceSnapshot.toLocaleString('fa-IR') }} تومان</p>
+        <p>پیش‌پرداخت: {{ booking.depositAmount.toLocaleString('fa-IR') }} تومان</p>
+      </div>
+    </BaseCard>
+
+    <!-- Refund status: "pending" and "done" are opposite emotional states and must not
+         share a color. "pending" is a neutral, in-progress fact (not an error) so it gets
+         the muted-text treatment, not an alarming or accent color; "done" is a genuine
+         confirmation and gets --color-success, matching bookings/index.vue's status
+         badges. Neither uses plain --color-accent as body text (WCAG AA contrast). -->
+    <BaseCard v-if="booking.refundStatus" data-testid="refund-status-card" class="text-sm">
+      <p v-if="booking.refundStatus === 'pending'" class="flex items-center gap-1.5 text-(--color-text-muted)">
+        <BaseIcon name="clock" :size="14" />
+        بازگشت وجه در حال انجام است
+      </p>
+      <p v-else class="flex items-center gap-1.5 text-(--color-success)">
+        <BaseIcon name="check-circle" :size="14" />
+        وجه بازگردانده شد
+      </p>
+    </BaseCard>
+
+    <div
+      v-if="CANCELLABLE_STATUSES.includes(booking.status) || booking.status === 'pending_payment' || booking.status === 'completed'"
+      class="flex flex-wrap items-center gap-2"
+    >
+      <BaseButton
+        v-if="booking.status === 'pending_payment'"
+        data-testid="retry-payment-button"
+        :loading="retrying"
+        @click="retryPayment"
+      >
+        تکمیل پرداخت
+      </BaseButton>
+
+      <BaseButton
+        v-if="CANCELLABLE_STATUSES.includes(booking.status)"
+        variant="danger"
+        data-testid="cancel-booking-button"
+        :loading="cancelling"
+        @click="cancelBooking"
+      >
+        لغو نوبت
+      </BaseButton>
+
+      <BaseButton
+        v-if="booking.status === 'completed'"
+        variant="secondary"
+        data-testid="review-booking-button"
+        @click="reviewOpen = true"
+      >
+        ثبت نظر
+      </BaseButton>
+    </div>
+
+    <NuxtLink to="/bookings" class="block text-sm text-(--color-text) hover:underline">بازگشت به نوبت‌های من</NuxtLink>
+
+    <ReviewPromptModal
+      v-if="reviewOpen"
+      :booking-id="booking.id"
+      :worker-name="booking.workerName"
+      @close="reviewOpen = false"
+    />
   </div>
 </template>
