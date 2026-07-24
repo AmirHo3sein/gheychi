@@ -14,6 +14,7 @@ const emit = defineEmits<{ updated: [rating: { id: string; status: string }] }>(
 
 const { apiFetch } = useApi()
 const submitting = ref(false)
+const confirming = ref(false)
 
 async function toggle() {
   submitting.value = true
@@ -23,31 +24,58 @@ async function toggle() {
     body: { status: target },
   })
   submitting.value = false
+  confirming.value = false
   if (data) emit('updated', data)
 }
 </script>
 
 <template>
-  <AppButton
-    v-if="status === 'published'"
-    data-testid="reject-worker-rating"
-    type="button"
-    variant="danger"
-    :disabled="submitting"
-    @click="toggle"
-  >
-    <template #icon><AppIcon name="x" :size="15" /></template>
-    رد امتیاز
-  </AppButton>
-  <AppButton
-    v-else
-    data-testid="republish-worker-rating"
-    type="button"
-    variant="primary"
-    :disabled="submitting"
-    @click="toggle"
-  >
-    <template #icon><AppIcon name="check" :size="15" /></template>
-    انتشار مجدد
-  </AppButton>
+  <div v-if="!confirming" class="flex flex-wrap gap-2.5">
+    <AppButton
+      v-if="status === 'published'"
+      data-testid="reject-worker-rating"
+      type="button"
+      variant="danger"
+      :disabled="submitting"
+      @click="confirming = true"
+    >
+      <template #icon><AppIcon name="x" :size="15" /></template>
+      رد امتیاز
+    </AppButton>
+    <AppButton
+      v-else
+      data-testid="republish-worker-rating"
+      type="button"
+      variant="primary"
+      :disabled="submitting"
+      @click="confirming = true"
+    >
+      <template #icon><AppIcon name="check" :size="15" /></template>
+      انتشار مجدد
+    </AppButton>
+  </div>
+
+  <div v-else class="flex flex-wrap items-center gap-2.5 text-sm">
+    <span class="text-(--color-text)">
+      {{ status === 'published' ? 'این امتیاز رد شود؟' : 'این امتیاز دوباره منتشر شود؟' }}
+    </span>
+    <AppButton
+      :data-testid="status === 'published' ? 'reject-worker-rating-confirm' : 'republish-worker-rating-confirm'"
+      type="button"
+      :variant="status === 'published' ? 'danger' : 'primary'"
+      :disabled="submitting"
+      @click="toggle"
+    >
+      {{ status === 'published' ? 'رد امتیاز' : 'انتشار مجدد' }}
+    </AppButton>
+    <AppButton
+      :data-testid="status === 'published' ? 'reject-worker-rating-cancel' : 'republish-worker-rating-cancel'"
+      type="button"
+      variant="secondary"
+      :disabled="submitting"
+      @click="confirming = false"
+    >
+      انصراف
+    </AppButton>
+  </div>
 </template>

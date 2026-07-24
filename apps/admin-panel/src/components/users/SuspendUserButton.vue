@@ -16,6 +16,7 @@ const emit = defineEmits<{ updated: [user: { id: string; status: string }] }>()
 const { apiFetch } = useApi()
 const { push } = useToast()
 const submitting = ref(false)
+const confirming = ref(false)
 
 async function toggle() {
   submitting.value = true
@@ -25,6 +26,7 @@ async function toggle() {
     body: { status: target },
   })
   submitting.value = false
+  confirming.value = false
   if (data) {
     // Providers get the cascade spelled out. Worded conditionally because the backend
     // cascade only touches an APPROVED salon on suspend (and only a cascade-suspended one
@@ -45,26 +47,63 @@ async function toggle() {
 </script>
 
 <template>
-  <AppButton
-    v-if="status === 'active'"
-    data-testid="suspend-user"
-    type="button"
-    variant="danger"
-    :disabled="submitting"
-    @click="toggle"
-  >
-    <template #icon><AppIcon name="lock" :size="14" /></template>
-    تعلیق
-  </AppButton>
-  <AppButton
-    v-else
-    data-testid="unsuspend-user"
-    type="button"
-    variant="primary"
-    :disabled="submitting"
-    @click="toggle"
-  >
-    <template #icon><AppIcon name="check" :size="14" /></template>
-    رفع تعلیق
-  </AppButton>
+  <div v-if="!confirming" class="flex flex-wrap gap-2.5">
+    <AppButton
+      v-if="status === 'active'"
+      data-testid="suspend-user"
+      type="button"
+      variant="danger"
+      :disabled="submitting"
+      @click="confirming = true"
+    >
+      <template #icon><AppIcon name="lock" :size="14" /></template>
+      تعلیق
+    </AppButton>
+    <AppButton
+      v-else
+      data-testid="unsuspend-user"
+      type="button"
+      variant="primary"
+      :disabled="submitting"
+      @click="confirming = true"
+    >
+      <template #icon><AppIcon name="check" :size="14" /></template>
+      رفع تعلیق
+    </AppButton>
+  </div>
+
+  <div v-else class="flex flex-wrap items-center gap-2.5 text-sm">
+    <span class="text-(--color-text)">
+      <template v-if="status === 'active'">
+        این کاربر معلق شود؟
+        <span v-if="role === 'provider'" class="text-(--color-text-muted)">
+          آرایشگاه تاییدشدهٔ او (در صورت وجود) نیز از دسترس عموم خارج خواهد شد.
+        </span>
+      </template>
+      <template v-else>
+        این کاربر رفع تعلیق شود؟
+        <span v-if="role === 'provider'" class="text-(--color-text-muted)">
+          آرایشگاهی که به دلیل تعلیق او معلق شده بود (در صورت وجود) بازگردانده خواهد شد.
+        </span>
+      </template>
+    </span>
+    <AppButton
+      :data-testid="status === 'active' ? 'suspend-user-confirm' : 'unsuspend-user-confirm'"
+      type="button"
+      :variant="status === 'active' ? 'danger' : 'primary'"
+      :disabled="submitting"
+      @click="toggle"
+    >
+      {{ status === 'active' ? 'تعلیق' : 'رفع تعلیق' }}
+    </AppButton>
+    <AppButton
+      :data-testid="status === 'active' ? 'suspend-user-cancel' : 'unsuspend-user-cancel'"
+      type="button"
+      variant="secondary"
+      :disabled="submitting"
+      @click="confirming = false"
+    >
+      انصراف
+    </AppButton>
+  </div>
 </template>

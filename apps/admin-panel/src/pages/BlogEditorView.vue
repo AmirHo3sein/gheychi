@@ -60,6 +60,11 @@ const seoOpen = ref(false)
 
 const submitting = ref(false)
 const confirmingDelete = ref(false)
+// Mirrors confirmingDelete's two-step shape for publish/unpublish (askX/confirmX/cancelX),
+// per DESIGN.md's Uniform Consequence Rule -- a state-visibility transition gets the same
+// confirm-before-commit weight as delete rather than firing immediately on click. One ref
+// (not two booleans) since only one of the publish/unpublish buttons is ever visible at a time.
+const confirmingTransition = ref<'publish' | 'unpublish' | null>(null)
 
 const categories = ref<BlogCategory[]>([])
 const categoryOptions = computed(() => [
@@ -140,6 +145,7 @@ async function save() {
   }
   submitting.value = true
   confirmingDelete.value = false
+  confirmingTransition.value = null
 
   if (isCreate.value) {
     // A manually edited slug rides on the create itself, so the operation is atomic: a
@@ -170,18 +176,32 @@ async function save() {
   submitting.value = false
 }
 
-async function publish() {
-  await transition('publish')
+function askPublish() {
+  confirmingTransition.value = 'publish'
+  confirmingDelete.value = false
 }
 
-async function unpublish() {
-  await transition('unpublish')
+function askUnpublish() {
+  confirmingTransition.value = 'unpublish'
+  confirmingDelete.value = false
+}
+
+function cancelTransition() {
+  confirmingTransition.value = null
+}
+
+async function confirmTransition() {
+  const action = confirmingTransition.value
+  if (!action) return
+  confirmingTransition.value = null
+  await transition(action)
 }
 
 async function transition(action: 'publish' | 'unpublish') {
   if (submitting.value || !postId.value) return
   submitting.value = true
   confirmingDelete.value = false
+  confirmingTransition.value = null
   // Deliberately NOT silent: a lost publish/unpublish race answers 409 with a Farsi message
   // that surfaces through the standard toast. Either way the server is the truth afterwards,
   // so always reload instead of patching status locally.
@@ -192,6 +212,7 @@ async function transition(action: 'publish' | 'unpublish') {
 
 function askDelete() {
   confirmingDelete.value = true
+  confirmingTransition.value = null
 }
 
 function cancelDelete() {
@@ -256,6 +277,28 @@ async function removeCover() {
               انصراف
             </AppButton>
           </template>
+          <template v-else-if="confirmingTransition === 'publish'">
+            <span class="text-sm font-semibold text-(--color-text)">
+              این مطلب منتشر شود؟ محتوا برای عموم قابل مشاهده خواهد شد.
+            </span>
+            <AppButton data-testid="confirm-publish" variant="primary" :disabled="submitting" @click="confirmTransition">
+              انتشار
+            </AppButton>
+            <AppButton data-testid="cancel-publish" variant="ghost" :disabled="submitting" @click="cancelTransition">
+              انصراف
+            </AppButton>
+          </template>
+          <template v-else-if="confirmingTransition === 'unpublish'">
+            <span class="text-sm font-semibold text-(--tone-warning-text)">
+              انتشار این مطلب لغو شود؟ محتوا از دسترس عموم خارج می‌شود.
+            </span>
+            <AppButton data-testid="confirm-unpublish" variant="danger" :disabled="submitting" @click="confirmTransition">
+              لغو انتشار
+            </AppButton>
+            <AppButton data-testid="cancel-unpublish" variant="ghost" :disabled="submitting" @click="cancelTransition">
+              انصراف
+            </AppButton>
+          </template>
           <template v-else>
             <AppButton data-testid="save-button" variant="primary" :disabled="submitting" @click="save">
               ذخیره
@@ -268,7 +311,7 @@ async function removeCover() {
               data-testid="publish-button"
               variant="secondary"
               :disabled="submitting"
-              @click="publish"
+              @click="askPublish"
             >
               انتشار
             </AppButton>
@@ -277,7 +320,7 @@ async function removeCover() {
               data-testid="unpublish-button"
               variant="secondary"
               :disabled="submitting"
-              @click="unpublish"
+              @click="askUnpublish"
             >
               لغو انتشار
             </AppButton>

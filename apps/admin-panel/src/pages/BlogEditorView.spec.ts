@@ -206,11 +206,15 @@ describe('BlogEditorView', () => {
     expect(wrapper.find('[data-testid="slug-error"]').exists()).toBe(false)
   })
 
-  it('publishes and reloads the post from the server', async () => {
+  it('publishes only after the inline confirm, then reloads the post from the server', async () => {
     const { wrapper } = await mountAt('/blog/p1')
     expect(wrapper.text()).toContain('پیش‌نویس')
 
     await wrapper.get('[data-testid="publish-button"]').trigger('click')
+    expect(wrapper.find('[data-testid="confirm-publish"]').exists()).toBe(true)
+    expect(fetchMock.mock.calls.some(([p]) => p === '/admin/blog/posts/p1/publish')).toBe(false)
+
+    await wrapper.get('[data-testid="confirm-publish"]').trigger('click')
     await flushPromises()
 
     expect(fetchMock).toHaveBeenCalledWith('/admin/blog/posts/p1/publish', { method: 'POST' })
@@ -218,11 +222,27 @@ describe('BlogEditorView', () => {
     expect(wrapper.text()).toContain('منتشرشده')
   })
 
+  it('cancelling the publish confirm does not call the API and returns to the normal buttons', async () => {
+    const { wrapper } = await mountAt('/blog/p1')
+
+    await wrapper.get('[data-testid="publish-button"]').trigger('click')
+    expect(wrapper.find('[data-testid="confirm-publish"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="cancel-publish"]').trigger('click')
+    await flushPromises()
+
+    expect(fetchMock.mock.calls.some(([p]) => p === '/admin/blog/posts/p1/publish')).toBe(false)
+    expect(wrapper.find('[data-testid="confirm-publish"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="publish-button"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('پیش‌نویس')
+  })
+
   it('on a 409 lost publish race, still reloads instead of patching status locally', async () => {
     dispatchFetch({ publishError: { status: 409, message: 'این مطلب قبلاً منتشر شده است' } })
     const { wrapper } = await mountAt('/blog/p1')
 
     await wrapper.get('[data-testid="publish-button"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-publish"]').trigger('click')
     await flushPromises()
 
     // The Farsi 409 message surfaced via the real useApi toast path (not silent); here we
@@ -231,12 +251,16 @@ describe('BlogEditorView', () => {
     expect(wrapper.text()).toContain('پیش‌نویس')
   })
 
-  it('unpublishes and reloads the post from the server', async () => {
+  it('unpublishes only after the inline confirm, then reloads the post from the server', async () => {
     dispatchFetch({ initial: { status: 'published', publishedAt: '2026-07-08T10:00:00.000Z' } })
     const { wrapper } = await mountAt('/blog/p1')
     expect(wrapper.text()).toContain('منتشرشده')
 
     await wrapper.get('[data-testid="unpublish-button"]').trigger('click')
+    expect(wrapper.find('[data-testid="confirm-unpublish"]').exists()).toBe(true)
+    expect(fetchMock.mock.calls.some(([p]) => p === '/admin/blog/posts/p1/unpublish')).toBe(false)
+
+    await wrapper.get('[data-testid="confirm-unpublish"]').trigger('click')
     await flushPromises()
 
     expect(fetchMock).toHaveBeenCalledWith('/admin/blog/posts/p1/unpublish', { method: 'POST' })

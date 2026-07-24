@@ -59,14 +59,21 @@ const { apiFetch } = useApi()
 const { push: pushToast } = useToast()
 
 const rows = ref<RewardTypeRow[]>([])
+// Snapshot of what's currently persisted per referral type -- diffed against the live `rows`
+// entry to build the per-card confirm summary and to detect "nothing actually changed".
+const originalRows = ref<RewardTypeRow[]>([])
 const loading = ref(true)
 const savingType = ref<ReferralType | null>(null)
+// Which single card is showing its confirm-summary, if any -- scoped per-row (not a page-wide
+// boolean) since multiple cards live on this page at once (Uniform Consequence Rule).
+const confirmingType = ref<ReferralType | null>(null)
 
 async function load() {
   loading.value = true
   const { data } = await apiFetch<RewardTypeRow[]>('/admin/referral-reward-types', { silent: true })
   const byType = new Map((data ?? []).map((row) => [row.referralType, row]))
   rows.value = TYPE_ORDER.map((type) => byType.get(type)).filter((row): row is RewardTypeRow => !!row)
+  originalRows.value = rows.value.map((row) => ({ ...row }))
   loading.value = false
 }
 
@@ -77,6 +84,81 @@ function normalizeNullable(value: unknown): number | null {
   if (value === '' || value === null || value === undefined) return null
   const n = Number(value)
   return Number.isFinite(n) ? n : null
+}
+
+interface FieldDiff {
+  key: string
+  label: string
+  oldText: string
+  newText: string
+}
+
+function formatNullable(value: number | null, unit: string, nullLabel: string): string {
+  return value === null ? nullLabel : `${value}${unit}`
+}
+
+// Builds the "what will actually change" list for one row's confirm summary -- only fields
+// whose formatted text differs from the persisted snapshot are included.
+function buildDiffs(row: RewardTypeRow, original: RewardTypeRow): FieldDiff[] {
+  const diffs: FieldDiff[] = []
+  const addIfChanged = (key: string, label: string, oldText: string, newText: string) => {
+    if (oldText !== newText) diffs.push({ key, label, oldText, newText })
+  }
+
+  addIfChanged('enabled', 'فعال‌سازی', original.enabled ? 'فعال' : 'غیرفعال', row.enabled ? 'فعال' : 'غیرفعال')
+  addIfChanged('referrerRewardKind', 'نوع پاداش معرف', rewardKindLabel(original.referrerRewardKind), rewardKindLabel(row.referrerRewardKind))
+  addIfChanged(
+    'referrerRewardValue',
+    'مقدار پاداش معرف',
+    `${original.referrerRewardValue}${rewardKindUnit(original.referrerRewardKind)}`,
+    `${row.referrerRewardValue}${rewardKindUnit(row.referrerRewardKind)}`,
+  )
+  addIfChanged(
+    'referrerRewardMax',
+    'سقف پاداش معرف',
+    formatNullable(original.referrerRewardMax, rewardKindUnit(original.referrerRewardKind), 'نامحدود'),
+    formatNullable(row.referrerRewardMax, rewardKindUnit(row.referrerRewardKind), 'نامحدود'),
+  )
+  addIfChanged('referredRewardKind', 'نوع پاداش معرفی‌شده', rewardKindLabel(original.referredRewardKind), rewardKindLabel(row.referredRewardKind))
+  addIfChanged(
+    'referredRewardValue',
+    'مقدار پاداش معرفی‌شده',
+    `${original.referredRewardValue}${rewardKindUnit(original.referredRewardKind)}`,
+    `${row.referredRewardValue}${rewardKindUnit(row.referredRewardKind)}`,
+  )
+  addIfChanged(
+    'referredRewardMax',
+    'سقف پاداش معرفی‌شده',
+    formatNullable(original.referredRewardMax, rewardKindUnit(original.referredRewardKind), 'نامحدود'),
+    formatNullable(row.referredRewardMax, rewardKindUnit(row.referredRewardKind), 'نامحدود'),
+  )
+  addIfChanged('qualifyingEvent', 'رویداد شرط پاداش', qualifyingEventLabel(original.qualifyingEvent), qualifyingEventLabel(row.qualifyingEvent))
+  addIfChanged('grantHoldbackHours', 'مهلت انتظار اعطا', `${original.grantHoldbackHours} ساعت`, `${row.grantHoldbackHours} ساعت`)
+  addIfChanged('expirationDays', 'انقضا', formatNullable(original.expirationDays, ' روز', 'هرگز'), formatNullable(row.expirationDays, ' روز', 'هرگز'))
+  addIfChanged(
+    'maxReferralsPerReferrer',
+    'سقف تعداد معرفی هر معرف',
+    formatNullable(original.maxReferralsPerReferrer, '', 'نامحدود'),
+    formatNullable(row.maxReferralsPerReferrer, '', 'نامحدود'),
+  )
+
+  return diffs
+}
+
+function diffsFor(row: RewardTypeRow): FieldDiff[] {
+  const original = originalRows.value.find((r) => r.referralType === row.referralType)
+  if (!original) return []
+  return buildDiffs(row, original)
+}
+
+function askConfirm(row: RewardTypeRow) {
+  // Nothing actually changed -- no empty confirm card, just no-op.
+  if (diffsFor(row).length === 0) return
+  confirmingType.value = row.referralType
+}
+
+function cancelConfirm() {
+  confirmingType.value = null
 }
 
 async function save(row: RewardTypeRow) {
@@ -99,9 +181,16 @@ async function save(row: RewardTypeRow) {
     },
   })
   savingType.value = null
+  // Whether the PATCH succeeded or failed, the confirm card closes: on success there's
+  // nothing left to confirm; on failure (mirrors AdjustBalanceCard.vue) drop back to the
+  // editable form rather than leave the admin stuck on a confirm screen that just failed --
+  // their edits are preserved on `row` either way, so retrying doesn't lose input.
+  confirmingType.value = null
   if (data) {
     const index = rows.value.findIndex((r) => r.referralType === row.referralType)
     if (index !== -1) rows.value[index] = data
+    const originalIndex = originalRows.value.findIndex((r) => r.referralType === row.referralType)
+    if (originalIndex !== -1) originalRows.value[originalIndex] = { ...data }
     pushToast(`تنظیمات «${referralTypeLabel(row.referralType)}» ذخیره شد`)
   }
 }
@@ -125,7 +214,8 @@ onMounted(load)
               role="switch"
               :aria-checked="row.enabled"
               :data-testid="`enabled-toggle-${row.referralType}`"
-              class="relative h-6 w-11 shrink-0 rounded-full transition-colors"
+              :disabled="confirmingType === row.referralType"
+              class="relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60"
               :class="row.enabled ? 'bg-(--color-accent)' : 'bg-(--color-border)'"
               @click="row.enabled = !row.enabled"
             >
@@ -134,6 +224,43 @@ onMounted(load)
           </div>
         </div>
 
+        <!-- Uniform Consequence Rule (DESIGN.md): this card's reward-type config is a
+             money-moving setting, so saving it gets the same confirm-before-commit weight as
+             a wallet adjustment -- scoped to this one card via `confirmingType`. -->
+        <div v-if="confirmingType === row.referralType" class="space-y-3.5" :data-testid="`confirm-summary-${row.referralType}`">
+          <p class="flex items-start gap-2.5 rounded-xl bg-(--tone-warning-bg) px-4 py-3 text-sm font-semibold text-(--tone-warning-text)">
+            <AppIcon name="warning" :size="16" class="mt-0.5 shrink-0" />
+            <span>این تغییرات بر پاداش‌های معرفی «{{ referralTypeLabel(row.referralType) }}» اثر می‌گذارد. لطفا موارد زیر را بررسی و تایید کنید:</span>
+          </p>
+          <ul class="tnum space-y-1.5 rounded-xl bg-(--color-border-soft) p-3.5 text-sm text-(--color-text)">
+            <li v-for="diff in diffsFor(row)" :key="diff.key" :data-testid="`confirm-row-${row.referralType}-${diff.key}`">
+              <span class="font-semibold">{{ diff.label }}:</span>
+              {{ diff.oldText }} ← {{ diff.newText }}
+            </li>
+          </ul>
+          <div class="flex justify-end gap-2.5">
+            <AppButton
+              type="button"
+              :data-testid="`confirm-submit-${row.referralType}`"
+              :disabled="savingType === row.referralType"
+              :loading="savingType === row.referralType"
+              @click="save(row)"
+            >
+              تایید و ثبت
+            </AppButton>
+            <AppButton
+              type="button"
+              variant="ghost"
+              :data-testid="`confirm-cancel-${row.referralType}`"
+              :disabled="savingType === row.referralType"
+              @click="cancelConfirm"
+            >
+              انصراف
+            </AppButton>
+          </div>
+        </div>
+
+        <template v-else>
         <!-- R12: all three types ship disabled with zero-value rewards by default -- an
              explanatory banner so this reads as "not configured yet", not "broken". -->
         <div
@@ -257,13 +384,13 @@ onMounted(load)
           <AppButton
             type="button"
             :data-testid="`save-${row.referralType}`"
-            :disabled="savingType === row.referralType"
-            :loading="savingType === row.referralType"
-            @click="save(row)"
+            :disabled="savingType === row.referralType || diffsFor(row).length === 0"
+            @click="askConfirm(row)"
           >
             ذخیره تغییرات
           </AppButton>
         </div>
+        </template>
       </AppCard>
     </div>
   </div>

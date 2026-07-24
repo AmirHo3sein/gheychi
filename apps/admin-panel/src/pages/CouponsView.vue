@@ -48,6 +48,10 @@ const editMaxRedemptions = ref<number | null>(null)
 
 const submitting = ref(false)
 const confirmingId = ref<string | null>(null)
+// Separate from confirmingId (which guards the delete confirm) -- toggleActive gets its own
+// inline confirm strip in the status cell, per DESIGN.md's Uniform Consequence Rule (no
+// mutating action should read as more casual than another just because it's a single click).
+const confirmingToggleId = ref<string | null>(null)
 
 async function load() {
   loading.value = true
@@ -98,6 +102,7 @@ function startEdit(coupon: Coupon) {
   editExpiresAt.value = coupon.expiresAt ? coupon.expiresAt.slice(0, 10) : ''
   editMaxRedemptions.value = coupon.maxRedemptions
   confirmingId.value = null
+  confirmingToggleId.value = null
 }
 
 async function saveEdit() {
@@ -124,6 +129,16 @@ async function saveEdit() {
   }
 }
 
+function askToggle(coupon: Coupon) {
+  confirmingToggleId.value = coupon.id
+  editingId.value = null
+  confirmingId.value = null
+}
+
+function cancelToggle() {
+  confirmingToggleId.value = null
+}
+
 async function toggleActive(coupon: Coupon) {
   if (submitting.value) return
   submitting.value = true
@@ -132,12 +147,14 @@ async function toggleActive(coupon: Coupon) {
     body: { isActive: !coupon.isActive },
   })
   submitting.value = false
+  confirmingToggleId.value = null
   if (data) coupon.isActive = data.isActive
 }
 
 function askDelete(coupon: Coupon) {
   confirmingId.value = coupon.id
   editingId.value = null
+  confirmingToggleId.value = null
 }
 
 async function confirmDelete() {
@@ -289,10 +306,44 @@ onMounted(load)
                 <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ coupon.maxRedemptions ?? 'نامحدود' }}</td>
                 <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ coupon.redeemedCount }}</td>
                 <td class="px-5 py-3.5">
+                  <!-- Inline confirm strip, scoped to just this cell (not a row-wide colspan
+                       like the delete confirm) -- per DESIGN.md's Uniform Consequence Rule this
+                       single-click status toggle gets the same confirm-before-commit treatment
+                       as delete, just at the size the action itself warrants. -->
+                  <div v-if="confirmingToggleId === coupon.id" class="flex flex-wrap items-center gap-2">
+                    <span
+                      class="text-xs font-semibold"
+                      :class="coupon.isActive ? 'text-(--tone-danger-text)' : 'text-(--tone-success-text)'"
+                    >
+                      {{
+                        coupon.isActive
+                          ? 'این کد تخفیف غیرفعال شود؟ کاربران دیگر نمی‌توانند از آن استفاده کنند.'
+                          : 'این کد فعال شود؟'
+                      }}
+                    </span>
+                    <AppButton
+                      data-testid="confirm-toggle-active"
+                      :variant="coupon.isActive ? 'danger' : 'primary'"
+                      :disabled="submitting"
+                      @click="toggleActive(coupon)"
+                    >
+                      تأیید
+                    </AppButton>
+                    <AppButton data-testid="cancel-toggle-active" variant="ghost" :disabled="submitting" @click="cancelToggle">
+                      انصراف
+                    </AppButton>
+                  </div>
                   <!-- Wraps a StatusBadge pill, not text/icon content -- AppButton's own padded
                        chrome is neutralized (p-0) so this stays a tight click target around the
                        badge rather than growing a visible button box around it. -->
-                  <AppButton variant="ghost" class="!p-0" :disabled="submitting" title="تغییر وضعیت فعال/غیرفعال" @click="toggleActive(coupon)">
+                  <AppButton
+                    v-else
+                    variant="ghost"
+                    class="!p-0"
+                    :disabled="submitting"
+                    title="تغییر وضعیت فعال/غیرفعال"
+                    @click="askToggle(coupon)"
+                  >
                     <StatusBadge :label="coupon.isActive ? 'فعال' : 'غیرفعال'" :tone="coupon.isActive ? 'success' : 'neutral'" />
                   </AppButton>
                 </td>

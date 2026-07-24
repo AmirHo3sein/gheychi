@@ -97,8 +97,13 @@ describe('ReferralSettingsView', () => {
     expect(wrapper.findAll('[data-testid="disabled-banner"]')).toHaveLength(2)
   })
 
-  it('saves a row with the full field set, PATCHing only that referral type', async () => {
+  it('save button is disabled with no changes, and clicking it opens a per-row confirm summary before PATCHing', async () => {
     const wrapper = await mountView()
+
+    // Nothing edited yet -- save is disabled, and there is no confirm screen.
+    expect(wrapper.get('[data-testid="save-user"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="confirm-summary-user"]').exists()).toBe(false)
+
     fetchMock.mockResolvedValueOnce({
       data: { ...REWARD_TYPES[1], enabled: true, referrerRewardValue: 20000, referredRewardValue: 15 },
       error: null,
@@ -108,6 +113,17 @@ describe('ReferralSettingsView', () => {
     await wrapper.get('[data-testid="referrer-value-user"]').setValue(20000)
     await wrapper.get('[data-testid="referred-value-user"]').setValue(15)
     await wrapper.get('[data-testid="save-user"]').trigger('click')
+
+    // Only the GET has happened -- the confirm screen is showing, not yet PATCHed.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const summary = wrapper.get('[data-testid="confirm-summary-user"]')
+    expect(summary.text()).toContain('20000')
+    expect(summary.text()).toContain('15')
+    // Only the 'user' card shows a confirm summary -- the other two rows are untouched.
+    expect(wrapper.find('[data-testid="confirm-summary-salon_owner"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="confirm-summary-worker"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="confirm-submit-user"]').trigger('click')
     await flushPromises()
 
     expect(fetchMock).toHaveBeenCalledWith('/admin/referral-reward-types/user', {
@@ -126,15 +142,36 @@ describe('ReferralSettingsView', () => {
         maxReferralsPerReferrer: null,
       },
     })
-    // Only the 'user' row's disabled banner is gone -- the other two rows are untouched.
+    // Confirm screen closed and the 'user' row's disabled banner is gone -- the other two rows
+    // are untouched.
+    expect(wrapper.find('[data-testid="confirm-summary-user"]').exists()).toBe(false)
     expect(wrapper.findAll('[data-testid="disabled-banner"]')).toHaveLength(2)
+  })
+
+  it('cancelling the confirm screen does not fire the PATCH and preserves the in-progress edit', async () => {
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-testid="referrer-value-worker"]').setValue(500)
+    await wrapper.get('[data-testid="save-worker"]').trigger('click')
+    expect(wrapper.find('[data-testid="confirm-summary-worker"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="confirm-cancel-worker"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="confirm-summary-worker"]').exists()).toBe(false)
+    // Only the initial GET happened -- no PATCH was ever sent.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining('/admin/referral-reward-types/worker'), expect.anything())
+    // The edited value survives the cancel.
+    expect((wrapper.get('[data-testid="referrer-value-worker"]').element as HTMLInputElement).value).toBe('500')
   })
 
   it('sends null (not 0/NaN) for the nullable cap fields left empty', async () => {
     const wrapper = await mountView()
     fetchMock.mockResolvedValueOnce({ data: { ...REWARD_TYPES[2] }, error: null })
 
+    await wrapper.get('[data-testid="enabled-toggle-worker"]').trigger('click')
     await wrapper.get('[data-testid="save-worker"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-submit-worker"]').trigger('click')
     await flushPromises()
 
     const call = fetchMock.mock.calls.find(([url]) => url === '/admin/referral-reward-types/worker')
