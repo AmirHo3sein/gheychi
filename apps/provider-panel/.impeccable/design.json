@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-24T00:00:00.000Z",
+  "title": "Design System: Arayeshgah Provider Panel",
+  "extensions": {
+    "colorMeta": {
+      "accent-teal": {
+        "role": "primary",
+        "displayName": "Certified Teal",
+        "canonical": "#0EA89B",
+        "tonalRamp": ["#053A35", "#0A5850", "#0F7A6E", "#0EA89B", "#3DC4B7", "#7AD9CF", "#B3EBE4", "#E3F6F3"]
+      },
+      "accent-violet": {
+        "role": "primary",
+        "displayName": "Notarized Violet",
+        "canonical": "#7A3FF2",
+        "tonalRamp": ["#150A26", "#2A1450", "#442080", "#6030C9", "#7A3FF2", "#9463F5", "#C3A3F8", "#E8DDFC"]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Warm Paper",
+        "canonical": "#F4FBFA",
+        "tonalRamp": ["#0C0F0E", "#151F1D", "#1F2F2C", "#2E4744", "#5E7C79", "#A4C4C1", "#D5E9E7", "#F4FBFA"]
+      },
+      "surface-dark": {
+        "role": "neutral",
+        "displayName": "Ink Violet",
+        "canonical": "#151217",
+        "tonalRamp": ["#0A0810", "#151217", "#211D24", "#332C3A", "#544A5C", "#7C7086", "#B0A5B8", "#E8E2EB"]
+      },
+      "danger": {
+        "role": "error",
+        "displayName": "Ledger Red",
+        "canonical": "#C0392B",
+        "tonalRamp": ["#3D0F0A", "#661A12", "#96261B", "#C0392B", "#DC6B5E", "#EA9C93", "#F4C7C1", "#FCEAEA"]
+      },
+      "success": {
+        "role": "success",
+        "displayName": "Cleared Green",
+        "canonical": "#1E9E6B",
+        "tonalRamp": ["#083626", "#0F5A3E", "#157C57", "#1E9E6B", "#4CBB8C", "#84D3AF", "#B8E7D2", "#E3F5EC"]
+      },
+      "warning": {
+        "role": "warning",
+        "displayName": "Pending Amber",
+        "canonical": "#B4740E",
+        "tonalRamp": ["#3D2703", "#5F3D06", "#8A580A", "#B4740E", "#D69B3F", "#E8BC7A", "#F3D9AF", "#FEF3DE"]
+      },
+      "info": {
+        "role": "info",
+        "displayName": "Notice Blue",
+        "canonical": "#2A5FBE",
+        "tonalRamp": ["#0E1F40", "#183566", "#20488F", "#2A5FBE", "#5A87D4", "#8DAEE3", "#C1D2F0", "#E7EFFC"]
+      }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Reserved for LoginView.vue's hero copy -- the one screen in this app closer to Persuade than Operate. Not used for routine page titles." },
+      "title": { "displayName": "Title", "purpose": "This app's workhorse heading -- the 'where you are' size at the top of every list/settings/detail screen." },
+      "body": { "displayName": "Body", "purpose": "Default reading copy." },
+      "label": { "displayName": "Label", "purpose": "Form labels, buttons, table headers, compact UI text -- the most-used size in a dense operate-mode app." },
+      "caption": { "displayName": "Caption", "purpose": "Helper text, inline validation, status-badge labels, timestamps." }
+    },
+    "shadows": [
+      { "name": "shadow-sm", "value": "0 1px 2px hsl(var(--shadow-color) / 0.06), 0 1px 1px hsl(var(--shadow-color) / 0.04)", "purpose": "Resting elevation for AppCard or the primary button at rest. Reconciled from provider-panel's prior --shadow-panel." },
+      { "name": "shadow-md", "value": "0 8px 24px -8px hsl(var(--shadow-color) / 0.16), 0 2px 6px -2px hsl(var(--shadow-color) / 0.08)", "purpose": "Hover/emphasis elevation -- primary button hover, and the floating AppSelect dropdown panel (currently mis-tiered onto shadow-sm)." },
+      { "name": "shadow-lg", "value": "0 24px 48px -16px hsl(var(--shadow-color) / 0.22), 0 8px 16px -4px hsl(var(--shadow-color) / 0.1)", "purpose": "Highest-elevation surface -- modal/sheet overlays. Reconciled from provider-panel's prior --shadow-pop." }
+    ],
+    "motion": [
+      { "name": "press-scale", "value": "transform: scale(0.98)", "purpose": "Tactile press-down feedback on :active for buttons, inherited from user-app's BaseButton." },
+      { "name": "duration-standard", "value": "150ms", "purpose": "Default transition duration for button color/shadow/transform changes." }
+    ],
+    "breakpoints": [
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single primary action on a screen -- accent fill, deepens on hover. Not yet a shared component in this app (every page currently hand-rolls this markup); this is the target to extract an AppButton toward.",
+      "html": "<button class=\"ds-btn-primary\">تایید رزرو</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--color-accent); color: #FFFFFF; font-weight: 600; font-size: 0.875rem; padding: 10px 16px; border-radius: 12px; border: none; box-shadow: var(--shadow-sm); transition: all 150ms; cursor: pointer; } .ds-btn-primary:hover { background: var(--color-accent-strong); box-shadow: var(--shadow-md); } .ds-btn-primary:active { transform: scale(0.98); } .ds-btn-primary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; } .ds-btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }"
+    },
+    {
+      "name": "Status Badge",
+      "kind": "custom",
+      "refersTo": "status-badge",
+      "description": "Signature component of this app, already implemented well (StatusBadge.vue) -- pill badge with a leading dot, tone-mapped across success/warning/danger/info/neutral. A candidate to back-port to user-app and admin-panel rather than something to fix here.",
+      "html": "<span class=\"ds-badge ds-badge-warning\"><span class=\"ds-badge-dot\"></span>در انتظار تایید</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; gap: 6px; border-radius: 9999px; padding: 4px 10px; font-size: 0.75rem; font-weight: 500; } .ds-badge-dot { width: 6px; height: 6px; border-radius: 9999px; background: currentColor; } .ds-badge-warning { background: var(--color-warning-soft); color: var(--color-warning); }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "AppCard.vue -- already correctly on-token (16px radius, bordered, flat-at-rest shadow).",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-title\">امروز</div><div class=\"ds-card-body\">۴ نوبت &middot; ۲,۳۵۰,۰۰۰ تومان</div></div>",
+      "css": ".ds-card { border-radius: 16px; border: 1px solid var(--color-border); background: var(--color-surface-card); box-shadow: var(--shadow-sm); padding: 16px; } .ds-card-title { font-size: 1.25rem; font-weight: 700; color: var(--color-text); margin-bottom: 8px; } .ds-card-body { font-size: 1rem; color: var(--color-text-muted); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Verified Ledger (inherited from apps/user-app -- see that app's design.json for the full narrative; this file records only what's specific to the Operate-mode provider panel)",
+    "overview": "The salon owner's side of the same trust-legible-at-a-glance system user-app builds for customers. Where user-app occasionally leans Persuade (the login hero, salon showcase), this app is almost entirely Operate: scanability and fast task completion for a between-clients phone check, or a longer focused desktop session for setup and earnings review. The accent is used even more sparingly here than in user-app -- a dashboard screen typically has one primary action, sometimes none.",
+    "keyCharacteristics": [
+      "Same two-mode teal/violet re-theme as user-app -- not an independently chosen palette.",
+      "Denser default spacing than user-app's baseline -- this is a utility console, not a discovery/marketing surface.",
+      "A genuinely good status-badge pattern (StatusBadge.vue) this app has that user-app doesn't yet -- worth sharing back, not fixing.",
+      "The token layer is currently incomplete relative to user-app (no accent-strong/deep/soft/text) -- the single biggest gap between this document's target and current code."
+    ],
+    "rules": [
+      { "name": "The One Seal Rule", "body": "The accent color appears on the single most important element of a screen -- on a dashboard/list screen this is often the one primary action in the header, sometimes none.", "section": "colors" },
+      { "name": "The No Mode-Agnostic Color Rule", "body": "Every color in this system has a distinct light and dark value.", "section": "colors" },
+      { "name": "The Fill-Text Split Rule", "body": "A 'strong' accent/danger shade verified for white text on top of it as a fill is not automatically safe as foreground text on a card background -- measure and tokenize both directions separately (accent-strong vs accent-text).", "section": "colors" },
+      { "name": "The Density-First Rule", "body": "Default to compact spacing; this app has essentially no Persuade-mode screens other than the login hero.", "section": "layout" },
+      { "name": "The Elevation-Means-Something Rule", "body": "A shadow is never decorative -- flat + bordered is the default resting state.", "section": "elevation" },
+      { "name": "The Hue-Tinted Shadow Rule", "body": "A shadow is never neutral black, even in dark mode -- it carries the mode's accent hue. Provider-panel's current dark-mode shadow (pure rgba(0,0,0,...)) violates this.", "section": "elevation" },
+      { "name": "The Container-Softer-Than-Control Rule", "body": "A container's radius is one step larger than the controls it holds -- 16px cards, 12px buttons/inputs.", "section": "shapes" },
+      { "name": "The No Physical-Direction Leak Rule", "body": "Use logical properties (start-/end-), never left/right. LoginView.vue's input icon is a confirmed current violation.", "section": "shapes" }
+    ],
+    "dos": [
+      "Do treat apps/user-app/DESIGN.md as the parent document -- when a rule isn't restated here, it still governs.",
+      "Do build a shared AppButton/AppInput rather than hand-rolling markup per page (currently 31 raw buttons, 34 raw inputs across 15 files).",
+      "Do pair a shadow-depth change with a color change on the primary button's hover state.",
+      "Do keep the warning/info semantic additions -- a legitimate Operate-mode need, not drift.",
+      "Do use logical CSS properties for positioned elements."
+    ],
+    "donts": [
+      "Don't treat provider-panel's current --color-border/--color-muted/danger/success hex values as an equally-valid alternative to user-app's -- they are unintentional drift and should be corrected to match exactly.",
+      "Don't use pure black for a dark-mode shadow.",
+      "Don't invent a third, independently-designed status-tone vocabulary in admin-panel later -- reach for this app's warning/info additions instead.",
+      "Don't add a second accent color or spread accent emphasis across more than one element per screen."
+    ]
+  }
+}
