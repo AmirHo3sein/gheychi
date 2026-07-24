@@ -56,7 +56,7 @@ const { data: balances } = await useAsyncData('wallet-balances', async () => {
 
 // Filter/page state lives in the route query (same idiom as blog/index.vue) so a page
 // turn is one router.push and useAsyncData refetches exactly once.
-const { data: transactions } = await useAsyncData(
+const { data: transactions, pending: transactionsPending } = await useAsyncData(
   'wallet-transactions',
   async () => {
     const { data } = await apiFetch<WalletTransactionsResponse>('/wallet/mine/transactions', {
@@ -97,7 +97,7 @@ useSeoMeta({ title: 'کیف پول — آرایشگاه' })
 </script>
 
 <template>
-  <div class="p-4 space-y-6">
+  <div class="mx-auto max-w-2xl p-4 space-y-6">
     <div class="flex items-center gap-2">
       <NuxtLink
         to="/profile"
@@ -130,7 +130,7 @@ useSeoMeta({ title: 'کیف پول — آرایشگاه' })
         هنوز تراکنشی در کیف پول شما ثبت نشده است
       </p>
 
-      <div v-else class="space-y-2">
+      <div v-else class="space-y-2 transition-opacity" :class="{ 'pointer-events-none opacity-60': transactionsPending }">
         <BaseCard v-for="tx in transactions.items" :key="tx.id" data-testid="wallet-transaction">
           <div class="flex items-center justify-between gap-2">
             <div class="space-y-0.5 text-sm">
@@ -153,18 +153,21 @@ useSeoMeta({ title: 'کیف پول — آرایشگاه' })
         <button
           type="button"
           data-testid="prev-page"
-          class="rounded-full bg-(--color-surface-card) px-3 py-1 disabled:opacity-40"
-          :disabled="page <= 1"
+          class="min-h-11 rounded-full border border-(--color-border) bg-(--color-surface-card) px-4 py-2 text-(--color-text) disabled:cursor-not-allowed disabled:opacity-40"
+          :disabled="page <= 1 || transactionsPending"
           @click="goToPage(page - 1)"
         >
           قبلی
         </button>
-        <span class="text-xs">صفحه {{ page.toLocaleString('fa-IR') }} از {{ totalPages.toLocaleString('fa-IR') }}</span>
+        <span class="flex items-center gap-1.5 text-xs text-(--color-text-muted)">
+          <BaseIcon v-if="transactionsPending" name="spinner" :size="14" class="animate-spin" />
+          صفحه {{ page.toLocaleString('fa-IR') }} از {{ totalPages.toLocaleString('fa-IR') }}
+        </span>
         <button
           type="button"
           data-testid="next-page"
-          class="rounded-full bg-(--color-surface-card) px-3 py-1 disabled:opacity-40"
-          :disabled="page >= totalPages"
+          class="min-h-11 rounded-full border border-(--color-border) bg-(--color-surface-card) px-4 py-2 text-(--color-text) disabled:cursor-not-allowed disabled:opacity-40"
+          :disabled="page >= totalPages || transactionsPending"
           @click="goToPage(page + 1)"
         >
           بعدی

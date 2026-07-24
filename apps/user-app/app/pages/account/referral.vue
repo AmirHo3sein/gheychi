@@ -74,7 +74,7 @@ const STATUS_LABELS: Record<ReferralStatus, string> = {
 
 const STATUS_CLASSES: Record<ReferralStatus, string> = {
   awaiting_qualifying_event: 'text-(--color-text-muted)',
-  partially_granted: 'text-(--color-accent)',
+  partially_granted: 'text-(--color-accent-text)',
   reward_granted: 'text-(--color-success)',
   expired: 'text-(--color-text-muted)',
   cancelled: 'text-(--color-danger)',
@@ -129,7 +129,7 @@ const { data: myCode } = await useAsyncData('referral-my-code', async () => {
 // page turn is one router.push and useAsyncData refetches exactly once. The referral
 // list and the rewards list below page independently (`page` vs `rewardsPage`), so
 // goToPage/goToRewardsPage merge into the existing query rather than replacing it.
-const { data: referrals } = await useAsyncData(
+const { data: referrals, pending: referralsPending } = await useAsyncData(
   'referrals-mine',
   async () => {
     const { data } = await apiFetch<ReferralsResponse>('/referrals/mine', {
@@ -144,7 +144,7 @@ const { data: referrals } = await useAsyncData(
 // GET /referrals/mine/rewards -- my referral_rewards rows, either beneficiary role
 // (I can appear as 'referrer' on referrals I sent, or 'referred' on the one referral
 // that brought me in). currency/couponCode are denormalized in by the API itself.
-const { data: rewards } = await useAsyncData(
+const { data: rewards, pending: rewardsPending } = await useAsyncData(
   'referral-rewards-mine',
   async () => {
     const { data } = await apiFetch<RewardsResponse>('/referrals/mine/rewards', {
@@ -241,7 +241,7 @@ useSeoMeta({ title: 'دعوت از دوستان — آرایشگاه' })
 </script>
 
 <template>
-  <div class="p-4 space-y-6">
+  <div class="mx-auto max-w-2xl p-4 space-y-6">
     <div class="flex items-center gap-2">
       <NuxtLink
         to="/profile"
@@ -284,7 +284,7 @@ useSeoMeta({ title: 'دعوت از دوستان — آرایشگاه' })
         هنوز کسی با کد معرفی تو ثبت‌نام نکرده است
       </p>
 
-      <div v-else class="space-y-2">
+      <div v-else class="space-y-2 transition-opacity" :class="{ 'pointer-events-none opacity-60': referralsPending }">
         <BaseCard v-for="r in referrals.items" :key="r.id" data-testid="referral-item">
           <div class="flex items-center justify-between gap-2">
             <div class="space-y-0.5 text-sm">
@@ -301,22 +301,25 @@ useSeoMeta({ title: 'دعوت از دوستان — آرایشگاه' })
         </BaseCard>
       </div>
 
-      <nav v-if="totalPages > 1" class="flex items-center justify-center gap-3 pt-2 text-sm" aria-label="صفحه‌بندی">
+      <nav v-if="totalPages > 1" class="flex items-center justify-center gap-3 pt-2 text-sm" aria-label="صفحه‌بندی دعوت‌ها">
         <button
           type="button"
           data-testid="prev-page"
-          class="rounded-full bg-(--color-surface-card) px-3 py-1 disabled:opacity-40"
-          :disabled="page <= 1"
+          class="min-h-11 rounded-full border border-(--color-border) bg-(--color-surface-card) px-4 py-2 text-(--color-text) disabled:cursor-not-allowed disabled:opacity-40"
+          :disabled="page <= 1 || referralsPending"
           @click="goToPage(page - 1)"
         >
           قبلی
         </button>
-        <span class="text-xs">صفحه {{ page.toLocaleString('fa-IR') }} از {{ totalPages.toLocaleString('fa-IR') }}</span>
+        <span class="flex items-center gap-1.5 text-xs text-(--color-text-muted)">
+          <BaseIcon v-if="referralsPending" name="spinner" :size="14" class="animate-spin" />
+          صفحه {{ page.toLocaleString('fa-IR') }} از {{ totalPages.toLocaleString('fa-IR') }}
+        </span>
         <button
           type="button"
           data-testid="next-page"
-          class="rounded-full bg-(--color-surface-card) px-3 py-1 disabled:opacity-40"
-          :disabled="page >= totalPages"
+          class="min-h-11 rounded-full border border-(--color-border) bg-(--color-surface-card) px-4 py-2 text-(--color-text) disabled:cursor-not-allowed disabled:opacity-40"
+          :disabled="page >= totalPages || referralsPending"
           @click="goToPage(page + 1)"
         >
           بعدی
@@ -335,7 +338,7 @@ useSeoMeta({ title: 'دعوت از دوستان — آرایشگاه' })
         هنوز پاداشی برای تو ثبت نشده است
       </p>
 
-      <div v-else class="space-y-2">
+      <div v-else class="space-y-2 transition-opacity" :class="{ 'pointer-events-none opacity-60': rewardsPending }">
         <BaseCard v-for="rw in rewards.items" :key="rw.id" data-testid="reward-item">
           <div class="flex items-center justify-between gap-2">
             <div class="space-y-0.5 text-sm">
@@ -348,12 +351,12 @@ useSeoMeta({ title: 'دعوت از دوستان — آرایشگاه' })
                 v-if="rw.couponCode"
                 type="button"
                 data-testid="use-coupon-button"
-                class="text-xs text-(--color-accent) hover:underline"
+                class="text-xs text-(--color-accent-text) hover:underline"
                 @click="useCoupon(rw.couponCode)"
               >
                 استفاده از این کد
               </button>
-              <NuxtLink v-if="rw.walletTransactionId" to="/account/wallet" class="text-xs text-(--color-accent) hover:underline">
+              <NuxtLink v-if="rw.walletTransactionId" to="/account/wallet" class="text-xs text-(--color-accent-text) hover:underline">
                 مشاهده در کیف پول
               </NuxtLink>
             </div>
@@ -371,18 +374,21 @@ useSeoMeta({ title: 'دعوت از دوستان — آرایشگاه' })
         <button
           type="button"
           data-testid="rewards-prev-page"
-          class="rounded-full bg-(--color-surface-card) px-3 py-1 disabled:opacity-40"
-          :disabled="rewardsPage <= 1"
+          class="min-h-11 rounded-full border border-(--color-border) bg-(--color-surface-card) px-4 py-2 text-(--color-text) disabled:cursor-not-allowed disabled:opacity-40"
+          :disabled="rewardsPage <= 1 || rewardsPending"
           @click="goToRewardsPage(rewardsPage - 1)"
         >
           قبلی
         </button>
-        <span class="text-xs">صفحه {{ rewardsPage.toLocaleString('fa-IR') }} از {{ rewardsTotalPages.toLocaleString('fa-IR') }}</span>
+        <span class="flex items-center gap-1.5 text-xs text-(--color-text-muted)">
+          <BaseIcon v-if="rewardsPending" name="spinner" :size="14" class="animate-spin" />
+          صفحه {{ rewardsPage.toLocaleString('fa-IR') }} از {{ rewardsTotalPages.toLocaleString('fa-IR') }}
+        </span>
         <button
           type="button"
           data-testid="rewards-next-page"
-          class="rounded-full bg-(--color-surface-card) px-3 py-1 disabled:opacity-40"
-          :disabled="rewardsPage >= rewardsTotalPages"
+          class="min-h-11 rounded-full border border-(--color-border) bg-(--color-surface-card) px-4 py-2 text-(--color-text) disabled:cursor-not-allowed disabled:opacity-40"
+          :disabled="rewardsPage >= rewardsTotalPages || rewardsPending"
           @click="goToRewardsPage(rewardsPage + 1)"
         >
           بعدی

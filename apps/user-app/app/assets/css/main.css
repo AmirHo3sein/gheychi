@@ -30,6 +30,14 @@
   --color-accent-strong: #0F766E;
   --color-accent-deep: #115E59;
   --color-accent-soft: #E3F6F3;
+  /* accent-text: accent-hued TEXT on a card/surface background (status labels, inline
+     links) -- distinct from accent-strong, which is only verified for white text ON TOP
+     of it as a fill/hover background, not as foreground text itself. Light mode's value
+     happens to equal accent-strong (5.47:1 against --color-surface-card) because that
+     shade passes in both directions here; dark mode does NOT share that property (see
+     the dark block below) so this token must not be assumed interchangeable with
+     accent-strong just because they match in light mode. */
+  --color-accent-text: #0F766E;
   --color-ad: #FF7A45;
   /* ad-strong: contrast-safe fill for white text on the "ad" color (e.g. the featured-salon
      badge) -- plain --color-ad is 2.59:1 as a fill, kept only for text-on-light-background uses. */
@@ -69,6 +77,13 @@
   --color-accent-strong: #6D28D9;
   --color-accent-deep: #5B21B6;
   --color-accent-soft: #2C2140;
+  /* accent-text (dark): #6D28D9 (accent-strong) only reaches 2.33:1 as TEXT against
+     --color-surface-card -- it was verified the opposite direction (white text ON TOP of
+     it as a fill, 5.50:1) and fails badly here; a darkened "strong" shade loses contrast
+     against a dark background instead of gaining it. #A78BFA verified at 6.10:1 against
+     --color-surface-card / 6.82:1 against --color-surface via the same sRGB-to-linear +
+     relative-luminance formula used throughout this file. */
+  --color-accent-text: #A78BFA;
   --color-ad: #F24F8D;
   --color-ad-strong: #BE185D;
   --color-danger: #F2645C;

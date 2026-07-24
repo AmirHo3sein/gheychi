@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { reactive } from 'vue'
 import { mountSuspended, mockNuxtImport } from '@nuxt/test-utils/runtime'
 import { flushPromises } from '@vue/test-utils'
 import ReferralPage from '../../app/pages/account/referral.vue'
@@ -10,6 +11,23 @@ const fetchStub = Object.assign((...args: unknown[]) => fetchMock(...args), {
 
 const { navigateToMock } = vi.hoisted(() => ({ navigateToMock: vi.fn() }))
 mockNuxtImport('navigateTo', () => navigateToMock)
+
+// Same reasoning as blog-index.spec.ts: page-turn state lives in route.query, and the
+// real Nuxt test router doesn't reliably re-navigate a query-only push here -- pin
+// useRoute/useRouter to a minimal, directly-controllable pair.
+const mockRoute = reactive<{ query: Record<string, string> }>({ query: {} })
+mockNuxtImport('useRoute', () => () => mockRoute)
+mockNuxtImport('useRouter', () => () => ({
+  push: (to: { query?: Record<string, string> }) => {
+    mockRoute.query = to.query ?? {}
+    return Promise.resolve()
+  },
+  replace: (to: { query?: Record<string, string> } | string) => {
+    if (typeof to === 'object') mockRoute.query = to.query ?? {}
+    return Promise.resolve()
+  },
+  resolve: (to: string | { path?: string }) => ({ href: typeof to === 'string' ? to : (to.path ?? '/') }),
+}))
 
 const MY_CODE = { code: 'AB3D9F2K', isActive: true, shareUrl: 'http://localhost:3003/login?ref=AB3D9F2K' }
 
@@ -76,6 +94,7 @@ describe('account referral page', () => {
   beforeEach(() => {
     fetchMock.mockReset()
     navigateToMock.mockReset()
+    mockRoute.query = {}
     vi.stubGlobal('$fetch', fetchStub)
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
@@ -144,14 +163,19 @@ describe('account referral page', () => {
     expect(statusText).not.toContain('پاداش اعطا شد') // must not read as the full-grant label
     expect(statusText).toContain('جزئی')
     expect(row.text()).toContain('باقی')
+    // The accent-as-text contrast bug (fails ~2-3:1 in one or both themes) was found
+    // and fixed on this exact label -- --color-accent-text is the verified-safe
+    // foreground-text variant, distinct from --color-accent-strong (a fill-only token).
+    expect(row.find('[data-testid="referral-status"]').classes()).toContain('text-(--color-accent-text)')
   })
 
-  it('shows pagination controls once results exceed one page', async () => {
+  it('shows pagination controls once results exceed one page, sized to the 44px touch-target minimum', async () => {
     stub(MY_CODE, [REFERRAL_AWAITING], 45)
     const wrapper = await mountSuspended(ReferralPage)
 
     expect(wrapper.find('[data-testid="next-page"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="prev-page"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="next-page"]').classes()).toContain('min-h-11')
   })
 
   it('shows the rewards empty state when nothing has been granted yet', async () => {
@@ -203,5 +227,22 @@ describe('account referral page', () => {
     const wrapper = await mountSuspended(ReferralPage)
 
     expect(wrapper.find('[data-testid="use-coupon-button"]').exists()).toBe(false)
+  })
+
+  it('disables pagination and dims the list while a page turn is in flight', async () => {
+    stub(MY_CODE, [REFERRAL_AWAITING], 45)
+    const wrapper = await mountSuspended(ReferralPage)
+
+    fetchMock.mockImplementation((path: string) => {
+      if (path === '/referrals/mine') return new Promise(() => {}) // never resolves
+      if (path === '/referrals/mine/rewards') return Promise.resolve({ items: [], total: 0, page: 1, pageSize: 20 })
+      return Promise.resolve(MY_CODE)
+    })
+
+    await wrapper.find('[data-testid="next-page"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="next-page"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="prev-page"]').attributes('disabled')).toBeDefined()
   })
 })
