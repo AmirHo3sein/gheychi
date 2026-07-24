@@ -228,6 +228,7 @@ const CONFIG_META: Record<string, ConfigMeta> = {
   commission_percent: { label: 'درصد کمیسیون پلتفرم', hint: 'سهم پلتفرم از هر رزرو موفق', unit: '%' },
   booking_hold_ttl_minutes: { label: 'مهلت نگه‌داری رزرو', hint: 'زمان قفل‌شدن نوبت تا پرداخت', unit: 'دقیقه' },
   reminder_lead_hours: { label: 'یادآوری قبل از نوبت', hint: 'چند ساعت قبل، پیامک یادآوری ارسال شود', unit: 'ساعت' },
+  review_edit_window_hours: { label: 'مهلت ویرایش نظر', hint: 'مدت زمانی که کاربر می‌تواند نظر ثبت‌شده را ویرایش یا حذف کند', unit: 'ساعت' },
 }
 
 /** Falls back to the raw key as its own label -- new config keys stay editable, just less pretty. */
