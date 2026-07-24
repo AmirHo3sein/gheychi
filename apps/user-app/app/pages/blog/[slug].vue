@@ -77,8 +77,11 @@ useHead({
   ],
 })
 
-// Rendered once at setup -- the body never changes on this page.
-const bodyHtml = renderMarkdown(post.value.bodyMarkdown)
+// Rendered once at setup -- the body never changes on this page. useState (not a plain
+// const) so the client reuses the value computed during SSR instead of re-running
+// renderMarkdown on the same data during hydration -- keyed by slug so navigating between
+// two articles in one session never reuses a stale render.
+const bodyHtml = useState(`blog-post-body-${slug}`, () => renderMarkdown(post.value!.bodyMarkdown))
 
 const publishedDate = new Date(post.value.publishedAt).toLocaleDateString('fa-IR', {
   year: 'numeric',
@@ -101,6 +104,7 @@ const publishedDate = new Date(post.value.publishedAt).toLocaleDateString('fa-IR
       :src="post.coverImageUrl"
       width="768"
       height="432"
+      sizes="(min-width: 768px) 672px, 100vw"
       class="w-full rounded-xl object-cover"
       :alt="post.title"
     />
@@ -109,7 +113,7 @@ const publishedDate = new Date(post.value.publishedAt).toLocaleDateString('fa-IR
       <NuxtLink
         v-if="post.categorySlug"
         :to="{ path: '/blog', query: { category: post.categorySlug } }"
-        class="inline-block rounded-full bg-(--color-surface-card) px-3 py-1 text-xs text-(--color-accent)"
+        class="inline-block rounded-full bg-(--color-surface-card) px-3 py-1 text-xs text-(--color-accent-strong)"
       >
         {{ post.categoryName }}
       </NuxtLink>
@@ -122,6 +126,19 @@ const publishedDate = new Date(post.value.publishedAt).toLocaleDateString('fa-IR
 
     <!-- sanctioned v-html: renderMarkdown uses html:false so raw HTML never parses — see its invariant test -->
     <div class="article-body" v-html="bodyHtml" />
+
+    <!-- Conversion bridge: this whole surface exists to pull organic search traffic toward
+         salon discovery (PRODUCT.md) -- a finished reader otherwise has nowhere to go but
+         back to search. Kept intentionally lightweight (one card, one action), not a
+         related-posts recommendation engine. -->
+    <BaseCard padding="lg" class="space-y-3 text-center">
+      <p class="font-bold text-(--color-text)">دنبال یک سالن مطمئن می‌گردی؟</p>
+      <p class="text-sm text-(--color-text-muted)">سالن‌های تأییدشده نزدیک خودت را در آرایشگاه پیدا کن.</p>
+      <BaseButton block @click="navigateTo('/')">
+        <template #icon><BaseIcon name="search" :size="16" /></template>
+        پیدا کردن سالن نزدیک شما
+      </BaseButton>
+    </BaseCard>
   </article>
 </template>
 

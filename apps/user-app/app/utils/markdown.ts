@@ -21,6 +21,23 @@ md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
   return defaultLinkOpenRenderer(tokens, idx, options, env, self)
 }
 
+// The article page renders its own page-level <h1> (the post title) above this markdown
+// body, so a body that itself starts with `# Heading` would otherwise emit a second,
+// visually-near-identical <h1> -- breaking the SEO document outline and screen-reader
+// heading navigation. Demoting every rendered heading by one level (h1->h2 ... h6 stays
+// h6, never demoted past it) is the robust fix: it holds regardless of what any individual
+// post's markdown happens to contain, rather than relying on editorial discipline.
+// A core rule (not a renderer-rule override) so it applies uniformly to heading_open AND
+// heading_close tokens from one place. Pinned by test/unit/markdown.spec.ts.
+md.core.ruler.push('demote_headings', (state) => {
+  for (const token of state.tokens) {
+    if (token.type === 'heading_open' || token.type === 'heading_close') {
+      const level = Number(token.tag.slice(1))
+      token.tag = `h${Math.min(level + 1, 6)}`
+    }
+  }
+})
+
 export function renderMarkdown(src: string): string {
   return md.render(src)
 }

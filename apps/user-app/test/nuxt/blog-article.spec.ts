@@ -43,6 +43,10 @@ describe('blog article page', () => {
     wrapper?.unmount()
     wrapper = undefined
     clearNuxtData('blog-post-healthy-hair-tips')
+    // Same reasoning as the useAsyncData cache above: the rendered-markdown useState is also
+    // keyed by slug (`blog-post-body-${slug}`), so a same-slug-different-body test case (this
+    // file exercises that on purpose) would otherwise silently reuse the previous test's render.
+    clearNuxtState('blog-post-body-healthy-hair-tips')
   })
 
   afterEach(() => {
@@ -61,12 +65,34 @@ describe('blog article page', () => {
     expect(wrapper.text()).toContain('۱۴۰۵') // fa-IR calendar year for 2026-07-01
 
     const body = wrapper.get('.article-body').element.innerHTML
-    expect(body).toContain('<h2>شستشوی درست</h2>')
+    // Body markdown's `## شستشوی درست` is demoted by one level (h2 -> h3) since the page's
+    // own <h1> (the post title) already owns level 1 -- see markdown.ts's demote_headings rule.
+    expect(body).toContain('<h3>شستشوی درست</h3>')
     expect(body).toContain('&lt;script&gt;')
     expect(body).not.toContain('<script>')
 
     // Category chip links back to the filtered index.
     expect(wrapper.find('a[href="/blog?category=hair"]').exists()).toBe(true)
+
+    // Conversion bridge to salon discovery -- the article's only path back into the product.
+    expect(wrapper.text()).toContain('پیدا کردن سالن نزدیک شما')
+    expect(wrapper.find('a[href="/"]').exists()).toBe(false) // click-driven navigateTo, not a NuxtLink
+  })
+
+  it('demotes a body that starts with a top-level heading so the page never renders two <h1>s', async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/blog/posts/healthy-hair-tips') {
+        return { ...ARTICLE, bodyMarkdown: '# عنوان اصلی\n\nمتن مقاله' }
+      }
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    wrapper = await mountSuspended(BlogArticlePage)
+
+    // The page-level h1 is the post title; the body's own `# عنوان اصلی` must not produce
+    // a second <h1> anywhere in the rendered DOM.
+    expect(wrapper.findAll('h1')).toHaveLength(1)
+    expect(wrapper.get('h1').text()).toBe(ARTICLE.title)
+    expect(wrapper.get('.article-body').element.innerHTML).toContain('<h2>عنوان اصلی</h2>')
   })
 
   it('derives the description meta from the body when metaDescription and excerpt are both null', async () => {

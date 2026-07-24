@@ -2,8 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { renderMarkdown } from '../../app/utils/markdown'
 
 describe('renderMarkdown (html:false invariant)', () => {
-  it('renders markdown structure', () => {
-    expect(renderMarkdown('# عنوان')).toContain('<h1>عنوان</h1>')
+  // The article page ([slug].vue) renders its own page-level <h1> (the post title) above
+  // this markdown body, so every rendered heading is demoted by one level to avoid a
+  // duplicate <h1> -- see the comment on the `demote_headings` core rule in markdown.ts.
+  it('demotes a top-level heading so the body never emits its own <h1>', () => {
+    expect(renderMarkdown('# عنوان')).toContain('<h2>عنوان</h2>')
+  })
+
+  it('demotes nested heading levels by one, each capped at h6', () => {
+    expect(renderMarkdown('## دو')).toContain('<h3>دو</h3>')
+    expect(renderMarkdown('###### شش')).toContain('<h6>شش</h6>')
   })
 
   it('escapes a raw <script> payload instead of parsing it', () => {
