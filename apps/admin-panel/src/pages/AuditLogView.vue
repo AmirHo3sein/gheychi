@@ -2,8 +2,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
@@ -126,15 +128,13 @@ watch(page, load)
         </div>
         <div>
           <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">شناسه مدیر (UUID)</label>
-          <div class="relative">
-            <AppIcon name="search" :size="16" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-text-muted)" />
-            <input
-              v-model="actorFilter"
-              placeholder="شناسه کامل را وارد کنید"
-              class="w-52 rounded-xl border border-(--color-border) py-2 ps-9 pe-3 text-sm"
-              dir="ltr"
-            />
-          </div>
+          <AppInput
+            v-model="actorFilter"
+            icon="search"
+            placeholder="شناسه کامل را وارد کنید"
+            dir="ltr"
+            class="w-52"
+          />
         </div>
         <div>
           <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">بازه زمانی</label>
@@ -144,15 +144,15 @@ watch(page, load)
             <JalaliDatePicker v-model="toDate" placeholder="تا تاریخ" class="w-32" />
           </div>
         </div>
-        <button
+        <AppButton
           v-if="hasActiveFilters"
-          type="button"
-          class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-(--color-text-muted) transition-colors hover:text-(--tone-danger-text)"
+          variant="ghost"
+          class="mb-2"
           @click="clearFilters"
         >
-          <AppIcon name="reset" :size="15" />
+          <template #icon><AppIcon name="reset" :size="15" /></template>
           پاک کردن فیلترها
-        </button>
+        </AppButton>
       </div>
     </AppCard>
 
@@ -205,7 +205,7 @@ watch(page, load)
                 </summary>
                 <pre
                   dir="ltr"
-                  class="mt-1.5 max-h-40 max-w-64 overflow-x-auto overflow-y-auto rounded-lg bg-(--color-border-soft) p-2 text-left text-xs text-(--color-text-muted)"
+                  class="mt-1.5 max-h-40 max-w-64 overflow-x-auto overflow-y-auto rounded-2xl bg-(--color-border-soft) p-2 text-left text-xs text-(--color-text-muted)"
                 >{{ formatPayload(row.payload) }}</pre>
               </details>
               <span v-else class="text-(--color-text-muted)">—</span>

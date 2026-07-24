@@ -13,6 +13,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useApi } from '@/composables/useApi'
+import AppButton from '@/components/ui/AppButton.vue'
 
 const props = defineProps<{ referralId: string }>()
 
@@ -65,16 +66,16 @@ async function submit() {
 
 <template>
   <div>
-    <button
+    <AppButton
       v-if="!open"
       type="button"
+      variant="danger"
       data-testid="cancel-referral-button"
       :disabled="submitting"
-      class="inline-flex items-center gap-2 rounded-xl border border-(--tone-danger-text) px-3.5 py-2 text-sm font-semibold text-(--tone-danger-text) transition-colors hover:bg-(--tone-danger-bg) disabled:opacity-40"
       @click="openPanel"
     >
       لغو معرفی
-    </button>
+    </AppButton>
 
     <div v-else class="space-y-3">
       <label class="block text-sm font-semibold text-(--color-text)">دلیل لغو (الزامی)</label>
@@ -90,24 +91,24 @@ async function submit() {
         وارد کردن دلیل الزامی است.
       </p>
       <div class="flex gap-2.5">
-        <button
+        <AppButton
           type="button"
+          variant="danger"
           data-testid="cancel-referral-submit"
           :disabled="submitting"
-          class="rounded-xl bg-(--tone-danger-text) px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
           @click="submit"
         >
           ثبت لغو
-        </button>
-        <button
+        </AppButton>
+        <AppButton
           type="button"
+          variant="secondary"
           data-testid="cancel-referral-dismiss"
           :disabled="submitting"
-          class="rounded-xl border border-(--color-border) px-4 py-2.5 text-sm font-semibold text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) disabled:opacity-40"
           @click="collapse"
         >
           انصراف
-        </button>
+        </AppButton>
       </div>
     </div>
   </div>

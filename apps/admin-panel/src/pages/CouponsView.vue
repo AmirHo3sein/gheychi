@@ -2,8 +2,10 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useApi } from '@/composables/useApi'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 
@@ -169,46 +171,39 @@ onMounted(load)
       <form class="flex flex-wrap items-end gap-2.5" @submit.prevent="add">
         <div>
           <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">کد</label>
-          <input
-            v-model="newCode"
-            placeholder="مثلا SUMMER25"
-            maxlength="30"
-            class="w-36 rounded-xl border border-(--color-border) p-2.5 text-sm uppercase"
-          />
+          <AppInput v-model="newCode" placeholder="مثلا SUMMER25" :maxlength="30" class="w-36 uppercase" />
         </div>
         <div>
           <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">درصد تخفیف</label>
-          <input
-            v-model.number="newDiscountPercent"
+          <AppInput
+            :model-value="newDiscountPercent === null ? '' : String(newDiscountPercent)"
             type="number"
             min="1"
             max="100"
             placeholder="۱ تا ۱۰۰"
-            class="tnum w-24 rounded-xl border border-(--color-border) p-2.5 text-sm"
+            class="tnum w-24"
+            @update:model-value="(v) => (newDiscountPercent = v === '' ? null : Number(v))"
           />
         </div>
         <div>
           <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">تاریخ انقضا (اختیاری)</label>
-          <input v-model="newExpiresAt" type="date" class="tnum w-40 rounded-xl border border-(--color-border) p-2.5 text-sm" />
+          <AppInput v-model="newExpiresAt" type="date" class="tnum w-40" />
         </div>
         <div>
           <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">سقف تعداد استفاده (اختیاری)</label>
-          <input
-            v-model.number="newMaxRedemptions"
+          <AppInput
+            :model-value="newMaxRedemptions === null ? '' : String(newMaxRedemptions)"
             type="number"
             min="1"
             placeholder="نامحدود"
-            class="tnum w-32 rounded-xl border border-(--color-border) p-2.5 text-sm"
+            class="tnum w-32"
+            @update:model-value="(v) => (newMaxRedemptions = v === '' ? null : Number(v))"
           />
         </div>
-        <button
-          type="submit"
-          :disabled="submitting || !newCode.trim() || !newDiscountPercent"
-          class="inline-flex shrink-0 items-center gap-2 rounded-xl bg-(--color-accent) px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-        >
-          <AppIcon name="plus" :size="16" />
+        <AppButton type="submit" variant="primary" :disabled="submitting || !newCode.trim() || !newDiscountPercent">
+          <template #icon><AppIcon name="plus" :size="16" /></template>
           افزودن
-        </button>
+        </AppButton>
       </form>
     </AppCard>
 
@@ -238,24 +233,26 @@ onMounted(load)
 
               <template v-if="editingId === coupon.id">
                 <td class="px-5 py-3.5">
-                  <input
-                    v-model.number="editDiscountPercent"
+                  <AppInput
+                    :model-value="editDiscountPercent === null ? '' : String(editDiscountPercent)"
                     type="number"
                     min="1"
                     max="100"
-                    class="tnum w-20 rounded-lg border border-(--color-border) p-1.5 text-sm"
+                    class="tnum w-20"
+                    @update:model-value="(v) => (editDiscountPercent = v === '' ? null : Number(v))"
                   />
                 </td>
                 <td class="px-5 py-3.5">
-                  <input v-model="editExpiresAt" type="date" class="tnum w-36 rounded-lg border border-(--color-border) p-1.5 text-sm" />
+                  <AppInput v-model="editExpiresAt" type="date" class="tnum w-36" />
                 </td>
                 <td class="px-5 py-3.5">
-                  <input
-                    v-model.number="editMaxRedemptions"
+                  <AppInput
+                    :model-value="editMaxRedemptions === null ? '' : String(editMaxRedemptions)"
                     type="number"
                     min="1"
                     placeholder="نامحدود"
-                    class="tnum w-24 rounded-lg border border-(--color-border) p-1.5 text-sm"
+                    class="tnum w-24"
+                    @update:model-value="(v) => (editMaxRedemptions = v === '' ? null : Number(v))"
                   />
                 </td>
                 <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ coupon.redeemedCount }}</td>
@@ -263,22 +260,12 @@ onMounted(load)
                   <StatusBadge :label="coupon.isActive ? 'فعال' : 'غیرفعال'" :tone="coupon.isActive ? 'success' : 'neutral'" />
                 </td>
                 <td class="px-5 py-3.5">
-                  <button
-                    type="button"
-                    :disabled="submitting"
-                    class="shrink-0 text-sm font-semibold text-(--color-accent) disabled:opacity-40"
-                    @click="saveEdit"
-                  >
+                  <AppButton variant="primary" :disabled="submitting" @click="saveEdit">
                     ذخیره
-                  </button>
-                  <button
-                    type="button"
-                    :disabled="submitting"
-                    class="mr-3 shrink-0 text-sm font-semibold text-(--color-text-muted) disabled:opacity-40"
-                    @click="editingId = null"
-                  >
+                  </AppButton>
+                  <AppButton variant="ghost" class="mr-3" :disabled="submitting" @click="editingId = null">
                     انصراف
-                  </button>
+                  </AppButton>
                 </td>
               </template>
 
@@ -287,24 +274,12 @@ onMounted(load)
                   کد «{{ coupon.code }}» غیرفعال شود؟
                 </td>
                 <td class="px-5 py-3.5">
-                  <button
-                    data-testid="confirm-delete"
-                    type="button"
-                    :disabled="submitting"
-                    class="shrink-0 text-sm font-semibold text-(--tone-danger-text) disabled:opacity-40"
-                    @click="confirmDelete"
-                  >
+                  <AppButton data-testid="confirm-delete" variant="danger" :disabled="submitting" @click="confirmDelete">
                     حذف
-                  </button>
-                  <button
-                    data-testid="cancel-delete"
-                    type="button"
-                    :disabled="submitting"
-                    class="mr-3 shrink-0 text-sm font-semibold text-(--color-text-muted) disabled:opacity-40"
-                    @click="confirmingId = null"
-                  >
+                  </AppButton>
+                  <AppButton data-testid="cancel-delete" variant="ghost" class="mr-3" :disabled="submitting" @click="confirmingId = null">
                     انصراف
-                  </button>
+                  </AppButton>
                 </td>
               </template>
 
@@ -314,30 +289,26 @@ onMounted(load)
                 <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ coupon.maxRedemptions ?? 'نامحدود' }}</td>
                 <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ coupon.redeemedCount }}</td>
                 <td class="px-5 py-3.5">
-                  <button type="button" :disabled="submitting" class="disabled:opacity-40" title="تغییر وضعیت فعال/غیرفعال" @click="toggleActive(coupon)">
+                  <!-- Wraps a StatusBadge pill, not text/icon content -- AppButton's own padded
+                       chrome is neutralized (p-0) so this stays a tight click target around the
+                       badge rather than growing a visible button box around it. -->
+                  <AppButton variant="ghost" class="!p-0" :disabled="submitting" title="تغییر وضعیت فعال/غیرفعال" @click="toggleActive(coupon)">
                     <StatusBadge :label="coupon.isActive ? 'فعال' : 'غیرفعال'" :tone="coupon.isActive ? 'success' : 'neutral'" />
-                  </button>
+                  </AppButton>
                 </td>
                 <td class="px-5 py-3.5">
-                  <button
-                    type="button"
-                    :disabled="submitting"
-                    class="shrink-0 rounded-lg p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-accent) disabled:opacity-40"
-                    title="ویرایش"
-                    @click="startEdit(coupon)"
-                  >
-                    <AppIcon name="pencil" :size="15" />
-                  </button>
-                  <button
+                  <AppButton variant="secondary" :disabled="submitting" title="ویرایش" @click="startEdit(coupon)">
+                    <template #icon><AppIcon name="pencil" :size="15" /></template>
+                  </AppButton>
+                  <AppButton
                     data-testid="delete-coupon"
-                    type="button"
+                    variant="danger"
                     :disabled="submitting"
-                    class="shrink-0 rounded-lg p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text) disabled:opacity-40"
                     title="حذف"
                     @click="askDelete(coupon)"
                   >
-                    <AppIcon name="x" :size="15" />
-                  </button>
+                    <template #icon><AppIcon name="x" :size="15" /></template>
+                  </AppButton>
                 </td>
               </template>
             </tr>

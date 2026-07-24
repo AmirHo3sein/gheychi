@@ -151,7 +151,7 @@ watch(page, load)
             استوری گزارش‌شده
           </p>
           <template v-if="report.storyUrl">
-            <img :src="report.storyUrl" alt="" class="h-24 w-24 rounded-lg object-cover" />
+            <img :src="report.storyUrl" alt="" class="h-24 w-24 rounded-xl object-cover" />
             <p v-if="report.storyCaption" class="mt-2 text-sm text-(--color-text)">{{ report.storyCaption }}</p>
           </template>
           <p v-else class="text-sm text-(--color-text-muted)">منقضی شده</p>
@@ -163,7 +163,7 @@ watch(page, load)
             نمونه کار گزارش‌شده
           </p>
           <template v-if="report.portfolioItemUrl">
-            <img :src="report.portfolioItemUrl" alt="" class="h-24 w-24 rounded-lg object-cover" />
+            <img :src="report.portfolioItemUrl" alt="" class="h-24 w-24 rounded-xl object-cover" />
             <p v-if="report.portfolioItemCaption" class="mt-2 text-sm text-(--color-text)">{{ report.portfolioItemCaption }}</p>
           </template>
           <p v-else class="text-sm text-(--color-text-muted)">منقضی شده</p>

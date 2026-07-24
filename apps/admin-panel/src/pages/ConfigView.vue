@@ -3,7 +3,9 @@
 import { onMounted, ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 import { configKeyMeta } from '@/utils/labels'
 
 interface ConfigRow {
@@ -43,19 +45,19 @@ onMounted(load)
           <p v-if="configKeyMeta(row.key).hint" class="mt-0.5 text-xs text-(--color-text-muted)">{{ configKeyMeta(row.key).hint }}</p>
         </div>
         <div class="flex shrink-0 items-center gap-2">
-          <input v-model.number="row.value" type="number" class="tnum w-24 rounded-xl border border-(--color-border) p-2 text-left text-sm" />
+          <AppInput
+            :model-value="String(row.value)"
+            type="number"
+            class="tnum w-24 text-left"
+            @update:model-value="(v) => (row.value = Number(v))"
+          />
           <span v-if="configKeyMeta(row.key).unit" class="w-14 text-xs text-(--color-text-muted)">{{ configKeyMeta(row.key).unit }}</span>
         </div>
       </div>
     </AppCard>
 
-    <button
-      type="button"
-      :disabled="saving"
-      class="rounded-xl bg-(--color-accent) px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-      @click="save"
-    >
+    <AppButton variant="primary" :disabled="saving" @click="save">
       ذخیره تغییرات
-    </button>
+    </AppButton>
   </div>
 </template>

@@ -3,6 +3,7 @@
 import { ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppButton from '@/components/ui/AppButton.vue'
 
 const props = defineProps<{ reportId: string }>()
 
@@ -54,26 +55,26 @@ async function submit() {
 <template>
   <div>
     <div v-if="!showNoteFor" class="flex flex-wrap gap-2.5">
-      <button
+      <AppButton
         data-testid="resolve-button"
         type="button"
+        variant="primary"
         :disabled="submitting"
-        class="inline-flex items-center gap-2 rounded-xl bg-(--color-accent) px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
         @click="openNote('resolved')"
       >
-        <AppIcon name="check" :size="16" />
+        <template #icon><AppIcon name="check" :size="16" /></template>
         رسیدگی شد
-      </button>
-      <button
+      </AppButton>
+      <AppButton
         data-testid="dismiss-button"
         type="button"
+        variant="danger"
         :disabled="submitting"
-        class="inline-flex items-center gap-2 rounded-xl border border-(--tone-danger-text) px-4 py-2.5 text-sm font-semibold text-(--tone-danger-text) transition-colors hover:bg-(--tone-danger-bg) disabled:opacity-40"
         @click="openNote('dismissed')"
       >
-        <AppIcon name="x" :size="16" />
+        <template #icon><AppIcon name="x" :size="16" /></template>
         رد گزارش
-      </button>
+      </AppButton>
     </div>
 
     <div v-else class="space-y-3">
@@ -90,24 +91,24 @@ async function submit() {
         class="w-full rounded-xl border border-(--color-border) p-3 text-sm"
       />
       <div class="flex gap-2.5">
-        <button
+        <AppButton
           data-testid="submit-resolution"
           type="button"
+          variant="primary"
           :disabled="submitting"
-          class="rounded-xl bg-(--color-accent) px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
           @click="submit"
         >
           ثبت نهایی
-        </button>
-        <button
+        </AppButton>
+        <AppButton
           data-testid="cancel-resolution"
           type="button"
+          variant="secondary"
           :disabled="submitting"
-          class="rounded-xl border border-(--color-border) px-4 py-2.5 text-sm font-semibold text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft)"
           @click="collapse"
         >
           انصراف
-        </button>
+        </AppButton>
       </div>
     </div>
   </div>

@@ -3,6 +3,7 @@
 import { ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppButton from '@/components/ui/AppButton.vue'
 
 // Remove/restore toggle for one showcase row (story or portfolio item). Never a hard
 // delete -- moderation stays reversible and the row is retained as evidence; the
@@ -62,28 +63,28 @@ async function setStatus(status: 'published' | 'removed') {
 <template>
   <div>
     <div v-if="!showReason" class="flex flex-wrap gap-2.5">
-      <button
+      <AppButton
         v-if="status === 'published'"
         data-testid="remove-button"
         type="button"
+        variant="danger"
         :disabled="submitting"
-        class="inline-flex items-center gap-2 rounded-xl border border-(--tone-danger-text) px-4 py-2.5 text-sm font-semibold text-(--tone-danger-text) transition-colors hover:bg-(--tone-danger-bg) disabled:opacity-40"
         @click="openReason"
       >
-        <AppIcon name="x" :size="16" />
+        <template #icon><AppIcon name="x" :size="16" /></template>
         حذف
-      </button>
-      <button
+      </AppButton>
+      <AppButton
         v-else
         data-testid="restore-button"
         type="button"
+        variant="primary"
         :disabled="submitting"
-        class="inline-flex items-center gap-2 rounded-xl bg-(--color-accent) px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
         @click="setStatus('published')"
       >
-        <AppIcon name="reset" :size="16" />
+        <template #icon><AppIcon name="reset" :size="16" /></template>
         بازگردانی
-      </button>
+      </AppButton>
     </div>
 
     <div v-else class="space-y-3">
@@ -98,24 +99,24 @@ async function setStatus(status: 'published' | 'removed') {
         class="w-full rounded-xl border border-(--color-border) p-3 text-sm"
       />
       <div class="flex gap-2.5">
-        <button
+        <AppButton
           data-testid="remove-submit"
           type="button"
+          variant="danger"
           :disabled="submitting"
-          class="rounded-xl bg-(--tone-danger-text) px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
           @click="setStatus('removed')"
         >
           ثبت نهایی
-        </button>
-        <button
+        </AppButton>
+        <AppButton
           data-testid="remove-cancel"
           type="button"
+          variant="secondary"
           :disabled="submitting"
-          class="rounded-xl border border-(--color-border) px-4 py-2.5 text-sm font-semibold text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft)"
           @click="collapse"
         >
           انصراف
-        </button>
+        </AppButton>
       </div>
     </div>
   </div>

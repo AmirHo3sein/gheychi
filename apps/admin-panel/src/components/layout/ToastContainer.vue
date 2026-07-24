@@ -11,7 +11,7 @@ const { toasts } = useToast()
       v-for="toast in toasts"
       :key="toast.id"
       data-testid="toast"
-      class="w-full max-w-sm rounded-lg bg-(--color-text) px-4 py-3 text-sm text-white shadow-lg"
+      class="w-full max-w-sm rounded-xl bg-(--color-text) px-4 py-3 text-sm text-white shadow-lg"
     >
       {{ toast.message }}
     </div>

@@ -2,8 +2,10 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useApi } from '@/composables/useApi'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon, { type IconName } from '@/components/ui/AppIcon.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 
 interface Category {
   id: number
@@ -100,26 +102,14 @@ onMounted(load)
         افزودن دسته‌بندی جدید
       </p>
       <form class="flex gap-2.5" @submit.prevent="add">
-        <input
-          v-model="newIcon"
-          placeholder="کلید آیکون"
-          maxlength="20"
-          class="w-28 rounded-xl border border-(--color-border) p-2.5 text-sm"
-        />
-        <input
-          v-model="newName"
-          placeholder="نام دسته‌بندی"
-          maxlength="60"
-          class="flex-1 rounded-xl border border-(--color-border) p-2.5 text-sm"
-        />
-        <button
-          type="submit"
-          :disabled="submitting || !newName.trim()"
-          class="inline-flex shrink-0 items-center gap-2 rounded-xl bg-(--color-accent) px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-        >
-          <AppIcon name="plus" :size="16" />
+        <AppInput v-model="newIcon" placeholder="کلید آیکون" :maxlength="20" class="w-28" />
+        <div class="min-w-0 flex-1">
+          <AppInput v-model="newName" placeholder="نام دسته‌بندی" :maxlength="60" />
+        </div>
+        <AppButton type="submit" variant="primary" :disabled="submitting || !newName.trim()">
+          <template #icon><AppIcon name="plus" :size="16" /></template>
           افزودن
-        </button>
+        </AppButton>
       </form>
     </AppCard>
 
@@ -140,63 +130,35 @@ onMounted(load)
             <span class="min-w-0 flex-1 truncate text-sm font-semibold text-(--tone-danger-text)">
               «{{ category.name }}» حذف شود؟
             </span>
-            <button
-              data-testid="confirm-delete"
-              type="button"
-              :disabled="submitting"
-              class="shrink-0 text-sm font-semibold text-(--tone-danger-text) disabled:opacity-40"
-              @click="confirmDelete"
-            >
+            <AppButton data-testid="confirm-delete" variant="danger" :disabled="submitting" @click="confirmDelete">
               حذف
-            </button>
-            <button
-              data-testid="cancel-delete"
-              type="button"
-              :disabled="submitting"
-              class="shrink-0 text-sm font-semibold text-(--color-text-muted) disabled:opacity-40"
-              @click="confirmingId = null"
-            >
+            </AppButton>
+            <AppButton data-testid="cancel-delete" variant="ghost" :disabled="submitting" @click="confirmingId = null">
               انصراف
-            </button>
+            </AppButton>
           </template>
 
           <template v-else>
-            <input
-              v-if="editingId === category.id"
-              v-model="editName"
-              maxlength="60"
-              class="min-w-0 flex-1 rounded-lg border border-(--color-border) p-1.5 text-sm"
-            />
+            <div v-if="editingId === category.id" class="min-w-0 flex-1">
+              <AppInput v-model="editName" :maxlength="60" />
+            </div>
             <span v-else class="min-w-0 flex-1 truncate text-sm font-semibold text-(--color-text)">{{ category.name }}</span>
-            <button
-              v-if="editingId === category.id"
-              type="button"
-              :disabled="submitting"
-              class="shrink-0 text-sm font-semibold text-(--color-accent) disabled:opacity-40"
-              @click="saveEdit"
-            >
+            <AppButton v-if="editingId === category.id" variant="primary" :disabled="submitting" @click="saveEdit">
               ذخیره
-            </button>
+            </AppButton>
             <template v-else>
-              <button
-                type="button"
-                :disabled="submitting"
-                class="shrink-0 rounded-lg p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-accent) disabled:opacity-40"
-                title="ویرایش"
-                @click="startEdit(category)"
-              >
-                <AppIcon name="pencil" :size="15" />
-              </button>
-              <button
+              <AppButton variant="secondary" :disabled="submitting" title="ویرایش" @click="startEdit(category)">
+                <template #icon><AppIcon name="pencil" :size="15" /></template>
+              </AppButton>
+              <AppButton
                 data-testid="delete-category"
-                type="button"
+                variant="danger"
                 :disabled="submitting"
-                class="shrink-0 rounded-lg p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text) disabled:opacity-40"
                 title="حذف"
                 @click="askDelete(category)"
               >
-                <AppIcon name="x" :size="15" />
-              </button>
+                <template #icon><AppIcon name="x" :size="15" /></template>
+              </AppButton>
             </template>
           </template>
         </AppCard>

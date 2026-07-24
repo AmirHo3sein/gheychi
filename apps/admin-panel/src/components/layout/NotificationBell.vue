@@ -111,14 +111,14 @@ onUnmounted(() => {
       data-testid="notification-bell"
       type="button"
       title="اعلان‌ها"
-      class="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text)"
+      class="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text)"
       @click="toggle"
     >
       <AppIcon name="bell" :size="18" />
       <span
         v-if="count > 0"
         data-testid="unread-badge"
-        class="tnum absolute -left-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-(--tone-danger-text) px-1 text-[10px] font-bold text-white"
+        class="tnum absolute -end-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-(--tone-danger-text) px-1 text-[10px] font-bold text-white"
       >
         {{ count > 99 ? '۹۹+' : count }}
       </span>
@@ -127,7 +127,7 @@ onUnmounted(() => {
     <div
       v-if="open"
       data-testid="notification-dropdown"
-      class="absolute left-0 z-50 mt-1.5 w-80 rounded-2xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-md)"
+      class="absolute end-0 z-50 mt-1.5 w-80 rounded-2xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-md)"
     >
       <div class="flex items-center justify-between border-b border-(--color-border-soft) px-4 py-2.5">
         <p class="text-sm font-bold text-(--color-text)">اعلان‌ها</p>

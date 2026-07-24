@@ -3,8 +3,10 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import Pagination from '@/components/ui/Pagination.vue'
@@ -195,15 +197,10 @@ watch(page, load)
             <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">دسته‌بندی</label>
             <AppSelect v-model="categoryFilter" :options="categoryOptions" width="12rem" />
           </div>
-          <button
-            data-testid="new-post"
-            type="button"
-            class="ms-auto inline-flex items-center gap-2 rounded-xl bg-(--color-accent) px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-            @click="goToCreate"
-          >
-            <AppIcon name="plus" :size="16" />
+          <AppButton data-testid="new-post" variant="primary" class="ms-auto" @click="goToCreate">
+            <template #icon><AppIcon name="plus" :size="16" /></template>
             مطلب جدید
-          </button>
+          </AppButton>
         </div>
       </AppCard>
 
@@ -248,21 +245,17 @@ watch(page, load)
 
       <form class="mb-4 flex gap-2" @submit.prevent="addCategory">
         <!-- maxlength 60 = CreateBlogCategoryDto's @Length cap (blog_categories.name varchar(60)) -->
-        <input
-          v-model="newName"
-          data-testid="new-category-name"
-          placeholder="نام دسته‌بندی"
-          maxlength="60"
-          class="min-w-0 flex-1 rounded-xl border border-(--color-border) p-2.5 text-sm"
-        />
-        <button
-          data-testid="add-category"
-          type="submit"
-          :disabled="submitting || !newName.trim()"
-          class="inline-flex shrink-0 items-center rounded-xl bg-(--color-accent) px-3 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-        >
-          <AppIcon name="plus" :size="16" />
-        </button>
+        <div class="min-w-0 flex-1">
+          <AppInput
+            v-model="newName"
+            data-testid="new-category-name"
+            placeholder="نام دسته‌بندی"
+            :maxlength="60"
+          />
+        </div>
+        <AppButton data-testid="add-category" type="submit" variant="primary" :disabled="submitting || !newName.trim()">
+          <template #icon><AppIcon name="plus" :size="16" /></template>
+        </AppButton>
       </form>
 
       <div class="space-y-2">
@@ -275,66 +268,47 @@ watch(page, load)
             <span class="min-w-0 flex-1 truncate text-sm font-semibold text-(--tone-danger-text)">
               «{{ category.name }}» حذف شود؟
             </span>
-            <button
-              data-testid="confirm-delete-category"
-              type="button"
-              :disabled="submitting"
-              class="shrink-0 text-sm font-semibold text-(--tone-danger-text) disabled:opacity-40"
-              @click="confirmDelete"
-            >
+            <AppButton data-testid="confirm-delete-category" variant="danger" :disabled="submitting" @click="confirmDelete">
               حذف
-            </button>
-            <button
-              data-testid="cancel-delete-category"
-              type="button"
-              :disabled="submitting"
-              class="shrink-0 text-sm font-semibold text-(--color-text-muted) disabled:opacity-40"
-              @click="cancelDelete"
-            >
+            </AppButton>
+            <AppButton data-testid="cancel-delete-category" variant="ghost" :disabled="submitting" @click="cancelDelete">
               انصراف
-            </button>
+            </AppButton>
           </template>
 
           <template v-else>
-            <input
-              v-if="editingId === category.id"
-              v-model="editName"
-              data-testid="edit-category-name"
-              maxlength="60"
-              class="min-w-0 flex-1 rounded-lg border border-(--color-border) p-1.5 text-sm"
-            />
+            <div v-if="editingId === category.id" class="min-w-0 flex-1">
+              <AppInput v-model="editName" data-testid="edit-category-name" :maxlength="60" />
+            </div>
             <span v-else class="min-w-0 flex-1 truncate text-sm font-semibold text-(--color-text)">{{ category.name }}</span>
-            <button
+            <AppButton
               v-if="editingId === category.id"
               data-testid="save-category"
-              type="button"
+              variant="primary"
               :disabled="submitting"
-              class="shrink-0 text-sm font-semibold text-(--color-accent) disabled:opacity-40"
               @click="saveEdit"
             >
               ذخیره
-            </button>
+            </AppButton>
             <template v-else>
-              <button
+              <AppButton
                 data-testid="edit-category"
-                type="button"
+                variant="secondary"
                 :disabled="submitting"
-                class="shrink-0 rounded-lg p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-accent) disabled:opacity-40"
                 title="ویرایش"
                 @click="startEdit(category)"
               >
-                <AppIcon name="pencil" :size="15" />
-              </button>
-              <button
+                <template #icon><AppIcon name="pencil" :size="15" /></template>
+              </AppButton>
+              <AppButton
                 data-testid="delete-category"
-                type="button"
+                variant="danger"
                 :disabled="submitting"
-                class="shrink-0 rounded-lg p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text) disabled:opacity-40"
                 title="حذف"
                 @click="askDelete(category)"
               >
-                <AppIcon name="x" :size="15" />
-              </button>
+                <template #icon><AppIcon name="x" :size="15" /></template>
+              </AppButton>
             </template>
           </template>
         </div>

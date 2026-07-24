@@ -3,8 +3,10 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
 import SuspendUserButton from '@/components/users/SuspendUserButton.vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
@@ -84,20 +86,11 @@ watch([roleFilter, joinedFrom, joinedTo], load)
   <div class="space-y-5 p-8">
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
-        <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">شماره موبایل</label>
-          <div class="relative">
-            <AppIcon name="phone" :size="15" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-text-muted)" />
-            <input
-              v-model="phoneFilter"
-              placeholder="جست‌وجو…"
-              class="w-40 rounded-xl border border-(--color-border) py-2 ps-9 pe-3 text-sm"
-            />
-          </div>
+        <div class="w-40">
+          <AppInput v-model="phoneFilter" icon="phone" label="شماره موبایل" placeholder="جست‌وجو…" />
         </div>
-        <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">نام</label>
-          <input v-model="nameFilter" placeholder="همه" class="w-32 rounded-xl border border-(--color-border) p-2 text-sm" />
+        <div class="w-32">
+          <AppInput v-model="nameFilter" label="نام" placeholder="همه" />
         </div>
         <div>
           <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">نقش</label>
@@ -111,15 +104,12 @@ watch([roleFilter, joinedFrom, joinedTo], load)
             <JalaliDatePicker v-model="joinedTo" placeholder="تا تاریخ" class="w-32" />
           </div>
         </div>
-        <button
-          v-if="hasActiveFilters"
-          type="button"
-          class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-(--color-text-muted) transition-colors hover:text-(--tone-danger-text)"
-          @click="clearFilters"
-        >
-          <AppIcon name="reset" :size="15" />
+        <AppButton v-if="hasActiveFilters" type="button" variant="ghost" class="mb-2" @click="clearFilters">
+          <template #icon>
+            <AppIcon name="reset" :size="15" />
+          </template>
           پاک کردن فیلترها
-        </button>
+        </AppButton>
       </div>
     </AppCard>
 

@@ -173,7 +173,7 @@ async function verifyOtp() {
             :key="f.label"
             class="flex items-center gap-3 rounded-xl border border-(--color-border) bg-(--color-surface-card) px-4 py-3 text-right shadow-(--shadow-sm)"
           >
-            <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-(--tone-info-bg) text-(--color-accent)">
+            <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-(--tone-info-bg) text-(--color-accent)">
               <AppIcon :name="f.icon" :size="17" />
             </div>
             <span class="text-sm font-semibold text-(--color-text)">{{ f.label }}</span>

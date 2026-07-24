@@ -28,8 +28,10 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
 import ModerateWorkerRatingButton from '@/components/reviews/ModerateWorkerRatingButton.vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import Pagination from '@/components/ui/Pagination.vue'
@@ -113,30 +115,19 @@ watch(page, load)
   <div class="space-y-5 p-8">
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
-        <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">شناسه آرایشگاه</label>
-          <div class="relative">
-            <AppIcon name="search" :size="16" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-text-muted)" />
-            <input
-              v-model="salonIdFilter"
-              placeholder="جست‌وجو…"
-              class="w-52 rounded-xl border border-(--color-border) py-2 ps-9 pe-3 text-sm"
-            />
-          </div>
+        <div class="w-52">
+          <AppInput v-model="salonIdFilter" icon="search" label="شناسه آرایشگاه" placeholder="جست‌وجو…" />
         </div>
         <div>
           <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">وضعیت</label>
           <AppSelect v-model="statusFilter" :options="STATUS_OPTIONS" width="10rem" />
         </div>
-        <button
-          v-if="hasActiveFilters"
-          type="button"
-          class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-(--color-text-muted) transition-colors hover:text-(--tone-danger-text)"
-          @click="clearFilters"
-        >
-          <AppIcon name="reset" :size="15" />
+        <AppButton v-if="hasActiveFilters" type="button" variant="ghost" class="mb-2" @click="clearFilters">
+          <template #icon>
+            <AppIcon name="reset" :size="15" />
+          </template>
           پاک کردن فیلترها
-        </button>
+        </AppButton>
       </div>
     </AppCard>
 

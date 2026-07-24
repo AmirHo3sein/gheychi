@@ -12,8 +12,10 @@
 import { onMounted, ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import type { SelectOption } from '@/components/ui/AppSelect.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
@@ -127,7 +129,7 @@ onMounted(load)
               :class="row.enabled ? 'bg-(--color-accent)' : 'bg-(--color-border)'"
               @click="row.enabled = !row.enabled"
             >
-              <span class="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all" :class="row.enabled ? 'left-0.5' : 'right-0.5'" />
+              <span class="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all" :class="row.enabled ? 'end-0.5' : 'start-0.5'" />
             </button>
           </div>
         </div>
@@ -156,22 +158,24 @@ onMounted(load)
             <div class="flex items-end gap-2">
               <div class="flex-1">
                 <label class="mb-1.5 block text-xs text-(--color-text-muted)">مقدار ({{ rewardKindUnit(row.referrerRewardKind) }})</label>
-                <input
-                  v-model.number="row.referrerRewardValue"
+                <AppInput
+                  :model-value="String(row.referrerRewardValue)"
                   :data-testid="`referrer-value-${row.referralType}`"
                   type="number"
                   min="0"
-                  class="tnum w-full rounded-xl border border-(--color-border) p-2.5 text-sm"
+                  class="tnum"
+                  @update:model-value="(v) => (row.referrerRewardValue = Number(v))"
                 />
               </div>
               <div class="flex-1">
                 <label class="mb-1.5 block text-xs text-(--color-text-muted)">سقف (اختیاری)</label>
-                <input
-                  v-model.number="row.referrerRewardMax"
+                <AppInput
+                  :model-value="row.referrerRewardMax === null ? '' : String(row.referrerRewardMax)"
                   type="number"
                   min="0"
                   placeholder="نامحدود"
-                  class="tnum w-full rounded-xl border border-(--color-border) p-2.5 text-sm"
+                  class="tnum"
+                  @update:model-value="(v) => (row.referrerRewardMax = v === '' ? null : Number(v))"
                 />
               </div>
             </div>
@@ -186,22 +190,24 @@ onMounted(load)
             <div class="flex items-end gap-2">
               <div class="flex-1">
                 <label class="mb-1.5 block text-xs text-(--color-text-muted)">مقدار ({{ rewardKindUnit(row.referredRewardKind) }})</label>
-                <input
-                  v-model.number="row.referredRewardValue"
+                <AppInput
+                  :model-value="String(row.referredRewardValue)"
                   :data-testid="`referred-value-${row.referralType}`"
                   type="number"
                   min="0"
-                  class="tnum w-full rounded-xl border border-(--color-border) p-2.5 text-sm"
+                  class="tnum"
+                  @update:model-value="(v) => (row.referredRewardValue = Number(v))"
                 />
               </div>
               <div class="flex-1">
                 <label class="mb-1.5 block text-xs text-(--color-text-muted)">سقف (اختیاری)</label>
-                <input
-                  v-model.number="row.referredRewardMax"
+                <AppInput
+                  :model-value="row.referredRewardMax === null ? '' : String(row.referredRewardMax)"
                   type="number"
                   min="0"
                   placeholder="نامحدود"
-                  class="tnum w-full rounded-xl border border-(--color-border) p-2.5 text-sm"
+                  class="tnum"
+                  @update:model-value="(v) => (row.referredRewardMax = v === '' ? null : Number(v))"
                 />
               </div>
             </div>
@@ -215,45 +221,48 @@ onMounted(load)
           </div>
           <div>
             <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">مهلت انتظار اعطا (ساعت)</label>
-            <input
-              v-model.number="row.grantHoldbackHours"
+            <AppInput
+              :model-value="String(row.grantHoldbackHours)"
               type="number"
               min="0"
-              class="tnum w-full rounded-xl border border-(--color-border) p-2.5 text-sm"
+              class="tnum"
+              @update:model-value="(v) => (row.grantHoldbackHours = Number(v))"
             />
           </div>
           <div>
             <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">انقضا (روز، اختیاری)</label>
-            <input
-              v-model.number="row.expirationDays"
+            <AppInput
+              :model-value="row.expirationDays === null ? '' : String(row.expirationDays)"
               type="number"
               min="0"
               placeholder="هرگز"
-              class="tnum w-full rounded-xl border border-(--color-border) p-2.5 text-sm"
+              class="tnum"
+              @update:model-value="(v) => (row.expirationDays = v === '' ? null : Number(v))"
             />
           </div>
           <div>
             <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">سقف تعداد معرفی هر معرف (اختیاری)</label>
-            <input
-              v-model.number="row.maxReferralsPerReferrer"
+            <AppInput
+              :model-value="row.maxReferralsPerReferrer === null ? '' : String(row.maxReferralsPerReferrer)"
               type="number"
               min="0"
               placeholder="نامحدود"
-              class="tnum w-full rounded-xl border border-(--color-border) p-2.5 text-sm"
+              class="tnum"
+              @update:model-value="(v) => (row.maxReferralsPerReferrer = v === '' ? null : Number(v))"
             />
           </div>
         </div>
 
         <div class="mt-5 flex justify-end">
-          <button
+          <AppButton
             type="button"
             :data-testid="`save-${row.referralType}`"
             :disabled="savingType === row.referralType"
-            class="rounded-xl bg-(--color-accent) px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+            :loading="savingType === row.referralType"
             @click="save(row)"
           >
             ذخیره تغییرات
-          </button>
+          </AppButton>
         </div>
       </AppCard>
     </div>

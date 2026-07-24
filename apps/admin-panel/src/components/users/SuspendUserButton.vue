@@ -4,6 +4,7 @@ import { ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppButton from '@/components/ui/AppButton.vue'
 
 const props = defineProps<{
   userId: string
@@ -44,26 +45,26 @@ async function toggle() {
 </script>
 
 <template>
-  <button
+  <AppButton
     v-if="status === 'active'"
     data-testid="suspend-user"
     type="button"
+    variant="danger"
     :disabled="submitting"
-    class="inline-flex items-center gap-2 rounded-lg border border-(--tone-danger-text) px-3.5 py-2 text-sm font-semibold text-(--tone-danger-text) transition-colors hover:bg-(--tone-danger-bg) disabled:opacity-40"
     @click="toggle"
   >
-    <AppIcon name="lock" :size="14" />
+    <template #icon><AppIcon name="lock" :size="14" /></template>
     تعلیق
-  </button>
-  <button
+  </AppButton>
+  <AppButton
     v-else
     data-testid="unsuspend-user"
     type="button"
+    variant="primary"
     :disabled="submitting"
-    class="inline-flex items-center gap-2 rounded-lg bg-(--color-accent) px-3.5 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
     @click="toggle"
   >
-    <AppIcon name="check" :size="14" />
+    <template #icon><AppIcon name="check" :size="14" /></template>
     رفع تعلیق
-  </button>
+  </AppButton>
 </template>

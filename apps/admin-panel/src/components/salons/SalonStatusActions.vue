@@ -3,6 +3,7 @@
 import { ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppButton from '@/components/ui/AppButton.vue'
 
 const props = defineProps<{
   salonId: string
@@ -55,50 +56,50 @@ async function submitReason() {
 <template>
   <div>
     <div v-if="!showReasonFor" class="flex flex-wrap gap-2.5">
-      <button
+      <AppButton
         v-if="status === 'pending'"
         data-testid="approve-button"
         type="button"
+        variant="primary"
         :disabled="submitting"
-        class="inline-flex items-center gap-2 rounded-xl bg-(--color-accent) px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
         @click="approve"
       >
-        <AppIcon name="check" :size="16" />
+        <template #icon><AppIcon name="check" :size="16" /></template>
         تایید آرایشگاه
-      </button>
-      <button
+      </AppButton>
+      <AppButton
         v-if="status === 'pending'"
         data-testid="reject-button"
         type="button"
+        variant="danger"
         :disabled="submitting"
-        class="inline-flex items-center gap-2 rounded-xl border border-(--tone-danger-text) px-4 py-2.5 text-sm font-semibold text-(--tone-danger-text) transition-colors hover:bg-(--tone-danger-bg) disabled:opacity-40"
         @click="openReason('rejected')"
       >
-        <AppIcon name="x" :size="16" />
+        <template #icon><AppIcon name="x" :size="16" /></template>
         رد درخواست
-      </button>
-      <button
+      </AppButton>
+      <AppButton
         v-if="status === 'approved'"
         data-testid="suspend-button"
         type="button"
+        variant="danger"
         :disabled="submitting"
-        class="inline-flex items-center gap-2 rounded-xl border border-(--tone-danger-text) px-4 py-2.5 text-sm font-semibold text-(--tone-danger-text) transition-colors hover:bg-(--tone-danger-bg) disabled:opacity-40"
         @click="openReason('suspended')"
       >
-        <AppIcon name="warning" :size="16" />
+        <template #icon><AppIcon name="warning" :size="16" /></template>
         تعلیق آرایشگاه
-      </button>
-      <button
+      </AppButton>
+      <AppButton
         v-if="status === 'suspended'"
         data-testid="reapprove-button"
         type="button"
+        variant="primary"
         :disabled="submitting"
-        class="inline-flex items-center gap-2 rounded-xl bg-(--color-accent) px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
         @click="approve"
       >
-        <AppIcon name="check" :size="16" />
+        <template #icon><AppIcon name="check" :size="16" /></template>
         رفع تعلیق و تایید مجدد
-      </button>
+      </AppButton>
       <p v-if="status === 'rejected'" class="text-sm text-(--color-text-muted)">
         اقدامی برای این وضعیت لازم نیست.
       </p>
@@ -117,23 +118,23 @@ async function submitReason() {
       />
       <p v-if="reasonError" data-testid="reason-error" class="text-sm text-(--tone-danger-text)">وارد کردن دلیل الزامی است.</p>
       <div class="flex gap-2.5">
-        <button
+        <AppButton
           data-testid="reject-submit"
           type="button"
+          variant="danger"
           :disabled="submitting"
-          class="rounded-xl bg-(--tone-danger-text) px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
           @click="submitReason"
         >
           ثبت نهایی
-        </button>
-        <button
+        </AppButton>
+        <AppButton
           type="button"
+          variant="secondary"
           :disabled="submitting"
-          class="rounded-xl border border-(--color-border) px-4 py-2.5 text-sm font-semibold text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft)"
           @click="showReasonFor = null"
         >
           انصراف
-        </button>
+        </AppButton>
       </div>
     </div>
   </div>

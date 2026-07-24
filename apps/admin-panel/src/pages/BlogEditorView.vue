@@ -4,8 +4,10 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
@@ -247,65 +249,47 @@ async function removeCover() {
         <div class="flex items-center gap-2">
           <template v-if="confirmingDelete">
             <span class="text-sm font-semibold text-(--tone-danger-text)">مطلب حذف شود؟</span>
-            <button
-              data-testid="confirm-delete"
-              type="button"
-              :disabled="submitting"
-              class="rounded-lg bg-(--tone-danger-bg) px-3 py-1.5 text-sm font-semibold text-(--tone-danger-text) disabled:opacity-40"
-              @click="confirmDelete"
-            >
+            <AppButton data-testid="confirm-delete" variant="danger" :disabled="submitting" @click="confirmDelete">
               حذف
-            </button>
-            <button
-              data-testid="cancel-delete"
-              type="button"
-              :disabled="submitting"
-              class="px-2 text-sm font-semibold text-(--color-text-muted) disabled:opacity-40"
-              @click="cancelDelete"
-            >
+            </AppButton>
+            <AppButton data-testid="cancel-delete" variant="ghost" :disabled="submitting" @click="cancelDelete">
               انصراف
-            </button>
+            </AppButton>
           </template>
           <template v-else>
-            <button
-              data-testid="save-button"
-              type="button"
-              :disabled="submitting"
-              class="rounded-lg bg-(--color-accent) px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
-              @click="save"
-            >
+            <AppButton data-testid="save-button" variant="primary" :disabled="submitting" @click="save">
               ذخیره
-            </button>
-            <button
+            </AppButton>
+            <!-- No "success" variant exists on AppButton -- publish/unpublish are non-destructive
+                 state transitions with no clean match among primary/secondary/ghost/danger, so
+                 they map to secondary rather than borrowing primary's accent (reserved for save). -->
+            <AppButton
               v-if="post?.status === 'draft'"
               data-testid="publish-button"
-              type="button"
+              variant="secondary"
               :disabled="submitting"
-              class="rounded-lg bg-(--tone-success-bg) px-4 py-1.5 text-sm font-semibold text-(--tone-success-text) disabled:opacity-40"
               @click="publish"
             >
               انتشار
-            </button>
-            <button
+            </AppButton>
+            <AppButton
               v-if="post?.status === 'published'"
               data-testid="unpublish-button"
-              type="button"
+              variant="secondary"
               :disabled="submitting"
-              class="rounded-lg bg-(--tone-warning-bg) px-4 py-1.5 text-sm font-semibold text-(--tone-warning-text) disabled:opacity-40"
               @click="unpublish"
             >
               لغو انتشار
-            </button>
-            <button
+            </AppButton>
+            <AppButton
               v-if="!isCreate"
               data-testid="delete-button"
-              type="button"
+              variant="danger"
               :disabled="submitting"
-              class="rounded-lg px-3 py-1.5 text-sm font-semibold text-(--tone-danger-text) disabled:opacity-40"
               @click="askDelete"
             >
               حذف
-            </button>
+            </AppButton>
           </template>
         </div>
       </div>
@@ -315,24 +299,22 @@ async function removeCover() {
           <AppCard class="space-y-4">
             <div>
               <label class="mb-1 block text-xs text-(--color-text-muted)" for="post-title">عنوان</label>
-              <input
+              <AppInput
                 id="post-title"
                 v-model="title"
                 data-testid="title-input"
-                maxlength="200"
-                class="w-full rounded-lg border border-(--color-border) p-2 text-sm"
+                :maxlength="200"
               />
             </div>
 
             <div>
               <label class="mb-1 block text-xs text-(--color-text-muted)" for="post-slug">نامک</label>
-              <input
+              <AppInput
                 id="post-slug"
                 v-model="slug"
                 data-testid="slug-input"
-                maxlength="220"
+                :maxlength="220"
                 dir="ltr"
-                class="w-full rounded-lg border border-(--color-border) p-2 text-left text-sm"
                 @input="onSlugInput"
               />
               <p v-if="slugError" data-testid="slug-error" class="mt-1 text-xs text-(--tone-danger-text)">
@@ -353,12 +335,11 @@ async function removeCover() {
               </div>
               <div>
                 <label class="mb-1 block text-xs text-(--color-text-muted)" for="post-author">نویسنده</label>
-                <input
+                <AppInput
                   id="post-author"
                   v-model="authorName"
                   data-testid="author-input"
-                  maxlength="80"
-                  class="w-full rounded-lg border border-(--color-border) p-2 text-sm"
+                  :maxlength="80"
                 />
               </div>
             </div>
@@ -375,7 +356,7 @@ async function removeCover() {
                 data-testid="excerpt-input"
                 maxlength="500"
                 rows="3"
-                class="w-full rounded-lg border border-(--color-border) p-2 text-sm"
+                class="w-full rounded-xl border border-(--color-border) p-2 text-sm"
               />
             </div>
 
@@ -402,18 +383,17 @@ async function removeCover() {
                     data-testid="meta-description-input"
                     maxlength="300"
                     rows="3"
-                    class="w-full rounded-lg border border-(--color-border) p-2 text-sm"
+                    class="w-full rounded-xl border border-(--color-border) p-2 text-sm"
                   />
                 </div>
                 <div>
                   <label class="mb-1 block text-xs text-(--color-text-muted)" for="post-og-title">عنوان اشتراک‌گذاری (og:title)</label>
                   <!-- maxlength matches the blog DTO's ogTitle cap (varchar(200) / @Length(0, 200)) -->
-                  <input
+                  <AppInput
                     id="post-og-title"
                     v-model="ogTitle"
                     data-testid="og-title-input"
-                    maxlength="200"
-                    class="w-full rounded-lg border border-(--color-border) p-2 text-sm"
+                    :maxlength="200"
                   />
                 </div>
               </div>
@@ -428,7 +408,7 @@ async function removeCover() {
                 class="h-40 w-full rounded-xl object-cover"
               />
               <div class="flex items-center gap-3">
-                <label class="cursor-pointer rounded-lg bg-(--color-border-soft) px-3 py-1.5 text-sm font-semibold text-(--color-accent)">
+                <label class="cursor-pointer rounded-xl bg-(--color-border-soft) px-3 py-1.5 text-sm font-semibold text-(--color-accent)">
                   {{ post?.coverImageUrl ? 'تعویض کاور' : 'بارگذاری کاور' }}
                   <input
                     data-testid="cover-input"
@@ -439,16 +419,15 @@ async function removeCover() {
                     @change="onCoverChange"
                   />
                 </label>
-                <button
+                <AppButton
                   v-if="post?.coverImageUrl"
                   data-testid="remove-cover"
-                  type="button"
+                  variant="danger"
                   :disabled="submitting"
-                  class="text-sm font-semibold text-(--tone-danger-text) disabled:opacity-40"
                   @click="removeCover"
                 >
                   حذف کاور
-                </button>
+                </AppButton>
               </div>
             </div>
             <p v-else class="text-xs text-(--color-text-muted)">برای بارگذاری کاور، ابتدا پیش‌نویس را ذخیره کنید.</p>
@@ -461,7 +440,7 @@ async function removeCover() {
                 data-testid="body-input"
                 rows="18"
                 dir="auto"
-                class="w-full rounded-lg border border-(--color-border) p-2 font-mono text-sm leading-6"
+                class="w-full rounded-xl border border-(--color-border) p-2 font-mono text-sm leading-6"
               />
             </div>
           </AppCard>

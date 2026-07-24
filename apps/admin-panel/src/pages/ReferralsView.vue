@@ -20,8 +20,10 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
 import CancelReferralAction from '@/components/referrals/CancelReferralAction.vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import Pagination from '@/components/ui/Pagination.vue'
@@ -202,15 +204,13 @@ watch(page, load)
       <div class="flex flex-wrap items-end gap-3">
         <div>
           <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">شماره موبایل معرف</label>
-          <div class="relative">
-            <AppIcon name="phone" :size="15" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-text-muted)" />
-            <input
-              v-model="referrerPhoneFilter"
-              data-testid="referrer-phone-filter"
-              placeholder="جست‌وجو…"
-              class="w-44 rounded-xl border border-(--color-border) py-2 ps-9 pe-3 text-sm"
-            />
-          </div>
+          <AppInput
+            v-model="referrerPhoneFilter"
+            icon="phone"
+            data-testid="referrer-phone-filter"
+            placeholder="جست‌وجو…"
+            class="w-44"
+          />
         </div>
 
         <div>
@@ -223,15 +223,16 @@ watch(page, load)
           <AppSelect v-model="typeFilter" :options="TYPE_OPTIONS" width="10rem" />
         </div>
 
-        <button
+        <AppButton
           v-if="hasActiveFilters"
           type="button"
-          class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-(--color-text-muted) transition-colors hover:text-(--tone-danger-text)"
+          variant="ghost"
+          class="mb-2"
           @click="clearFilters"
         >
-          <AppIcon name="reset" :size="15" />
+          <template #icon><AppIcon name="reset" :size="15" /></template>
           پاک کردن فیلترها
-        </button>
+        </AppButton>
       </div>
     </AppCard>
 
@@ -273,7 +274,7 @@ watch(page, load)
                   >
                     نمایش
                   </summary>
-                  <div class="tnum mt-1.5 max-w-96 space-y-3 rounded-lg bg-(--color-border-soft) p-2.5 text-xs text-(--color-text)">
+                  <div class="tnum mt-1.5 max-w-96 space-y-3 rounded-xl bg-(--color-border-soft) p-2.5 text-xs text-(--color-text)">
                     <ul class="space-y-1">
                       <li><span class="text-(--color-text-muted)">شناسه:</span> {{ referral.id.slice(0, 8) }}…</li>
                       <li><span class="text-(--color-text-muted)">رویداد شرط:</span> {{ qualifyingEventLabel(referral.qualifyingEvent) }}</li>

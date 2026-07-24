@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import SalonStatusActions from '@/components/salons/SalonStatusActions.vue'
 import ShowcaseStatusActions from '@/components/salons/ShowcaseStatusActions.vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
@@ -120,17 +121,16 @@ onMounted(load)
     <template v-else-if="salon">
       <AppCard :padded="false" class="p-2">
         <div class="flex flex-wrap gap-1.5">
-          <button
+          <AppButton
             v-for="tab in TABS"
             :key="tab.key"
             :data-testid="`tab-${tab.key}`"
             type="button"
-            class="rounded-xl px-4 py-2 text-sm font-semibold transition-colors"
-            :class="activeTab === tab.key ? 'bg-(--color-accent) text-white' : 'text-(--color-text-muted) hover:bg-(--color-border-soft)'"
+            :variant="activeTab === tab.key ? 'primary' : 'ghost'"
             @click="selectTab(tab.key)"
           >
             {{ tab.label }}
-          </button>
+          </AppButton>
         </div>
       </AppCard>
 

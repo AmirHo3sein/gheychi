@@ -18,8 +18,10 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
 import AdjustBalanceCard from '@/components/wallet/AdjustBalanceCard.vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
@@ -175,15 +177,14 @@ watch(page, load)
       <div class="flex flex-wrap items-end gap-3">
         <div class="relative">
           <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">شماره موبایل کاربر</label>
-          <div v-if="!selectedUser" class="relative">
-            <AppIcon name="phone" :size="15" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-text-muted)" />
-            <input
-              v-model="phoneQuery"
-              data-testid="wallet-phone-filter"
-              placeholder="جست‌وجو…"
-              class="w-44 rounded-xl border border-(--color-border) py-2 ps-9 pe-3 text-sm"
-            />
-          </div>
+          <AppInput
+            v-if="!selectedUser"
+            v-model="phoneQuery"
+            icon="phone"
+            data-testid="wallet-phone-filter"
+            placeholder="جست‌وجو…"
+            class="w-44"
+          />
           <div
             v-else
             data-testid="wallet-selected-user"
@@ -206,7 +207,7 @@ watch(page, load)
           <div
             v-if="matches.length > 0"
             data-testid="wallet-user-matches"
-            class="absolute right-0 top-full z-10 mt-1 w-64 overflow-hidden rounded-xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-md)"
+            class="absolute start-0 top-full z-10 mt-1 w-64 overflow-hidden rounded-xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-md)"
           >
             <button
               v-for="user in matches"
@@ -235,15 +236,16 @@ watch(page, load)
           </div>
         </div>
 
-        <button
+        <AppButton
           v-if="hasActiveFilters"
           type="button"
-          class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-(--color-text-muted) transition-colors hover:text-(--tone-danger-text)"
+          variant="ghost"
+          class="mb-2"
           @click="clearFilters"
         >
-          <AppIcon name="reset" :size="15" />
+          <template #icon><AppIcon name="reset" :size="15" /></template>
           پاک کردن فیلترها
-        </button>
+        </AppButton>
       </div>
     </AppCard>
 
