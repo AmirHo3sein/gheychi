@@ -2,6 +2,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useApi } from '@/composables/useApi'
+import AppInput from '../ui/AppInput.vue'
+import AppButton from '../ui/AppButton.vue'
 
 const model = defineModel<{ categoryId: number | null; name: string; price: number; durationMin: number }>({
   required: true,
@@ -27,14 +29,13 @@ onMounted(loadCategories)
 <template>
   <div v-if="loadError" class="space-y-3 rounded-xl border border-dashed border-(--color-border) p-4 text-center">
     <p class="text-sm text-(--tone-danger-text)">دسته‌بندی‌ها بارگذاری نشد.</p>
-    <button
-      type="button"
+    <AppButton
+      variant="secondary"
       data-testid="retry-categories"
-      class="rounded-xl border border-(--color-border) px-4 py-2 text-sm font-semibold text-(--color-text) hover:bg-(--color-border-soft)"
       @click="loadCategories"
     >
       تلاش دوباره
-    </button>
+    </AppButton>
   </div>
   <div v-else class="space-y-4">
     <div>
@@ -48,37 +49,32 @@ onMounted(loadCategories)
         <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
       </select>
     </div>
-    <div>
-      <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">نام خدمت</label>
-      <input
-        v-model="model.name"
-        data-testid="service-name"
-        placeholder="مثلاً کوتاهی مو زنانه"
-        class="w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-3 text-sm"
-      />
-    </div>
+    <AppInput
+      v-model="model.name"
+      label="نام خدمت"
+      data-testid="service-name"
+      placeholder="مثلاً کوتاهی مو زنانه"
+    />
     <div class="grid grid-cols-2 gap-3">
-      <div>
-        <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">قیمت (تومان)</label>
-        <input
-          v-model.number="model.price"
-          data-testid="service-price"
-          type="number"
-          min="0"
-          class="tnum w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-3 text-sm"
-        />
-      </div>
-      <div>
-        <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">مدت زمان (دقیقه)</label>
-        <input
-          v-model.number="model.durationMin"
-          data-testid="service-duration"
-          type="number"
-          min="5"
-          max="600"
-          class="tnum w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-3 text-sm"
-        />
-      </div>
+      <AppInput
+        :model-value="String(model.price)"
+        label="قیمت (تومان)"
+        data-testid="service-price"
+        type="number"
+        min="0"
+        class="tnum"
+        @update:model-value="model.price = Number($event)"
+      />
+      <AppInput
+        :model-value="String(model.durationMin)"
+        label="مدت زمان (دقیقه)"
+        data-testid="service-duration"
+        type="number"
+        min="5"
+        max="600"
+        class="tnum"
+        @update:model-value="model.durationMin = Number($event)"
+      />
     </div>
   </div>
 </template>

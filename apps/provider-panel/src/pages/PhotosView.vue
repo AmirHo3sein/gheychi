@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import PhotoUploader from '@/components/photos/PhotoUploader.vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useApi } from '@/composables/useApi'
@@ -48,28 +49,23 @@ async function removePhoto(id: string) {
     <EmptyState v-if="!loading && photos.length === 0" icon="photos" message="هنوز تصویری بارگذاری نشده است." />
 
     <div v-else class="grid grid-cols-2 gap-3">
-      <div v-for="p in photos" :key="p.id" class="overflow-hidden rounded-2xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-panel)">
+      <div v-for="p in photos" :key="p.id" class="overflow-hidden rounded-2xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-sm)">
         <div class="relative aspect-square w-full">
           <img :src="p.url" class="h-full w-full object-cover" />
           <span
             v-if="p.isCover"
-            class="absolute right-2 top-2 rounded-full bg-(--color-accent) px-2 py-0.5 text-[10px] font-bold text-white shadow-(--shadow-panel)"
+            class="absolute end-2 top-2 rounded-full bg-(--color-accent) px-2 py-0.5 text-[10px] font-bold text-white shadow-(--shadow-sm)"
           >
             عکس اصلی
           </span>
         </div>
         <div class="flex items-center justify-between p-2">
-          <button
-            type="button"
-            :disabled="p.isCover"
-            class="text-xs font-semibold text-(--color-accent) disabled:text-(--color-muted)"
-            @click="setCover(p.id)"
-          >
+          <AppButton type="button" variant="ghost" :disabled="p.isCover" @click="setCover(p.id)">
             {{ p.isCover ? 'انتخاب شده' : 'انتخاب به‌عنوان اصلی' }}
-          </button>
-          <button type="button" class="text-(--tone-danger-text)" @click="removePhoto(p.id)">
-            <AppIcon name="trash" :size="15" />
-          </button>
+          </AppButton>
+          <AppButton type="button" variant="danger" @click="removePhoto(p.id)">
+            <template #icon><AppIcon name="trash" :size="15" /></template>
+          </AppButton>
         </div>
       </div>
     </div>

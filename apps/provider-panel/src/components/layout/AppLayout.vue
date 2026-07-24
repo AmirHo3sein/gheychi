@@ -28,7 +28,7 @@ async function logout() {
 <template>
   <div class="min-h-screen bg-(--color-surface) pb-20">
     <header class="sticky top-0 z-30 flex items-center gap-3 border-b border-(--color-border) bg-(--color-surface-card)/90 px-4 py-3 backdrop-blur">
-      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-(--color-accent) font-black text-white shadow-(--shadow-panel)">
+      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-(--color-accent) font-black text-white shadow-(--shadow-sm)">
         آ
       </div>
       <p class="min-w-0 truncate text-sm font-bold text-(--color-text)">{{ salon?.name ?? 'پنل مدیریت آرایشگاه' }}</p>
@@ -37,7 +37,7 @@ async function logout() {
         <button
           type="button"
           :title="isDark ? 'حالت روشن' : 'حالت تیره'"
-          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-(--color-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text)"
+          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text)"
           @click="toggleTheme"
         >
           <AppIcon :name="isDark ? 'sun' : 'moon'" :size="18" />
@@ -45,7 +45,7 @@ async function logout() {
         <button
           type="button"
           title="خروج"
-          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-(--color-muted) transition-colors hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text)"
+          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-(--color-text-muted) transition-colors hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text)"
           @click="logout"
         >
           <AppIcon name="logout" :size="18" />

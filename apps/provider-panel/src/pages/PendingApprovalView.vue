@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { useSalon } from '@/composables/useSalon'
 import { useApi } from '@/composables/useApi'
@@ -26,15 +27,9 @@ async function resubmit() {
       {{ salon.rejectionReason }}
     </p>
     <RouterLink to="/settings" class="text-sm font-semibold text-(--color-accent) hover:underline">ویرایش اطلاعات آرایشگاه</RouterLink>
-    <button
-      data-testid="resubmit-button"
-      type="button"
-      :disabled="submitting"
-      class="w-full rounded-xl bg-(--color-accent) py-3 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-      @click="resubmit"
-    >
+    <AppButton data-testid="resubmit-button" type="button" block :disabled="submitting" :loading="submitting" @click="resubmit">
       {{ submitting ? 'در حال ارسال…' : 'ارسال مجدد برای بررسی' }}
-    </button>
+    </AppButton>
   </div>
 
   <div v-else class="mx-auto flex min-h-screen max-w-sm flex-col items-center justify-center gap-4 p-6 text-center">
@@ -47,20 +42,15 @@ async function resubmit() {
     <h1 class="text-lg font-bold text-(--color-text)">
       {{ salon?.status === 'suspended' ? 'آرایشگاه شما معلق شده است' : 'آرایشگاه شما در حال بررسی است' }}
     </h1>
-    <p class="text-sm text-(--color-muted)">
+    <p class="text-sm text-(--color-text-muted)">
       {{
         salon?.status === 'suspended'
           ? 'برای اطلاعات بیشتر با پشتیبانی تماس بگیرید.'
           : 'به محض تایید توسط تیم آرایشگاه، به شما اطلاع داده می‌شود.'
       }}
     </p>
-    <button
-      data-testid="refresh-status"
-      type="button"
-      class="rounded-xl border border-(--color-border) px-5 py-2.5 text-sm font-semibold text-(--color-text) hover:bg-(--color-border-soft)"
-      @click="refetch"
-    >
+    <AppButton data-testid="refresh-status" type="button" variant="secondary" @click="refetch">
       بررسی وضعیت
-    </button>
+    </AppButton>
   </div>
 </template>

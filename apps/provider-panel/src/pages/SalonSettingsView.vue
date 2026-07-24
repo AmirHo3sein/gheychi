@@ -4,7 +4,9 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import SalonInfoStep from '@/components/onboarding/SalonInfoStep.vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 
 const { apiFetch } = useApi()
 const { push: pushToast } = useToast()
@@ -116,31 +118,30 @@ onMounted(load)
 <template>
   <div v-if="loaded" class="space-y-4 p-4">
     <h1 class="text-lg font-bold text-(--color-text)">تنظیمات آرایشگاه</h1>
-    <div class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-5 shadow-(--shadow-panel)">
+    <div class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-5 shadow-(--shadow-sm)">
       <SalonInfoStep v-model="form" />
     </div>
 
-    <div class="space-y-4 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-5 shadow-(--shadow-panel)">
+    <div class="space-y-4 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-5 shadow-(--shadow-sm)">
       <h2 class="font-bold text-(--color-text)">پروفایل عمومی</h2>
 
       <div>
         <div class="mb-1.5 flex items-center justify-between">
           <label class="block text-sm font-semibold text-(--color-text)">شعار سالن</label>
-          <span class="tnum text-xs text-(--color-muted)">{{ form.tagline.length.toLocaleString('fa-IR') }}/۱۲۰</span>
+          <span class="tnum text-xs text-(--color-text-muted)">{{ form.tagline.length.toLocaleString('fa-IR') }}/۱۲۰</span>
         </div>
-        <input
+        <AppInput
           v-model="form.tagline"
           data-testid="tagline"
-          maxlength="120"
+          :maxlength="120"
           placeholder="مثلاً زیبایی شما، تخصص ما"
-          class="w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-3 text-sm"
         />
       </div>
 
       <div>
         <div class="mb-1.5 flex items-center justify-between">
           <label class="block text-sm font-semibold text-(--color-text)">درباره سالن</label>
-          <span class="tnum text-xs text-(--color-muted)">{{ form.about.length.toLocaleString('fa-IR') }}/۲۰۰۰</span>
+          <span class="tnum text-xs text-(--color-text-muted)">{{ form.about.length.toLocaleString('fa-IR') }}/۲۰۰۰</span>
         </div>
         <textarea
           v-model="form.about"
@@ -150,13 +151,13 @@ onMounted(load)
           placeholder="داستان سالن، تخصص‌ها و هر چیزی که مشتری باید بداند"
           class="w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-3 text-sm"
         />
-        <p class="mt-1 text-xs text-(--color-muted)">شکست خط‌ها همان‌طور که می‌نویسید در صفحه عمومی نمایش داده می‌شوند.</p>
+        <p class="mt-1 text-xs text-(--color-text-muted)">شکست خط‌ها همان‌طور که می‌نویسید در صفحه عمومی نمایش داده می‌شوند.</p>
       </div>
 
       <div>
         <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">آیدی اینستاگرام</label>
         <div dir="ltr" class="flex items-center overflow-hidden rounded-xl border border-(--color-border) bg-(--color-surface-card)">
-          <span class="select-none border-e border-(--color-border) bg-(--color-border-soft) p-3 text-sm text-(--color-muted)">instagram.com/</span>
+          <span class="select-none border-e border-(--color-border) bg-(--color-border-soft) p-3 text-sm text-(--color-text-muted)">instagram.com/</span>
           <input
             v-model="form.instagramHandle"
             data-testid="instagram-handle"
@@ -181,21 +182,23 @@ onMounted(load)
         data-testid="profile-preview"
         class="rounded-xl border border-dashed border-(--color-border) bg-(--color-surface) p-3"
       >
-        <p class="mb-2 text-xs font-semibold text-(--color-muted)">پیش‌نمایش صفحه عمومی</p>
-        <p v-if="form.tagline.trim()" class="text-sm text-(--color-muted)">{{ form.tagline.trim() }}</p>
+        <p class="mb-2 text-xs font-semibold text-(--color-text-muted)">پیش‌نمایش صفحه عمومی</p>
+        <p v-if="form.tagline.trim()" class="text-sm text-(--color-text-muted)">{{ form.tagline.trim() }}</p>
         <p v-if="form.about.trim()" class="mt-1 whitespace-pre-line text-sm text-(--color-text)">{{ aboutExcerpt }}</p>
       </div>
     </div>
 
-    <button
+    <AppButton
       data-testid="save-button"
       type="button"
-      :disabled="saving || !isFormValid"
-      class="flex w-full items-center justify-center gap-2 rounded-xl bg-(--color-accent) py-3 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+      variant="primary"
+      block
+      :loading="saving"
+      :disabled="!isFormValid"
       @click="save"
     >
-      <AppIcon name="check" :size="16" />
+      <template #icon><AppIcon name="check" :size="16" /></template>
       {{ saving ? 'در حال ذخیره…' : 'ذخیره' }}
-    </button>
+    </AppButton>
   </div>
 </template>

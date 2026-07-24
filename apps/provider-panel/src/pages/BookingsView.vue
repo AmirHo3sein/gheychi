@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
@@ -77,11 +78,11 @@ async function assignWorker(booking: Booking, event: Event) {
         <StatusBadge :label="bookingStatusLabel(b.status).label" :tone="bookingStatusLabel(b.status).tone" />
       </div>
       <div v-if="b.status === 'confirmed' && workers.length > 0">
-        <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">تخصیص کارمند</label>
+        <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">تخصیص کارمند</label>
         <select
           :value="b.workerId ?? ''"
           data-testid="assign-worker"
-          class="native-select w-full rounded-lg border border-(--color-border) bg-(--color-surface) p-1.5 text-sm"
+          class="native-select w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-1.5 text-sm"
           @change="assignWorker(b, $event)"
         >
           <option value="">بدون تخصیص کارمند</option>
@@ -89,32 +90,17 @@ async function assignWorker(booking: Booking, event: Event) {
         </select>
       </div>
       <div v-if="b.status === 'confirmed'" class="flex gap-2">
-        <button
-          data-testid="mark-completed"
-          type="button"
-          class="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-(--color-border) py-2 text-sm font-semibold text-(--color-text) hover:bg-(--color-border-soft)"
-          @click="markStatus(b.id, 'completed')"
-        >
-          <AppIcon name="check" :size="15" />
+        <AppButton data-testid="mark-completed" type="button" variant="secondary" class="flex-1" @click="markStatus(b.id, 'completed')">
+          <template #icon><AppIcon name="check" :size="15" /></template>
           انجام شد
-        </button>
-        <button
-          data-testid="mark-no-show"
-          type="button"
-          class="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-(--color-border) py-2 text-sm font-semibold text-(--color-text) hover:bg-(--color-border-soft)"
-          @click="markStatus(b.id, 'no_show')"
-        >
-          <AppIcon name="x" :size="15" />
+        </AppButton>
+        <AppButton data-testid="mark-no-show" type="button" variant="secondary" class="flex-1" @click="markStatus(b.id, 'no_show')">
+          <template #icon><AppIcon name="x" :size="15" /></template>
           عدم حضور
-        </button>
-        <button
-          data-testid="cancel-booking"
-          type="button"
-          class="flex items-center justify-center rounded-xl border border-(--color-border) px-3 text-sm font-semibold text-(--tone-danger-text) hover:bg-(--tone-danger-bg)"
-          @click="cancelBooking(b.id)"
-        >
+        </AppButton>
+        <AppButton data-testid="cancel-booking" type="button" variant="danger" @click="cancelBooking(b.id)">
           لغو
-        </button>
+        </AppButton>
       </div>
     </AppCard>
   </div>

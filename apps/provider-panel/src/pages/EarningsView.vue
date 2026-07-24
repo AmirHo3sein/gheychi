@@ -44,7 +44,7 @@ function toman(amount: number): string {
 
       <AppCard>
         <div class="flex items-center justify-between">
-          <p class="text-sm text-(--color-muted)">کارمزد پلتفرم ({{ earnings.commissionPercent }}٪)</p>
+          <p class="text-sm text-(--color-text-muted)">کارمزد پلتفرم ({{ earnings.commissionPercent }}٪)</p>
           <p class="tnum text-lg font-bold text-(--tone-danger-text)">−{{ toman(earnings.commissionAmount) }}</p>
         </div>
       </AppCard>

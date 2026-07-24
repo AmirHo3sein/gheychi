@@ -71,7 +71,7 @@ const QUICK_LINKS: Array<{ to: string; label: string; icon: IconName }> = [
         v-for="link in QUICK_LINKS"
         :key="link.to"
         :to="link.to"
-        class="flex flex-col items-center gap-1.5 rounded-2xl border border-(--color-border) bg-(--color-surface-card) py-4 text-center shadow-(--shadow-panel) transition-colors hover:border-(--color-accent)"
+        class="flex flex-col items-center gap-1.5 rounded-2xl border border-(--color-border) bg-(--color-surface-card) py-4 text-center shadow-(--shadow-sm) transition-colors hover:border-(--color-accent)"
       >
         <div class="flex h-9 w-9 items-center justify-center rounded-full bg-(--tone-info-bg) text-(--color-accent)">
           <AppIcon :name="link.icon" :size="18" />
@@ -106,7 +106,7 @@ const QUICK_LINKS: Array<{ to: string; label: string; icon: IconName }> = [
         <AppCard v-for="b in upcomingBookings" :key="b.id" :padded="false" class="p-3">
           <div class="flex items-center justify-between">
             <p class="text-sm font-semibold text-(--color-text)">{{ serviceName(b.serviceId) }}</p>
-            <p class="tnum text-sm text-(--color-muted)">{{ new Date(b.startsAt).toLocaleDateString('fa-IR') }}</p>
+            <p class="tnum text-sm text-(--color-text-muted)">{{ new Date(b.startsAt).toLocaleDateString('fa-IR') }}</p>
           </div>
         </AppCard>
       </div>

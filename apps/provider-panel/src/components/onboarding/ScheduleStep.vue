@@ -24,14 +24,14 @@ const model = defineModel<Array<{ weekday: number; openTime: string; closeTime: 
         v-model="day.openTime"
         :disabled="!day.enabled"
         type="time"
-        class="tnum flex-1 rounded-lg border border-(--color-border) bg-(--color-surface) p-2 text-sm disabled:opacity-50"
+        class="tnum flex-1 rounded-xl border border-(--color-border) bg-(--color-surface) p-2 text-sm disabled:opacity-50"
       />
-      <span class="text-xs text-(--color-muted)">تا</span>
+      <span class="text-xs text-(--color-text-muted)">تا</span>
       <input
         v-model="day.closeTime"
         :disabled="!day.enabled"
         type="time"
-        class="tnum flex-1 rounded-lg border border-(--color-border) bg-(--color-surface) p-2 text-sm disabled:opacity-50"
+        class="tnum flex-1 rounded-xl border border-(--color-border) bg-(--color-surface) p-2 text-sm disabled:opacity-50"
       />
     </div>
   </div>

@@ -23,7 +23,7 @@ function isActive(to: string) {
       v-for="tab in TABS"
       :key="tab.to"
       :to="tab.to"
-      class="flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-medium text-(--color-muted) transition-colors"
+      class="flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-medium text-(--color-text-muted) transition-colors"
       :class="isActive(tab.to) && 'text-(--color-accent)'"
     >
       <AppIcon :name="tab.icon" :size="20" />

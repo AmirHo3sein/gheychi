@@ -61,7 +61,7 @@ async function onFileChange(event: Event) {
         <AppIcon name="upload" :size="18" />
       </div>
       <span class="text-sm font-semibold text-(--color-text)">{{ uploading ? 'در حال بارگذاری…' : 'افزودن تصویر جدید' }}</span>
-      <span class="text-xs text-(--color-muted)">jpeg, png, webp</span>
+      <span class="text-xs text-(--color-text-muted)">jpeg, png, webp</span>
       <input type="file" accept="image/jpeg,image/png,image/webp" class="hidden" :disabled="uploading" @change="onFileChange" />
     </label>
     <p v-if="error" class="mt-2 flex items-center gap-1.5 text-sm text-(--tone-danger-text)">

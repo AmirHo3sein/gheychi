@@ -1,8 +1,10 @@
 <!-- apps/provider-panel/src/pages/ReviewsView.vue -->
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useApi } from '@/composables/useApi'
 import { useSalon } from '@/composables/useSalon'
@@ -55,18 +57,12 @@ async function sendReply(id: string) {
         <span class="font-semibold text-(--color-accent)">پاسخ شما: </span>{{ r.salonReply }}
       </p>
       <div class="flex gap-2">
-        <input
+        <AppInput
           v-model="drafts[r.id]"
+          class="flex-1"
           :placeholder="r.salonReply ? 'ویرایش پاسخ' : 'پاسخ شما'"
-          class="flex-1 rounded-xl border border-(--color-border) bg-(--color-surface) p-2.5 text-sm"
         />
-        <button
-          type="button"
-          class="rounded-xl border border-(--color-border) px-4 text-sm font-semibold text-(--color-text) hover:bg-(--color-border-soft)"
-          @click="sendReply(r.id)"
-        >
-          ارسال
-        </button>
+        <AppButton type="button" variant="secondary" @click="sendReply(r.id)">ارسال</AppButton>
       </div>
     </AppCard>
   </div>

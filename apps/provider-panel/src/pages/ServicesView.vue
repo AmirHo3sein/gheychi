@@ -1,7 +1,9 @@
 <!-- apps/provider-panel/src/pages/ServicesView.vue -->
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect, { type SelectOption } from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
@@ -98,25 +100,21 @@ async function updateDiscount(service: Service, value: string) {
           <StatusBadge v-if="s.discountPercent" :label="`٪${s.discountPercent} تخفیف`" tone="success" />
         </div>
         <div class="flex items-center gap-2">
-          <div class="relative w-32">
-            <input
-              :value="s.price"
-              type="number"
-              class="tnum w-full rounded-lg border border-(--color-border) bg-(--color-surface) p-1.5 text-sm"
-              @change="updatePrice(s, +($event.target as HTMLInputElement).value)"
-            />
-          </div>
-          <div class="relative w-24">
-            <input
-              :value="s.discountPercent ?? ''"
-              type="number"
-              min="1"
-              max="100"
-              placeholder="٪ تخفیف"
-              class="tnum w-full rounded-lg border border-(--color-border) bg-(--color-surface) p-1.5 text-sm"
-              @change="updateDiscount(s, ($event.target as HTMLInputElement).value)"
-            />
-          </div>
+          <AppInput
+            :model-value="String(s.price)"
+            type="number"
+            class="tnum w-32"
+            @change="updatePrice(s, +($event.target as HTMLInputElement).value)"
+          />
+          <AppInput
+            :model-value="s.discountPercent != null ? String(s.discountPercent) : ''"
+            type="number"
+            min="1"
+            max="100"
+            placeholder="٪ تخفیف"
+            class="tnum w-24"
+            @change="updateDiscount(s, ($event.target as HTMLInputElement).value)"
+          />
         </div>
       </div>
       <label class="flex items-center gap-2 text-sm text-(--color-text)">
@@ -128,36 +126,35 @@ async function updateDiscount(service: Service, value: string) {
     <AppCard class="space-y-3">
       <h2 class="font-bold text-(--color-text)">افزودن خدمت جدید</h2>
       <AppSelect v-model="newService.categoryId" :options="categoryOptions" placeholder="دسته‌بندی" />
-      <input v-model="newService.name" placeholder="نام خدمت" class="w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-3 text-sm" />
+      <AppInput v-model="newService.name" placeholder="نام خدمت" />
       <div class="grid grid-cols-2 gap-3">
-        <input
-          v-model.number="newService.price"
+        <AppInput
+          :model-value="String(newService.price)"
           type="number"
           placeholder="قیمت"
-          class="tnum w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-3 text-sm"
+          class="tnum"
+          @update:model-value="(v) => (newService.price = Number(v))"
         />
-        <input
-          v-model.number="newService.durationMin"
+        <AppInput
+          :model-value="String(newService.durationMin)"
           type="number"
           placeholder="مدت زمان (دقیقه)"
-          class="tnum w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-3 text-sm"
+          class="tnum"
+          @update:model-value="(v) => (newService.durationMin = Number(v))"
         />
       </div>
-      <input
-        v-model.number="newService.discountPercent"
+      <AppInput
+        :model-value="newService.discountPercent != null ? String(newService.discountPercent) : ''"
         type="number"
         min="1"
         max="100"
         placeholder="٪ تخفیف (اختیاری)"
-        class="tnum w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-3 text-sm"
+        class="tnum"
+        @update:model-value="(v) => (newService.discountPercent = v === '' ? null : Number(v))"
       />
-      <button
-        type="button"
-        class="w-full rounded-xl bg-(--color-accent) p-3 text-sm font-bold text-white transition-opacity hover:opacity-90"
-        @click="addService"
-      >
+      <AppButton type="button" block @click="addService">
         افزودن
-      </button>
+      </AppButton>
     </AppCard>
   </div>
 </template>

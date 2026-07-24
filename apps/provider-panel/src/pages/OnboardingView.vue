@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import SalonInfoStep from '@/components/onboarding/SalonInfoStep.vue'
 import ScheduleStep from '@/components/onboarding/ScheduleStep.vue'
 import FirstServiceStep from '@/components/onboarding/FirstServiceStep.vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { useApi } from '@/composables/useApi'
 import { useSalon } from '@/composables/useSalon'
@@ -136,7 +137,7 @@ async function submit() {
 <template>
   <div class="mx-auto max-w-md p-6">
     <div class="mb-6 flex flex-col items-center text-center">
-      <div class="mb-2 flex h-11 w-11 items-center justify-center rounded-2xl bg-(--color-accent) text-lg font-black text-white shadow-(--shadow-panel)">
+      <div class="mb-2 flex h-11 w-11 items-center justify-center rounded-2xl bg-(--color-accent) text-lg font-black text-white shadow-(--shadow-sm)">
         آ
       </div>
       <h1 class="text-lg font-bold text-(--color-text)">ثبت‌نام آرایشگاه</h1>
@@ -152,19 +153,19 @@ async function submit() {
                 ? 'bg-(--color-accent) text-white'
                 : i + 1 === step
                   ? 'border-2 border-(--color-accent) text-(--color-accent)'
-                  : 'border border-(--color-border) text-(--color-muted)'
+                  : 'border border-(--color-border) text-(--color-text-muted)'
             "
           >
             <AppIcon v-if="i + 1 < step" name="check" :size="14" />
             <span v-else>{{ i + 1 }}</span>
           </div>
-          <span class="text-[11px] text-(--color-muted)">{{ label }}</span>
+          <span class="text-[11px] text-(--color-text-muted)">{{ label }}</span>
         </div>
         <div v-if="i < STEP_LABELS.length - 1" class="mb-4 h-px flex-1 bg-(--color-border)" />
       </template>
     </div>
 
-    <div class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-5 shadow-(--shadow-panel)">
+    <div class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-5 shadow-(--shadow-sm)">
       <SalonInfoStep v-if="step === 1" v-model="form.salonInfo" />
       <ScheduleStep v-else-if="step === 2" v-model="form.hours" />
       <FirstServiceStep v-else v-model="form.service" />
@@ -176,34 +177,23 @@ async function submit() {
     </p>
 
     <div class="mt-4 flex justify-between gap-3">
-      <button
-        v-if="step > 1"
-        type="button"
-        class="rounded-xl border border-(--color-border) px-4 py-2.5 text-sm font-semibold text-(--color-text) hover:bg-(--color-border-soft)"
-        @click="back"
-      >
+      <AppButton v-if="step > 1" type="button" variant="secondary" @click="back">
         قبلی
-      </button>
-      <button
-        v-if="step < 3"
-        data-testid="wizard-next"
-        type="button"
-        :disabled="!canGoNext"
-        class="mr-auto rounded-xl bg-(--color-accent) px-5 py-2.5 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-        @click="next"
-      >
+      </AppButton>
+      <AppButton v-if="step < 3" data-testid="wizard-next" type="button" class="mr-auto" :disabled="!canGoNext" @click="next">
         بعدی
-      </button>
-      <button
+      </AppButton>
+      <AppButton
         v-else
         data-testid="wizard-submit"
         type="button"
+        class="mr-auto"
         :disabled="!isServiceValid || submitting"
-        class="mr-auto rounded-xl bg-(--color-accent) px-5 py-2.5 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+        :loading="submitting"
         @click="submit"
       >
         {{ submitting ? 'در حال ثبت…' : 'ثبت و ارسال برای بررسی' }}
-      </button>
+      </AppButton>
     </div>
   </div>
 </template>

@@ -1,6 +1,7 @@
 <!-- apps/provider-panel/src/components/onboarding/SalonInfoStep.vue -->
 <script setup lang="ts">
 import SalonPinPicker from './SalonPinPicker.vue'
+import AppInput from '../ui/AppInput.vue'
 
 const model = defineModel<{
   name: string
@@ -21,15 +22,12 @@ function onPin(pos: { lat: number; lng: number }) {
 
 <template>
   <div class="space-y-4">
-    <div>
-      <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">نام آرایشگاه</label>
-      <input
-        v-model="model.name"
-        data-testid="salon-name"
-        placeholder="مثلاً سالن زیبایی ستاره"
-        class="w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-3 text-sm"
-      />
-    </div>
+    <AppInput
+      v-model="model.name"
+      label="نام آرایشگاه"
+      data-testid="salon-name"
+      placeholder="مثلاً سالن زیبایی ستاره"
+    />
 
     <div>
       <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">توضیحات (اختیاری)</label>
@@ -55,37 +53,30 @@ function onPin(pos: { lat: number; lng: number }) {
     </div>
 
     <div class="grid grid-cols-2 gap-3">
-      <div>
-        <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">شهر</label>
-        <input
-          v-model="model.city"
-          data-testid="city"
-          placeholder="شهر"
-          class="w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-3 text-sm"
-        />
-      </div>
-      <div>
-        <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">ظرفیت همزمان</label>
-        <input
-          v-model.number="model.capacity"
-          data-testid="capacity"
-          type="number"
-          min="1"
-          max="50"
-          class="tnum w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-3 text-sm"
-        />
-      </div>
-    </div>
-
-    <div>
-      <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">آدرس</label>
-      <input
-        v-model="model.address"
-        data-testid="address"
-        placeholder="آدرس کامل"
-        class="w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-3 text-sm"
+      <AppInput
+        v-model="model.city"
+        label="شهر"
+        data-testid="city"
+        placeholder="شهر"
+      />
+      <AppInput
+        :model-value="String(model.capacity)"
+        label="ظرفیت همزمان"
+        data-testid="capacity"
+        type="number"
+        min="1"
+        max="50"
+        class="tnum"
+        @update:model-value="model.capacity = Number($event)"
       />
     </div>
+
+    <AppInput
+      v-model="model.address"
+      label="آدرس"
+      data-testid="address"
+      placeholder="آدرس کامل"
+    />
 
     <div>
       <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">موقعیت روی نقشه</label>

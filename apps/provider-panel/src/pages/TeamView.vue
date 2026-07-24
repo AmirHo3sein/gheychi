@@ -1,7 +1,9 @@
 <!-- apps/provider-panel/src/pages/TeamView.vue -->
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
@@ -118,26 +120,12 @@ async function copyReferralCode(code: string) {
 
     <AppCard class="space-y-3">
       <h2 class="font-bold text-(--color-text)">افزودن عضو جدید</h2>
-      <input
-        v-model="newWorker.name"
-        placeholder="نام"
-        class="w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-3 text-sm"
-      />
-      <input
-        v-model="newWorker.phone"
-        placeholder="شماره موبایل"
-        class="tnum w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-3 text-sm"
-      />
+      <AppInput v-model="newWorker.name" placeholder="نام" />
+      <AppInput v-model="newWorker.phone" type="tel" inputmode="tel" placeholder="شماره موبایل" class="tnum" />
       <p v-if="createError" class="flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)">
         {{ createError }}
       </p>
-      <button
-        type="button"
-        class="w-full rounded-xl bg-(--color-accent) p-3 text-sm font-bold text-white transition-opacity hover:opacity-90"
-        @click="addWorker"
-      >
-        افزودن
-      </button>
+      <AppButton type="button" variant="primary" block @click="addWorker">افزودن</AppButton>
     </AppCard>
 
     <EmptyState v-if="!loading && workers.length === 0" icon="team" message="هنوز عضوی به تیم اضافه نشده است." />
@@ -146,7 +134,7 @@ async function copyReferralCode(code: string) {
       <div class="flex items-center justify-between">
         <div>
           <p class="text-sm font-bold text-(--color-text)">{{ w.name }}</p>
-          <p class="tnum text-sm text-(--color-muted)">{{ ratingLabel(w) }}</p>
+          <p class="tnum text-sm text-(--color-text-muted)">{{ ratingLabel(w) }}</p>
         </div>
         <label class="flex items-center gap-2 text-sm text-(--color-text)">
           <input type="checkbox" class="h-4 w-4 accent-(--color-accent)" :checked="w.active" @change="toggleActive(w, $event)" />
@@ -155,34 +143,29 @@ async function copyReferralCode(code: string) {
       </div>
 
       <div>
-        <button
-          type="button"
-          data-testid="toggle-referral-code"
-          class="text-sm font-bold text-(--color-accent) hover:opacity-90"
-          @click="toggleReferralCode(w)"
-        >
+        <AppButton type="button" variant="ghost" data-testid="toggle-referral-code" @click="toggleReferralCode(w)">
           {{ referralRevealed[w.id] ? 'پنهان کردن کد معرفی' : 'نمایش کد معرفی' }}
-        </button>
+        </AppButton>
 
         <div
           v-if="referralRevealed[w.id]"
           data-testid="referral-code-panel"
           class="mt-2 flex items-center gap-2 rounded-xl border border-(--color-border) bg-(--color-surface) p-3"
         >
-          <p v-if="referralLoading[w.id]" class="text-sm text-(--color-muted)">در حال دریافت...</p>
+          <p v-if="referralLoading[w.id]" class="text-sm text-(--color-text-muted)">در حال دریافت...</p>
           <p v-else-if="referralError[w.id]" class="text-sm text-(--tone-danger-text)">{{ referralError[w.id] }}</p>
           <template v-else-if="referralCodes[w.id]">
             <span class="tnum flex-1 text-sm font-bold text-(--color-text)" data-testid="referral-code-value">
               {{ referralCodes[w.id]!.code }}
             </span>
-            <button
+            <AppButton
               type="button"
+              variant="primary"
               data-testid="copy-referral-code"
-              class="rounded-lg bg-(--color-accent) px-3 py-1 text-xs font-bold text-white transition-opacity hover:opacity-90"
               @click="copyReferralCode(referralCodes[w.id]!.code)"
             >
               کپی
-            </button>
+            </AppButton>
           </template>
         </div>
       </div>

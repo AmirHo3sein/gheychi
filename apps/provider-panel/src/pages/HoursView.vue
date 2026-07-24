@@ -2,8 +2,10 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import ScheduleStep from '@/components/onboarding/ScheduleStep.vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
@@ -86,36 +88,26 @@ async function removeException(id: string) {
     <section>
       <h2 class="mb-2 text-sm font-bold text-(--color-text)">ساعات کاری هفتگی</h2>
       <ScheduleStep v-model="hours" />
-      <button
-        type="button"
-        data-testid="save-hours"
-        :disabled="saving"
-        class="mt-3 w-full rounded-xl bg-(--color-accent) py-3 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-        @click="saveHours"
-      >
+      <AppButton type="button" data-testid="save-hours" block class="mt-3" :disabled="saving" :loading="saving" @click="saveHours">
         {{ saving ? 'در حال ذخیره…' : 'ذخیره ساعات کاری' }}
-      </button>
+      </AppButton>
     </section>
 
     <section>
       <h2 class="mb-2 text-sm font-bold text-(--color-text)">تعطیلی‌های موردی</h2>
       <div class="flex gap-2">
-        <input v-model="newExceptionDate" type="date" class="tnum flex-1 rounded-xl border border-(--color-border) bg-(--color-surface-card) p-3 text-sm" />
-        <button
-          type="button"
-          class="flex items-center justify-center rounded-xl border border-(--color-border) px-4 text-sm font-semibold text-(--color-text) hover:bg-(--color-border-soft)"
-          @click="addException"
-        >
+        <AppInput v-model="newExceptionDate" type="date" class="tnum flex-1" />
+        <AppButton type="button" variant="secondary" @click="addException">
           <AppIcon name="plus" :size="16" />
-        </button>
+        </AppButton>
       </div>
       <EmptyState v-if="exceptions.length === 0" icon="hours" message="تعطیلی موردی ثبت نشده است." class="mt-3" />
       <div v-else class="mt-3 space-y-2">
         <AppCard v-for="e in exceptions" :key="e.id" :padded="false" class="flex items-center justify-between p-3">
           <span class="tnum text-sm text-(--color-text)">{{ e.date }}</span>
-          <button type="button" class="text-(--tone-danger-text)" @click="removeException(e.id)">
+          <AppButton type="button" variant="danger" @click="removeException(e.id)">
             <AppIcon name="trash" :size="16" />
-          </button>
+          </AppButton>
         </AppCard>
       </div>
     </section>

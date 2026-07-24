@@ -14,9 +14,15 @@
   --color-surface-card: #FFFFFF;
   --color-text: #0B4F4A;
   --color-accent: #0EA89B;
-  --color-border: #DCEEEC;
+  --color-accent-strong: #0F766E;
+  --color-accent-deep: #115E59;
+  --color-accent-soft: #E3F6F3;
+  --color-accent-text: #0F766E;
+  --color-border: #DCEDEA;
   --color-border-soft: #EAF6F5;
-  --color-muted: #5B8A86;
+  --color-text-muted: #4C716D;
+  --color-danger: #C0392B;
+  --color-danger-strong: #B91C1C;
 
   --tone-success-bg: #E3F7EE;
   --tone-success-text: #0F8A54;
@@ -29,8 +35,10 @@
   --tone-info-bg: #E7EFFC;
   --tone-info-text: #2A5FBE;
 
-  --shadow-panel: 0 1px 2px rgba(11, 79, 74, 0.04), 0 8px 24px -12px rgba(11, 79, 74, 0.12);
-  --shadow-pop: 0 12px 32px -8px rgba(11, 79, 74, 0.22);
+  --shadow-color: 178 45% 20%;
+  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.06), 0 1px 1px hsl(var(--shadow-color) / 0.04);
+  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.16), 0 2px 6px -2px hsl(var(--shadow-color) / 0.08);
+  --shadow-lg: 0 24px 48px -16px hsl(var(--shadow-color) / 0.22), 0 8px 16px -4px hsl(var(--shadow-color) / 0.1);
 }
 
 /* Dark mode -- "Bold Editorial", same accent/surface values as user-app/admin-panel's dark theme */
@@ -39,9 +47,15 @@
   --color-surface-card: #211D24;
   --color-text: #F5F0F2;
   --color-accent: #7A3FF2;
-  --color-border: #362F3D;
+  --color-accent-strong: #6D28D9;
+  --color-accent-deep: #5B21B6;
+  --color-accent-soft: #2C2140;
+  --color-accent-text: #A78BFA;
+  --color-border: #38323D;
   --color-border-soft: #2A242E;
-  --color-muted: #A79AB0;
+  --color-text-muted: #B3A3B0;
+  --color-danger: #F2645C;
+  --color-danger-strong: #9F1239;
 
   --tone-success-bg: #16301F;
   --tone-success-text: #4ADE80;
@@ -54,8 +68,10 @@
   --tone-info-bg: #1E2247;
   --tone-info-text: #A5A8F5;
 
-  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.2), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
-  --shadow-pop: 0 12px 32px -8px rgba(0, 0, 0, 0.6);
+  --shadow-color: 275 55% 4%;
+  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.4), 0 1px 1px hsl(var(--shadow-color) / 0.3);
+  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.55), 0 2px 6px -2px hsl(var(--shadow-color) / 0.4);
+  --shadow-lg: 0 24px 48px -16px hsl(var(--shadow-color) / 0.65), 0 8px 16px -4px hsl(var(--shadow-color) / 0.5);
 }
 
 html, body {
@@ -108,7 +124,7 @@ input, select, textarea {
 
 input:focus, select:focus, textarea:focus {
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(14, 168, 155, 0.15);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 30%, transparent);
 }
 
 button {
@@ -128,6 +144,9 @@ button:disabled {
   background-position: left 0.85rem center;
   padding-left: 2.25rem;
 }
+.dark .native-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23B3A3B0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
 
 /* vue-multiselect brand + RTL overrides -- identical to admin-panel's .app-select block,
    kept as a separate copy per the cross-app isolation convention. */
@@ -142,7 +161,7 @@ button:disabled {
 }
 .app-select .multiselect--active .multiselect__tags {
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(14, 168, 155, 0.15);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 30%, transparent);
 }
 .app-select .multiselect__select {
   right: auto;
@@ -150,7 +169,7 @@ button:disabled {
   height: 42px;
 }
 .app-select .multiselect__select::before {
-  border-color: var(--color-muted) transparent transparent transparent;
+  border-color: var(--color-text-muted) transparent transparent transparent;
 }
 .app-select .multiselect__single,
 .app-select .multiselect__placeholder,
@@ -167,14 +186,14 @@ button:disabled {
   max-width: 100%;
 }
 .app-select .multiselect__placeholder {
-  color: var(--color-muted);
+  color: var(--color-text-muted);
   padding-top: 0;
 }
 .app-select .multiselect__content-wrapper {
   border: 1px solid var(--color-border);
   border-radius: 0.75rem;
   background: var(--color-surface-card);
-  box-shadow: var(--shadow-panel);
+  box-shadow: var(--shadow-md);
   margin-top: 0.25rem;
   overflow: hidden;
 }

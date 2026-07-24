@@ -2,7 +2,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import PhotoUploader from '@/components/photos/PhotoUploader.vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useApi } from '@/composables/useApi'
 import { formatRemainingTime } from '@/utils/remaining-time'
@@ -85,19 +87,13 @@ function serviceName(id: string | null) {
       </span>
     </div>
 
-    <div class="space-y-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 shadow-(--shadow-panel)">
+    <div class="space-y-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 shadow-(--shadow-sm)">
       <div>
         <div class="mb-1.5 flex items-center justify-between">
           <label class="block text-sm font-semibold text-(--color-text)">توضیح استوری (اختیاری)</label>
-          <span class="tnum text-xs text-(--color-muted)">{{ caption.length.toLocaleString('fa-IR') }}/۲۰۰</span>
+          <span class="tnum text-xs text-(--color-text-muted)">{{ caption.length.toLocaleString('fa-IR') }}/۲۰۰</span>
         </div>
-        <input
-          v-model="caption"
-          data-testid="story-caption"
-          maxlength="200"
-          placeholder="توضیح کوتاه"
-          class="w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-3 text-sm"
-        />
+        <AppInput v-model="caption" data-testid="story-caption" :maxlength="200" placeholder="توضیح کوتاه" />
       </div>
       <div>
         <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">خدمت مرتبط (اختیاری)</label>
@@ -111,7 +107,7 @@ function serviceName(id: string | null) {
         </select>
       </div>
       <PhotoUploader endpoint="/salons/mine/stories" :extra-fields="extraFields" @uploaded="onUploaded" />
-      <p class="text-xs text-(--color-muted)">هر استوری ۲۴ ساعت پس از انتشار به‌صورت خودکار حذف می‌شود.</p>
+      <p class="text-xs text-(--color-text-muted)">هر استوری ۲۴ ساعت پس از انتشار به‌صورت خودکار حذف می‌شود.</p>
     </div>
 
     <EmptyState v-if="!loading && stories.length === 0" icon="stories" message="هنوز استوری فعالی ندارید." />
@@ -120,14 +116,14 @@ function serviceName(id: string | null) {
       <div
         v-for="s in stories"
         :key="s.id"
-        class="overflow-hidden rounded-2xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-panel)"
+        class="overflow-hidden rounded-2xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-sm)"
       >
         <div class="relative aspect-square w-full">
           <img :src="s.url" class="h-full w-full object-cover" />
           <span
             v-if="s.status === 'removed'"
             data-testid="removed-badge"
-            class="absolute right-2 top-2 rounded-full bg-(--tone-danger-bg) px-2 py-0.5 text-[10px] font-bold text-(--tone-danger-text) shadow-(--shadow-panel)"
+            class="absolute end-2 top-2 rounded-full bg-(--tone-danger-bg) px-2 py-0.5 text-[10px] font-bold text-(--tone-danger-text) shadow-(--shadow-sm)"
           >
             توسط مدیر حذف شد
           </span>
@@ -136,10 +132,10 @@ function serviceName(id: string | null) {
           <p v-if="s.caption" class="truncate text-xs text-(--color-text)">{{ s.caption }}</p>
           <p v-if="serviceName(s.serviceId)" class="truncate text-xs text-(--color-accent)">{{ serviceName(s.serviceId) }}</p>
           <div class="flex items-center justify-between">
-            <span class="tnum text-xs text-(--color-muted)">{{ formatRemainingTime(s.expiresAt, now) }}</span>
-            <button type="button" data-testid="delete-story" class="text-(--tone-danger-text)" @click="removeStory(s.id)">
-              <AppIcon name="trash" :size="15" />
-            </button>
+            <span class="tnum text-xs text-(--color-text-muted)">{{ formatRemainingTime(s.expiresAt, now) }}</span>
+            <AppButton type="button" variant="danger" data-testid="delete-story" @click="removeStory(s.id)">
+              <template #icon><AppIcon name="trash" :size="15" /></template>
+            </AppButton>
           </div>
         </div>
       </div>
