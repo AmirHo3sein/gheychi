@@ -140,9 +140,9 @@ async function submit() {
     <div v-if="!confirming" class="space-y-3.5">
       <div class="flex flex-wrap items-end gap-2.5">
         <div class="relative">
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">شماره موبایل کاربر</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">شماره موبایل کاربر</label>
           <div v-if="!selectedUser" class="relative">
-            <AppIcon name="phone" :size="15" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-muted)" />
+            <AppIcon name="phone" :size="15" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-text-muted)" />
             <input
               v-model="phoneQuery"
               data-testid="adjust-phone-input"
@@ -158,12 +158,12 @@ async function submit() {
           >
             <span class="min-w-0 truncate">
               <span class="font-semibold text-(--color-text)">{{ selectedUser.name ?? selectedUser.phone }}</span>
-              <span v-if="selectedUser.name" class="tnum text-xs text-(--color-muted)"> — {{ selectedUser.phone }}</span>
+              <span v-if="selectedUser.name" class="tnum text-xs text-(--color-text-muted)"> — {{ selectedUser.phone }}</span>
             </span>
             <button
               type="button"
               data-testid="adjust-clear-user"
-              class="shrink-0 text-(--color-muted) hover:text-(--tone-danger-text)"
+              class="shrink-0 text-(--color-text-muted) hover:text-(--tone-danger-text)"
               title="تغییر کاربر"
               @click="clearUser"
             >
@@ -174,7 +174,7 @@ async function submit() {
           <div
             v-if="matches.length > 0"
             data-testid="adjust-user-matches"
-            class="absolute right-0 top-full z-10 mt-1 w-64 overflow-hidden rounded-xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-pop)"
+            class="absolute right-0 top-full z-10 mt-1 w-64 overflow-hidden rounded-xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-md)"
           >
             <button
               v-for="user in matches"
@@ -184,13 +184,13 @@ async function submit() {
               @click="selectUser(user)"
             >
               <span class="font-semibold text-(--color-text)">{{ user.name ?? 'بدون نام' }}</span>
-              <span class="tnum mr-1 text-xs text-(--color-muted)">{{ user.phone }}</span>
+              <span class="tnum mr-1 text-xs text-(--color-text-muted)">{{ user.phone }}</span>
             </button>
           </div>
         </div>
 
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">مبلغ (مثبت = واریز، منفی = برداشت)</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">مبلغ (مثبت = واریز، منفی = برداشت)</label>
           <input
             v-model.number="amount"
             data-testid="adjust-amount-input"
@@ -201,13 +201,13 @@ async function submit() {
         </div>
 
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">واحد</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">واحد</label>
           <AppSelect v-model="currency" :options="CURRENCY_OPTIONS" width="8rem" />
         </div>
       </div>
 
       <div>
-        <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">دلیل (الزامی)</label>
+        <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">دلیل (الزامی)</label>
         <textarea
           v-model="reason"
           data-testid="adjust-reason-input"
@@ -258,7 +258,7 @@ async function submit() {
           type="button"
           data-testid="adjust-confirm-cancel"
           :disabled="submitting"
-          class="rounded-xl border border-(--color-border) px-4 py-2.5 text-sm font-semibold text-(--color-muted) transition-colors hover:bg-(--color-border-soft) disabled:opacity-40"
+          class="rounded-xl border border-(--color-border) px-4 py-2.5 text-sm font-semibold text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) disabled:opacity-40"
           @click="cancelConfirm"
         >
           انصراف

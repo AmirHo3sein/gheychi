@@ -201,9 +201,9 @@ watch(page, load)
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">شماره موبایل معرف</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">شماره موبایل معرف</label>
           <div class="relative">
-            <AppIcon name="phone" :size="15" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-muted)" />
+            <AppIcon name="phone" :size="15" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-text-muted)" />
             <input
               v-model="referrerPhoneFilter"
               data-testid="referrer-phone-filter"
@@ -214,19 +214,19 @@ watch(page, load)
         </div>
 
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">وضعیت</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">وضعیت</label>
           <AppSelect v-model="statusFilter" :options="STATUS_OPTIONS" width="12rem" />
         </div>
 
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">نوع معرفی</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">نوع معرفی</label>
           <AppSelect v-model="typeFilter" :options="TYPE_OPTIONS" width="10rem" />
         </div>
 
         <button
           v-if="hasActiveFilters"
           type="button"
-          class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-(--color-muted) transition-colors hover:text-(--tone-danger-text)"
+          class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-(--color-text-muted) transition-colors hover:text-(--tone-danger-text)"
           @click="clearFilters"
         >
           <AppIcon name="reset" :size="15" />
@@ -241,7 +241,7 @@ watch(page, load)
       <div class="overflow-x-auto">
         <table class="w-full text-right text-sm">
           <thead>
-            <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-muted)">
+            <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
               <th class="px-5 py-3 font-semibold">تاریخ ثبت</th>
               <th class="px-5 py-3 font-semibold">معرف</th>
               <th class="px-5 py-3 font-semibold">معرفی‌شده</th>
@@ -258,36 +258,36 @@ watch(page, load)
               data-testid="referral-row"
               class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
             >
-              <td class="tnum px-5 py-3.5 text-(--color-muted)">{{ formatDateTime(referral.createdAt) }}</td>
+              <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDateTime(referral.createdAt) }}</td>
               <td class="tnum px-5 py-3.5 text-(--color-text)">{{ referral.referrerPhone ?? '—' }}</td>
               <td class="tnum px-5 py-3.5 text-(--color-text)">{{ referral.referredUserPhoneMasked }}</td>
-              <td class="px-5 py-3.5 text-(--color-muted)">{{ referralTypeLabel(referral.referralType) }}</td>
+              <td class="px-5 py-3.5 text-(--color-text-muted)">{{ referralTypeLabel(referral.referralType) }}</td>
               <td class="px-5 py-3.5">
                 <StatusBadge :label="referralStatusLabel(referral.status).label" :tone="referralStatusLabel(referral.status).tone" />
               </td>
               <td class="px-5 py-3.5">
                 <details data-testid="referral-details">
                   <summary
-                    class="cursor-pointer text-xs font-semibold text-(--color-muted) transition-colors hover:text-(--color-text)"
+                    class="cursor-pointer text-xs font-semibold text-(--color-text-muted) transition-colors hover:text-(--color-text)"
                     @click="loadRewards(referral.id)"
                   >
                     نمایش
                   </summary>
                   <div class="tnum mt-1.5 max-w-96 space-y-3 rounded-lg bg-(--color-border-soft) p-2.5 text-xs text-(--color-text)">
                     <ul class="space-y-1">
-                      <li><span class="text-(--color-muted)">شناسه:</span> {{ referral.id.slice(0, 8) }}…</li>
-                      <li><span class="text-(--color-muted)">رویداد شرط:</span> {{ qualifyingEventLabel(referral.qualifyingEvent) }}</li>
+                      <li><span class="text-(--color-text-muted)">شناسه:</span> {{ referral.id.slice(0, 8) }}…</li>
+                      <li><span class="text-(--color-text-muted)">رویداد شرط:</span> {{ qualifyingEventLabel(referral.qualifyingEvent) }}</li>
                       <li>
-                        <span class="text-(--color-muted)">انقضا:</span>
+                        <span class="text-(--color-text-muted)">انقضا:</span>
                         {{ referral.expiresAt ? formatDateTime(referral.expiresAt) : 'ندارد' }}
                       </li>
                       <li>
-                        <span class="text-(--color-muted)">پاداش اعطا شد:</span>
+                        <span class="text-(--color-text-muted)">پاداش اعطا شد:</span>
                         {{ referral.rewardGrantedAt ? formatDateTime(referral.rewardGrantedAt) : '—' }}
                       </li>
-                      <li v-if="referral.salonId"><span class="text-(--color-muted)">سالن:</span> {{ referral.salonId.slice(0, 8) }}…</li>
+                      <li v-if="referral.salonId"><span class="text-(--color-text-muted)">سالن:</span> {{ referral.salonId.slice(0, 8) }}…</li>
                       <li v-if="referral.cancelledReason" class="whitespace-pre-wrap">
-                        <span class="text-(--color-muted)">دلیل لغو:</span> {{ referral.cancelledReason }}
+                        <span class="text-(--color-text-muted)">دلیل لغو:</span> {{ referral.cancelledReason }}
                       </li>
                     </ul>
 
@@ -295,7 +295,7 @@ watch(page, load)
                          and are always available immediately, no separate fetch needed. -->
                     <div class="space-y-2 border-t border-(--color-border) pt-2">
                       <div v-for="role in (['referrer', 'referred'] as const)" :key="role" data-testid="reward-terms">
-                        <p class="font-semibold text-(--color-muted)">{{ role === 'referrer' ? 'پاداش معرف' : 'پاداش معرفی‌شده' }}</p>
+                        <p class="font-semibold text-(--color-text-muted)">{{ role === 'referrer' ? 'پاداش معرف' : 'پاداش معرفی‌شده' }}</p>
                         <p>
                           {{
                             formatRewardTerms(
@@ -308,7 +308,7 @@ watch(page, load)
 
                         <!-- Per-side referral_rewards detail (GET /admin/referrals/:id/rewards),
                              fetched lazily on first expand of this row (see @click above). -->
-                        <p v-if="rewardsByReferral[referral.id]?.loading" class="text-(--color-muted)">در حال بارگذاری…</p>
+                        <p v-if="rewardsByReferral[referral.id]?.loading" class="text-(--color-text-muted)">در حال بارگذاری…</p>
                         <template v-else-if="rewardsByReferral[referral.id]">
                           <div v-if="rewardForRole(referral.id, role)" :data-testid="`reward-status-${role}`" class="mt-1 space-y-1">
                             <p class="flex items-center gap-1.5">
@@ -316,14 +316,14 @@ watch(page, load)
                                 :label="rewardForRole(referral.id, role)!.status === 'granted' ? 'اعطا شد' : 'برگشت خورد'"
                                 :tone="rewardForRole(referral.id, role)!.status === 'granted' ? 'success' : 'danger'"
                               />
-                              <span class="text-(--color-muted)">
+                              <span class="text-(--color-text-muted)">
                                 {{ formatDateTime(rewardForRole(referral.id, role)!.status === 'granted' ? rewardForRole(referral.id, role)!.grantedAt : (rewardForRole(referral.id, role)!.reversedAt ?? rewardForRole(referral.id, role)!.grantedAt)) }}
                               </span>
                             </p>
                             <p v-if="rewardForRole(referral.id, role)!.couponId">
-                              <span class="text-(--color-muted)">کد تخفیف:</span>
+                              <span class="text-(--color-text-muted)">کد تخفیف:</span>
                               <span class="font-mono font-semibold">{{ rewardForRole(referral.id, role)!.couponCode }}</span>
-                              <span class="text-(--color-muted)">
+                              <span class="text-(--color-text-muted)">
                                 ({{ formatResolvedRewardValue(rewardForRole(referral.id, role)!.rewardKind, rewardForRole(referral.id, role)!.rewardValue) }})
                               </span>
                               <StatusBadge
@@ -339,7 +339,7 @@ watch(page, load)
                               کسری بازگشت: {{ rewardForRole(referral.id, role)!.reversalShortfallAmount!.toLocaleString('fa-IR') }} تومان
                             </p>
                           </div>
-                          <p v-else class="mt-1 text-(--color-muted)">هنوز اعطا نشده</p>
+                          <p v-else class="mt-1 text-(--color-text-muted)">هنوز اعطا نشده</p>
                         </template>
                       </div>
                     </div>

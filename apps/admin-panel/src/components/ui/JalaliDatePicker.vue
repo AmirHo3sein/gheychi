@@ -134,28 +134,28 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocumentClick)
       class="flex w-full items-center gap-2 rounded-xl border border-(--color-border) p-2 text-sm"
       @click="toggle"
     >
-      <AppIcon name="calendar" :size="15" class="shrink-0 text-(--color-muted)" />
-      <span :class="displayLabel ? 'text-(--color-text)' : 'text-(--color-muted)'">
+      <AppIcon name="calendar" :size="15" class="shrink-0 text-(--color-text-muted)" />
+      <span :class="displayLabel ? 'text-(--color-text)' : 'text-(--color-text-muted)'">
         {{ displayLabel || placeholder || 'انتخاب تاریخ' }}
       </span>
     </button>
 
     <div
       v-if="open"
-      class="absolute z-50 mt-1.5 w-64 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-3 shadow-(--shadow-pop)"
+      class="absolute z-50 mt-1.5 w-64 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-3 shadow-(--shadow-md)"
     >
       <div class="mb-2 flex items-center justify-between">
         <button type="button" class="rounded-lg p-1.5 hover:bg-(--color-border-soft)" @click="nextMonth">
-          <AppIcon name="chevron-left" :size="16" class="rotate-180 text-(--color-muted)" />
+          <AppIcon name="chevron-left" :size="16" class="rotate-180 text-(--color-text-muted)" />
         </button>
         <p class="text-sm font-bold text-(--color-text)">{{ MONTHS[viewMonth - 1] }} {{ toPersianDigits(viewYear) }}</p>
         <button type="button" class="rounded-lg p-1.5 hover:bg-(--color-border-soft)" @click="prevMonth">
-          <AppIcon name="chevron-left" :size="16" class="text-(--color-muted)" />
+          <AppIcon name="chevron-left" :size="16" class="text-(--color-text-muted)" />
         </button>
       </div>
 
       <div class="grid grid-cols-7 gap-1 text-center">
-        <span v-for="w in WEEKDAYS" :key="w" class="py-1 text-xs font-semibold text-(--color-muted)">{{ w }}</span>
+        <span v-for="w in WEEKDAYS" :key="w" class="py-1 text-xs font-semibold text-(--color-text-muted)">{{ w }}</span>
         <button
           v-for="(day, i) in days"
           :key="i"
@@ -175,7 +175,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocumentClick)
 
       <div class="mt-2 flex justify-between border-t border-(--color-border-soft) pt-2">
         <button type="button" class="text-xs font-semibold text-(--color-accent)" @click="goToday">امروز</button>
-        <button type="button" class="text-xs font-semibold text-(--color-muted)" @click="clear">پاک کردن</button>
+        <button type="button" class="text-xs font-semibold text-(--color-text-muted)" @click="clear">پاک کردن</button>
       </div>
     </div>
   </div>

@@ -103,7 +103,7 @@ async function submit() {
           type="button"
           data-testid="cancel-referral-dismiss"
           :disabled="submitting"
-          class="rounded-xl border border-(--color-border) px-4 py-2.5 text-sm font-semibold text-(--color-muted) transition-colors hover:bg-(--color-border-soft) disabled:opacity-40"
+          class="rounded-xl border border-(--color-border) px-4 py-2.5 text-sm font-semibold text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) disabled:opacity-40"
           @click="collapse"
         >
           انصراف

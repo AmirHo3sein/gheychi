@@ -18,12 +18,12 @@ function go(page: number) {
 
 <template>
   <div v-if="total > 0" class="flex items-center justify-between border-t border-(--color-border-soft) px-5 py-3">
-    <p class="tnum text-xs text-(--color-muted)">{{ rangeStart }}–{{ rangeEnd }} از {{ total }}</p>
+    <p class="tnum text-xs text-(--color-text-muted)">{{ rangeStart }}–{{ rangeEnd }} از {{ total }}</p>
     <div class="flex items-center gap-1">
       <button
         type="button"
         :disabled="page <= 1"
-        class="flex h-7 w-7 items-center justify-center rounded-lg text-(--color-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text) disabled:pointer-events-none disabled:opacity-30"
+        class="flex h-7 w-7 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text) disabled:pointer-events-none disabled:opacity-30"
         @click="go(page - 1)"
       >
         <AppIcon name="chevron-right" :size="15" />
@@ -32,7 +32,7 @@ function go(page: number) {
       <button
         type="button"
         :disabled="page >= totalPages"
-        class="flex h-7 w-7 items-center justify-center rounded-lg text-(--color-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text) disabled:pointer-events-none disabled:opacity-30"
+        class="flex h-7 w-7 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text) disabled:pointer-events-none disabled:opacity-30"
         @click="go(page + 1)"
       >
         <AppIcon name="chevron-left" :size="15" />

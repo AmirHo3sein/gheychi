@@ -174,9 +174,9 @@ watch(page, load)
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
         <div class="relative">
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">شماره موبایل کاربر</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">شماره موبایل کاربر</label>
           <div v-if="!selectedUser" class="relative">
-            <AppIcon name="phone" :size="15" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-muted)" />
+            <AppIcon name="phone" :size="15" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-text-muted)" />
             <input
               v-model="phoneQuery"
               data-testid="wallet-phone-filter"
@@ -195,7 +195,7 @@ watch(page, load)
             <button
               type="button"
               data-testid="wallet-clear-user"
-              class="shrink-0 text-(--color-muted) hover:text-(--tone-danger-text)"
+              class="shrink-0 text-(--color-text-muted) hover:text-(--tone-danger-text)"
               title="پاک کردن کاربر"
               @click="clearUserFilter"
             >
@@ -206,7 +206,7 @@ watch(page, load)
           <div
             v-if="matches.length > 0"
             data-testid="wallet-user-matches"
-            class="absolute right-0 top-full z-10 mt-1 w-64 overflow-hidden rounded-xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-pop)"
+            class="absolute right-0 top-full z-10 mt-1 w-64 overflow-hidden rounded-xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-md)"
           >
             <button
               v-for="user in matches"
@@ -216,21 +216,21 @@ watch(page, load)
               @click="selectUser(user)"
             >
               <span class="font-semibold text-(--color-text)">{{ user.name ?? 'بدون نام' }}</span>
-              <span class="tnum mr-1 text-xs text-(--color-muted)">{{ user.phone }}</span>
+              <span class="tnum mr-1 text-xs text-(--color-text-muted)">{{ user.phone }}</span>
             </button>
           </div>
         </div>
 
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">نوع تراکنش</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">نوع تراکنش</label>
           <AppSelect v-model="typeFilter" :options="TYPE_OPTIONS" width="12rem" />
         </div>
 
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">بازه زمانی</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">بازه زمانی</label>
           <div class="flex items-center gap-1.5">
             <JalaliDatePicker v-model="fromDate" placeholder="از تاریخ" class="w-32" />
-            <span class="text-(--color-muted)">تا</span>
+            <span class="text-(--color-text-muted)">تا</span>
             <JalaliDatePicker v-model="toDate" placeholder="تا تاریخ" class="w-32" />
           </div>
         </div>
@@ -238,7 +238,7 @@ watch(page, load)
         <button
           v-if="hasActiveFilters"
           type="button"
-          class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-(--color-muted) transition-colors hover:text-(--tone-danger-text)"
+          class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-(--color-text-muted) transition-colors hover:text-(--tone-danger-text)"
           @click="clearFilters"
         >
           <AppIcon name="reset" :size="15" />
@@ -253,7 +253,7 @@ watch(page, load)
       <div class="overflow-x-auto">
         <table class="w-full text-right text-sm">
           <thead>
-            <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-muted)">
+            <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
               <th class="px-5 py-3 font-semibold">تاریخ</th>
               <th class="px-5 py-3 font-semibold">کاربر</th>
               <th class="px-5 py-3 font-semibold">واحد</th>
@@ -268,12 +268,12 @@ watch(page, load)
               :key="tx.id"
               class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
             >
-              <td class="tnum px-5 py-3.5 text-(--color-muted)">{{ formatDateTime(tx.createdAt) }}</td>
+              <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDateTime(tx.createdAt) }}</td>
               <td class="px-5 py-3.5">
                 <p class="font-semibold text-(--color-text)">{{ tx.userName ?? '—' }}</p>
-                <p class="tnum text-xs text-(--color-muted)">{{ tx.userPhone }}</p>
+                <p class="tnum text-xs text-(--color-text-muted)">{{ tx.userPhone }}</p>
               </td>
-              <td class="px-5 py-3.5 text-(--color-muted)">{{ currencyLabel(tx.currency) }}</td>
+              <td class="px-5 py-3.5 text-(--color-text-muted)">{{ currencyLabel(tx.currency) }}</td>
               <td
                 class="tnum px-5 py-3.5 font-semibold"
                 :class="tx.amount >= 0 ? 'text-(--tone-success-text)' : 'text-(--tone-danger-text)'"
@@ -283,7 +283,7 @@ watch(page, load)
               <td class="px-5 py-3.5">
                 <StatusBadge :label="walletTransactionTypeLabel(tx.type).label" :tone="walletTransactionTypeLabel(tx.type).tone" />
               </td>
-              <td class="max-w-64 truncate px-5 py-3.5 text-(--color-muted)" :title="tx.reason ?? undefined">
+              <td class="max-w-64 truncate px-5 py-3.5 text-(--color-text-muted)" :title="tx.reason ?? undefined">
                 {{ tx.reason ?? '—' }}
               </td>
             </tr>

@@ -5,7 +5,7 @@ withDefaults(defineProps<{ padded?: boolean }>(), { padded: true })
 
 <template>
   <div
-    class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-panel)"
+    class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-sm)"
     :class="padded && 'p-5'"
   >
     <slot />

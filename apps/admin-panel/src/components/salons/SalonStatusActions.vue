@@ -99,7 +99,7 @@ async function submitReason() {
         <AppIcon name="check" :size="16" />
         رفع تعلیق و تایید مجدد
       </button>
-      <p v-if="status === 'rejected'" class="text-sm text-(--color-muted)">
+      <p v-if="status === 'rejected'" class="text-sm text-(--color-text-muted)">
         اقدامی برای این وضعیت لازم نیست.
       </p>
     </div>
@@ -129,7 +129,7 @@ async function submitReason() {
         <button
           type="button"
           :disabled="submitting"
-          class="rounded-xl border border-(--color-border) px-4 py-2.5 text-sm font-semibold text-(--color-muted) transition-colors hover:bg-(--color-border-soft)"
+          class="rounded-xl border border-(--color-border) px-4 py-2.5 text-sm font-semibold text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft)"
           @click="showReasonFor = null"
         >
           انصراف

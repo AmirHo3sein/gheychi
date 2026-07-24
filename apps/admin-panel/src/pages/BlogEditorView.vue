@@ -260,7 +260,7 @@ async function removeCover() {
               data-testid="cancel-delete"
               type="button"
               :disabled="submitting"
-              class="px-2 text-sm font-semibold text-(--color-muted) disabled:opacity-40"
+              class="px-2 text-sm font-semibold text-(--color-text-muted) disabled:opacity-40"
               @click="cancelDelete"
             >
               انصراف
@@ -314,7 +314,7 @@ async function removeCover() {
         <div class="space-y-5">
           <AppCard class="space-y-4">
             <div>
-              <label class="mb-1 block text-xs text-(--color-muted)" for="post-title">عنوان</label>
+              <label class="mb-1 block text-xs text-(--color-text-muted)" for="post-title">عنوان</label>
               <input
                 id="post-title"
                 v-model="title"
@@ -325,7 +325,7 @@ async function removeCover() {
             </div>
 
             <div>
-              <label class="mb-1 block text-xs text-(--color-muted)" for="post-slug">نامک</label>
+              <label class="mb-1 block text-xs text-(--color-text-muted)" for="post-slug">نامک</label>
               <input
                 id="post-slug"
                 v-model="slug"
@@ -338,7 +338,7 @@ async function removeCover() {
               <p v-if="slugError" data-testid="slug-error" class="mt-1 text-xs text-(--tone-danger-text)">
                 {{ slugError }}
               </p>
-              <p v-if="isCreate" class="mt-1 text-xs text-(--color-muted)">
+              <p v-if="isCreate" class="mt-1 text-xs text-(--color-text-muted)">
                 تا وقتی این فیلد را دستی ویرایش نکنید فقط پیش‌نمایش است و نامک نهایی را سرور از روی عنوان می‌سازد؛ در صورت ویرایش، همین نامک ثبت می‌شود.
               </p>
               <p v-if="post?.status === 'published'" class="mt-1 text-xs text-(--tone-warning-text)">
@@ -348,11 +348,11 @@ async function removeCover() {
 
             <div class="grid grid-cols-2 gap-3">
               <div>
-                <label class="mb-1 block text-xs text-(--color-muted)">دسته‌بندی</label>
+                <label class="mb-1 block text-xs text-(--color-text-muted)">دسته‌بندی</label>
                 <AppSelect v-model="categoryId" :options="categoryOptions" width="100%" />
               </div>
               <div>
-                <label class="mb-1 block text-xs text-(--color-muted)" for="post-author">نویسنده</label>
+                <label class="mb-1 block text-xs text-(--color-text-muted)" for="post-author">نویسنده</label>
                 <input
                   id="post-author"
                   v-model="authorName"
@@ -365,8 +365,8 @@ async function removeCover() {
 
             <div>
               <div class="mb-1 flex items-center justify-between">
-                <label class="text-xs text-(--color-muted)" for="post-excerpt">خلاصه</label>
-                <span class="text-xs text-(--color-muted)">{{ excerpt.length }} / 500</span>
+                <label class="text-xs text-(--color-text-muted)" for="post-excerpt">خلاصه</label>
+                <span class="text-xs text-(--color-text-muted)">{{ excerpt.length }} / 500</span>
               </div>
               <!-- maxlength matches the blog DTO's excerpt cap (varchar(500) / @Length(0, 500)) -->
               <textarea
@@ -392,8 +392,8 @@ async function removeCover() {
               <div v-if="seoOpen" class="space-y-3 border-t border-(--color-border-soft) p-3">
                 <div>
                   <div class="mb-1 flex items-center justify-between">
-                    <label class="text-xs text-(--color-muted)" for="post-meta-description">توضیح متا</label>
-                    <span class="text-xs text-(--color-muted)">{{ metaDescription.length }} / 300</span>
+                    <label class="text-xs text-(--color-text-muted)" for="post-meta-description">توضیح متا</label>
+                    <span class="text-xs text-(--color-text-muted)">{{ metaDescription.length }} / 300</span>
                   </div>
                   <!-- maxlength matches the blog DTO's metaDescription cap (varchar(300) / @Length(0, 300)) -->
                   <textarea
@@ -406,7 +406,7 @@ async function removeCover() {
                   />
                 </div>
                 <div>
-                  <label class="mb-1 block text-xs text-(--color-muted)" for="post-og-title">عنوان اشتراک‌گذاری (og:title)</label>
+                  <label class="mb-1 block text-xs text-(--color-text-muted)" for="post-og-title">عنوان اشتراک‌گذاری (og:title)</label>
                   <!-- maxlength matches the blog DTO's ogTitle cap (varchar(200) / @Length(0, 200)) -->
                   <input
                     id="post-og-title"
@@ -451,10 +451,10 @@ async function removeCover() {
                 </button>
               </div>
             </div>
-            <p v-else class="text-xs text-(--color-muted)">برای بارگذاری کاور، ابتدا پیش‌نویس را ذخیره کنید.</p>
+            <p v-else class="text-xs text-(--color-text-muted)">برای بارگذاری کاور، ابتدا پیش‌نویس را ذخیره کنید.</p>
 
             <div>
-              <label class="mb-1 block text-xs text-(--color-muted)" for="post-body">متن مطلب (Markdown)</label>
+              <label class="mb-1 block text-xs text-(--color-text-muted)" for="post-body">متن مطلب (Markdown)</label>
               <textarea
                 id="post-body"
                 v-model="bodyMarkdown"
@@ -468,7 +468,7 @@ async function removeCover() {
         </div>
 
         <AppCard class="self-start">
-          <p class="mb-3 text-xs font-semibold text-(--color-muted)">پیش‌نمایش</p>
+          <p class="mb-3 text-xs font-semibold text-(--color-text-muted)">پیش‌نمایش</p>
           <!-- sanctioned v-html: renderMarkdown uses html:false so raw HTML never parses — see its invariant test -->
           <div data-testid="preview" class="space-y-3 text-sm leading-7 text-(--color-text)" v-html="previewHtml" />
         </AppCard>

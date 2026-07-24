@@ -111,7 +111,7 @@ watch(page, load)
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
         <div data-testid="status-filter">
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">وضعیت</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">وضعیت</label>
           <AppSelect v-model="statusFilter" :options="STATUS_OPTIONS" width="10rem" />
         </div>
       </div>
@@ -124,7 +124,7 @@ watch(page, load)
         <div class="flex items-start justify-between gap-4">
           <div class="flex flex-wrap items-center gap-2 text-sm">
             <span class="tnum font-semibold text-(--color-text)">{{ report.reporterPhone }}</span>
-            <span class="text-(--color-muted)">درباره</span>
+            <span class="text-(--color-text-muted)">درباره</span>
             <RouterLink :to="`/salons/${report.salonId}`" class="font-semibold text-(--color-accent) hover:opacity-80">
               {{ report.salonName }}
             </RouterLink>
@@ -135,7 +135,7 @@ watch(page, load)
         <p class="mt-3 text-sm leading-6 text-(--color-text)">{{ report.reason }}</p>
 
         <div v-if="report.reviewId" data-testid="quoted-review" class="mt-3 rounded-xl bg-(--color-border-soft) p-3">
-          <p class="mb-1 flex items-center gap-1.5 text-xs font-semibold text-(--color-muted)">
+          <p class="mb-1 flex items-center gap-1.5 text-xs font-semibold text-(--color-text-muted)">
             <AppIcon name="star" :size="13" />
             نظر گزارش‌شده — امتیاز {{ report.reviewRating ?? '—' }}
           </p>
@@ -146,7 +146,7 @@ watch(page, load)
              the provider deletes the story or the expiry GC collects it, and that is exactly
              when the «منقضی شده» placeholder must still identify the report as story-targeted. -->
         <div v-if="report.targetType === 'story'" data-testid="quoted-story" class="mt-3 rounded-xl bg-(--color-border-soft) p-3">
-          <p class="mb-1 flex items-center gap-1.5 text-xs font-semibold text-(--color-muted)">
+          <p class="mb-1 flex items-center gap-1.5 text-xs font-semibold text-(--color-text-muted)">
             <AppIcon name="sparkles" :size="13" />
             استوری گزارش‌شده
           </p>
@@ -154,11 +154,11 @@ watch(page, load)
             <img :src="report.storyUrl" alt="" class="h-24 w-24 rounded-lg object-cover" />
             <p v-if="report.storyCaption" class="mt-2 text-sm text-(--color-text)">{{ report.storyCaption }}</p>
           </template>
-          <p v-else class="text-sm text-(--color-muted)">منقضی شده</p>
+          <p v-else class="text-sm text-(--color-text-muted)">منقضی شده</p>
         </div>
 
         <div v-if="report.targetType === 'portfolio'" data-testid="quoted-portfolio-item" class="mt-3 rounded-xl bg-(--color-border-soft) p-3">
-          <p class="mb-1 flex items-center gap-1.5 text-xs font-semibold text-(--color-muted)">
+          <p class="mb-1 flex items-center gap-1.5 text-xs font-semibold text-(--color-text-muted)">
             <AppIcon name="brush" :size="13" />
             نمونه کار گزارش‌شده
           </p>
@@ -166,15 +166,15 @@ watch(page, load)
             <img :src="report.portfolioItemUrl" alt="" class="h-24 w-24 rounded-lg object-cover" />
             <p v-if="report.portfolioItemCaption" class="mt-2 text-sm text-(--color-text)">{{ report.portfolioItemCaption }}</p>
           </template>
-          <p v-else class="text-sm text-(--color-muted)">منقضی شده</p>
+          <p v-else class="text-sm text-(--color-text-muted)">منقضی شده</p>
         </div>
 
         <div v-if="report.resolutionNote" class="mt-3 rounded-xl bg-(--color-border-soft) p-3">
-          <p class="mb-1 text-xs font-semibold text-(--color-muted)">یادداشت رسیدگی</p>
+          <p class="mb-1 text-xs font-semibold text-(--color-text-muted)">یادداشت رسیدگی</p>
           <p class="text-sm text-(--color-text)">{{ report.resolutionNote }}</p>
         </div>
 
-        <p class="tnum mt-3 text-xs text-(--color-muted)">{{ formatDate(report.createdAt) }}</p>
+        <p class="tnum mt-3 text-xs text-(--color-text-muted)">{{ formatDate(report.createdAt) }}</p>
 
         <div v-if="report.status === 'open'" class="mt-4 border-t border-(--color-border-soft) pt-3.5">
           <ResolveReportActions :report-id="report.id" @updated="onActionFinished" @refresh="onActionFinished" />

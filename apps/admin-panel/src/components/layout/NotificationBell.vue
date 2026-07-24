@@ -111,7 +111,7 @@ onUnmounted(() => {
       data-testid="notification-bell"
       type="button"
       title="اعلان‌ها"
-      class="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-(--color-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text)"
+      class="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text)"
       @click="toggle"
     >
       <AppIcon name="bell" :size="18" />
@@ -127,7 +127,7 @@ onUnmounted(() => {
     <div
       v-if="open"
       data-testid="notification-dropdown"
-      class="absolute left-0 z-50 mt-1.5 w-80 rounded-2xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-pop)"
+      class="absolute left-0 z-50 mt-1.5 w-80 rounded-2xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-md)"
     >
       <div class="flex items-center justify-between border-b border-(--color-border-soft) px-4 py-2.5">
         <p class="text-sm font-bold text-(--color-text)">اعلان‌ها</p>
@@ -141,7 +141,7 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <p v-if="!loadingList && notifications.length === 0" class="px-4 py-8 text-center text-sm text-(--color-muted)">
+      <p v-if="!loadingList && notifications.length === 0" class="px-4 py-8 text-center text-sm text-(--color-text-muted)">
         اعلانی وجود ندارد.
       </p>
 
@@ -157,8 +157,8 @@ onUnmounted(() => {
               <span v-if="!notification.readAt" class="h-1.5 w-1.5 shrink-0 rounded-full bg-(--color-accent)" />
               <span class="text-sm font-semibold text-(--color-text)">{{ notification.title }}</span>
             </span>
-            <span v-if="notification.body" class="text-xs leading-5 text-(--color-muted)">{{ notification.body }}</span>
-            <span class="tnum text-[11px] text-(--color-muted)">{{ formatTime(notification.createdAt) }}</span>
+            <span v-if="notification.body" class="text-xs leading-5 text-(--color-text-muted)">{{ notification.body }}</span>
+            <span class="tnum text-[11px] text-(--color-text-muted)">{{ formatTime(notification.createdAt) }}</span>
           </button>
         </li>
       </ul>

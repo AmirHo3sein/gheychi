@@ -238,14 +238,14 @@ onMounted(async () => {
   <div class="space-y-6 p-8">
     <div class="grid grid-cols-2 gap-4 lg:grid-cols-5">
       <RouterLink v-for="stat in stats" :key="stat.label" :to="stat.to">
-        <AppCard class="transition-shadow hover:shadow-(--shadow-pop)">
+        <AppCard class="transition-shadow hover:shadow-(--shadow-lg)">
           <div class="flex items-center justify-between">
             <div class="flex h-10 w-10 items-center justify-center rounded-xl" :class="TONE_BG[stat.tone]">
               <AppIcon :name="stat.icon" :size="19" />
             </div>
             <span class="tnum text-2xl font-black text-(--color-text)">{{ loading ? '—' : stat.value }}</span>
           </div>
-          <p class="mt-3 text-sm text-(--color-muted)">{{ stat.label }}</p>
+          <p class="mt-3 text-sm text-(--color-text-muted)">{{ stat.label }}</p>
         </AppCard>
       </RouterLink>
     </div>
@@ -253,44 +253,44 @@ onMounted(async () => {
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <AppCard>
         <p class="mb-1 text-sm font-bold text-(--color-text)">وضعیت آرایشگاه‌ها</p>
-        <p class="mb-2 text-xs text-(--color-muted)">توزیع آرایشگاه‌ها بر اساس وضعیت بررسی</p>
+        <p class="mb-2 text-xs text-(--color-text-muted)">توزیع آرایشگاه‌ها بر اساس وضعیت بررسی</p>
         <VChart v-if="hasSalonData" :option="salonStatusChart" autoresize class="!h-64" />
-        <p v-else class="py-16 text-center text-sm text-(--color-muted)">داده‌ای برای نمایش موجود نیست.</p>
+        <p v-else class="py-16 text-center text-sm text-(--color-text-muted)">داده‌ای برای نمایش موجود نیست.</p>
       </AppCard>
 
       <AppCard>
         <p class="mb-1 text-sm font-bold text-(--color-text)">مخاطب آرایشگاه‌ها</p>
-        <p class="mb-2 text-xs text-(--color-muted)">سهم آرایشگاه‌های بانوان و آقایان</p>
+        <p class="mb-2 text-xs text-(--color-text-muted)">سهم آرایشگاه‌های بانوان و آقایان</p>
         <VChart v-if="hasSalonData" :option="genderChart" autoresize class="!h-64" />
-        <p v-else class="py-16 text-center text-sm text-(--color-muted)">داده‌ای برای نمایش موجود نیست.</p>
+        <p v-else class="py-16 text-center text-sm text-(--color-text-muted)">داده‌ای برای نمایش موجود نیست.</p>
       </AppCard>
 
       <AppCard>
         <p class="mb-1 text-sm font-bold text-(--color-text)">نقش کاربران</p>
-        <p class="mb-2 text-xs text-(--color-muted)">توزیع کاربران بر اساس نقش</p>
+        <p class="mb-2 text-xs text-(--color-text-muted)">توزیع کاربران بر اساس نقش</p>
         <VChart v-if="hasUserData" :option="userRoleChart" autoresize class="!h-64" />
-        <p v-else class="py-16 text-center text-sm text-(--color-muted)">داده‌ای برای نمایش موجود نیست.</p>
+        <p v-else class="py-16 text-center text-sm text-(--color-text-muted)">داده‌ای برای نمایش موجود نیست.</p>
       </AppCard>
     </div>
 
     <AppCard>
       <p class="mb-1 text-sm font-bold text-(--color-text)">توزیع امتیاز نظرات</p>
-      <p class="mb-2 text-xs text-(--color-muted)">تعداد نظرات ثبت‌شده به تفکیک امتیاز</p>
+      <p class="mb-2 text-xs text-(--color-text-muted)">تعداد نظرات ثبت‌شده به تفکیک امتیاز</p>
       <VChart v-if="hasReviewData" :option="ratingChart" autoresize class="!h-64" />
-      <p v-else class="py-16 text-center text-sm text-(--color-muted)">هنوز نظری ثبت نشده است.</p>
+      <p v-else class="py-16 text-center text-sm text-(--color-text-muted)">هنوز نظری ثبت نشده است.</p>
     </AppCard>
 
     <div>
-      <h2 class="mb-3 text-sm font-bold text-(--color-muted)">دسترسی سریع</h2>
+      <h2 class="mb-3 text-sm font-bold text-(--color-text-muted)">دسترسی سریع</h2>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <RouterLink v-for="link in QUICK_LINKS" :key="link.to" :to="link.to">
-          <AppCard class="flex items-center gap-3.5 transition-shadow hover:shadow-(--shadow-pop)">
+          <AppCard class="flex items-center gap-3.5 transition-shadow hover:shadow-(--shadow-lg)">
             <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-(--color-border-soft) text-(--color-accent)">
               <AppIcon :name="link.icon" :size="19" />
             </div>
             <div class="min-w-0">
               <p class="font-semibold text-(--color-text)">{{ link.label }}</p>
-              <p class="truncate text-xs text-(--color-muted)">{{ link.desc }}</p>
+              <p class="truncate text-xs text-(--color-text-muted)">{{ link.desc }}</p>
             </div>
             <AppIcon name="chevron-left" :size="16" class="mr-auto shrink-0 text-(--color-border)" />
           </AppCard>

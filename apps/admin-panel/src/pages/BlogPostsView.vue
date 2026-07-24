@@ -188,11 +188,11 @@ watch(page, load)
       <AppCard :padded="false" class="p-4">
         <div class="flex flex-wrap items-end gap-3">
           <div data-testid="status-filter">
-            <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">وضعیت</label>
+            <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">وضعیت</label>
             <AppSelect v-model="statusFilter" :options="STATUS_OPTIONS" width="11rem" />
           </div>
           <div data-testid="category-filter">
-            <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">دسته‌بندی</label>
+            <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">دسته‌بندی</label>
             <AppSelect v-model="categoryFilter" :options="categoryOptions" width="12rem" />
           </div>
           <button
@@ -212,7 +212,7 @@ watch(page, load)
       <AppCard v-else :padded="false" class="overflow-hidden">
         <table class="w-full text-right text-sm">
           <thead>
-            <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-muted)">
+            <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
               <th class="px-5 py-3 font-semibold">عنوان</th>
               <th class="px-5 py-3 font-semibold">دسته‌بندی</th>
               <th class="px-5 py-3 font-semibold">وضعیت</th>
@@ -228,11 +228,11 @@ watch(page, load)
               @click="openPost(post)"
             >
               <td class="px-5 py-3.5 font-semibold text-(--color-text)">{{ post.title }}</td>
-              <td class="px-5 py-3.5 text-(--color-muted)">{{ post.categoryName ?? '—' }}</td>
+              <td class="px-5 py-3.5 text-(--color-text-muted)">{{ post.categoryName ?? '—' }}</td>
               <td class="px-5 py-3.5">
                 <StatusBadge :label="blogPostStatusLabel(post.status).label" :tone="blogPostStatusLabel(post.status).tone" />
               </td>
-              <td class="tnum px-5 py-3.5 text-(--color-muted)">{{ formatDate(post.publishedAt) }}</td>
+              <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDate(post.publishedAt) }}</td>
             </tr>
           </tbody>
         </table>
@@ -288,7 +288,7 @@ watch(page, load)
               data-testid="cancel-delete-category"
               type="button"
               :disabled="submitting"
-              class="shrink-0 text-sm font-semibold text-(--color-muted) disabled:opacity-40"
+              class="shrink-0 text-sm font-semibold text-(--color-text-muted) disabled:opacity-40"
               @click="cancelDelete"
             >
               انصراف
@@ -319,7 +319,7 @@ watch(page, load)
                 data-testid="edit-category"
                 type="button"
                 :disabled="submitting"
-                class="shrink-0 rounded-lg p-1.5 text-(--color-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-accent) disabled:opacity-40"
+                class="shrink-0 rounded-lg p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-accent) disabled:opacity-40"
                 title="ویرایش"
                 @click="startEdit(category)"
               >
@@ -329,7 +329,7 @@ watch(page, load)
                 data-testid="delete-category"
                 type="button"
                 :disabled="submitting"
-                class="shrink-0 rounded-lg p-1.5 text-(--color-muted) transition-colors hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text) disabled:opacity-40"
+                class="shrink-0 rounded-lg p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text) disabled:opacity-40"
                 title="حذف"
                 @click="askDelete(category)"
               >
@@ -338,7 +338,7 @@ watch(page, load)
             </template>
           </template>
         </div>
-        <p v-if="categories.length === 0" class="py-4 text-center text-xs text-(--color-muted)">
+        <p v-if="categories.length === 0" class="py-4 text-center text-xs text-(--color-text-muted)">
           هنوز دسته‌بندی‌ای ساخته نشده است.
         </p>
       </div>

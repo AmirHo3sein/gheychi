@@ -102,9 +102,9 @@ watch(page, load)
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">شناسه آرایشگاه</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">شناسه آرایشگاه</label>
           <div class="relative">
-            <AppIcon name="search" :size="16" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-muted)" />
+            <AppIcon name="search" :size="16" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-text-muted)" />
             <input
               v-model="salonIdFilter"
               placeholder="جست‌وجو…"
@@ -113,17 +113,17 @@ watch(page, load)
           </div>
         </div>
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">وضعیت</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">وضعیت</label>
           <AppSelect v-model="statusFilter" :options="STATUS_OPTIONS" width="10rem" />
         </div>
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">امتیاز</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">امتیاز</label>
           <AppSelect v-model="ratingFilter" :options="RATING_OPTIONS" width="9rem" />
         </div>
         <button
           v-if="hasActiveFilters"
           type="button"
-          class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-(--color-muted) transition-colors hover:text-(--tone-danger-text)"
+          class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-(--color-text-muted) transition-colors hover:text-(--tone-danger-text)"
           @click="clearFilters"
         >
           <AppIcon name="reset" :size="15" />
@@ -151,7 +151,7 @@ watch(page, load)
           <StatusBadge :label="reviewStatusLabel(review.status).label" :tone="reviewStatusLabel(review.status).tone" />
         </div>
 
-        <div v-if="review.workerRating" class="mt-2.5 flex items-center gap-1.5 text-sm text-(--color-muted)">
+        <div v-if="review.workerRating" class="mt-2.5 flex items-center gap-1.5 text-sm text-(--color-text-muted)">
           <AppIcon name="worker-ratings" :size="15" />
           <span>امتیاز کارمند ({{ review.workerRating.workerName }}):</span>
           <span class="flex items-center gap-0.5 text-(--color-accent)">
@@ -170,7 +170,7 @@ watch(page, load)
         <p v-if="review.comment" class="mt-3 text-sm leading-6 text-(--color-text)">{{ review.comment }}</p>
 
         <div v-if="review.salonReply" class="mt-3 rounded-xl bg-(--color-border-soft) p-3">
-          <p class="mb-1 text-xs font-semibold text-(--color-muted)">پاسخ آرایشگاه</p>
+          <p class="mb-1 text-xs font-semibold text-(--color-text-muted)">پاسخ آرایشگاه</p>
           <p class="text-sm text-(--color-text)">{{ review.salonReply }}</p>
         </div>
 

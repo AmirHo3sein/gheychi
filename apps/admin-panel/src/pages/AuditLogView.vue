@@ -121,13 +121,13 @@ watch(page, load)
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
         <div data-testid="action-filter">
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">اقدام</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">اقدام</label>
           <AppSelect v-model="actionFilter" :options="ACTION_OPTIONS" width="13rem" />
         </div>
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">شناسه مدیر (UUID)</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">شناسه مدیر (UUID)</label>
           <div class="relative">
-            <AppIcon name="search" :size="16" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-muted)" />
+            <AppIcon name="search" :size="16" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-text-muted)" />
             <input
               v-model="actorFilter"
               placeholder="شناسه کامل را وارد کنید"
@@ -137,17 +137,17 @@ watch(page, load)
           </div>
         </div>
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">بازه زمانی</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">بازه زمانی</label>
           <div class="flex items-center gap-1.5">
             <JalaliDatePicker v-model="fromDate" placeholder="از تاریخ" class="w-32" />
-            <span class="text-(--color-muted)">تا</span>
+            <span class="text-(--color-text-muted)">تا</span>
             <JalaliDatePicker v-model="toDate" placeholder="تا تاریخ" class="w-32" />
           </div>
         </div>
         <button
           v-if="hasActiveFilters"
           type="button"
-          class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-(--color-muted) transition-colors hover:text-(--tone-danger-text)"
+          class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-(--color-text-muted) transition-colors hover:text-(--tone-danger-text)"
           @click="clearFilters"
         >
           <AppIcon name="reset" :size="15" />
@@ -161,7 +161,7 @@ watch(page, load)
     <AppCard v-else :padded="false" class="overflow-hidden">
       <table class="w-full text-right text-sm">
         <thead>
-          <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-muted)">
+          <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
             <th class="px-5 py-3 font-semibold">زمان</th>
             <th class="px-5 py-3 font-semibold">مدیر</th>
             <th class="px-5 py-3 font-semibold">اقدام</th>
@@ -176,10 +176,10 @@ watch(page, load)
             :key="row.id"
             class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
           >
-            <td class="tnum px-5 py-3.5 text-(--color-muted)">{{ formatDateTime(row.createdAt) }}</td>
+            <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDateTime(row.createdAt) }}</td>
             <td class="px-5 py-3.5">
               <p class="font-semibold text-(--color-text)">{{ row.actorName ?? '—' }}</p>
-              <p class="tnum text-xs text-(--color-muted)">{{ row.actorPhone }}</p>
+              <p class="tnum text-xs text-(--color-text-muted)">{{ row.actorPhone }}</p>
             </td>
             <td class="px-5 py-3.5">
               <StatusBadge :label="auditActionLabel(row.action).label" :tone="auditActionLabel(row.action).tone" />
@@ -192,23 +192,23 @@ watch(page, load)
               >
                 {{ targetTypeLabel(row.targetType) }}
               </RouterLink>
-              <span v-else class="text-(--color-muted)">{{ targetTypeLabel(row.targetType) }}</span>
-              <p v-if="row.targetId" dir="ltr" class="tnum text-right text-xs text-(--color-muted)">
+              <span v-else class="text-(--color-text-muted)">{{ targetTypeLabel(row.targetType) }}</span>
+              <p v-if="row.targetId" dir="ltr" class="tnum text-right text-xs text-(--color-text-muted)">
                 {{ row.targetId.slice(0, 8) }}…
               </p>
             </td>
             <td data-testid="payload-cell" class="px-5 py-3.5">
               <!-- Text interpolation only (never v-html) -- payloads contain user-supplied text. -->
               <details v-if="row.payload" data-testid="payload-details">
-                <summary class="cursor-pointer text-xs font-semibold text-(--color-muted) transition-colors hover:text-(--color-text)">
+                <summary class="cursor-pointer text-xs font-semibold text-(--color-text-muted) transition-colors hover:text-(--color-text)">
                   نمایش
                 </summary>
                 <pre
                   dir="ltr"
-                  class="mt-1.5 max-h-40 max-w-64 overflow-x-auto overflow-y-auto rounded-lg bg-(--color-border-soft) p-2 text-left text-xs text-(--color-muted)"
+                  class="mt-1.5 max-h-40 max-w-64 overflow-x-auto overflow-y-auto rounded-lg bg-(--color-border-soft) p-2 text-left text-xs text-(--color-text-muted)"
                 >{{ formatPayload(row.payload) }}</pre>
               </details>
-              <span v-else class="text-(--color-muted)">—</span>
+              <span v-else class="text-(--color-text-muted)">—</span>
             </td>
             <td class="px-5 py-3.5">
               <StatusBadge

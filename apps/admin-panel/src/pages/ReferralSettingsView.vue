@@ -148,14 +148,14 @@ onMounted(load)
 
         <div class="grid gap-5 sm:grid-cols-2">
           <div class="space-y-3 rounded-xl border border-(--color-border-soft) p-4">
-            <p class="text-xs font-semibold text-(--color-muted)">پاداش معرف</p>
+            <p class="text-xs font-semibold text-(--color-text-muted)">پاداش معرف</p>
             <div>
-              <label class="mb-1.5 block text-xs text-(--color-muted)">نوع پاداش</label>
+              <label class="mb-1.5 block text-xs text-(--color-text-muted)">نوع پاداش</label>
               <AppSelect v-model="row.referrerRewardKind" :options="REWARD_KIND_OPTIONS" width="100%" />
             </div>
             <div class="flex items-end gap-2">
               <div class="flex-1">
-                <label class="mb-1.5 block text-xs text-(--color-muted)">مقدار ({{ rewardKindUnit(row.referrerRewardKind) }})</label>
+                <label class="mb-1.5 block text-xs text-(--color-text-muted)">مقدار ({{ rewardKindUnit(row.referrerRewardKind) }})</label>
                 <input
                   v-model.number="row.referrerRewardValue"
                   :data-testid="`referrer-value-${row.referralType}`"
@@ -165,7 +165,7 @@ onMounted(load)
                 />
               </div>
               <div class="flex-1">
-                <label class="mb-1.5 block text-xs text-(--color-muted)">سقف (اختیاری)</label>
+                <label class="mb-1.5 block text-xs text-(--color-text-muted)">سقف (اختیاری)</label>
                 <input
                   v-model.number="row.referrerRewardMax"
                   type="number"
@@ -178,14 +178,14 @@ onMounted(load)
           </div>
 
           <div class="space-y-3 rounded-xl border border-(--color-border-soft) p-4">
-            <p class="text-xs font-semibold text-(--color-muted)">پاداش معرفی‌شده</p>
+            <p class="text-xs font-semibold text-(--color-text-muted)">پاداش معرفی‌شده</p>
             <div>
-              <label class="mb-1.5 block text-xs text-(--color-muted)">نوع پاداش</label>
+              <label class="mb-1.5 block text-xs text-(--color-text-muted)">نوع پاداش</label>
               <AppSelect v-model="row.referredRewardKind" :options="REWARD_KIND_OPTIONS" width="100%" />
             </div>
             <div class="flex items-end gap-2">
               <div class="flex-1">
-                <label class="mb-1.5 block text-xs text-(--color-muted)">مقدار ({{ rewardKindUnit(row.referredRewardKind) }})</label>
+                <label class="mb-1.5 block text-xs text-(--color-text-muted)">مقدار ({{ rewardKindUnit(row.referredRewardKind) }})</label>
                 <input
                   v-model.number="row.referredRewardValue"
                   :data-testid="`referred-value-${row.referralType}`"
@@ -195,7 +195,7 @@ onMounted(load)
                 />
               </div>
               <div class="flex-1">
-                <label class="mb-1.5 block text-xs text-(--color-muted)">سقف (اختیاری)</label>
+                <label class="mb-1.5 block text-xs text-(--color-text-muted)">سقف (اختیاری)</label>
                 <input
                   v-model.number="row.referredRewardMax"
                   type="number"
@@ -210,11 +210,11 @@ onMounted(load)
 
         <div class="mt-5 grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
           <div>
-            <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">رویداد شرط پاداش</label>
+            <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">رویداد شرط پاداش</label>
             <AppSelect v-model="row.qualifyingEvent" :options="QUALIFYING_EVENT_OPTIONS" width="100%" />
           </div>
           <div>
-            <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">مهلت انتظار اعطا (ساعت)</label>
+            <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">مهلت انتظار اعطا (ساعت)</label>
             <input
               v-model.number="row.grantHoldbackHours"
               type="number"
@@ -223,7 +223,7 @@ onMounted(load)
             />
           </div>
           <div>
-            <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">انقضا (روز، اختیاری)</label>
+            <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">انقضا (روز، اختیاری)</label>
             <input
               v-model.number="row.expirationDays"
               type="number"
@@ -233,7 +233,7 @@ onMounted(load)
             />
           </div>
           <div>
-            <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">سقف تعداد معرفی هر معرف (اختیاری)</label>
+            <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">سقف تعداد معرفی هر معرف (اختیاری)</label>
             <input
               v-model.number="row.maxReferralsPerReferrer"
               type="number"

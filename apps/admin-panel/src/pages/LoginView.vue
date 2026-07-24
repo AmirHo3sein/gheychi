@@ -3,7 +3,9 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import { useSessionStore } from '@/stores/session'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon, { type IconName } from '@/components/ui/AppIcon.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 
 const { apiFetch } = useApi()
 const session = useSessionStore()
@@ -87,7 +89,7 @@ async function verifyOtp() {
 
         <div class="login-stagger mt-10" style="animation-delay: 0.12s">
           <h1 class="text-2xl font-bold text-(--color-text)">خوش آمدید</h1>
-          <p class="mt-1.5 text-sm text-(--color-muted)">برای ورود به پنل مدیریت، شماره موبایل خود را وارد کنید.</p>
+          <p class="mt-1.5 text-sm text-(--color-text-muted)">برای ورود به پنل مدیریت، شماره موبایل خود را وارد کنید.</p>
         </div>
 
         <form
@@ -97,57 +99,39 @@ async function verifyOtp() {
           style="animation-delay: 0.24s"
           @submit.prevent="requestOtp"
         >
-          <div>
-            <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">شماره موبایل</label>
-            <div class="relative">
-              <AppIcon name="phone" :size="17" class="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-(--color-muted)" />
-              <input
-                v-model="phone"
-                data-testid="phone-input"
-                type="tel"
-                dir="ltr"
-                placeholder="شماره موبایل"
-                class="w-full rounded-xl border border-(--color-border) py-3 ps-11 pe-3 text-left text-sm"
-              />
-            </div>
-          </div>
-          <button
-            type="submit"
-            data-testid="submit-phone"
-            :disabled="submitting"
-            class="w-full rounded-xl bg-(--color-accent) py-3 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-          >
+          <AppInput
+            data-testid="phone-input"
+            v-model="phone"
+            type="tel"
+            dir="ltr"
+            icon="phone"
+            label="شماره موبایل"
+            placeholder="شماره موبایل"
+          />
+          <AppButton type="submit" data-testid="submit-phone" :loading="submitting" size="lg" block>
             {{ submitting ? 'در حال ارسال…' : 'ارسال کد تایید' }}
-          </button>
+          </AppButton>
         </form>
 
         <form v-else data-testid="code-form" class="mt-8 space-y-4" @submit.prevent="verifyOtp">
-          <div>
-            <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">کد تایید ارسال‌شده به {{ phone }}</label>
-            <div class="relative">
-              <AppIcon name="lock" :size="17" class="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-(--color-muted)" />
-              <input
-                v-model="code"
-                data-testid="code-input"
-                type="text"
-                inputmode="numeric"
-                dir="ltr"
-                placeholder="------"
-                class="tnum w-full rounded-xl border border-(--color-border) py-3 ps-11 pe-3 text-center text-lg tracking-[0.5em]"
-              />
-            </div>
-          </div>
-          <button
-            type="submit"
-            data-testid="submit-code"
-            :disabled="submitting"
-            class="w-full rounded-xl bg-(--color-accent) py-3 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-          >
+          <AppInput
+            data-testid="code-input"
+            v-model="code"
+            type="text"
+            inputmode="numeric"
+            dir="ltr"
+            align="center"
+            icon="lock"
+            class="tnum"
+            :label="`کد تایید ارسال‌شده به ${phone}`"
+            placeholder="------"
+          />
+          <AppButton type="submit" data-testid="submit-code" :loading="submitting" size="lg" block>
             {{ submitting ? 'در حال بررسی…' : 'تایید و ورود' }}
-          </button>
-          <button type="button" class="w-full text-center text-xs text-(--color-muted) hover:text-(--color-accent)" @click="step = 'phone'">
+          </AppButton>
+          <AppButton type="button" variant="ghost" block @click="step = 'phone'">
             ویرایش شماره موبایل
-          </button>
+          </AppButton>
         </form>
 
         <p v-if="errorMessage" class="mt-4 flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)">
@@ -179,7 +163,7 @@ async function verifyOtp() {
           پلتفرم آرایشگاهی
         </h2>
         <div class="login-underline mx-auto mt-3 h-1 w-16 rounded-full bg-(--color-accent)" />
-        <p class="login-stagger mt-4 text-sm leading-7 text-(--color-muted)" style="animation-delay: 0.2s">
+        <p class="login-stagger mt-4 text-sm leading-7 text-(--color-text-muted)" style="animation-delay: 0.2s">
           از یک نقطه، آرایشگاه‌ها را تایید کنید، نظرات را مدیریت کنید و تنظیمات کل پلتفرم آرایشگاه را در دست بگیرید.
         </p>
 
@@ -187,7 +171,7 @@ async function verifyOtp() {
           <div
             v-for="f in FEATURES"
             :key="f.label"
-            class="flex items-center gap-3 rounded-xl border border-(--color-border) bg-(--color-surface-card) px-4 py-3 text-right shadow-(--shadow-panel)"
+            class="flex items-center gap-3 rounded-xl border border-(--color-border) bg-(--color-surface-card) px-4 py-3 text-right shadow-(--shadow-sm)"
           >
             <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-(--tone-info-bg) text-(--color-accent)">
               <AppIcon :name="f.icon" :size="17" />

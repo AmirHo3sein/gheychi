@@ -35,7 +35,7 @@ async function logout() {
     <div class="flex flex-1 flex-col overflow-hidden">
       <header class="flex shrink-0 items-center gap-4 border-b border-(--color-border) bg-(--color-surface-card) px-6 py-3.5">
         <!-- Temporary logo mark, until a real brand asset exists -->
-        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-(--color-accent) font-black text-white shadow-(--shadow-panel)">
+        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-(--color-accent) font-black text-white shadow-(--shadow-sm)">
           آ
         </div>
 
@@ -47,7 +47,7 @@ async function logout() {
           <button
             type="button"
             :title="isDark ? 'حالت روشن' : 'حالت تیره'"
-            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-(--color-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text)"
+            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text)"
             @click="toggleTheme"
           >
             <AppIcon :name="isDark ? 'sun' : 'moon'" :size="18" />
@@ -60,7 +60,7 @@ async function logout() {
           <div class="flex items-center gap-2.5 rounded-xl py-1 pe-1 ps-2">
             <div class="min-w-0 text-right leading-tight">
               <p class="truncate text-sm font-semibold text-(--color-text)">{{ session.user?.name || session.user?.phone }}</p>
-              <p class="text-[11px] text-(--color-muted)">{{ userRoleLabel(session.user?.role ?? '') }}</p>
+              <p class="text-[11px] text-(--color-text-muted)">{{ userRoleLabel(session.user?.role ?? '') }}</p>
             </div>
             <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-(--tone-info-bg) text-sm font-bold text-(--color-accent)">
               {{ initial }}
@@ -70,7 +70,7 @@ async function logout() {
           <button
             type="button"
             title="خروج"
-            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-(--color-muted) transition-colors hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text)"
+            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text)"
             @click="logout"
           >
             <AppIcon name="logout" :size="18" />

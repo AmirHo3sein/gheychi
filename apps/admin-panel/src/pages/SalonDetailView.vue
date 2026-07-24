@@ -126,7 +126,7 @@ onMounted(load)
             :data-testid="`tab-${tab.key}`"
             type="button"
             class="rounded-xl px-4 py-2 text-sm font-semibold transition-colors"
-            :class="activeTab === tab.key ? 'bg-(--color-accent) text-white' : 'text-(--color-muted) hover:bg-(--color-border-soft)'"
+            :class="activeTab === tab.key ? 'bg-(--color-accent) text-white' : 'text-(--color-text-muted) hover:bg-(--color-border-soft)'"
             @click="selectTab(tab.key)"
           >
             {{ tab.label }}
@@ -143,7 +143,7 @@ onMounted(load)
               </div>
               <div>
                 <h2 class="text-lg font-bold text-(--color-text)">{{ salon.name }}</h2>
-                <p class="mt-0.5 text-sm text-(--color-muted)">{{ salon.city }} — {{ salon.address }}</p>
+                <p class="mt-0.5 text-sm text-(--color-text-muted)">{{ salon.city }} — {{ salon.address }}</p>
               </div>
             </div>
             <StatusBadge :label="salonStatusLabel(salon.status).label" :tone="salonStatusLabel(salon.status).tone" />
@@ -153,11 +153,11 @@ onMounted(load)
 
           <div class="mt-5 grid grid-cols-2 gap-3 border-t border-(--color-border-soft) pt-4 text-sm">
             <div>
-              <p class="text-xs text-(--color-muted)">مخاطب</p>
+              <p class="text-xs text-(--color-text-muted)">مخاطب</p>
               <p class="mt-1 font-semibold">{{ genderTargetLabel(salon.genderTarget) }}</p>
             </div>
             <div>
-              <p class="text-xs text-(--color-muted)">ظرفیت همزمان</p>
+              <p class="text-xs text-(--color-text-muted)">ظرفیت همزمان</p>
               <p class="tnum mt-1 font-semibold">{{ salon.capacity }} نفر</p>
             </div>
           </div>
@@ -200,7 +200,7 @@ onMounted(load)
                   <StatusBadge v-if="isExpired(story)" data-testid="expired-badge" label="منقضی شده" tone="neutral" />
                 </div>
                 <p v-if="story.caption" class="mt-2 text-sm leading-6 text-(--color-text)">{{ story.caption }}</p>
-                <p class="tnum mt-2 text-xs text-(--color-muted)">{{ formatDate(story.createdAt) }}</p>
+                <p class="tnum mt-2 text-xs text-(--color-text-muted)">{{ formatDate(story.createdAt) }}</p>
               </div>
             </div>
             <div class="mt-4 border-t border-(--color-border-soft) pt-3.5">
@@ -225,7 +225,7 @@ onMounted(load)
                   <StatusBadge :label="showcaseStatusLabel(item.status).label" :tone="showcaseStatusLabel(item.status).tone" />
                 </div>
                 <p v-if="item.caption" class="mt-2 text-sm leading-6 text-(--color-text)">{{ item.caption }}</p>
-                <p class="tnum mt-2 text-xs text-(--color-muted)">{{ formatDate(item.createdAt) }}</p>
+                <p class="tnum mt-2 text-xs text-(--color-text-muted)">{{ formatDate(item.createdAt) }}</p>
               </div>
             </div>
             <div class="mt-4 border-t border-(--color-border-soft) pt-3.5">

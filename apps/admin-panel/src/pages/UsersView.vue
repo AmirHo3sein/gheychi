@@ -85,9 +85,9 @@ watch([roleFilter, joinedFrom, joinedTo], load)
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">شماره موبایل</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">شماره موبایل</label>
           <div class="relative">
-            <AppIcon name="phone" :size="15" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-muted)" />
+            <AppIcon name="phone" :size="15" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-text-muted)" />
             <input
               v-model="phoneFilter"
               placeholder="جست‌وجو…"
@@ -96,25 +96,25 @@ watch([roleFilter, joinedFrom, joinedTo], load)
           </div>
         </div>
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">نام</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">نام</label>
           <input v-model="nameFilter" placeholder="همه" class="w-32 rounded-xl border border-(--color-border) p-2 text-sm" />
         </div>
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">نقش</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">نقش</label>
           <AppSelect v-model="roleFilter" :options="ROLE_OPTIONS" width="10rem" />
         </div>
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">بازه عضویت</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">بازه عضویت</label>
           <div class="flex items-center gap-1.5">
             <JalaliDatePicker v-model="joinedFrom" placeholder="از تاریخ" class="w-32" />
-            <span class="text-(--color-muted)">تا</span>
+            <span class="text-(--color-text-muted)">تا</span>
             <JalaliDatePicker v-model="joinedTo" placeholder="تا تاریخ" class="w-32" />
           </div>
         </div>
         <button
           v-if="hasActiveFilters"
           type="button"
-          class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-(--color-muted) transition-colors hover:text-(--tone-danger-text)"
+          class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-(--color-text-muted) transition-colors hover:text-(--tone-danger-text)"
           @click="clearFilters"
         >
           <AppIcon name="reset" :size="15" />
@@ -128,7 +128,7 @@ watch([roleFilter, joinedFrom, joinedTo], load)
     <AppCard v-else :padded="false" class="overflow-hidden">
       <table class="w-full text-right text-sm">
         <thead>
-          <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-muted)">
+          <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
             <th class="px-5 py-3 font-semibold">نام</th>
             <th class="px-5 py-3 font-semibold">موبایل</th>
             <th class="px-5 py-3 font-semibold">نقش</th>
@@ -144,9 +144,9 @@ watch([roleFilter, joinedFrom, joinedTo], load)
             class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
           >
             <td class="px-5 py-3.5 font-semibold text-(--color-text)">{{ user.name ?? '—' }}</td>
-            <td class="tnum px-5 py-3.5 text-(--color-muted)">{{ user.phone }}</td>
-            <td class="px-5 py-3.5 text-(--color-muted)">{{ userRoleLabel(user.role) }}</td>
-            <td class="tnum px-5 py-3.5 text-(--color-muted)">{{ formatDate(user.createdAt) }}</td>
+            <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ user.phone }}</td>
+            <td class="px-5 py-3.5 text-(--color-text-muted)">{{ userRoleLabel(user.role) }}</td>
+            <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDate(user.createdAt) }}</td>
             <td class="px-5 py-3.5">
               <StatusBadge :label="userStatusLabel(user.status).label" :tone="userStatusLabel(user.status).tone" />
             </td>

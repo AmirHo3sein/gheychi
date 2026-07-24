@@ -48,7 +48,7 @@ function isActive(to: string): boolean {
         v-for="link in LINKS"
         :key="link.to"
         :to="link.to"
-        class="group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-(--color-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text)"
+        class="group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text)"
         :class="isActive(link.to) && 'bg-(--tone-info-bg) font-bold text-(--color-accent) hover:bg-(--tone-info-bg) hover:text-(--color-accent)'"
       >
         <span

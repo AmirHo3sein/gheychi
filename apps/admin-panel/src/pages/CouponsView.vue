@@ -168,7 +168,7 @@ onMounted(load)
       </p>
       <form class="flex flex-wrap items-end gap-2.5" @submit.prevent="add">
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">کد</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">کد</label>
           <input
             v-model="newCode"
             placeholder="مثلا SUMMER25"
@@ -177,7 +177,7 @@ onMounted(load)
           />
         </div>
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">درصد تخفیف</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">درصد تخفیف</label>
           <input
             v-model.number="newDiscountPercent"
             type="number"
@@ -188,11 +188,11 @@ onMounted(load)
           />
         </div>
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">تاریخ انقضا (اختیاری)</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">تاریخ انقضا (اختیاری)</label>
           <input v-model="newExpiresAt" type="date" class="tnum w-40 rounded-xl border border-(--color-border) p-2.5 text-sm" />
         </div>
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">سقف تعداد استفاده (اختیاری)</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">سقف تعداد استفاده (اختیاری)</label>
           <input
             v-model.number="newMaxRedemptions"
             type="number"
@@ -218,7 +218,7 @@ onMounted(load)
       <div class="overflow-x-auto">
         <table class="w-full text-right text-sm">
           <thead>
-            <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-muted)">
+            <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
               <th class="px-5 py-3 font-semibold">کد</th>
               <th class="px-5 py-3 font-semibold">درصد تخفیف</th>
               <th class="px-5 py-3 font-semibold">تاریخ انقضا</th>
@@ -258,7 +258,7 @@ onMounted(load)
                     class="tnum w-24 rounded-lg border border-(--color-border) p-1.5 text-sm"
                   />
                 </td>
-                <td class="tnum px-5 py-3.5 text-(--color-muted)">{{ coupon.redeemedCount }}</td>
+                <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ coupon.redeemedCount }}</td>
                 <td class="px-5 py-3.5">
                   <StatusBadge :label="coupon.isActive ? 'فعال' : 'غیرفعال'" :tone="coupon.isActive ? 'success' : 'neutral'" />
                 </td>
@@ -274,7 +274,7 @@ onMounted(load)
                   <button
                     type="button"
                     :disabled="submitting"
-                    class="mr-3 shrink-0 text-sm font-semibold text-(--color-muted) disabled:opacity-40"
+                    class="mr-3 shrink-0 text-sm font-semibold text-(--color-text-muted) disabled:opacity-40"
                     @click="editingId = null"
                   >
                     انصراف
@@ -300,7 +300,7 @@ onMounted(load)
                     data-testid="cancel-delete"
                     type="button"
                     :disabled="submitting"
-                    class="mr-3 shrink-0 text-sm font-semibold text-(--color-muted) disabled:opacity-40"
+                    class="mr-3 shrink-0 text-sm font-semibold text-(--color-text-muted) disabled:opacity-40"
                     @click="confirmingId = null"
                   >
                     انصراف
@@ -309,10 +309,10 @@ onMounted(load)
               </template>
 
               <template v-else>
-                <td class="tnum px-5 py-3.5 text-(--color-muted)">{{ formatDiscountPercent(coupon.discountPercent) }}</td>
-                <td class="tnum px-5 py-3.5 text-(--color-muted)">{{ formatDate(coupon.expiresAt) }}</td>
-                <td class="tnum px-5 py-3.5 text-(--color-muted)">{{ coupon.maxRedemptions ?? 'نامحدود' }}</td>
-                <td class="tnum px-5 py-3.5 text-(--color-muted)">{{ coupon.redeemedCount }}</td>
+                <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDiscountPercent(coupon.discountPercent) }}</td>
+                <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDate(coupon.expiresAt) }}</td>
+                <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ coupon.maxRedemptions ?? 'نامحدود' }}</td>
+                <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ coupon.redeemedCount }}</td>
                 <td class="px-5 py-3.5">
                   <button type="button" :disabled="submitting" class="disabled:opacity-40" title="تغییر وضعیت فعال/غیرفعال" @click="toggleActive(coupon)">
                     <StatusBadge :label="coupon.isActive ? 'فعال' : 'غیرفعال'" :tone="coupon.isActive ? 'success' : 'neutral'" />
@@ -322,7 +322,7 @@ onMounted(load)
                   <button
                     type="button"
                     :disabled="submitting"
-                    class="shrink-0 rounded-lg p-1.5 text-(--color-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-accent) disabled:opacity-40"
+                    class="shrink-0 rounded-lg p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-accent) disabled:opacity-40"
                     title="ویرایش"
                     @click="startEdit(coupon)"
                   >
@@ -332,7 +332,7 @@ onMounted(load)
                     data-testid="delete-coupon"
                     type="button"
                     :disabled="submitting"
-                    class="shrink-0 rounded-lg p-1.5 text-(--color-muted) transition-colors hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text) disabled:opacity-40"
+                    class="shrink-0 rounded-lg p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text) disabled:opacity-40"
                     title="حذف"
                     @click="askDelete(coupon)"
                   >

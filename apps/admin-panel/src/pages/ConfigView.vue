@@ -40,11 +40,11 @@ onMounted(load)
       <div v-for="(row, i) in rows" :key="row.key" class="flex items-center justify-between gap-4 px-5 py-4" :class="i > 0 && 'border-t border-(--color-border-soft)'">
         <div>
           <p class="text-sm font-semibold text-(--color-text)">{{ configKeyMeta(row.key).label }}</p>
-          <p v-if="configKeyMeta(row.key).hint" class="mt-0.5 text-xs text-(--color-muted)">{{ configKeyMeta(row.key).hint }}</p>
+          <p v-if="configKeyMeta(row.key).hint" class="mt-0.5 text-xs text-(--color-text-muted)">{{ configKeyMeta(row.key).hint }}</p>
         </div>
         <div class="flex shrink-0 items-center gap-2">
           <input v-model.number="row.value" type="number" class="tnum w-24 rounded-xl border border-(--color-border) p-2 text-left text-sm" />
-          <span v-if="configKeyMeta(row.key).unit" class="w-14 text-xs text-(--color-muted)">{{ configKeyMeta(row.key).unit }}</span>
+          <span v-if="configKeyMeta(row.key).unit" class="w-14 text-xs text-(--color-text-muted)">{{ configKeyMeta(row.key).unit }}</span>
         </div>
       </div>
     </AppCard>

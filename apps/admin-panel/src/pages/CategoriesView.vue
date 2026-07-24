@@ -124,13 +124,13 @@ onMounted(load)
     </AppCard>
 
     <div>
-      <p class="mb-3 text-sm font-bold text-(--color-muted)">{{ categories.length }} دسته‌بندی</p>
+      <p class="mb-3 text-sm font-bold text-(--color-text-muted)">{{ categories.length }} دسته‌بندی</p>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <AppCard
           v-for="category in categories"
           :key="category.id"
           :padded="false"
-          class="flex items-center gap-3 p-3.5 transition-shadow hover:shadow-(--shadow-pop)"
+          class="flex items-center gap-3 p-3.5 transition-shadow hover:shadow-(--shadow-lg)"
         >
           <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-(--color-border-soft) text-(--color-accent)">
             <AppIcon :name="iconFor(category.icon)" :size="19" />
@@ -153,7 +153,7 @@ onMounted(load)
               data-testid="cancel-delete"
               type="button"
               :disabled="submitting"
-              class="shrink-0 text-sm font-semibold text-(--color-muted) disabled:opacity-40"
+              class="shrink-0 text-sm font-semibold text-(--color-text-muted) disabled:opacity-40"
               @click="confirmingId = null"
             >
               انصراف
@@ -181,7 +181,7 @@ onMounted(load)
               <button
                 type="button"
                 :disabled="submitting"
-                class="shrink-0 rounded-lg p-1.5 text-(--color-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-accent) disabled:opacity-40"
+                class="shrink-0 rounded-lg p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-accent) disabled:opacity-40"
                 title="ویرایش"
                 @click="startEdit(category)"
               >
@@ -191,7 +191,7 @@ onMounted(load)
                 data-testid="delete-category"
                 type="button"
                 :disabled="submitting"
-                class="shrink-0 rounded-lg p-1.5 text-(--color-muted) transition-colors hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text) disabled:opacity-40"
+                class="shrink-0 rounded-lg p-1.5 text-(--color-text-muted) transition-colors hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text) disabled:opacity-40"
                 title="حذف"
                 @click="askDelete(category)"
               >

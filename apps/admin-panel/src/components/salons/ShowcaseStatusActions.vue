@@ -111,7 +111,7 @@ async function setStatus(status: 'published' | 'removed') {
           data-testid="remove-cancel"
           type="button"
           :disabled="submitting"
-          class="rounded-xl border border-(--color-border) px-4 py-2.5 text-sm font-semibold text-(--color-muted) transition-colors hover:bg-(--color-border-soft)"
+          class="rounded-xl border border-(--color-border) px-4 py-2.5 text-sm font-semibold text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft)"
           @click="collapse"
         >
           انصراف

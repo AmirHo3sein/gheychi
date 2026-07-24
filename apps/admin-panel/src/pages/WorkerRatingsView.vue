@@ -114,9 +114,9 @@ watch(page, load)
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">شناسه آرایشگاه</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">شناسه آرایشگاه</label>
           <div class="relative">
-            <AppIcon name="search" :size="16" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-muted)" />
+            <AppIcon name="search" :size="16" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-text-muted)" />
             <input
               v-model="salonIdFilter"
               placeholder="جست‌وجو…"
@@ -125,13 +125,13 @@ watch(page, load)
           </div>
         </div>
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">وضعیت</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">وضعیت</label>
           <AppSelect v-model="statusFilter" :options="STATUS_OPTIONS" width="10rem" />
         </div>
         <button
           v-if="hasActiveFilters"
           type="button"
-          class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-(--color-muted) transition-colors hover:text-(--tone-danger-text)"
+          class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-(--color-text-muted) transition-colors hover:text-(--tone-danger-text)"
           @click="clearFilters"
         >
           <AppIcon name="reset" :size="15" />
@@ -157,7 +157,7 @@ watch(page, load)
               />
               <span class="tnum mr-1 text-sm font-bold text-(--color-text)">{{ rating.rating }}.0</span>
             </div>
-            <p class="mt-1.5 text-sm text-(--color-muted)">
+            <p class="mt-1.5 text-sm text-(--color-text-muted)">
               <span class="font-semibold text-(--color-text)">{{ rating.workerName }}</span>
               — {{ rating.salonName }}
             </p>

@@ -101,9 +101,9 @@ watch(page, load)
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">جست‌وجو</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">جست‌وجو</label>
           <div class="relative">
-            <AppIcon name="search" :size="16" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-muted)" />
+            <AppIcon name="search" :size="16" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-(--color-text-muted)" />
             <input
               v-model="nameFilter"
               placeholder="نام آرایشگاه"
@@ -112,21 +112,21 @@ watch(page, load)
           </div>
         </div>
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">شهر</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">شهر</label>
           <AppSelect v-model="cityFilter" :options="CITY_OPTIONS" width="10rem" searchable />
         </div>
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">مخاطب</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">مخاطب</label>
           <AppSelect v-model="genderFilter" :options="GENDER_OPTIONS" width="11rem" />
         </div>
         <div data-testid="status-filter">
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-muted)">وضعیت</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">وضعیت</label>
           <AppSelect v-model="statusFilter" :options="STATUS_OPTIONS" width="11rem" />
         </div>
         <button
           v-if="hasActiveFilters"
           type="button"
-          class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-(--color-muted) transition-colors hover:text-(--tone-danger-text)"
+          class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-(--color-text-muted) transition-colors hover:text-(--tone-danger-text)"
           @click="clearFilters"
         >
           <AppIcon name="reset" :size="15" />
@@ -140,7 +140,7 @@ watch(page, load)
     <AppCard v-else :padded="false" class="overflow-hidden">
       <table class="w-full text-right text-sm">
         <thead>
-          <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-muted)">
+          <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
             <th class="px-5 py-3 font-semibold">نام</th>
             <th class="px-5 py-3 font-semibold">شهر</th>
             <th class="px-5 py-3 font-semibold">مخاطب</th>
@@ -159,12 +159,12 @@ watch(page, load)
                 {{ salon.name }}
               </RouterLink>
             </td>
-            <td class="px-5 py-3.5 text-(--color-muted)">{{ salon.city }}</td>
-            <td class="px-5 py-3.5 text-(--color-muted)">{{ genderTargetLabel(salon.genderTarget) }}</td>
+            <td class="px-5 py-3.5 text-(--color-text-muted)">{{ salon.city }}</td>
+            <td class="px-5 py-3.5 text-(--color-text-muted)">{{ genderTargetLabel(salon.genderTarget) }}</td>
             <td class="px-5 py-3.5">
               <StatusBadge :label="salonStatusLabel(salon.status).label" :tone="salonStatusLabel(salon.status).tone" />
             </td>
-            <td class="tnum px-5 py-3.5 text-(--color-muted)">{{ formatDate(salon.createdAt) }}</td>
+            <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDate(salon.createdAt) }}</td>
           </tr>
         </tbody>
       </table>

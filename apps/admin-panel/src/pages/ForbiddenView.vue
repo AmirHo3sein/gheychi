@@ -9,7 +9,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
     </div>
     <div>
       <h1 class="text-lg font-bold text-(--color-text)">دسترسی غیرمجاز</h1>
-      <p class="mt-1 max-w-xs text-sm text-(--color-muted)">این بخش فقط برای مدیران سیستم قابل دسترسی است.</p>
+      <p class="mt-1 max-w-xs text-sm text-(--color-text-muted)">این بخش فقط برای مدیران سیستم قابل دسترسی است.</p>
     </div>
   </div>
 </template>
