@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-24T00:00:00.000Z",
+  "title": "Design System: Arayeshgah Admin Panel",
+  "extensions": {
+    "colorMeta": {
+      "accent-teal": {
+        "role": "primary",
+        "displayName": "Certified Teal",
+        "canonical": "#0EA89B",
+        "tonalRamp": ["#053A35", "#0A5850", "#0F7A6E", "#0EA89B", "#3DC4B7", "#7AD9CF", "#B3EBE4", "#E3F6F3"]
+      },
+      "accent-violet": {
+        "role": "primary",
+        "displayName": "Notarized Violet",
+        "canonical": "#7A3FF2",
+        "tonalRamp": ["#150A26", "#2A1450", "#442080", "#6030C9", "#7A3FF2", "#9463F5", "#C3A3F8", "#E8DDFC"]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Warm Paper",
+        "canonical": "#F4FBFA",
+        "tonalRamp": ["#0C0F0E", "#151F1D", "#1F2F2C", "#2E4744", "#5E7C79", "#A4C4C1", "#D5E9E7", "#F4FBFA"]
+      },
+      "surface-dark": {
+        "role": "neutral",
+        "displayName": "Ink Violet",
+        "canonical": "#151217",
+        "tonalRamp": ["#0A0810", "#151217", "#211D24", "#332C3A", "#544A5C", "#7C7086", "#B0A5B8", "#E8E2EB"]
+      },
+      "danger": {
+        "role": "error",
+        "displayName": "Ledger Red",
+        "canonical": "#C0392B",
+        "tonalRamp": ["#3D0F0A", "#661A12", "#96261B", "#C0392B", "#DC6B5E", "#EA9C93", "#F4C7C1", "#FCEAEA"]
+      },
+      "success": {
+        "role": "success",
+        "displayName": "Cleared Green",
+        "canonical": "#1E9E6B",
+        "tonalRamp": ["#083626", "#0F5A3E", "#157C57", "#1E9E6B", "#4CBB8C", "#84D3AF", "#B8E7D2", "#E3F5EC"]
+      },
+      "warning": {
+        "role": "warning",
+        "displayName": "Pending Amber",
+        "canonical": "#B4740E",
+        "tonalRamp": ["#3D2703", "#5F3D06", "#8A580A", "#B4740E", "#D69B3F", "#E8BC7A", "#F3D9AF", "#FEF3DE"]
+      },
+      "info": {
+        "role": "info",
+        "displayName": "Notice Blue",
+        "canonical": "#2A5FBE",
+        "tonalRamp": ["#0E1F40", "#183566", "#20488F", "#2A5FBE", "#5A87D4", "#8DAEE3", "#C1D2F0", "#E7EFFC"]
+      }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Not used anywhere in this app -- every screen, including login, is Operate-mode. Title is the ceiling." },
+      "title": { "displayName": "Title", "purpose": "This app's workhorse heading -- the top of every list/detail/settings screen." },
+      "body": { "displayName": "Body", "purpose": "Default reading copy." },
+      "label": { "displayName": "Label", "purpose": "Form labels, buttons, table headers -- the most-used size given how table-heavy this app is." },
+      "caption": { "displayName": "Caption", "purpose": "Helper text, status-badge labels, timestamps, audit-log metadata." }
+    },
+    "shadows": [
+      { "name": "shadow-sm", "value": "0 1px 2px hsl(var(--shadow-color) / 0.06), 0 1px 1px hsl(var(--shadow-color) / 0.04)", "purpose": "Resting elevation for AppCard or the primary button at rest." },
+      { "name": "shadow-md", "value": "0 8px 24px -8px hsl(var(--shadow-color) / 0.16), 0 2px 6px -2px hsl(var(--shadow-color) / 0.08)", "purpose": "Hover/emphasis elevation, floating overlays (AppSelect dropdown, JalaliDatePicker panel)." },
+      { "name": "shadow-lg", "value": "0 24px 48px -16px hsl(var(--shadow-color) / 0.22), 0 8px 16px -4px hsl(var(--shadow-color) / 0.1)", "purpose": "Highest-elevation surface -- confirmation modals for destructive/money-moving actions." }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Not yet a shared component in this app -- same structural gap provider-panel had before this session's fix.",
+      "html": "<button class=\"ds-btn-primary\">تایید سالن</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--color-accent); color: #FFFFFF; font-weight: 600; font-size: 0.875rem; padding: 10px 16px; border-radius: 12px; border: none; box-shadow: var(--shadow-sm); transition: all 150ms; cursor: pointer; } .ds-btn-primary:hover { background: var(--color-accent-strong); box-shadow: var(--shadow-md); }"
+    },
+    {
+      "name": "Pagination",
+      "kind": "custom",
+      "refersTo": "pagination",
+      "description": "Signature component of this app, already implemented well (Pagination.vue) -- an extracted, reusable pagination control neither user-app nor provider-panel has (both still hand-roll per-page). Candidate to back-port, not to fix here.",
+      "html": "<nav class=\"ds-pagination\"><button>قبلی</button><span>صفحه ۲ از ۵</span><button>بعدی</button></nav>",
+      "css": ".ds-pagination { display: flex; align-items: center; justify-content: center; gap: 12px; font-size: 0.875rem; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Verified Ledger (inherited from apps/user-app -- see apps/provider-panel/DESIGN.md for the sibling reconciliation this app mirrors)",
+    "overview": "The operator console for a small internal trust-and-safety/money-moving team. Desktop-primary, table-dense, no Persuade-mode screens at all. Every action here is either money-moving or trust/moderation, both audit-logged, both held to the same elevated confirm-before-commit bar -- the design's job is to make consequence unambiguous, not to be inviting.",
+    "keyCharacteristics": [
+      "Same two-mode teal/violet re-theme as user-app and provider-panel.",
+      "The densest, most table-heavy surface in the platform -- desktop information density outranks mobile-friendliness by explicit product mandate.",
+      "Two genuinely good existing components (JalaliDatePicker, Pagination) neither sibling app has -- preserve, don't rebuild.",
+      "The token layer was found in the same unreconciled state provider-panel was in before this session's fix -- same root cause, same mechanical fix applies."
+    ],
+    "rules": [
+      { "name": "The One Seal Rule", "body": "On a table-heavy screen, the accent marks exactly the one primary toolbar/header action -- row-level actions are secondary/ghost/danger, never accent-filled.", "section": "colors" },
+      { "name": "The Uniform Consequence Rule", "body": "A destructive/trust action and a money-moving action get the same confirm-before-commit treatment and visual weight -- neither category reads as more casual than the other.", "section": "colors" },
+      { "name": "The Fill-Text Split Rule", "body": "A fill-safe accent/danger shade is not automatically text-safe -- measure and tokenize both directions separately.", "section": "colors" },
+      { "name": "The Density-First Rule", "body": "The strongest form of this rule across all three apps -- no Persuade-mode exception exists here at all.", "section": "layout" },
+      { "name": "The Elevation-Means-Something Rule", "body": "A shadow is never decorative -- flat + bordered is the default resting state.", "section": "elevation" },
+      { "name": "The Hue-Tinted Shadow Rule", "body": "A shadow is never neutral black, even in dark mode.", "section": "elevation" },
+      { "name": "The Container-Softer-Than-Control Rule", "body": "16px containers, 12px controls.", "section": "shapes" }
+    ],
+    "dos": [
+      "Do treat apps/user-app/DESIGN.md as the parent and apps/provider-panel/DESIGN.md as the proven sibling fix to mirror.",
+      "Do build a shared AppButton/AppInput and migrate hand-rolled markup onto them.",
+      "Do apply the same confirm-before-commit weight to money-moving and moderation actions alike.",
+      "Do preserve JalaliDatePicker.vue and Pagination.vue as-is.",
+      "Do favor table density over mobile-first card layouts."
+    ],
+    "donts": [
+      "Don't invent a fourth status-tone vocabulary -- reuse provider-panel's warning/info additions.",
+      "Don't soften a destructive or money-moving action's visual weight relative to the other category.",
+      "Don't add a mobile-first layout pass at the expense of desktop table density."
+    ]
+  }
+}
