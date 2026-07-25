@@ -1,6 +1,22 @@
-import { IsIn, IsISO8601, IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsIn, IsInt, IsISO8601, IsOptional, IsString, Max, Min,
+} from 'class-validator';
 
 export class AdminUserQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  pageSize?: number;
+
   @IsOptional()
   @IsString()
   phone?: string;

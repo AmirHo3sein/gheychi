@@ -113,6 +113,7 @@ describe('ReferralsView', () => {
     await wrapper.get('[data-testid="cancel-referral-button"]').trigger('click')
     await wrapper.get('[data-testid="cancel-reason-input"]').setValue('fraud suspected')
     await wrapper.get('[data-testid="cancel-referral-submit"]').trigger('click')
+    await wrapper.get('[data-testid="cancel-referral-confirm"]').trigger('click')
     await flushPromises()
 
     expect(fetchMock).toHaveBeenCalledWith('/admin/referrals/ref-1/cancel', {
@@ -139,6 +140,7 @@ describe('ReferralsView', () => {
     await wrapper.get('[data-testid="cancel-referral-button"]').trigger('click')
     await wrapper.get('[data-testid="cancel-reason-input"]').setValue('too late')
     await wrapper.get('[data-testid="cancel-referral-submit"]').trigger('click')
+    await wrapper.get('[data-testid="cancel-referral-confirm"]').trigger('click')
     await flushPromises()
 
     const listCalls = fetchMock.mock.calls.filter(([url]) => (url as string).startsWith('/admin/referrals?'))

@@ -1,6 +1,6 @@
 <!-- apps/admin-panel/src/components/users/SuspendUserButton.vue -->
 <script setup lang="ts">
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -17,6 +17,16 @@ const { apiFetch } = useApi()
 const { push } = useToast()
 const submitting = ref(false)
 const confirming = ref(false)
+const confirmButtonRef = ref<InstanceType<typeof AppButton> | null>(null)
+
+// The v-if/v-else swap below unmounts the clicked toggle button the instant `confirming`
+// flips, which drops keyboard focus to <body> with no visible indicator. Move focus onto
+// the newly-mounted confirm control instead, once it exists in the DOM.
+async function askConfirm() {
+  confirming.value = true
+  await nextTick()
+  confirmButtonRef.value?.$el?.focus()
+}
 
 async function toggle() {
   submitting.value = true
@@ -54,7 +64,7 @@ async function toggle() {
       type="button"
       variant="danger"
       :disabled="submitting"
-      @click="confirming = true"
+      @click="askConfirm"
     >
       <template #icon><AppIcon name="lock" :size="14" /></template>
       تعلیق
@@ -63,9 +73,9 @@ async function toggle() {
       v-else
       data-testid="unsuspend-user"
       type="button"
-      variant="primary"
+      variant="secondary"
       :disabled="submitting"
-      @click="confirming = true"
+      @click="askConfirm"
     >
       <template #icon><AppIcon name="check" :size="14" /></template>
       رفع تعلیق
@@ -88,9 +98,10 @@ async function toggle() {
       </template>
     </span>
     <AppButton
+      ref="confirmButtonRef"
       :data-testid="status === 'active' ? 'suspend-user-confirm' : 'unsuspend-user-confirm'"
       type="button"
-      :variant="status === 'active' ? 'danger' : 'primary'"
+      :variant="status === 'active' ? 'danger' : 'secondary'"
       :disabled="submitting"
       @click="toggle"
     >

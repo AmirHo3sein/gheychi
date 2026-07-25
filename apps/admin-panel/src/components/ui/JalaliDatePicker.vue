@@ -10,7 +10,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { toGregorian, toJalaali, jalaaliMonthLength } from 'jalaali-js'
 import AppIcon from '@/components/ui/AppIcon.vue'
 
-const props = defineProps<{ modelValue: string; placeholder?: string }>()
+const props = defineProps<{ modelValue: string; placeholder?: string; ariaLabel?: string }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
 const MONTHS = ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند']
@@ -123,15 +123,24 @@ function onDocumentClick(e: MouseEvent) {
   if (root.value && !root.value.contains(e.target as Node)) open.value = false
 }
 
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && open.value) {
+    open.value = false
+  }
+}
+
 onMounted(() => document.addEventListener('mousedown', onDocumentClick))
 onBeforeUnmount(() => document.removeEventListener('mousedown', onDocumentClick))
 </script>
 
 <template>
-  <div ref="root" class="relative">
+  <div ref="root" class="relative" @keydown="onKeydown">
     <button
       type="button"
       class="flex w-full items-center gap-2 rounded-xl border border-(--color-border) p-2 text-sm"
+      :aria-label="ariaLabel"
+      aria-haspopup="dialog"
+      :aria-expanded="open"
       @click="toggle"
     >
       <AppIcon name="calendar" :size="15" class="shrink-0 text-(--color-text-muted)" />
@@ -145,11 +154,11 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocumentClick)
       class="absolute z-50 mt-1.5 w-64 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-3 shadow-(--shadow-md)"
     >
       <div class="mb-2 flex items-center justify-between">
-        <button type="button" class="rounded-lg p-1.5 hover:bg-(--color-border-soft)" @click="nextMonth">
+        <button type="button" aria-label="ماه بعد" class="rounded-lg p-1.5 hover:bg-(--color-border-soft)" @click="nextMonth">
           <AppIcon name="chevron-left" :size="16" class="rotate-180 text-(--color-text-muted)" />
         </button>
         <p class="text-sm font-bold text-(--color-text)">{{ MONTHS[viewMonth - 1] }} {{ toPersianDigits(viewYear) }}</p>
-        <button type="button" class="rounded-lg p-1.5 hover:bg-(--color-border-soft)" @click="prevMonth">
+        <button type="button" aria-label="ماه قبل" class="rounded-lg p-1.5 hover:bg-(--color-border-soft)" @click="prevMonth">
           <AppIcon name="chevron-left" :size="16" class="text-(--color-text-muted)" />
         </button>
       </div>

@@ -32,7 +32,11 @@ describe('CancelReferralAction', () => {
 
     await wrapper.get('[data-testid="cancel-referral-button"]').trigger('click')
     await wrapper.get('[data-testid="cancel-reason-input"]').setValue('fraud suspected')
+    // "submit" now advances to the confirm-summary step rather than firing the request directly.
     await wrapper.get('[data-testid="cancel-referral-submit"]').trigger('click')
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="cancel-referral-confirm-summary"]').text()).toContain('fraud suspected')
+    await wrapper.get('[data-testid="cancel-referral-confirm"]').trigger('click')
     await flushPromises()
 
     // Deliberately not silent -- a 409 must surface via the standard toast path.
@@ -55,12 +59,26 @@ describe('CancelReferralAction', () => {
     await wrapper.get('[data-testid="cancel-referral-button"]').trigger('click')
     await wrapper.get('[data-testid="cancel-reason-input"]').setValue('too late now')
     await wrapper.get('[data-testid="cancel-referral-submit"]').trigger('click')
+    await wrapper.get('[data-testid="cancel-referral-confirm"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.find('[data-testid="cancel-reason-input"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="cancel-referral-button"]').exists()).toBe(true)
     expect(wrapper.emitted('cancelled')).toBeUndefined()
     expect(wrapper.emitted('refresh')).toHaveLength(1)
+  })
+
+  it('the back button returns to the reason step without losing the typed text', async () => {
+    const wrapper = mount(CancelReferralAction, { props: { referralId: 'r1' } })
+
+    await wrapper.get('[data-testid="cancel-referral-button"]').trigger('click')
+    await wrapper.get('[data-testid="cancel-reason-input"]').setValue('fraud suspected')
+    await wrapper.get('[data-testid="cancel-referral-submit"]').trigger('click')
+    await wrapper.get('[data-testid="cancel-referral-back"]').trigger('click')
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    const input = wrapper.get('[data-testid="cancel-reason-input"]').element as HTMLTextAreaElement
+    expect(input.value).toBe('fraud suspected')
   })
 
   it('cancelling the panel collapses without a request', async () => {
@@ -85,12 +103,13 @@ describe('CancelReferralAction', () => {
 
     await wrapper.get('[data-testid="cancel-referral-button"]').trigger('click')
     await wrapper.get('[data-testid="cancel-reason-input"]').setValue('fraud suspected')
-    const submit = wrapper.get('[data-testid="cancel-referral-submit"]')
-    await submit.trigger('click')
+    await wrapper.get('[data-testid="cancel-referral-submit"]').trigger('click')
+    const confirm = wrapper.get('[data-testid="cancel-referral-confirm"]')
+    await confirm.trigger('click')
 
-    expect((submit.element as HTMLButtonElement).disabled).toBe(true)
+    expect((confirm.element as HTMLButtonElement).disabled).toBe(true)
 
-    await submit.trigger('click')
+    await confirm.trigger('click')
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
     resolveFetch({ data: { id: 'r1', status: 'cancelled', cancelledReason: 'fraud suspected' }, error: null })

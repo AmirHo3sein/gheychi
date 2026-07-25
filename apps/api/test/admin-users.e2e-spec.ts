@@ -20,13 +20,13 @@ describe('Admin users list and suspend (e2e)', () => {
       .get('/api/admin/users?phone=09122300002')
       .set('Cookie', adminCookie)
       .expect(200);
-    customerUserId = me.body[0].id;
+    customerUserId = me.body.items[0].id;
 
     const self = await request(app.getHttpServer())
       .get('/api/admin/users?phone=09122300001')
       .set('Cookie', adminCookie)
       .expect(200);
-    adminUserId = self.body[0].id;
+    adminUserId = self.body.items[0].id;
   });
 
   afterAll(async () => {
@@ -38,8 +38,9 @@ describe('Admin users list and suspend (e2e)', () => {
       .get('/api/admin/users?phone=09122300002')
       .set('Cookie', adminCookie)
       .expect(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].phone).toBe('09122300002');
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.total).toBe(1);
+    expect(res.body.items[0].phone).toBe('09122300002');
   });
 
   it('filters by role', async () => {
@@ -47,8 +48,19 @@ describe('Admin users list and suspend (e2e)', () => {
       .get('/api/admin/users?role=admin')
       .set('Cookie', adminCookie)
       .expect(200);
-    expect(res.body.some((u: { phone: string }) => u.phone === '09122300001')).toBe(true);
-    expect(res.body.some((u: { phone: string }) => u.phone === '09122300002')).toBe(false);
+    expect(res.body.items.some((u: { phone: string }) => u.phone === '09122300001')).toBe(true);
+    expect(res.body.items.some((u: { phone: string }) => u.phone === '09122300002')).toBe(false);
+  });
+
+  it('paginates the results', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/admin/users?page=1&pageSize=1')
+      .set('Cookie', adminCookie)
+      .expect(200);
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.page).toBe(1);
+    expect(res.body.pageSize).toBe(1);
+    expect(res.body.total).toBeGreaterThanOrEqual(2);
   });
 
   it('suspends a user', async () => {

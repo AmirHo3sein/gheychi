@@ -160,7 +160,9 @@ button:disabled {
    from the library's default green to the app's teal accent. Scoped under .app-select so
    it only touches AppSelect.vue's instances. */
 .app-select .multiselect__tags {
-  min-height: 40px;
+  /* Some call sites pair this class with compact padding elsewhere in the app --
+     enforce the floor here so every .app-select usage clears it regardless. */
+  min-height: 2.75rem;
   padding: 0.5rem 0.75rem 0.5rem 2.5rem;
   border-radius: 0.75rem;
   border: 1px solid var(--color-border);

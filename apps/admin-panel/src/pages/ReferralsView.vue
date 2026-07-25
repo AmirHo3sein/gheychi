@@ -208,7 +208,7 @@ watch(page, load)
             v-model="referrerPhoneFilter"
             icon="phone"
             data-testid="referrer-phone-filter"
-            placeholder="جست‌وجو…"
+            placeholder="شماره کامل را وارد کنید"
             class="w-44"
           />
         </div>
@@ -240,18 +240,26 @@ watch(page, load)
 
     <AppCard v-else :padded="false" class="overflow-hidden">
       <div class="overflow-x-auto">
-        <table class="w-full text-right text-sm">
-          <thead>
-            <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
-              <th class="px-5 py-3 font-semibold">تاریخ ثبت</th>
-              <th class="px-5 py-3 font-semibold">معرف</th>
-              <th class="px-5 py-3 font-semibold">معرفی‌شده</th>
-              <th class="px-5 py-3 font-semibold">نوع</th>
-              <th class="px-5 py-3 font-semibold">وضعیت</th>
-              <th class="px-5 py-3 font-semibold">جزئیات</th>
-              <th class="px-5 py-3"></th>
-            </tr>
-          </thead>
+        <div class="relative">
+          <div
+            v-if="loading"
+            data-testid="table-loading"
+            class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-(--color-surface-card)/70"
+          >
+            <AppIcon name="spinner" :size="22" class="animate-spin text-(--color-text-muted)" />
+          </div>
+          <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
+            <thead>
+              <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
+                <th scope="col" class="px-5 py-3 font-semibold">تاریخ ثبت</th>
+                <th scope="col" class="px-5 py-3 font-semibold">معرف</th>
+                <th scope="col" class="px-5 py-3 font-semibold">معرفی‌شده</th>
+                <th scope="col" class="px-5 py-3 font-semibold">نوع</th>
+                <th scope="col" class="px-5 py-3 font-semibold">وضعیت</th>
+                <th scope="col" class="px-5 py-3 font-semibold">جزئیات</th>
+                <th scope="col" class="px-5 py-3"></th>
+              </tr>
+            </thead>
           <tbody>
             <tr
               v-for="referral in referrals"
@@ -358,6 +366,7 @@ watch(page, load)
             </tr>
           </tbody>
         </table>
+        </div>
       </div>
       <Pagination :page="page" :page-size="pageSize" :total="total" @update:page="(p) => (page = p)" />
     </AppCard>

@@ -9,7 +9,7 @@
      this is the expected default, not a broken/empty form, so a disabled row leads with a
      clear, explanatory banner instead of just looking unfilled. -->
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, nextTick, ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -151,14 +151,85 @@ function diffsFor(row: RewardTypeRow): FieldDiff[] {
   return buildDiffs(row, original)
 }
 
+interface RowValidation {
+  referrerValueError: string | null
+  referrerMaxError: string | null
+  referredValueError: string | null
+  referredMaxError: string | null
+  grantHoldbackError: string | null
+  expirationError: string | null
+  maxReferralsError: string | null
+}
+
+function negativeError(value: number | null, label: string): string | null {
+  return value !== null && Number(value) < 0 ? `${label} نمی‌تواند منفی باشد` : null
+}
+
+function percentCapError(kind: RewardKind, value: number, label: string): string | null {
+  return kind === 'percent_discount' && Number(value) > 100 ? `${label} برای تخفیف درصدی نمی‌تواند بیش از ۱۰۰ باشد` : null
+}
+
+// Client-side mirror of the backend's PercentRewardValueCapConstraint (percent-kind values
+// capped at 100) plus a min=0 guard that HTML5 constraint validation never actually enforces
+// here, since Save is type=button with no surrounding <form type=submit>.
+function validateRow(row: RewardTypeRow): RowValidation {
+  return {
+    referrerValueError: percentCapError(row.referrerRewardKind, row.referrerRewardValue, 'مقدار پاداش معرف')
+      ?? negativeError(row.referrerRewardValue, 'مقدار پاداش معرف'),
+    referrerMaxError: negativeError(row.referrerRewardMax, 'سقف پاداش معرف'),
+    referredValueError: percentCapError(row.referredRewardKind, row.referredRewardValue, 'مقدار پاداش معرفی‌شده')
+      ?? negativeError(row.referredRewardValue, 'مقدار پاداش معرفی‌شده'),
+    referredMaxError: negativeError(row.referredRewardMax, 'سقف پاداش معرفی‌شده'),
+    grantHoldbackError: negativeError(row.grantHoldbackHours, 'مهلت انتظار اعطا'),
+    expirationError: negativeError(row.expirationDays, 'انقضا'),
+    maxReferralsError: negativeError(row.maxReferralsPerReferrer, 'سقف تعداد معرفی هر معرف'),
+  }
+}
+
+function hasRowErrors(row: RewardTypeRow): boolean {
+  const v = validateRow(row)
+  return Object.values(v).some((message) => message !== null)
+}
+
+// Per-row focus targets for the edit-form <-> confirm-summary swap (#6) -- keyed by
+// referralType since all three cards exist simultaneously, so a page-wide single ref
+// wouldn't distinguish which card's step just changed.
+const confirmButtonRefs = new Map<ReferralType, { $el?: HTMLElement } | null>()
+const saveButtonRefs = new Map<ReferralType, { $el?: HTMLElement } | null>()
+
+function setConfirmButtonRef(type: ReferralType, el: unknown) {
+  if (el) confirmButtonRefs.set(type, el as { $el?: HTMLElement })
+  else confirmButtonRefs.delete(type)
+}
+
+function setSaveButtonRef(type: ReferralType, el: unknown) {
+  if (el) saveButtonRefs.set(type, el as { $el?: HTMLElement })
+  else saveButtonRefs.delete(type)
+}
+
+function focusConfirmButton(type: ReferralType) {
+  confirmButtonRefs.get(type)?.$el?.focus?.()
+}
+
+function focusSaveButton(type: ReferralType) {
+  saveButtonRefs.get(type)?.$el?.focus?.()
+}
+
 function askConfirm(row: RewardTypeRow) {
+  // Invalid values never reach the confirm step -- the Save button is also disabled while
+  // this is true, but guard here too since askConfirm is the actual gate into the
+  // money-moving confirm summary.
+  if (hasRowErrors(row)) return
   // Nothing actually changed -- no empty confirm card, just no-op.
   if (diffsFor(row).length === 0) return
   confirmingType.value = row.referralType
+  nextTick(() => focusConfirmButton(row.referralType))
 }
 
 function cancelConfirm() {
+  const type = confirmingType.value
   confirmingType.value = null
+  if (type) nextTick(() => focusSaveButton(type))
 }
 
 async function save(row: RewardTypeRow) {
@@ -186,6 +257,7 @@ async function save(row: RewardTypeRow) {
   // editable form rather than leave the admin stuck on a confirm screen that just failed --
   // their edits are preserved on `row` either way, so retrying doesn't lose input.
   confirmingType.value = null
+  nextTick(() => focusSaveButton(row.referralType))
   if (data) {
     const index = rows.value.findIndex((r) => r.referralType === row.referralType)
     if (index !== -1) rows.value[index] = data
@@ -200,7 +272,17 @@ onMounted(load)
 
 <template>
   <div class="mx-auto max-w-3xl space-y-5 p-8">
-    <div v-for="row in rows" :key="row.referralType" class="space-y-5">
+    <div
+      v-if="loading && rows.length === 0"
+      class="flex items-center justify-center gap-2 py-16 text-sm text-(--color-text-muted)"
+      role="status"
+      aria-label="در حال بارگذاری"
+    >
+      <AppIcon name="spinner" :size="20" class="animate-spin" />
+      در حال بارگذاری تنظیمات معرفی…
+    </div>
+
+    <div v-for="row in rows" :key="row.referralType">
       <AppCard>
         <div class="mb-4 flex items-center justify-between gap-3">
           <p class="flex items-center gap-2 text-sm font-bold text-(--color-text)">
@@ -213,13 +295,21 @@ onMounted(load)
               type="button"
               role="switch"
               :aria-checked="row.enabled"
+              :aria-label="'فعال‌سازی معرفی ' + referralTypeLabel(row.referralType)"
               :data-testid="`enabled-toggle-${row.referralType}`"
               :disabled="confirmingType === row.referralType"
-              class="relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60"
-              :class="row.enabled ? 'bg-(--color-accent)' : 'bg-(--color-border)'"
+              class="flex h-11 w-11 shrink-0 items-center justify-center disabled:cursor-not-allowed disabled:opacity-60"
               @click="row.enabled = !row.enabled"
             >
-              <span class="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all" :class="row.enabled ? 'end-0.5' : 'start-0.5'" />
+              <span
+                class="relative h-6 w-11 rounded-full transition-colors"
+                :class="row.enabled ? 'bg-(--color-accent-strong) dark:bg-(--color-accent)' : 'bg-(--color-text-muted)'"
+              >
+                <span
+                  class="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-(--shadow-sm) transition-all"
+                  :class="row.enabled ? 'end-0.5' : 'start-0.5'"
+                />
+              </span>
             </button>
           </div>
         </div>
@@ -241,6 +331,7 @@ onMounted(load)
           <div class="flex justify-end gap-2.5">
             <AppButton
               type="button"
+              :ref="(el) => setConfirmButtonRef(row.referralType, el)"
               :data-testid="`confirm-submit-${row.referralType}`"
               :disabled="savingType === row.referralType"
               :loading="savingType === row.referralType"
@@ -293,6 +384,9 @@ onMounted(load)
                   class="tnum"
                   @update:model-value="(v) => (row.referrerRewardValue = Number(v))"
                 />
+                <p v-if="validateRow(row).referrerValueError" class="mt-1 text-xs text-(--tone-danger-text)">
+                  {{ validateRow(row).referrerValueError }}
+                </p>
               </div>
               <div class="flex-1">
                 <label class="mb-1.5 block text-xs text-(--color-text-muted)">سقف (اختیاری)</label>
@@ -304,6 +398,10 @@ onMounted(load)
                   class="tnum"
                   @update:model-value="(v) => (row.referrerRewardMax = v === '' ? null : Number(v))"
                 />
+                <p class="mt-1 text-xs text-(--color-text-muted)">خالی = نامحدود</p>
+                <p v-if="validateRow(row).referrerMaxError" class="mt-1 text-xs text-(--tone-danger-text)">
+                  {{ validateRow(row).referrerMaxError }}
+                </p>
               </div>
             </div>
           </div>
@@ -325,6 +423,9 @@ onMounted(load)
                   class="tnum"
                   @update:model-value="(v) => (row.referredRewardValue = Number(v))"
                 />
+                <p v-if="validateRow(row).referredValueError" class="mt-1 text-xs text-(--tone-danger-text)">
+                  {{ validateRow(row).referredValueError }}
+                </p>
               </div>
               <div class="flex-1">
                 <label class="mb-1.5 block text-xs text-(--color-text-muted)">سقف (اختیاری)</label>
@@ -336,6 +437,10 @@ onMounted(load)
                   class="tnum"
                   @update:model-value="(v) => (row.referredRewardMax = v === '' ? null : Number(v))"
                 />
+                <p class="mt-1 text-xs text-(--color-text-muted)">خالی = نامحدود</p>
+                <p v-if="validateRow(row).referredMaxError" class="mt-1 text-xs text-(--tone-danger-text)">
+                  {{ validateRow(row).referredMaxError }}
+                </p>
               </div>
             </div>
           </div>
@@ -355,6 +460,9 @@ onMounted(load)
               class="tnum"
               @update:model-value="(v) => (row.grantHoldbackHours = Number(v))"
             />
+            <p v-if="validateRow(row).grantHoldbackError" class="mt-1 text-xs text-(--tone-danger-text)">
+              {{ validateRow(row).grantHoldbackError }}
+            </p>
           </div>
           <div>
             <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">انقضا (روز، اختیاری)</label>
@@ -366,6 +474,10 @@ onMounted(load)
               class="tnum"
               @update:model-value="(v) => (row.expirationDays = v === '' ? null : Number(v))"
             />
+            <p class="mt-1 text-xs text-(--color-text-muted)">خالی = هرگز</p>
+            <p v-if="validateRow(row).expirationError" class="mt-1 text-xs text-(--tone-danger-text)">
+              {{ validateRow(row).expirationError }}
+            </p>
           </div>
           <div>
             <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">سقف تعداد معرفی هر معرف (اختیاری)</label>
@@ -377,14 +489,19 @@ onMounted(load)
               class="tnum"
               @update:model-value="(v) => (row.maxReferralsPerReferrer = v === '' ? null : Number(v))"
             />
+            <p class="mt-1 text-xs text-(--color-text-muted)">خالی = نامحدود</p>
+            <p v-if="validateRow(row).maxReferralsError" class="mt-1 text-xs text-(--tone-danger-text)">
+              {{ validateRow(row).maxReferralsError }}
+            </p>
           </div>
         </div>
 
         <div class="mt-5 flex justify-end">
           <AppButton
             type="button"
+            :ref="(el) => setSaveButtonRef(row.referralType, el)"
             :data-testid="`save-${row.referralType}`"
-            :disabled="savingType === row.referralType || diffsFor(row).length === 0"
+            :disabled="savingType === row.referralType || diffsFor(row).length === 0 || hasRowErrors(row)"
             @click="askConfirm(row)"
           >
             ذخیره تغییرات

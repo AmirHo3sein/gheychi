@@ -32,7 +32,7 @@ export class AdminUsersController {
   ) {}
 
   @Get()
-  list(@Query() query: AdminUserQueryDto) {
+  async list(@Query() query: AdminUserQueryDto) {
     const qb = this.users
       .createQueryBuilder('user')
       .select(['user.id', 'user.phone', 'user.name', 'user.role', 'user.status', 'user.createdAt'])
@@ -44,7 +44,12 @@ export class AdminUsersController {
     if (query.joinedFrom) qb.andWhere('user.createdAt >= :joinedFrom', { joinedFrom: query.joinedFrom });
     if (query.joinedTo) qb.andWhere('user.createdAt <= :joinedTo', { joinedTo: query.joinedTo });
 
-    return qb.getMany();
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    qb.skip((page - 1) * pageSize).take(pageSize);
+
+    const [items, total] = await qb.getManyAndCount();
+    return { items, total, page, pageSize };
   }
 
   @Patch(':id/status')
