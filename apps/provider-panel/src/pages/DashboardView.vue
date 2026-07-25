@@ -1,6 +1,7 @@
 <!-- apps/provider-panel/src/pages/DashboardView.vue -->
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon, { type IconName } from '@/components/ui/AppIcon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
@@ -21,16 +22,29 @@ const { apiFetch } = useApi()
 const bookings = ref<Booking[]>([])
 const services = ref<Service[]>([])
 const loading = ref(true)
+const loadError = ref(false)
 
-onMounted(async () => {
+async function load() {
+  loading.value = true
+  loadError.value = false
+
   const [bookingsRes, servicesRes] = await Promise.all([
     apiFetch<Booking[]>('/salons/mine/bookings', { silent: true }),
     apiFetch<Service[]>('/salons/mine/services', { silent: true }),
   ])
+
+  if (bookingsRes.error || servicesRes.error) {
+    loadError.value = true
+    loading.value = false
+    return
+  }
+
   bookings.value = bookingsRes.data ?? []
   services.value = servicesRes.data ?? []
   loading.value = false
-})
+}
+
+onMounted(load)
 
 function serviceName(id: string) {
   return services.value.find((s) => s.id === id)?.name ?? '—'
@@ -46,7 +60,12 @@ const todaysBookings = computed(() =>
 
 const upcomingBookings = computed(() =>
   bookings.value
-    .filter((b) => b.status === 'confirmed' && new Date(b.startsAt) > new Date())
+    .filter(
+      (b) =>
+        b.status === 'confirmed' &&
+        new Date(b.startsAt) > new Date() &&
+        new Date(b.startsAt).toDateString() !== todayKey,
+    )
     .sort((a, b) => a.startsAt.localeCompare(b.startsAt))
     .slice(0, 5),
 )
@@ -63,7 +82,7 @@ const QUICK_LINKS: Array<{ to: string; label: string; icon: IconName }> = [
 </script>
 
 <template>
-  <div class="space-y-6 p-4">
+  <div class="mx-auto max-w-3xl space-y-6 p-4">
     <h1 class="text-lg font-bold text-(--color-text)">داشبورد</h1>
 
     <div class="grid grid-cols-3 gap-2">
@@ -73,43 +92,58 @@ const QUICK_LINKS: Array<{ to: string; label: string; icon: IconName }> = [
         :to="link.to"
         class="flex flex-col items-center gap-1.5 rounded-2xl border border-(--color-border) bg-(--color-surface-card) py-4 text-center shadow-(--shadow-sm) transition-colors hover:border-(--color-accent)"
       >
-        <div class="flex h-9 w-9 items-center justify-center rounded-full bg-(--tone-info-bg) text-(--color-accent)">
+        <div class="flex h-9 w-9 items-center justify-center rounded-full bg-(--tone-info-bg) text-(--color-text-muted)">
           <AppIcon :name="link.icon" :size="18" />
         </div>
         <span class="text-xs font-semibold text-(--color-text)">{{ link.label }}</span>
       </RouterLink>
     </div>
 
-    <section>
-      <h2 class="mb-2 flex items-center gap-2 text-sm font-bold text-(--color-text)">
-        <AppIcon name="bookings" :size="16" class="text-(--color-accent)" />
-        نوبت‌های امروز
-      </h2>
-      <EmptyState v-if="!loading && todaysBookings.length === 0" icon="bookings" message="نوبتی برای امروز ثبت نشده است." />
-      <div v-else class="space-y-2">
-        <AppCard v-for="b in todaysBookings" :key="b.id" :padded="false" class="p-3">
-          <div class="flex items-center justify-between">
-            <p class="text-sm font-semibold text-(--color-text)">{{ serviceName(b.serviceId) }}</p>
-            <p class="tnum text-sm font-bold text-(--color-accent)">{{ new Date(b.startsAt).toLocaleTimeString('fa-IR') }}</p>
-          </div>
-        </AppCard>
-      </div>
-    </section>
+    <div v-if="loadError" class="space-y-3 rounded-xl border border-dashed border-(--color-border) p-4 text-center">
+      <p class="text-sm text-(--tone-danger-text)">اطلاعات نوبت‌ها بارگذاری نشد.</p>
+      <AppButton variant="secondary" data-testid="retry-dashboard" @click="load">
+        تلاش دوباره
+      </AppButton>
+    </div>
 
-    <section>
-      <h2 class="mb-2 flex items-center gap-2 text-sm font-bold text-(--color-text)">
-        <AppIcon name="dashboard" :size="16" class="text-(--color-accent)" />
-        نوبت‌های بعدی
-      </h2>
-      <EmptyState v-if="!loading && upcomingBookings.length === 0" icon="bookings" message="نوبت بعدی ثبت نشده است." />
-      <div v-else class="space-y-2">
-        <AppCard v-for="b in upcomingBookings" :key="b.id" :padded="false" class="p-3">
-          <div class="flex items-center justify-between">
-            <p class="text-sm font-semibold text-(--color-text)">{{ serviceName(b.serviceId) }}</p>
-            <p class="tnum text-sm text-(--color-text-muted)">{{ new Date(b.startsAt).toLocaleDateString('fa-IR') }}</p>
-          </div>
-        </AppCard>
-      </div>
-    </section>
+    <template v-else>
+      <section>
+        <h2 class="mb-2 flex items-center gap-2 text-sm font-bold text-(--color-text)">
+          <AppIcon name="bookings" :size="16" class="text-(--color-text-muted)" />
+          نوبت‌های امروز
+        </h2>
+        <div v-if="loading" class="flex items-center justify-center py-8 text-(--color-text-muted)">
+          <AppIcon name="spinner" :size="20" class="animate-spin" />
+        </div>
+        <EmptyState v-else-if="todaysBookings.length === 0" icon="bookings" message="نوبتی برای امروز ثبت نشده است." />
+        <div v-else class="space-y-2">
+          <AppCard v-for="b in todaysBookings" :key="b.id" :padded="false" class="p-3">
+            <div class="flex items-center justify-between">
+              <p class="text-sm font-semibold text-(--color-text)">{{ serviceName(b.serviceId) }}</p>
+              <p class="tnum text-sm font-bold text-(--color-accent-text)">{{ new Date(b.startsAt).toLocaleTimeString('fa-IR') }}</p>
+            </div>
+          </AppCard>
+        </div>
+      </section>
+
+      <section>
+        <h2 class="mb-2 flex items-center gap-2 text-sm font-bold text-(--color-text)">
+          <AppIcon name="bookings" :size="16" class="text-(--color-text-muted)" />
+          نوبت‌های بعدی
+        </h2>
+        <div v-if="loading" class="flex items-center justify-center py-8 text-(--color-text-muted)">
+          <AppIcon name="spinner" :size="20" class="animate-spin" />
+        </div>
+        <EmptyState v-else-if="upcomingBookings.length === 0" icon="bookings" message="نوبت بعدی ثبت نشده است." />
+        <div v-else class="space-y-2">
+          <AppCard v-for="b in upcomingBookings" :key="b.id" :padded="false" class="p-3">
+            <div class="flex items-center justify-between">
+              <p class="text-sm font-semibold text-(--color-text)">{{ serviceName(b.serviceId) }}</p>
+              <p class="tnum text-sm text-(--color-text-muted)">{{ new Date(b.startsAt).toLocaleDateString('fa-IR') }}</p>
+            </div>
+          </AppCard>
+        </div>
+      </section>
+    </template>
   </div>
 </template>

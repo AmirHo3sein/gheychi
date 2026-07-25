@@ -6,7 +6,7 @@ const { toasts } = useToast()
 </script>
 
 <template>
-  <div class="fixed inset-x-0 top-4 z-50 flex flex-col items-center gap-2 px-4">
+  <div class="fixed inset-x-0 top-4 z-50 flex flex-col items-center gap-2 px-4" role="status" aria-live="polite">
     <div
       v-for="toast in toasts"
       :key="toast.id"

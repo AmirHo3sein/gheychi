@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -11,6 +11,8 @@ import { bookingStatusLabel } from '@/utils/labels'
 interface Booking {
   id: string
   serviceId: string
+  serviceName: string
+  priceSnapshot: number
   startsAt: string
   status: string
   workerId: string | null
@@ -26,42 +28,74 @@ const { apiFetch } = useApi()
 const bookings = ref<Booking[]>([])
 const workers = ref<Worker[]>([])
 const loading = ref(true)
+const loadError = ref(false)
+const submittingId = ref<string | null>(null)
 
-async function load() {
-  const { data } = await apiFetch<Booking[]>('/salons/mine/bookings', { silent: true })
+async function fetchBookings(): Promise<boolean> {
+  const { data, error } = await apiFetch<Booking[]>('/salons/mine/bookings', { silent: true })
+  if (error) return false
   bookings.value = data ?? []
+  return true
+}
+
+async function fetchWorkers(): Promise<boolean> {
+  const { data, error } = await apiFetch<Worker[]>('/salons/mine/workers', { silent: true })
+  if (error) return false
+  workers.value = (data ?? []).filter((w) => w.active)
+  return true
+}
+
+async function loadAll() {
+  loading.value = true
+  loadError.value = false
+  const [bookingsOk, workersOk] = await Promise.all([fetchBookings(), fetchWorkers()])
+  loadError.value = !bookingsOk || !workersOk
   loading.value = false
 }
 
-onMounted(async () => {
-  const [, workersRes] = await Promise.all([
-    load(),
-    apiFetch<Worker[]>('/salons/mine/workers', { silent: true }),
-  ])
-  workers.value = (workersRes.data ?? []).filter((w) => w.active)
-})
+onMounted(loadAll)
+
+// Backend returns startsAt DESC (furthest-future first), which buries the next
+// imminent booking under farther-future ones -- re-sort ascending so the soonest
+// booking always surfaces first.
+const sortedBookings = computed(() => [...bookings.value].sort((a, b) => a.startsAt.localeCompare(b.startsAt)))
 
 async function markStatus(id: string, status: 'completed' | 'no_show') {
-  await apiFetch(`/salons/mine/bookings/${id}`, { method: 'PATCH', body: { status } })
-  await load()
+  submittingId.value = id
+  try {
+    await apiFetch(`/salons/mine/bookings/${id}`, { method: 'PATCH', body: { status } })
+    await fetchBookings()
+  } finally {
+    submittingId.value = null
+  }
 }
 
 async function cancelBooking(id: string) {
   if (!confirm('لغو این نوبت ممکن است مشمول جریمه شود. ادامه می‌دهید؟')) return
-  await apiFetch(`/bookings/${id}/cancel`, { method: 'POST' })
-  await load()
+  submittingId.value = id
+  try {
+    await apiFetch(`/bookings/${id}/cancel`, { method: 'POST' })
+    await fetchBookings()
+  } finally {
+    submittingId.value = null
+  }
 }
 
 async function assignWorker(booking: Booking, event: Event) {
   const workerId = (event.target as HTMLSelectElement).value
   if (!workerId) return
-  const { data } = await apiFetch<Booking>(`/salons/mine/bookings/${booking.id}/assign-worker`, {
-    method: 'PATCH',
-    body: { workerId },
-  })
-  if (data) {
-    booking.workerId = data.workerId
-    booking.workerName = data.workerName
+  submittingId.value = booking.id
+  try {
+    const { data } = await apiFetch<Booking>(`/salons/mine/bookings/${booking.id}/assign-worker`, {
+      method: 'PATCH',
+      body: { workerId },
+    })
+    if (data) {
+      booking.workerId = data.workerId
+      booking.workerName = data.workerName
+    }
+  } finally {
+    submittingId.value = null
   }
 }
 </script>
@@ -70,38 +104,87 @@ async function assignWorker(booking: Booking, event: Event) {
   <div class="space-y-3 p-4">
     <h1 class="text-lg font-bold text-(--color-text)">نوبت‌ها</h1>
 
-    <EmptyState v-if="!loading && bookings.length === 0" icon="bookings" message="هنوز نوبتی ثبت نشده است." />
+    <div v-if="loadError" class="space-y-3 rounded-xl border border-dashed border-(--color-border) p-4 text-center">
+      <p class="text-sm text-(--tone-danger-text)">نوبت‌ها بارگذاری نشد.</p>
+      <AppButton type="button" variant="secondary" data-testid="retry-bookings" @click="loadAll">
+        تلاش دوباره
+      </AppButton>
+    </div>
 
-    <AppCard v-for="b in bookings" :key="b.id" :data-testid="`booking-${b.id}`" :padded="false" class="space-y-3 p-4">
-      <div class="flex items-center justify-between">
-        <p class="tnum text-sm font-semibold text-(--color-text)">{{ new Date(b.startsAt).toLocaleString('fa-IR') }}</p>
-        <StatusBadge :label="bookingStatusLabel(b.status).label" :tone="bookingStatusLabel(b.status).tone" />
+    <template v-else>
+      <div v-if="loading" class="flex items-center justify-center py-8 text-(--color-text-muted)">
+        <AppIcon name="spinner" :size="20" class="animate-spin" />
       </div>
-      <div v-if="b.status === 'confirmed' && workers.length > 0">
-        <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">تخصیص کارمند</label>
-        <select
-          :value="b.workerId ?? ''"
-          data-testid="assign-worker"
-          class="native-select w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-1.5 text-sm"
-          @change="assignWorker(b, $event)"
-        >
-          <option value="">بدون تخصیص کارمند</option>
-          <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
-        </select>
-      </div>
-      <div v-if="b.status === 'confirmed'" class="flex gap-2">
-        <AppButton data-testid="mark-completed" type="button" variant="secondary" class="flex-1" @click="markStatus(b.id, 'completed')">
-          <template #icon><AppIcon name="check" :size="15" /></template>
-          انجام شد
-        </AppButton>
-        <AppButton data-testid="mark-no-show" type="button" variant="secondary" class="flex-1" @click="markStatus(b.id, 'no_show')">
-          <template #icon><AppIcon name="x" :size="15" /></template>
-          عدم حضور
-        </AppButton>
-        <AppButton data-testid="cancel-booking" type="button" variant="danger" @click="cancelBooking(b.id)">
-          لغو
-        </AppButton>
-      </div>
-    </AppCard>
+
+      <template v-else>
+        <EmptyState v-if="bookings.length === 0" icon="bookings" message="هنوز نوبتی ثبت نشده است." />
+
+        <AppCard v-for="b in sortedBookings" :key="b.id" :data-testid="`booking-${b.id}`" :padded="false" class="space-y-3 p-4">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-sm font-bold text-(--color-text)">{{ b.serviceName }}</p>
+              <p class="tnum text-xs text-(--color-text-muted)">{{ b.priceSnapshot.toLocaleString('fa-IR') }} تومان</p>
+            </div>
+            <StatusBadge :label="bookingStatusLabel(b.status).label" :tone="bookingStatusLabel(b.status).tone" />
+          </div>
+          <p class="tnum text-sm text-(--color-text-muted)">{{ new Date(b.startsAt).toLocaleString('fa-IR') }}</p>
+
+          <div v-if="b.status === 'confirmed' && workers.length > 0">
+            <label :for="`worker-select-${b.id}`" class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">تخصیص کارمند</label>
+            <select
+              :id="`worker-select-${b.id}`"
+              :value="b.workerId ?? ''"
+              :disabled="submittingId === b.id"
+              data-testid="assign-worker"
+              class="native-select w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-1.5 text-sm"
+              @change="assignWorker(b, $event)"
+            >
+              <option value="">بدون تخصیص کارمند</option>
+              <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
+            </select>
+          </div>
+          <p v-else-if="b.workerName" class="text-sm text-(--color-text-muted)">
+            کارمند: <span class="font-semibold text-(--color-text)">{{ b.workerName }}</span>
+          </p>
+
+          <div v-if="b.status === 'confirmed'" class="flex gap-2">
+            <AppButton
+              data-testid="mark-completed"
+              type="button"
+              variant="secondary"
+              class="flex-1"
+              :disabled="submittingId === b.id"
+              :loading="submittingId === b.id"
+              @click="markStatus(b.id, 'completed')"
+            >
+              <template #icon><AppIcon name="check" :size="15" /></template>
+              انجام شد
+            </AppButton>
+            <AppButton
+              data-testid="mark-no-show"
+              type="button"
+              variant="secondary"
+              class="flex-1"
+              :disabled="submittingId === b.id"
+              :loading="submittingId === b.id"
+              @click="markStatus(b.id, 'no_show')"
+            >
+              <template #icon><AppIcon name="x" :size="15" /></template>
+              عدم حضور
+            </AppButton>
+            <AppButton
+              data-testid="cancel-booking"
+              type="button"
+              variant="danger"
+              :disabled="submittingId === b.id"
+              :loading="submittingId === b.id"
+              @click="cancelBooking(b.id)"
+            >
+              لغو
+            </AppButton>
+          </div>
+        </AppCard>
+      </template>
+    </template>
   </div>
 </template>

@@ -5,16 +5,18 @@ const WEEKDAYS = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارش
 const model = defineModel<Array<{ weekday: number; openTime: string; closeTime: string; enabled: boolean }>>({
   required: true,
 })
+
+withDefaults(defineProps<{ invalidWeekdays?: number[] }>(), { invalidWeekdays: () => [] })
 </script>
 
 <template>
-  <div class="space-y-2">
+  <div class="max-w-2xl space-y-2">
     <div
       v-for="day in model"
       :key="day.weekday"
       :data-testid="`day-${day.weekday}`"
-      class="flex items-center gap-3 rounded-xl border border-(--color-border) bg-(--color-surface-card) p-3 transition-colors"
-      :class="!day.enabled && 'opacity-60'"
+      class="flex items-center gap-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-3 transition-colors"
+      :class="[!day.enabled && 'opacity-60', invalidWeekdays.includes(day.weekday) && 'border-(--color-danger)']"
     >
       <label class="flex w-24 shrink-0 items-center gap-2 text-sm font-medium text-(--color-text)">
         <input v-model="day.enabled" type="checkbox" class="h-4 w-4 accent-(--color-accent)" />

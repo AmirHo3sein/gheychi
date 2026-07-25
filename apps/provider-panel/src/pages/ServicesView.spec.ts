@@ -1,0 +1,153 @@
+import { mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { resetToast, useToast } from '@/composables/useToast'
+import ServicesView from './ServicesView.vue'
+
+const SERVICE = {
+  id: 'svc-1',
+  categoryId: 1,
+  name: 'کوتاهی مو',
+  price: 100000,
+  durationMin: 30,
+  isActive: true,
+  discountPercent: null,
+}
+
+describe('ServicesView', () => {
+  beforeEach(() => {
+    resetToast()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('does not deactivate a service without confirmation, and the row stays untouched', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [SERVICE] }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+    vi.stubGlobal('fetch', fetchMock)
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+
+    const wrapper = mount(ServicesView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(wrapper.find('[data-testid="deactivate-service"]').exists()).toBe(true)
+    await wrapper.find('[data-testid="deactivate-service"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(confirmSpy).toHaveBeenCalled()
+    // Only the two initial GETs happened -- no DELETE was fired.
+    expect(fetchMock.mock.calls.length).toBe(2)
+    // The service row is still rendered -- declining the confirm must not remove it.
+    expect(wrapper.text()).toContain('کوتاهی مو')
+  })
+
+  it('deactivates a service after confirmation, sending a real DELETE and removing the row', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [SERVICE] }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+      .mockResolvedValueOnce({ ok: true, status: 204, json: async () => null }) // DELETE service
+    vi.stubGlobal('fetch', fetchMock)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    const wrapper = mount(ServicesView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    await wrapper.find('[data-testid="deactivate-service"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    const deleteCall = fetchMock.mock.calls[2]!
+    expect(deleteCall[0]).toContain('/salons/mine/services/svc-1')
+    expect(deleteCall[1]).toMatchObject({ method: 'DELETE' })
+    expect(wrapper.text()).not.toContain('کوتاهی مو')
+  })
+
+  it('renders no checkbox for the active state -- deactivation is an explicit danger action, not a bare toggle', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [SERVICE] }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(ServicesView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(wrapper.find('input[type="checkbox"]').exists()).toBe(false)
+  })
+
+  it('shows a retry-capable error state when either the services or categories load fails', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({ message: 'boom' }) }) // GET services fails
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(ServicesView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(wrapper.find('[data-testid="retry-services"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('هنوز خدمتی ثبت نشده است')
+  })
+
+  it('retries both fetches when the retry button is clicked after a load failure', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({ message: 'boom' }) }) // GET services fails
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [SERVICE] }) // GET services (retry)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories (retry)
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(ServicesView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    await wrapper.find('[data-testid="retry-services"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(fetchMock.mock.calls.length).toBe(4)
+    expect(wrapper.find('[data-testid="retry-services"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('کوتاهی مو')
+  })
+
+  it('shows a success toast after updating a price', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [SERVICE] }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ...SERVICE, price: 150000 }) }) // PATCH price
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(ServicesView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    // First number input on the page is the service row's price field.
+    const input = wrapper.findAll('input[type="number"]')[0]!
+    await input.setValue('150000')
+    await input.trigger('change')
+    await new Promise((r) => setTimeout(r, 0))
+
+    const patchCall = fetchMock.mock.calls[2]!
+    expect(patchCall[0]).toContain('/salons/mine/services/svc-1')
+    expect(patchCall[1]).toMatchObject({ method: 'PATCH' })
+    expect(JSON.parse(patchCall[1].body)).toEqual({ price: 150000 })
+    expect(useToast().toasts.value.some((t) => t.message === 'قیمت به‌روزرسانی شد')).toBe(true)
+  })
+
+  it('shows an inline error and skips the request when adding a service without a category', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(ServicesView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    const nameInput = wrapper.findAll('input[type="text"]').at(-1)
+    if (nameInput) await nameInput.setValue('رنگ مو')
+
+    const addButton = wrapper.findAll('button').find((b) => b.text().includes('افزودن'))!
+    await addButton.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(wrapper.text()).toContain('دسته‌بندی خدمت را انتخاب کنید')
+    // Only the two initial GETs happened -- no POST was fired.
+    expect(fetchMock.mock.calls.length).toBe(2)
+  })
+})

@@ -132,4 +132,128 @@ describe('TeamView referral code reveal', () => {
 
     wrapper.unmount()
   })
+
+  it('exposes aria-expanded/aria-controls on the toggle button, bound to the reveal state', async () => {
+    const wrapper = await mountView()
+    fetchMock.mockImplementationOnce(() =>
+      Promise.resolve({ data: { code: 'REF-ARIA', isActive: true, shareUrl: 'https://example.com/r/REF-ARIA' }, error: null }),
+    )
+
+    const toggle = wrapper.findAll('[data-testid="toggle-referral-code"]')[0]!
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+
+    await toggle.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    const panel = wrapper.get('[data-testid="referral-code-panel"]')
+    expect(toggle.attributes('aria-controls')).toBe(panel.attributes('id'))
+
+    wrapper.unmount()
+  })
+
+  it('renders the copy-referral-code button as the secondary variant, not primary', async () => {
+    const wrapper = await mountView()
+    fetchMock.mockImplementationOnce(() =>
+      Promise.resolve({ data: { code: 'REF-VARIANT', isActive: true, shareUrl: 'https://example.com/r/REF-VARIANT' }, error: null }),
+    )
+
+    await wrapper.findAll('[data-testid="toggle-referral-code"]')[0]!.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.vm.$nextTick()
+
+    const copyButton = wrapper.get('[data-testid="copy-referral-code"]')
+    // Secondary variant's fill (border-soft), not primary's (accent-strong) -- the One Seal
+    // Rule reserves the accent-filled primary look for this page's real primary action
+    // ("افزودن" / add member), not a per-row action that can multiply across reveals.
+    expect(copyButton.classes().join(' ')).toContain('border-soft')
+    expect(copyButton.classes().join(' ')).not.toContain('accent-strong')
+
+    wrapper.unmount()
+  })
+})
+
+describe('TeamView loading state', () => {
+  beforeEach(() => {
+    fetchMock.mockReset()
+    resetToast()
+  })
+
+  it('shows a loading spinner distinct from the empty state while the initial fetch is pending', async () => {
+    let resolveFetch!: (v: { data: typeof workers; error: null }) => void
+    fetchMock.mockImplementation(
+      () => new Promise((resolve) => { resolveFetch = resolve }),
+    )
+
+    const wrapper = mount(TeamView)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="loading-spinner"]').exists()).toBe(true)
+    // Empty state must not render while still loading.
+    expect(wrapper.text()).not.toContain('هنوز عضوی به تیم اضافه نشده است')
+
+    resolveFetch({ data: [], error: null })
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('هنوز عضوی به تیم اضافه نشده است')
+
+    wrapper.unmount()
+  })
+})
+
+describe('TeamView add-member form', () => {
+  beforeEach(() => {
+    fetchMock.mockReset()
+    resetToast()
+    fetchMock.mockImplementation((path: string) => {
+      if (path === '/salons/mine/workers') return Promise.resolve({ data: [], error: null })
+      return Promise.resolve({ data: null, error: null })
+    })
+  })
+
+  it('sets an inline Persian error instead of failing silently on empty submit', async () => {
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-testid="submit-add-worker"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('نام و شماره موبایل الزامی است')
+    // No API call was made for the empty submit itself.
+    expect(fetchMock).toHaveBeenCalledTimes(1) // only the initial list load
+  })
+
+  it('maps a non-409 server error (e.g. phone-format validation) to a fixed Persian message, never the raw server string', async () => {
+    const wrapper = await mountView()
+
+    fetchMock.mockImplementationOnce(() =>
+      Promise.resolve({ data: null, error: { status: 400, message: 'phone must be a valid Iranian mobile number' } }),
+    )
+
+    await wrapper.get('input[placeholder="نام"]').setValue('علی')
+    await wrapper.get('input[placeholder="شماره موبایل"]').setValue('123')
+    await wrapper.get('[data-testid="submit-add-worker"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).not.toContain('phone must be a valid Iranian mobile number')
+    expect(wrapper.text()).toContain('اطلاعات وارد شده نامعتبر است')
+  })
+
+  it('still shows the specific duplicate-member message on a 409', async () => {
+    const wrapper = await mountView()
+
+    fetchMock.mockImplementationOnce(() =>
+      Promise.resolve({ data: null, error: { status: 409, message: 'this user is already a team member' } }),
+    )
+
+    await wrapper.get('input[placeholder="نام"]').setValue('علی')
+    await wrapper.get('input[placeholder="شماره موبایل"]').setValue('09121234567')
+    await wrapper.get('[data-testid="submit-add-worker"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('این کاربر از قبل عضو تیم است')
+  })
 })

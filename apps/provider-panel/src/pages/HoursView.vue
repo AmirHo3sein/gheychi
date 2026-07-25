@@ -21,6 +21,8 @@ interface ScheduleException {
   isClosed: boolean
 }
 
+const WEEKDAY_LABELS = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه']
+
 const { apiFetch } = useApi()
 const { push: pushToast } = useToast()
 const hours = ref(
@@ -29,12 +31,19 @@ const hours = ref(
 const exceptions = ref<ScheduleException[]>([])
 const newExceptionDate = ref('')
 const saving = ref(false)
+const hoursError = ref('')
+const invalidWeekdays = ref<number[]>([])
 
-async function loadHours() {
-  const { data } = await apiFetch<WorkingHour[]>('/salons/mine/hours', { silent: true })
-  if (!data) return
+// Gates both sections until the first load settles -- saving/rendering against the
+// all-days-disabled seed state before the real schedule arrives would silently wipe it.
+const loading = ref(true)
+const loadError = ref(false)
+
+async function loadHours(): Promise<boolean> {
+  const { data, error } = await apiFetch<WorkingHour[]>('/salons/mine/hours', { silent: true })
+  if (error) return false
   for (const day of hours.value) {
-    const match = data.find((h) => h.weekday === day.weekday)
+    const match = data?.find((h) => h.weekday === day.weekday)
     // Postgres `time` columns round-trip through pg as HH:MM:SS, but the PUT
     // validation (HourRangeDto) and the <input type="time"> fields only accept HH:MM.
     if (match) {
@@ -46,19 +55,39 @@ async function loadHours() {
       })
     }
   }
+  return true
 }
 
-async function loadExceptions() {
-  const { data } = await apiFetch<ScheduleException[]>('/salons/mine/exceptions', { silent: true })
+async function loadExceptions(): Promise<boolean> {
+  const { data, error } = await apiFetch<ScheduleException[]>('/salons/mine/exceptions', { silent: true })
+  if (error) return false
   exceptions.value = data ?? []
+  return true
 }
 
-onMounted(() => {
-  loadHours()
-  loadExceptions()
-})
+async function loadAll() {
+  loading.value = true
+  loadError.value = false
+  const [hoursOk, exceptionsOk] = await Promise.all([loadHours(), loadExceptions()])
+  loadError.value = !hoursOk || !exceptionsOk
+  loading.value = false
+}
+
+onMounted(loadAll)
+
+function validateHours(): { message: string; invalid: number[] } {
+  const invalid = hours.value.filter((h) => h.enabled && h.closeTime <= h.openTime).map((h) => h.weekday)
+  if (invalid.length === 0) return { message: '', invalid: [] }
+  const names = invalid.map((w) => WEEKDAY_LABELS[w]).join('، ')
+  return { message: `ساعت پایان باید بعد از ساعت شروع باشد: ${names}`, invalid }
+}
 
 async function saveHours() {
+  const validation = validateHours()
+  hoursError.value = validation.message
+  invalidWeekdays.value = validation.invalid
+  if (validation.message) return
+
   saving.value = true
   const enabled = hours.value
     .filter((h) => h.enabled)
@@ -76,8 +105,13 @@ async function addException() {
 }
 
 async function removeException(id: string) {
+  if (!window.confirm('این تعطیلی حذف شود؟')) return
   await apiFetch(`/salons/mine/exceptions/${id}`, { method: 'DELETE' })
   await loadExceptions()
+}
+
+function exceptionDateLabel(e: ScheduleException): string {
+  return new Date(e.date).toLocaleDateString('fa-IR')
 }
 </script>
 
@@ -85,31 +119,65 @@ async function removeException(id: string) {
   <div class="space-y-6 p-4">
     <h1 class="text-lg font-bold text-(--color-text)">ساعات کاری</h1>
 
-    <section>
-      <h2 class="mb-2 text-sm font-bold text-(--color-text)">ساعات کاری هفتگی</h2>
-      <ScheduleStep v-model="hours" />
-      <AppButton type="button" data-testid="save-hours" block class="mt-3" :disabled="saving" :loading="saving" @click="saveHours">
-        {{ saving ? 'در حال ذخیره…' : 'ذخیره ساعات کاری' }}
-      </AppButton>
-    </section>
+    <div v-if="loadError" class="space-y-3 rounded-2xl border border-dashed border-(--color-border) p-4 text-center">
+      <p class="text-sm text-(--tone-danger-text)">اطلاعات ساعات کاری بارگذاری نشد.</p>
+      <AppButton type="button" variant="secondary" data-testid="retry-hours" @click="loadAll">تلاش دوباره</AppButton>
+    </div>
 
-    <section>
-      <h2 class="mb-2 text-sm font-bold text-(--color-text)">تعطیلی‌های موردی</h2>
-      <div class="flex gap-2">
-        <AppInput v-model="newExceptionDate" type="date" class="tnum flex-1" />
-        <AppButton type="button" variant="secondary" @click="addException">
-          <AppIcon name="plus" :size="16" />
-        </AppButton>
-      </div>
-      <EmptyState v-if="exceptions.length === 0" icon="hours" message="تعطیلی موردی ثبت نشده است." class="mt-3" />
-      <div v-else class="mt-3 space-y-2">
-        <AppCard v-for="e in exceptions" :key="e.id" :padded="false" class="flex items-center justify-between p-3">
-          <span class="tnum text-sm text-(--color-text)">{{ e.date }}</span>
-          <AppButton type="button" variant="danger" @click="removeException(e.id)">
-            <AppIcon name="trash" :size="16" />
+    <template v-else>
+      <section>
+        <h2 class="mb-2 text-sm font-bold text-(--color-text)">ساعات کاری هفتگی</h2>
+        <div
+          v-if="loading"
+          class="max-w-2xl rounded-2xl border border-dashed border-(--color-border) py-10 text-center text-sm text-(--color-text-muted)"
+        >
+          در حال بارگذاری…
+        </div>
+        <template v-else>
+          <ScheduleStep v-model="hours" :invalid-weekdays="invalidWeekdays" />
+          <p
+            v-if="hoursError"
+            class="mt-2 max-w-2xl flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)"
+          >
+            {{ hoursError }}
+          </p>
+          <AppButton
+            type="button"
+            data-testid="save-hours"
+            block
+            class="mt-3 max-w-2xl"
+            :disabled="saving"
+            :loading="saving"
+            @click="saveHours"
+          >
+            {{ saving ? 'در حال ذخیره…' : 'ذخیره ساعات کاری' }}
           </AppButton>
-        </AppCard>
-      </div>
-    </section>
+        </template>
+      </section>
+
+      <section>
+        <h2 class="mb-2 text-sm font-bold text-(--color-text)">تعطیلی‌های موردی</h2>
+        <div v-if="loading" class="rounded-2xl border border-dashed border-(--color-border) py-10 text-center text-sm text-(--color-text-muted)">
+          در حال بارگذاری…
+        </div>
+        <template v-else>
+          <div class="flex gap-2">
+            <AppInput v-model="newExceptionDate" label="تاریخ تعطیلی" type="date" class="tnum flex-1" />
+            <AppButton type="button" variant="secondary" aria-label="افزودن تعطیلی" @click="addException">
+              <AppIcon name="plus" :size="16" />
+            </AppButton>
+          </div>
+          <EmptyState v-if="exceptions.length === 0" icon="hours" message="تعطیلی موردی ثبت نشده است." class="mt-3" />
+          <div v-else class="mt-3 space-y-2">
+            <AppCard v-for="e in exceptions" :key="e.id" :padded="false" class="flex items-center justify-between p-3">
+              <span class="tnum text-sm text-(--color-text)">{{ exceptionDateLabel(e) }}</span>
+              <AppButton type="button" variant="danger" aria-label="حذف تعطیلی" @click="removeException(e.id)">
+                <AppIcon name="trash" :size="16" />
+              </AppButton>
+            </AppCard>
+          </div>
+        </template>
+      </section>
+    </template>
   </div>
 </template>

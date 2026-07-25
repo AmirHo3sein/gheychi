@@ -3,6 +3,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useApi } from '@/composables/useApi'
@@ -47,23 +48,32 @@ async function load() {
 
 onMounted(load)
 
-function ratingLabel(w: Worker): string {
+function ratingText(w: Worker): string {
   if (w.ratingCount === 0) return 'بدون امتیاز'
-  return `⭐ ${Number(w.ratingAvg).toFixed(1)} (${w.ratingCount.toLocaleString('fa-IR')} نظر)`
+  return `${Number(w.ratingAvg).toFixed(1)} (${w.ratingCount.toLocaleString('fa-IR')} نظر)`
 }
 
 async function addWorker() {
   createError.value = ''
-  if (!newWorker.name.trim() || !newWorker.phone.trim()) return
+  if (!newWorker.name.trim() || !newWorker.phone.trim()) {
+    createError.value = 'نام و شماره موبایل الزامی است'
+    return
+  }
 
-  // Not silent: a 409 (duplicate worker) or 400 (self-hire) both need to surface inline,
-  // not just via the generic toast -- the toast still fires too (useApi's default non-silent behavior).
+  // Not silent: a 409 (duplicate worker) or 400 (self-hire/validation) both need to surface
+  // inline, not just via the generic toast -- the toast still fires too (useApi's default
+  // non-silent behavior). Non-409 errors are mapped to a fixed Persian message rather than
+  // trusting the server string verbatim -- class-validator's DTO messages (e.g. the phone
+  // format check) are English and would otherwise leak untranslated onto this Persian-only
+  // screen. Mirrors LoginView.vue's pattern.
   const { data, error } = await apiFetch<Worker>('/salons/mine/workers', {
     method: 'POST',
     body: { name: newWorker.name.trim(), phone: newWorker.phone.trim() },
   })
   if (error) {
-    createError.value = error.status === 409 ? 'این کاربر از قبل عضو تیم است.' : error.message
+    createError.value = error.status === 409
+      ? 'این کاربر از قبل عضو تیم است.'
+      : 'اطلاعات وارد شده نامعتبر است. لطفاً نام و شماره موبایل را بررسی کنید.'
     return
   }
   if (data) workers.value.unshift(data)
@@ -125,30 +135,44 @@ async function copyReferralCode(code: string) {
       <p v-if="createError" class="flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)">
         {{ createError }}
       </p>
-      <AppButton type="button" variant="primary" block @click="addWorker">افزودن</AppButton>
+      <AppButton type="button" variant="primary" block data-testid="submit-add-worker" @click="addWorker">افزودن</AppButton>
     </AppCard>
 
-    <EmptyState v-if="!loading && workers.length === 0" icon="team" message="هنوز عضوی به تیم اضافه نشده است." />
+    <div v-if="loading" data-testid="loading-spinner" class="flex items-center justify-center py-8 text-(--color-text-muted)">
+      <AppIcon name="spinner" :size="20" class="animate-spin" />
+    </div>
+    <EmptyState v-else-if="workers.length === 0" icon="team" message="هنوز عضوی به تیم اضافه نشده است." />
 
     <AppCard v-for="w in workers" :key="w.id" :padded="false" class="space-y-3 p-4">
       <div class="flex items-center justify-between">
         <div>
           <p class="text-sm font-bold text-(--color-text)">{{ w.name }}</p>
-          <p class="tnum text-sm text-(--color-text-muted)">{{ ratingLabel(w) }}</p>
+          <p class="tnum flex items-center gap-1 text-sm text-(--color-text-muted)">
+            <AppIcon v-if="w.ratingCount > 0" name="star" :size="14" fill="currentColor" class="text-(--tone-warning-text)" />
+            {{ ratingText(w) }}
+          </p>
         </div>
-        <label class="flex items-center gap-2 text-sm text-(--color-text)">
+        <label class="-mx-1 flex min-h-11 items-center gap-2 rounded-lg px-1 py-2 text-sm text-(--color-text)">
           <input type="checkbox" class="h-4 w-4 accent-(--color-accent)" :checked="w.active" @change="toggleActive(w, $event)" />
           فعال
         </label>
       </div>
 
       <div>
-        <AppButton type="button" variant="ghost" data-testid="toggle-referral-code" @click="toggleReferralCode(w)">
+        <AppButton
+          type="button"
+          variant="ghost"
+          data-testid="toggle-referral-code"
+          :aria-expanded="referralRevealed[w.id] ?? false"
+          :aria-controls="`referral-panel-${w.id}`"
+          @click="toggleReferralCode(w)"
+        >
           {{ referralRevealed[w.id] ? 'پنهان کردن کد معرفی' : 'نمایش کد معرفی' }}
         </AppButton>
 
         <div
           v-if="referralRevealed[w.id]"
+          :id="`referral-panel-${w.id}`"
           data-testid="referral-code-panel"
           class="mt-2 flex items-center gap-2 rounded-xl border border-(--color-border) bg-(--color-surface) p-3"
         >
@@ -160,7 +184,7 @@ async function copyReferralCode(code: string) {
             </span>
             <AppButton
               type="button"
-              variant="primary"
+              variant="secondary"
               data-testid="copy-referral-code"
               @click="copyReferralCode(referralCodes[w.id]!.code)"
             >

@@ -25,9 +25,13 @@
   --color-danger-strong: #B91C1C;
 
   --tone-success-bg: #E3F7EE;
-  --tone-success-text: #0F8A54;
+  /* Darkened from #0F8A54 (3.93:1 against --tone-success-bg, fails WCAG AA) to
+     4.83:1 -- dark mode's #4ADE80 already passes and is untouched. */
+  --tone-success-text: #0D7A48;
   --tone-warning-bg: #FEF3DE;
-  --tone-warning-text: #B4740E;
+  /* Darkened from #B4740E (3.51:1 against --tone-warning-bg, fails WCAG AA) to
+     4.87:1 -- dark mode's #FBBF24 already passes and is untouched. */
+  --tone-warning-text: #955F09;
   --tone-danger-bg: #FCE8EA;
   --tone-danger-text: #C22B3F;
   --tone-neutral-bg: #EEF1F2;
@@ -143,6 +147,10 @@ button:disabled {
   background-repeat: no-repeat;
   background-position: left 0.85rem center;
   padding-left: 2.25rem;
+  /* Some call sites pair this class with compact padding (e.g. p-1.5), which lands
+     well under the 44px touch-target floor -- enforce the floor here so every
+     .native-select usage clears it regardless of the padding utility applied. */
+  min-height: 2.75rem;
 }
 .dark .native-select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23B3A3B0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
