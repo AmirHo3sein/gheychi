@@ -180,6 +180,10 @@ const AUDIT_ACTION: Record<string, LabelEntry> = {
   'wallet.adjust': { label: 'تعدیل موجودی کیف پول', tone: 'warning' },
   'referral-reward-type.update': { label: 'ویرایش نوع پاداش معرفی', tone: 'info' },
   'referral.cancel': { label: 'لغو معرفی', tone: 'danger' },
+  'coupon.create': { label: 'ایجاد کد تخفیف', tone: 'success' },
+  'coupon.update': { label: 'ویرایش کد تخفیف', tone: 'info' },
+  'coupon.delete': { label: 'حذف کد تخفیف', tone: 'danger' },
+  'worker-rating.moderate': { label: 'تعدیل ارزیابی کارمند', tone: 'warning' },
 }
 
 // Canonical list of the audited action names -- filter dropdowns and tests derive from
@@ -200,6 +204,8 @@ const AUDIT_TARGET_TYPE: Record<string, string> = {
   wallet: 'کیف پول',
   'referral-reward-type': 'نوع پاداش معرفی',
   referral: 'معرفی',
+  coupon: 'کد تخفیف',
+  'worker-rating': 'ارزیابی کارمند',
 }
 
 const REPORT_STATUS: Record<string, LabelEntry> = {

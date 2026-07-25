@@ -14,13 +14,16 @@ import {
 } from './labels'
 
 describe('auditActionLabel', () => {
-  it('maps every one of the twenty-one audited actions to a Farsi label', () => {
+  it('maps every one of the audited actions to a Farsi label', () => {
     // 9 from Plan 7 + 6 post.* + 3 blogcategory.* from Plan 8 + 2 showcase
     // (story/portfolio status) from the salon-showcase plan + 1 wallet.adjust from the
     // referral-and-rating system's Slice 2 (Wallet Ledger) + 2 (referral-reward-type.update,
-    // referral.cancel) from Slice 3 (Referral codes + tracking). This length guard is
-    // deliberate: adding a backend @AuditAction without a Farsi label must fail here.
-    expect(AUDIT_ACTION_KEYS).toHaveLength(23)
+    // referral.cancel) from Slice 3 (Referral codes + tracking) + 3 coupon.* (create/update/
+    // delete) + 1 worker-rating.moderate, both of which existed on the backend for a while
+    // before the admin-panel audit-log sweep caught the drift and added their labels here.
+    // This length guard is deliberate: adding a backend @AuditAction without a Farsi label
+    // must fail here.
+    expect(AUDIT_ACTION_KEYS).toHaveLength(27)
     for (const action of AUDIT_ACTION_KEYS) {
       const entry = auditActionLabel(action)
       // A mapped entry never falls back to the raw dotted action name.

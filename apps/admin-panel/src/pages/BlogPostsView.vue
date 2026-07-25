@@ -11,6 +11,7 @@ import AppSelect from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
+import { debounce } from '@/utils/debounce'
 import { blogPostStatusLabel } from '@/utils/labels'
 
 interface BlogCategory {
@@ -48,21 +49,33 @@ const { apiFetch } = useApi()
 // ---- posts list ----
 const posts = ref<BlogPostRow[]>([])
 const loading = ref(true)
+// Distinct from "genuinely no results" -- SalonsView.vue's loadError pattern -- a fetch
+// failure must not be silently repainted as an empty list.
+const loadError = ref(false)
 const page = ref(1)
 const total = ref(0)
 const pageSize = 20
 
 const statusFilter = ref<'all' | 'draft' | 'published'>('all')
 const categoryFilter = ref<number | ''>('')
+const titleFilter = ref('')
 
 async function load() {
   loading.value = true
+  loadError.value = false
   const params = new URLSearchParams({ status: statusFilter.value, page: String(page.value), pageSize: String(pageSize) })
   if (categoryFilter.value !== '') params.set('categoryId', String(categoryFilter.value))
+  if (titleFilter.value) params.set('title', titleFilter.value)
 
-  const { data } = await apiFetch<BlogPostListResponse>(`/admin/blog/posts?${params.toString()}`, { silent: true })
-  posts.value = data?.items ?? []
-  total.value = data?.total ?? 0
+  const { data, error } = await apiFetch<BlogPostListResponse>(`/admin/blog/posts?${params.toString()}`, { silent: true })
+  if (error) {
+    loadError.value = true
+    posts.value = []
+    total.value = 0
+  } else {
+    posts.value = data?.items ?? []
+    total.value = data?.total ?? 0
+  }
   loading.value = false
 }
 
@@ -78,7 +91,9 @@ function loadFromFilterChange() {
 
 function formatDate(iso: string | null): string {
   if (!iso) return '—'
-  return new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
+  const parsed = new Date(iso)
+  if (isNaN(parsed.getTime())) return '—'
+  return new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' }).format(parsed)
 }
 
 function openPost(post: BlogPostRow) {
@@ -88,6 +103,16 @@ function openPost(post: BlogPostRow) {
 function goToCreate() {
   router.push('/blog/new')
 }
+
+function clearFilters() {
+  statusFilter.value = 'all'
+  categoryFilter.value = ''
+  titleFilter.value = ''
+}
+
+const hasActiveFilters = computed(
+  () => statusFilter.value !== 'all' || categoryFilter.value !== '' || !!titleFilter.value,
+)
 
 // ---- categories side card (CategoriesView pattern, retargeted at /admin/blog/categories) ----
 const categories = ref<BlogCategory[]>([])
@@ -181,6 +206,9 @@ onMounted(() => {
   loadCategories()
 })
 watch([statusFilter, categoryFilter], loadFromFilterChange)
+// titleFilter is free-text (fires on every keystroke) -- debounced so it doesn't hammer
+// the API mid-word, same as SalonsView.vue's nameFilter.
+watch(titleFilter, debounce(loadFromFilterChange, 350))
 watch(page, load)
 </script>
 
@@ -189,14 +217,25 @@ watch(page, load)
     <div class="min-w-0 flex-1 space-y-5">
       <AppCard :padded="false" class="p-4">
         <div class="flex flex-wrap items-end gap-3">
+          <AppInput v-model="titleFilter" icon="search" label="جست‌وجو" placeholder="عنوان مطلب" class="w-52" />
           <div data-testid="status-filter">
             <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">وضعیت</label>
             <AppSelect v-model="statusFilter" :options="STATUS_OPTIONS" width="11rem" />
           </div>
           <div data-testid="category-filter">
             <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">دسته‌بندی</label>
-            <AppSelect v-model="categoryFilter" :options="categoryOptions" width="12rem" />
+            <AppSelect v-model="categoryFilter" :options="categoryOptions" width="12rem" :searchable="true" />
           </div>
+          <AppButton
+            v-if="hasActiveFilters"
+            type="button"
+            variant="ghost"
+            class="mb-0.5"
+            @click="clearFilters"
+          >
+            <template #icon><AppIcon name="reset" :size="15" /></template>
+            پاک کردن فیلترها
+          </AppButton>
           <AppButton data-testid="new-post" variant="primary" class="ms-auto" @click="goToCreate">
             <template #icon><AppIcon name="plus" :size="16" /></template>
             مطلب جدید
@@ -204,35 +243,59 @@ watch(page, load)
         </div>
       </AppCard>
 
-      <EmptyState v-if="!loading && posts.length === 0" icon="newspaper" message="مطلبی با این فیلترها یافت نشد." />
+      <AppCard
+        v-if="loadError"
+        :padded="false"
+        data-testid="load-error"
+        class="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center"
+      >
+        <div class="flex h-12 w-12 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)">
+          <AppIcon name="warning" :size="22" />
+        </div>
+        <p class="text-sm text-(--color-text-muted)">خطا در دریافت فهرست مطالب.</p>
+        <AppButton type="button" variant="secondary" data-testid="retry-load" @click="load">تلاش دوباره</AppButton>
+      </AppCard>
+
+      <EmptyState v-else-if="!loading && posts.length === 0" icon="newspaper" message="مطلبی با این فیلترها یافت نشد." />
 
       <AppCard v-else :padded="false" class="overflow-hidden">
-        <table class="w-full text-right text-sm">
-          <thead>
-            <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
-              <th class="px-5 py-3 font-semibold">عنوان</th>
-              <th class="px-5 py-3 font-semibold">دسته‌بندی</th>
-              <th class="px-5 py-3 font-semibold">وضعیت</th>
-              <th class="px-5 py-3 font-semibold">تاریخ انتشار</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="post in posts"
-              :key="post.id"
-              data-testid="post-row"
-              class="cursor-pointer border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
-              @click="openPost(post)"
-            >
-              <td class="px-5 py-3.5 font-semibold text-(--color-text)">{{ post.title }}</td>
-              <td class="px-5 py-3.5 text-(--color-text-muted)">{{ post.categoryName ?? '—' }}</td>
-              <td class="px-5 py-3.5">
-                <StatusBadge :label="blogPostStatusLabel(post.status).label" :tone="blogPostStatusLabel(post.status).tone" />
-              </td>
-              <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDate(post.publishedAt) }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="relative">
+          <div
+            v-if="loading"
+            data-testid="table-loading"
+            class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-(--color-surface-card)/70"
+          >
+            <AppIcon name="spinner" :size="22" class="animate-spin text-(--color-text-muted)" />
+          </div>
+          <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
+            <thead>
+              <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
+                <th class="px-5 py-3 font-semibold">عنوان</th>
+                <th class="px-5 py-3 font-semibold">دسته‌بندی</th>
+                <th class="px-5 py-3 font-semibold">وضعیت</th>
+                <th class="px-5 py-3 font-semibold">تاریخ انتشار</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="post in posts"
+                :key="post.id"
+                data-testid="post-row"
+                class="cursor-pointer border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
+                @click="openPost(post)"
+              >
+                <td class="px-5 py-3.5 font-semibold text-(--color-text)">
+                  <RouterLink :to="`/blog/${post.id}`" class="hover:text-(--color-accent-text)">{{ post.title }}</RouterLink>
+                </td>
+                <td class="px-5 py-3.5 text-(--color-text-muted)">{{ post.categoryName ?? '—' }}</td>
+                <td class="px-5 py-3.5">
+                  <StatusBadge :label="blogPostStatusLabel(post.status).label" :tone="blogPostStatusLabel(post.status).tone" />
+                </td>
+                <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDate(post.publishedAt) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
         <Pagination :page="page" :page-size="pageSize" :total="total" @update:page="(p) => (page = p)" />
       </AppCard>
     </div>
@@ -253,7 +316,13 @@ watch(page, load)
             :maxlength="60"
           />
         </div>
-        <AppButton data-testid="add-category" type="submit" variant="primary" :disabled="submitting || !newName.trim()">
+        <AppButton
+          data-testid="add-category"
+          type="submit"
+          variant="primary"
+          aria-label="افزودن دسته‌بندی"
+          :disabled="submitting || !newName.trim()"
+        >
           <template #icon><AppIcon name="plus" :size="16" /></template>
         </AppButton>
       </form>
@@ -262,7 +331,7 @@ watch(page, load)
         <div
           v-for="category in categories"
           :key="category.id"
-          class="flex items-center gap-2 rounded-xl border border-(--color-border-soft) p-2.5"
+          class="flex items-center gap-2 rounded-2xl border border-(--color-border-soft) p-2.5"
         >
           <template v-if="confirmingId === category.id">
             <span class="min-w-0 flex-1 truncate text-sm font-semibold text-(--tone-danger-text)">
@@ -278,7 +347,7 @@ watch(page, load)
 
           <template v-else>
             <div v-if="editingId === category.id" class="min-w-0 flex-1">
-              <AppInput v-model="editName" data-testid="edit-category-name" :maxlength="60" />
+              <AppInput v-model="editName" data-testid="edit-category-name" aria-label="نام دسته‌بندی" :maxlength="60" />
             </div>
             <span v-else class="min-w-0 flex-1 truncate text-sm font-semibold text-(--color-text)">{{ category.name }}</span>
             <AppButton

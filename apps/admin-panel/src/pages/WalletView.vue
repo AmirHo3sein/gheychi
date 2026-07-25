@@ -17,6 +17,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
+import { usePhoneUserSearch } from '@/composables/usePhoneUserSearch'
 import AdjustBalanceCard from '@/components/wallet/AdjustBalanceCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
@@ -27,7 +28,6 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
-import { debounce } from '@/utils/debounce'
 import { currencyLabel, walletTransactionTypeLabel } from '@/utils/labels'
 
 const TYPE_OPTIONS = [
@@ -38,12 +38,6 @@ const TYPE_OPTIONS = [
 ]
 
 type WalletTransactionType = 'referral_reward' | 'referral_reversal' | 'admin_adjustment'
-
-interface MatchedUser {
-  id: string
-  phone: string
-  name: string | null
-}
 
 interface WalletTransactionRow {
   id: string
@@ -72,37 +66,11 @@ const page = ref(1)
 const total = ref(0)
 const pageSize = 20
 
-const phoneQuery = ref('')
-const matches = ref<MatchedUser[]>([])
-const selectedUser = ref<MatchedUser | null>(null)
+const { root: phoneSearchRoot, phoneQuery, matches, selectedUser, noResults, selectUser, clearUser: clearUserFilter } =
+  usePhoneUserSearch()
 const typeFilter = ref<'' | WalletTransactionType>('')
 const fromDate = ref('')
 const toDate = ref('')
-
-// Guards against a slower earlier user-search response landing after a faster later one.
-let searchToken = 0
-
-async function searchUsers() {
-  const query = phoneQuery.value.trim()
-  if (selectedUser.value) return
-  matches.value = []
-  if (!query) return
-  const token = ++searchToken
-  const { data } = await apiFetch<MatchedUser[]>(`/admin/users?phone=${encodeURIComponent(query)}`, { silent: true })
-  if (token === searchToken) matches.value = data ?? []
-}
-
-function selectUser(user: MatchedUser) {
-  selectedUser.value = user
-  matches.value = []
-  phoneQuery.value = user.phone
-}
-
-function clearUserFilter() {
-  selectedUser.value = null
-  phoneQuery.value = ''
-  matches.value = []
-}
 
 async function load() {
   loading.value = true
@@ -132,9 +100,11 @@ function loadFromFilterChange() {
 }
 
 function onAdjusted(result: { userId: string; balanceAfter: number }) {
-  // If the ledger currently narrows to the exact user who was just adjusted, refresh so
-  // the new row is visible immediately instead of looking stale until the next filter change.
-  if (selectedUser.value?.id === result.userId) load()
+  // Refresh whenever the ledger isn't currently filtered to a DIFFERENT user than the one
+  // just adjusted -- covers both "narrowed to exactly that user" and the page's default
+  // unfiltered/global-ledger state, so the new row is visible immediately instead of
+  // looking stale (with only the toast as feedback) until the next filter change.
+  if (!selectedUser.value || selectedUser.value.id === result.userId) load()
 }
 
 function formatDateTime(iso: string): string {
@@ -163,7 +133,6 @@ const hasActiveFilters = computed(
 )
 
 onMounted(load)
-watch(phoneQuery, debounce(searchUsers, 350))
 watch(selectedUser, loadFromFilterChange)
 watch([typeFilter, fromDate, toDate], loadFromFilterChange)
 watch(page, load)
@@ -175,7 +144,7 @@ watch(page, load)
 
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
-        <div class="relative">
+        <div ref="phoneSearchRoot" class="relative">
           <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">شماره موبایل کاربر</label>
           <AppInput
             v-if="!selectedUser"
@@ -198,6 +167,7 @@ watch(page, load)
               data-testid="wallet-clear-user"
               class="shrink-0 text-(--color-text-muted) hover:text-(--tone-danger-text)"
               title="پاک کردن کاربر"
+              aria-label="پاک کردن کاربر"
               @click="clearUserFilter"
             >
               <AppIcon name="x" :size="14" />
@@ -205,9 +175,9 @@ watch(page, load)
           </div>
 
           <div
-            v-if="matches.length > 0"
+            v-if="matches.length > 0 || noResults"
             data-testid="wallet-user-matches"
-            class="absolute start-0 top-full z-10 mt-1 w-64 overflow-hidden rounded-xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-md)"
+            class="absolute start-0 top-full z-10 mt-1 w-44 overflow-hidden rounded-xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-md)"
           >
             <button
               v-for="user in matches"
@@ -219,6 +189,7 @@ watch(page, load)
               <span class="font-semibold text-(--color-text)">{{ user.name ?? 'بدون نام' }}</span>
               <span class="tnum mr-1 text-xs text-(--color-text-muted)">{{ user.phone }}</span>
             </button>
+            <p v-if="noResults" class="px-3 py-2 text-sm text-(--color-text-muted)">کاربری یافت نشد</p>
           </div>
         </div>
 
@@ -256,12 +227,12 @@ watch(page, load)
         <table class="w-full text-right text-sm">
           <thead>
             <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
-              <th class="px-5 py-3 font-semibold">تاریخ</th>
-              <th class="px-5 py-3 font-semibold">کاربر</th>
-              <th class="px-5 py-3 font-semibold">واحد</th>
-              <th class="px-5 py-3 font-semibold">مبلغ</th>
-              <th class="px-5 py-3 font-semibold">نوع</th>
-              <th class="px-5 py-3 font-semibold">دلیل</th>
+              <th scope="col" class="px-5 py-3 font-semibold">تاریخ</th>
+              <th scope="col" class="px-5 py-3 font-semibold">کاربر</th>
+              <th scope="col" class="px-5 py-3 font-semibold">واحد</th>
+              <th scope="col" class="px-5 py-3 font-semibold">مبلغ</th>
+              <th scope="col" class="px-5 py-3 font-semibold">نوع</th>
+              <th scope="col" class="px-5 py-3 font-semibold">دلیل</th>
             </tr>
           </thead>
           <tbody>

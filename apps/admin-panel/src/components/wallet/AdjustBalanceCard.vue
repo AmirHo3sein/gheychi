@@ -15,21 +15,16 @@
      which useApi surfaces through the standard toast path -- same reasoning as
      CouponsView.vue's create() for its own 409 case. -->
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
+import { usePhoneUserSearch } from '@/composables/usePhoneUserSearch'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import type { SelectOption } from '@/components/ui/AppSelect.vue'
-
-interface MatchedUser {
-  id: string
-  phone: string
-  name: string | null
-}
 
 const CURRENCY_OPTIONS: SelectOption[] = [
   { value: 'toman', label: 'تومان' },
@@ -41,10 +36,16 @@ const emit = defineEmits<{ adjusted: [result: { userId: string; balanceAfter: nu
 const { apiFetch } = useApi()
 const { push } = useToast()
 
-const phoneQuery = ref('')
-const matches = ref<MatchedUser[]>([])
-const searching = ref(false)
-const selectedUser = ref<MatchedUser | null>(null)
+const {
+  root: phoneSearchRoot,
+  phoneQuery,
+  matches,
+  selectedUser,
+  searching,
+  noResults,
+  selectUser,
+  clearUser,
+} = usePhoneUserSearch()
 
 const amount = ref<number | null>(null)
 const currency = ref<'toman' | 'points'>('toman')
@@ -68,48 +69,27 @@ const amountText = computed<string>({
 const confirming = ref(false)
 const submitting = ref(false)
 
-// Guards against a slower earlier response landing after a faster later one when the
-// admin keeps typing -- same shape as AuditLogView's UUID gate, just for an async lookup
-// instead of a sync regex.
-let searchToken = 0
-
-async function searchUsers() {
-  const query = phoneQuery.value.trim()
-  if (selectedUser.value) return
-  matches.value = []
-  if (!query) return
-  searching.value = true
-  const token = ++searchToken
-  const { data } = await apiFetch<MatchedUser[]>(`/admin/users?phone=${encodeURIComponent(query)}`, { silent: true })
-  if (token === searchToken) {
-    matches.value = data ?? []
-    searching.value = false
-  }
-}
-
-function selectUser(user: MatchedUser) {
-  selectedUser.value = user
-  matches.value = []
-  phoneQuery.value = user.phone
-}
-
-function clearUser() {
-  selectedUser.value = null
-  phoneQuery.value = ''
-  matches.value = []
-}
-
 const canSubmit = computed(
   () => !!selectedUser.value && !!amount.value && amount.value !== 0 && reason.value.trim().length > 0,
 )
 
-function askConfirm() {
+// Focus management around the confirm step: moving in focuses the confirm heading (the
+// form is fully replaced, so focus would otherwise silently stay on the now-gone "ثبت
+// تعدیل" button); moving back out returns focus to that same button.
+const confirmHeadingRef = ref<HTMLElement | null>(null)
+const openConfirmButtonRef = ref<{ $el: HTMLElement } | null>(null)
+
+async function askConfirm() {
   if (!canSubmit.value) return
   confirming.value = true
+  await nextTick()
+  confirmHeadingRef.value?.focus()
 }
 
-function cancelConfirm() {
+async function cancelConfirm() {
   confirming.value = false
+  await nextTick()
+  openConfirmButtonRef.value?.$el.focus()
 }
 
 function resetForm() {
@@ -156,7 +136,7 @@ async function submit() {
 
     <div v-if="!confirming" class="space-y-3.5">
       <div class="flex flex-wrap items-end gap-2.5">
-        <div class="relative">
+        <div ref="phoneSearchRoot" class="relative">
           <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">شماره موبایل کاربر</label>
           <div v-if="!selectedUser" class="w-48">
             <AppInput
@@ -164,8 +144,8 @@ async function submit() {
               data-testid="adjust-phone-input"
               icon="phone"
               placeholder="جست‌وجوی شماره موبایل…"
-              @input="searchUsers"
             />
+            <p v-if="searching" class="mt-1 text-xs text-(--color-text-muted)">در حال جستجو…</p>
           </div>
           <div
             v-else
@@ -181,6 +161,7 @@ async function submit() {
               data-testid="adjust-clear-user"
               class="shrink-0 text-(--color-text-muted) hover:text-(--tone-danger-text)"
               title="تغییر کاربر"
+              aria-label="تغییر کاربر"
               @click="clearUser"
             >
               <AppIcon name="x" :size="14" />
@@ -188,9 +169,9 @@ async function submit() {
           </div>
 
           <div
-            v-if="matches.length > 0"
+            v-if="matches.length > 0 || noResults"
             data-testid="adjust-user-matches"
-            class="absolute start-0 top-full z-10 mt-1 w-64 overflow-hidden rounded-xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-md)"
+            class="absolute start-0 top-full z-10 mt-1 w-48 overflow-hidden rounded-xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-md)"
           >
             <button
               v-for="user in matches"
@@ -202,6 +183,7 @@ async function submit() {
               <span class="font-semibold text-(--color-text)">{{ user.name ?? 'بدون نام' }}</span>
               <span class="tnum mr-1 text-xs text-(--color-text-muted)">{{ user.phone }}</span>
             </button>
+            <p v-if="noResults" class="px-3 py-2 text-sm text-(--color-text-muted)">کاربری یافت نشد</p>
           </div>
         </div>
 
@@ -211,7 +193,7 @@ async function submit() {
             data-testid="adjust-amount-input"
             type="number"
             label="مبلغ (مثبت = واریز، منفی = برداشت)"
-            placeholder="مثلا 50000 یا 50000-"
+            placeholder="مثلا 50000 (واریز) یا -50000 (برداشت)"
             class="tnum"
           />
         </div>
@@ -233,7 +215,13 @@ async function submit() {
         />
       </div>
 
-      <AppButton type="button" data-testid="adjust-open-confirm" :disabled="!canSubmit" @click="askConfirm">
+      <AppButton
+        ref="openConfirmButtonRef"
+        type="button"
+        data-testid="adjust-open-confirm"
+        :disabled="!canSubmit"
+        @click="askConfirm"
+      >
         <template #icon>
           <AppIcon name="wallet" :size="16" />
         </template>
@@ -242,7 +230,7 @@ async function submit() {
     </div>
 
     <div v-else class="space-y-3">
-      <p class="text-sm font-semibold text-(--tone-warning-text)">
+      <p ref="confirmHeadingRef" tabindex="-1" class="text-sm font-semibold text-(--tone-warning-text) outline-none">
         این عملیات موجودی واقعی کاربر را تغییر می‌دهد. لطفا جزئیات را بررسی و تایید کنید:
       </p>
       <ul class="tnum space-y-1 rounded-xl bg-(--color-border-soft) p-3.5 text-sm text-(--color-text)">

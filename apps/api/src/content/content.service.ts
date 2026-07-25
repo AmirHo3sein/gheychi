@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindOptionsWhere, In, Repository } from 'typeorm';
+import { FindOptionsWhere, ILike, In, Repository } from 'typeorm';
 import { isForeignKeyViolation, isUniqueViolation } from '../common/postgres-error-codes';
 import { makeSlug } from '../common/slug.util';
 import { STORAGE_PROVIDER, StorageProvider } from '../storage/storage.provider';
@@ -166,10 +166,12 @@ export class ContentService {
 
     if (status !== 'all') qb.andWhere('post.status = :status', { status });
     if (query.categoryId !== undefined) qb.andWhere('post.categoryId = :categoryId', { categoryId: query.categoryId });
+    if (query.title) qb.andWhere('post.title ILIKE :title', { title: `%${query.title}%` });
 
     const countWhere: FindOptionsWhere<BlogPost> = {};
     if (status !== 'all') countWhere.status = status;
     if (query.categoryId !== undefined) countWhere.categoryId = query.categoryId;
+    if (query.title) countWhere.title = ILike(`%${query.title}%`);
 
     const [items, total] = await Promise.all([
       qb.getRawMany<AdminBlogPostListItem>(),

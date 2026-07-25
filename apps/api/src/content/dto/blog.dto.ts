@@ -108,6 +108,13 @@ export class AdminBlogPostQueryDto {
   @Min(1)
   categoryId?: number;
 
+  // Free-text title search, ILIKE-matched (admin-salons.controller.ts's `name` filter
+  // precedent) -- not length-capped beyond the title column itself since this is a
+  // search term, not stored data.
+  @IsOptional()
+  @IsString()
+  title?: string;
+
   @IsOptional()
   @Type(() => Number)
   @IsInt()
