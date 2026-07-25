@@ -26,9 +26,14 @@
 
   /* Status tone system -- replaces raw enum strings everywhere with a consistent color language */
   --tone-success-bg: #E3F7EE;
-  --tone-success-text: #0F8A54;
+  /* Darkened from #0F8A54 (3.93:1 against --tone-success-bg, fails WCAG AA) to
+     4.83:1 -- dark mode's #4ADE80 already passes and is untouched. Same fix already
+     applied to provider-panel's identical pre-fix token this session. */
+  --tone-success-text: #0D7A48;
   --tone-warning-bg: #FEF3DE;
-  --tone-warning-text: #B4740E;
+  /* Darkened from #B4740E (3.51:1 against --tone-warning-bg, fails WCAG AA) to
+     4.87:1 -- dark mode's #FBBF24 already passes and is untouched. */
+  --tone-warning-text: #955F09;
   --tone-danger-bg: #FCE8EA;
   --tone-danger-text: #C22B3F;
   --tone-neutral-bg: #EEF1F2;

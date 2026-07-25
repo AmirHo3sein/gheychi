@@ -23,7 +23,8 @@ function go(page: number) {
       <button
         type="button"
         :disabled="page <= 1"
-        class="flex h-7 w-7 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text) disabled:pointer-events-none disabled:opacity-30"
+        aria-label="صفحه قبل"
+        class="flex h-11 w-11 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text) disabled:pointer-events-none disabled:opacity-30"
         @click="go(page - 1)"
       >
         <AppIcon name="chevron-right" :size="15" />
@@ -32,7 +33,8 @@ function go(page: number) {
       <button
         type="button"
         :disabled="page >= totalPages"
-        class="flex h-7 w-7 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text) disabled:pointer-events-none disabled:opacity-30"
+        aria-label="صفحه بعد"
+        class="flex h-11 w-11 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text) disabled:pointer-events-none disabled:opacity-30"
         @click="go(page + 1)"
       >
         <AppIcon name="chevron-left" :size="15" />
