@@ -233,33 +233,8 @@ button:disabled {
   color: white;
 }
 
-/* Login page (v2) -- a light, editorial split-screen instead of the dark particle-field
-   attempt: a soft morphing mesh-gradient panel with a handful of large, calm floating
-   glyphs (curated hero decoration, not a confetti field), plus a clean white form panel. */
-@keyframes mesh-morph-a {
-  0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); }
-  50% { transform: translate(4%, -6%) scale(1.15) rotate(8deg); }
-}
-@keyframes mesh-morph-b {
-  0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); }
-  50% { transform: translate(-5%, 5%) scale(1.1) rotate(-6deg); }
-}
-@keyframes mesh-morph-c {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(3%, 4%) scale(0.92); }
-}
-.mesh-a { animation: mesh-morph-a 18s ease-in-out infinite; }
-.mesh-b { animation: mesh-morph-b 22s ease-in-out infinite; }
-.mesh-c { animation: mesh-morph-c 16s ease-in-out infinite; }
-
-@keyframes glyph-float {
-  0%, 100% { transform: translateY(0) rotate(var(--rot, 0deg)); }
-  50% { transform: translateY(-16px) rotate(calc(var(--rot, 0deg) + 6deg)); }
-}
-.login-glyph {
-  animation: glyph-float 7s ease-in-out infinite;
-}
-
+/* Login page -- a clean, centered form panel (no visual/hero side panel; this app is
+   Operate-only per DESIGN.md, so login stays a plain form like every other screen). */
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(16px); }
   to { opacity: 1; transform: translateY(0); }
@@ -268,15 +243,11 @@ button:disabled {
   opacity: 0;
   animation: fade-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
-
-@keyframes underline-grow {
-  from { transform: scaleX(0); }
-  to { transform: scaleX(1); }
-}
-.login-underline {
-  transform-origin: right;
-  animation: underline-grow 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  animation-delay: 0.5s;
+@media (prefers-reduced-motion: reduce) {
+  .login-stagger {
+    opacity: 1;
+    animation: none;
+  }
 }
 
 /* Route-change transition -- a quick fade + gentle rise, applied to the RouterView

@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import { useSessionStore } from '@/stores/session'
 import AppButton from '@/components/ui/AppButton.vue'
-import AppIcon, { type IconName } from '@/components/ui/AppIcon.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 
 const { apiFetch } = useApi()
@@ -16,30 +16,7 @@ const code = ref('')
 const step = ref<'phone' | 'code'>('phone')
 const errorMessage = ref('')
 const submitting = ref(false)
-
-// A handful of large, calm floating glyphs -- curated hero decoration for the visual
-// panel, not a dense particle field. Fixed positions/timings, not random.
-interface Glyph {
-  icon: IconName
-  top: string
-  left: string
-  size: number
-  rot: string
-  delay: string
-}
-const GLYPHS: Glyph[] = [
-  { icon: 'scissors', top: '14%', left: '18%', size: 64, rot: '-18deg', delay: '0s' },
-  { icon: 'sparkles', top: '68%', left: '12%', size: 40, rot: '10deg', delay: '1.2s' },
-  { icon: 'palette', top: '20%', left: '72%', size: 52, rot: '14deg', delay: '2.4s' },
-  { icon: 'droplet', top: '78%', left: '68%', size: 36, rot: '-8deg', delay: '0.6s' },
-  { icon: 'brush', top: '48%', left: '84%', size: 44, rot: '-22deg', delay: '3s' },
-]
-
-const FEATURES: { icon: IconName; label: string }[] = [
-  { icon: 'salons', label: 'بررسی و تایید آرایشگاه‌ها' },
-  { icon: 'reviews', label: 'تعدیل نظرات کاربران' },
-  { icon: 'config', label: 'کنترل کامل تنظیمات پلتفرم' },
-]
+const codeInputRef = ref<InstanceType<typeof AppInput> | null>(null)
 
 async function requestOtp() {
   errorMessage.value = ''
@@ -55,6 +32,14 @@ async function requestOtp() {
     return
   }
   step.value = 'code'
+  await nextTick()
+  codeInputRef.value?.$el?.querySelector('input')?.focus()
+}
+
+function backToPhoneStep() {
+  step.value = 'phone'
+  errorMessage.value = ''
+  code.value = ''
 }
 
 async function verifyOtp() {
@@ -78,108 +63,74 @@ async function verifyOtp() {
 </script>
 
 <template>
-  <div class="flex min-h-screen bg-(--color-surface-card)">
-    <!-- Form panel (right side, RTL reading-start) -->
-    <div class="flex w-full flex-col justify-center px-8 py-12 sm:px-16 lg:w-[46%] lg:px-20">
-      <div class="mx-auto w-full max-w-sm">
-        <div class="login-stagger flex items-center gap-2.5" style="animation-delay: 0s">
-          <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-(--color-accent) text-lg font-black text-white">آ</div>
-          <span class="text-sm font-bold text-(--color-text)">پنل مدیریت آرایشگاه</span>
-        </div>
-
-        <div class="login-stagger mt-10" style="animation-delay: 0.12s">
-          <h1 class="text-2xl font-bold text-(--color-text)">خوش آمدید</h1>
-          <p class="mt-1.5 text-sm text-(--color-text-muted)">برای ورود به پنل مدیریت، شماره موبایل خود را وارد کنید.</p>
-        </div>
-
-        <form
-          v-if="step === 'phone'"
-          data-testid="phone-form"
-          class="login-stagger mt-8 space-y-4"
-          style="animation-delay: 0.24s"
-          @submit.prevent="requestOtp"
-        >
-          <AppInput
-            data-testid="phone-input"
-            v-model="phone"
-            type="tel"
-            dir="ltr"
-            icon="phone"
-            label="شماره موبایل"
-            placeholder="شماره موبایل"
-          />
-          <AppButton type="submit" data-testid="submit-phone" :loading="submitting" size="lg" block>
-            {{ submitting ? 'در حال ارسال…' : 'ارسال کد تایید' }}
-          </AppButton>
-        </form>
-
-        <form v-else data-testid="code-form" class="mt-8 space-y-4" @submit.prevent="verifyOtp">
-          <AppInput
-            data-testid="code-input"
-            v-model="code"
-            type="text"
-            inputmode="numeric"
-            dir="ltr"
-            align="center"
-            icon="lock"
-            class="tnum"
-            :label="`کد تایید ارسال‌شده به ${phone}`"
-            placeholder="------"
-          />
-          <AppButton type="submit" data-testid="submit-code" :loading="submitting" size="lg" block>
-            {{ submitting ? 'در حال بررسی…' : 'تایید و ورود' }}
-          </AppButton>
-          <AppButton type="button" variant="ghost" block @click="step = 'phone'">
-            ویرایش شماره موبایل
-          </AppButton>
-        </form>
-
-        <p v-if="errorMessage" class="mt-4 flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)">
-          <AppIcon name="warning" :size="16" class="shrink-0" />
-          {{ errorMessage }}
-        </p>
+  <div class="flex min-h-screen items-center justify-center bg-(--color-surface-card) px-8 py-12 sm:px-16">
+    <div class="mx-auto w-full max-w-sm">
+      <div class="login-stagger flex items-center gap-2.5" style="animation-delay: 0s">
+        <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-(--color-accent) text-lg font-black text-white">آ</div>
+        <span class="text-sm font-bold text-(--color-text)">پنل مدیریت آرایشگاه</span>
       </div>
-    </div>
 
-    <!-- Visual panel (left side) -->
-    <div class="relative hidden flex-1 items-center justify-center overflow-hidden bg-(--color-surface) lg:flex">
-      <div class="mesh-a pointer-events-none absolute -top-24 left-1/4 h-[30rem] w-[30rem] rounded-full bg-(--color-accent) opacity-25 blur-[100px]" />
-      <div class="mesh-b pointer-events-none absolute bottom-[-6rem] right-[-4rem] h-96 w-96 rounded-full bg-amber-300 opacity-30 blur-[100px]" />
-      <div class="mesh-c pointer-events-none absolute top-1/3 right-1/4 h-72 w-72 rounded-full bg-rose-300 opacity-25 blur-[100px]" />
+      <div class="login-stagger mt-10" style="animation-delay: 0.12s">
+        <h1 class="text-2xl font-bold text-(--color-text)">خوش آمدید</h1>
+        <p class="mt-1.5 text-sm text-(--color-text-muted)">برای ورود به پنل مدیریت، شماره موبایل خود را وارد کنید.</p>
+      </div>
 
-      <div
-        v-for="(g, i) in GLYPHS"
-        :key="i"
-        class="login-glyph pointer-events-none absolute text-(--color-accent) opacity-[0.16]"
-        :style="{ top: g.top, left: g.left, animationDelay: g.delay, '--rot': g.rot }"
+      <form
+        v-if="step === 'phone'"
+        data-testid="phone-form"
+        class="login-stagger mt-8 space-y-4"
+        style="animation-delay: 0.24s"
+        @submit.prevent="requestOtp"
       >
-        <AppIcon :name="g.icon" :size="g.size" />
-      </div>
+        <AppInput
+          data-testid="phone-input"
+          v-model="phone"
+          type="tel"
+          dir="ltr"
+          icon="phone"
+          label="شماره موبایل"
+          placeholder="شماره موبایل"
+          autocomplete="tel"
+          autofocus
+        />
+        <AppButton type="submit" data-testid="submit-phone" :loading="submitting" size="lg" block>
+          {{ submitting ? 'در حال ارسال…' : 'ارسال کد تایید' }}
+        </AppButton>
+      </form>
 
-      <div class="relative max-w-md px-10 text-center">
-        <h2 class="login-stagger text-3xl font-black leading-[1.5] text-(--color-text)" style="animation-delay: 0.1s">
-          مدیریت حرفه‌ای
-          <br />
-          پلتفرم آرایشگاهی
-        </h2>
-        <div class="login-underline mx-auto mt-3 h-1 w-16 rounded-full bg-(--color-accent)" />
-        <p class="login-stagger mt-4 text-sm leading-7 text-(--color-text-muted)" style="animation-delay: 0.2s">
-          از یک نقطه، آرایشگاه‌ها را تایید کنید، نظرات را مدیریت کنید و تنظیمات کل پلتفرم آرایشگاه را در دست بگیرید.
-        </p>
+      <form v-else data-testid="code-form" class="mt-8 space-y-4" @submit.prevent="verifyOtp">
+        <AppInput
+          ref="codeInputRef"
+          data-testid="code-input"
+          v-model="code"
+          type="text"
+          inputmode="numeric"
+          dir="ltr"
+          align="center"
+          icon="lock"
+          class="tnum"
+          :label="`کد تایید ارسال‌شده به ${phone}`"
+          placeholder="------"
+          autocomplete="one-time-code"
+          :error="step === 'code' ? errorMessage : ''"
+        />
+        <AppButton type="submit" data-testid="submit-code" :loading="submitting" size="lg" block>
+          {{ submitting ? 'در حال بررسی…' : 'تایید و ورود' }}
+        </AppButton>
+        <AppButton type="button" variant="ghost" block @click="backToPhoneStep">
+          ویرایش شماره موبایل
+        </AppButton>
+      </form>
 
-        <div class="login-stagger mt-9 space-y-3" style="animation-delay: 0.32s">
-          <div
-            v-for="f in FEATURES"
-            :key="f.label"
-            class="flex items-center gap-3 rounded-xl border border-(--color-border) bg-(--color-surface-card) px-4 py-3 text-right shadow-(--shadow-sm)"
-          >
-            <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-(--tone-info-bg) text-(--color-accent)">
-              <AppIcon :name="f.icon" :size="17" />
-            </div>
-            <span class="text-sm font-semibold text-(--color-text)">{{ f.label }}</span>
-          </div>
-        </div>
-      </div>
+      <p
+        v-if="errorMessage"
+        role="alert"
+        aria-live="polite"
+        class="mt-4 flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)"
+      >
+        <AppIcon name="warning" :size="16" class="shrink-0" />
+        {{ errorMessage }}
+      </p>
     </div>
   </div>
 </template>

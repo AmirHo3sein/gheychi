@@ -45,6 +45,12 @@ const postId = computed(() => route.params.id as string | undefined)
 
 const post = ref<AdminBlogPost | null>(null)
 const notFound = ref(false)
+// Only ever flips true on the very first load (see load()) -- a background refetch after a
+// successful action never wipes already-known-good editor state back to a blank/loading form.
+const loading = ref(false)
+// Distinct from "genuinely no post": a fetch failure must not be silently repainted as if the
+// form were just empty (matches SalonsView.load()'s loadError, styled the same way below).
+const loadError = ref(false)
 
 const title = ref('')
 const slug = ref('')
@@ -58,6 +64,8 @@ const ogTitle = ref('')
 const bodyMarkdown = ref('')
 const seoOpen = ref(false)
 
+const coverInputRef = ref<HTMLInputElement | null>(null)
+
 const submitting = ref(false)
 const confirmingDelete = ref(false)
 // Mirrors confirmingDelete's two-step shape for publish/unpublish (askX/confirmX/cancelX),
@@ -65,6 +73,13 @@ const confirmingDelete = ref(false)
 // confirm-before-commit weight as delete rather than firing immediately on click. One ref
 // (not two booleans) since only one of the publish/unpublish buttons is ever visible at a time.
 const confirmingTransition = ref<'publish' | 'unpublish' | null>(null)
+// Same shape again for cover removal -- it previously fired immediately despite carrying the
+// same danger-variant visual weight as delete.
+const confirmingCoverRemove = ref(false)
+// Same shape again, but conditional: only gates save() when the currently-loaded post is
+// published AND the slug field has been edited away from its original value (see askSave()) --
+// a plain edit-and-save, or any edit on a draft post, keeps the existing single-click save.
+const confirmingSlugChange = ref(false)
 
 const categories = ref<BlogCategory[]>([])
 const categoryOptions = computed(() => [
@@ -107,7 +122,15 @@ function applyPost(p: AdminBlogPost) {
 
 async function load() {
   if (isCreate.value || !postId.value) return
-  const { data, error } = await apiFetch<AdminBlogPost>(`/admin/blog/posts/${postId.value}`, { silent: true })
+  // Only show the full-page loading state on the very first load, not on a background
+  // refetch triggered after a successful publish/unpublish/cover action (mirrors
+  // SalonDetailView.load()).
+  loading.value = post.value === null
+  loadError.value = false
+  // Deliberately NOT silent -- a real failure here surfaces via the standard toast, same as
+  // SalonDetailView.load() (the function this one has always claimed to mirror).
+  const { data, error } = await apiFetch<AdminBlogPost>(`/admin/blog/posts/${postId.value}`)
+  loading.value = false
   if (data) {
     applyPost(data)
     notFound.value = false
@@ -116,7 +139,13 @@ async function load() {
   // Only a confirmed 404 flips to not-found -- a transient failure right after a
   // successful action must not wipe known-good editor state (same rationale as
   // SalonDetailView.load()).
-  if (error?.status === 404) notFound.value = true
+  if (error?.status === 404) {
+    notFound.value = true
+    return
+  }
+  // Only surface a persistent, retryable error state when there's nothing already on screen --
+  // a transient post-action refetch failure keeps showing the known-good post.
+  if (!post.value) loadError.value = true
 }
 
 onMounted(async () => {
@@ -137,6 +166,35 @@ function basePayload() {
   }
 }
 
+// Entry point for the save button. A published post's slug controls its public URL, so
+// changing it gets the same confirm-before-commit weight as delete/publish-transition rather
+// than riding along with every other harmless field edit on a single click.
+function askSave() {
+  if (!title.value.trim() || !bodyMarkdown.value.trim()) {
+    useToast().push('عنوان و متن مطلب الزامی است')
+    return
+  }
+  const trimmedSlug = slug.value.trim()
+  const slugChanged = trimmedSlug !== '' && trimmedSlug !== post.value?.slug
+  if (post.value?.status === 'published' && slugChanged) {
+    confirmingSlugChange.value = true
+    confirmingDelete.value = false
+    confirmingTransition.value = null
+    confirmingCoverRemove.value = false
+    return
+  }
+  save()
+}
+
+function cancelSlugChange() {
+  confirmingSlugChange.value = false
+}
+
+async function confirmSlugChangeSave() {
+  confirmingSlugChange.value = false
+  await save()
+}
+
 async function save() {
   if (submitting.value) return
   if (!title.value.trim() || !bodyMarkdown.value.trim()) {
@@ -146,6 +204,8 @@ async function save() {
   submitting.value = true
   confirmingDelete.value = false
   confirmingTransition.value = null
+  confirmingCoverRemove.value = false
+  confirmingSlugChange.value = false
 
   if (isCreate.value) {
     // A manually edited slug rides on the create itself, so the operation is atomic: a
@@ -153,9 +213,12 @@ async function save() {
     // The un-edited client-side preview is never sent -- it keeps Persian characters and
     // has no uniqueness suffix; the backend derives the authoritative slug instead.
     const manualSlug = slugDirty.value ? slug.value.trim() : ''
+    // silent: true -- a 409 is carried by the inline, field-associated slugError below;
+    // surfacing it as a toast too would show the identical message twice.
     const { data, error } = await apiFetch<AdminBlogPost>('/admin/blog/posts', {
       method: 'POST',
       body: { ...basePayload(), ...(manualSlug ? { slug: manualSlug } : {}) },
+      silent: true,
     })
     if (data) {
       submitting.value = false
@@ -163,15 +226,19 @@ async function save() {
       return
     }
     if (error?.status === 409) slugError.value = error.message
+    else if (error) useToast().push(error.message)
   } else {
+    // silent: true -- same reasoning as the create branch above.
     const { data, error } = await apiFetch<AdminBlogPost>(`/admin/blog/posts/${postId.value}`, {
       method: 'PATCH',
       // An emptied slug field is skipped rather than sent: '' fails the backend's
       // SLUG_PATTERN with a raw class-validator message; the server keeps the old slug.
       body: { ...basePayload(), ...(slug.value.trim() ? { slug: slug.value.trim() } : {}) },
+      silent: true,
     })
     if (data) applyPost(data)
     else if (error?.status === 409) slugError.value = error.message
+    else if (error) useToast().push(error.message)
   }
   submitting.value = false
 }
@@ -179,11 +246,15 @@ async function save() {
 function askPublish() {
   confirmingTransition.value = 'publish'
   confirmingDelete.value = false
+  confirmingCoverRemove.value = false
+  confirmingSlugChange.value = false
 }
 
 function askUnpublish() {
   confirmingTransition.value = 'unpublish'
   confirmingDelete.value = false
+  confirmingCoverRemove.value = false
+  confirmingSlugChange.value = false
 }
 
 function cancelTransition() {
@@ -213,6 +284,8 @@ async function transition(action: 'publish' | 'unpublish') {
 function askDelete() {
   confirmingDelete.value = true
   confirmingTransition.value = null
+  confirmingCoverRemove.value = false
+  confirmingSlugChange.value = false
 }
 
 function cancelDelete() {
@@ -226,6 +299,10 @@ async function confirmDelete() {
   submitting.value = false
   confirmingDelete.value = false
   if (!error) await router.push('/blog')
+}
+
+function triggerCoverPicker() {
+  coverInputRef.value?.click()
 }
 
 async function onCoverChange(event: Event) {
@@ -243,9 +320,21 @@ async function onCoverChange(event: Event) {
   if (!error) await load()
 }
 
-async function removeCover() {
+function askRemoveCover() {
+  confirmingCoverRemove.value = true
+  confirmingDelete.value = false
+  confirmingTransition.value = null
+  confirmingSlugChange.value = false
+}
+
+function cancelRemoveCover() {
+  confirmingCoverRemove.value = false
+}
+
+async function confirmRemoveCover() {
   if (submitting.value || !postId.value) return
   submitting.value = true
+  confirmingCoverRemove.value = false
   const { error } = await apiFetch(`/admin/blog/posts/${postId.value}/cover`, { method: 'DELETE' })
   submitting.value = false
   if (!error) await load()
@@ -255,6 +344,23 @@ async function removeCover() {
 <template>
   <div class="mx-auto max-w-6xl space-y-5 p-8">
     <EmptyState v-if="notFound" icon="warning" message="مطلب یافت نشد." />
+
+    <AppCard
+      v-else-if="loadError"
+      :padded="false"
+      data-testid="load-error"
+      class="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center"
+    >
+      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)">
+        <AppIcon name="warning" :size="22" />
+      </div>
+      <p class="text-sm text-(--color-text-muted)">خطا در بارگذاری مطلب.</p>
+      <AppButton type="button" variant="secondary" data-testid="retry-load" @click="load">تلاش دوباره</AppButton>
+    </AppCard>
+
+    <div v-else-if="loading" data-testid="loading-indicator" class="flex justify-center py-16">
+      <AppIcon name="spinner" :size="24" class="animate-spin text-(--color-text-muted)" />
+    </div>
 
     <template v-else>
       <div class="flex flex-wrap items-center justify-between gap-3">
@@ -270,7 +376,7 @@ async function removeCover() {
         <div class="flex items-center gap-2">
           <template v-if="confirmingDelete">
             <span class="text-sm font-semibold text-(--tone-danger-text)">مطلب حذف شود؟</span>
-            <AppButton data-testid="confirm-delete" variant="danger" :disabled="submitting" @click="confirmDelete">
+            <AppButton data-testid="confirm-delete" variant="danger" :disabled="submitting" :loading="submitting" @click="confirmDelete">
               حذف
             </AppButton>
             <AppButton data-testid="cancel-delete" variant="ghost" :disabled="submitting" @click="cancelDelete">
@@ -281,7 +387,7 @@ async function removeCover() {
             <span class="text-sm font-semibold text-(--color-text)">
               این مطلب منتشر شود؟ محتوا برای عموم قابل مشاهده خواهد شد.
             </span>
-            <AppButton data-testid="confirm-publish" variant="primary" :disabled="submitting" @click="confirmTransition">
+            <AppButton data-testid="confirm-publish" variant="primary" :disabled="submitting" :loading="submitting" @click="confirmTransition">
               انتشار
             </AppButton>
             <AppButton data-testid="cancel-publish" variant="ghost" :disabled="submitting" @click="cancelTransition">
@@ -292,15 +398,26 @@ async function removeCover() {
             <span class="text-sm font-semibold text-(--tone-warning-text)">
               انتشار این مطلب لغو شود؟ محتوا از دسترس عموم خارج می‌شود.
             </span>
-            <AppButton data-testid="confirm-unpublish" variant="danger" :disabled="submitting" @click="confirmTransition">
+            <AppButton data-testid="confirm-unpublish" variant="danger" :disabled="submitting" :loading="submitting" @click="confirmTransition">
               لغو انتشار
             </AppButton>
             <AppButton data-testid="cancel-unpublish" variant="ghost" :disabled="submitting" @click="cancelTransition">
               انصراف
             </AppButton>
           </template>
+          <template v-else-if="confirmingSlugChange">
+            <span class="text-sm font-semibold text-(--tone-warning-text)">
+              تغییر نامک، آدرس عمومی این مطلب منتشرشده را تغییر می‌دهد. ذخیره شود؟
+            </span>
+            <AppButton data-testid="confirm-save-slug-change" variant="primary" :disabled="submitting" :loading="submitting" @click="confirmSlugChangeSave">
+              ذخیره
+            </AppButton>
+            <AppButton data-testid="cancel-save-slug-change" variant="ghost" :disabled="submitting" @click="cancelSlugChange">
+              انصراف
+            </AppButton>
+          </template>
           <template v-else>
-            <AppButton data-testid="save-button" variant="primary" :disabled="submitting" @click="save">
+            <AppButton data-testid="save-button" variant="primary" :disabled="submitting" :loading="submitting" @click="askSave">
               ذخیره
             </AppButton>
             <!-- No "success" variant exists on AppButton -- publish/unpublish are non-destructive
@@ -399,7 +516,7 @@ async function removeCover() {
                 data-testid="excerpt-input"
                 maxlength="500"
                 rows="3"
-                class="w-full rounded-xl border border-(--color-border) p-2 text-sm"
+                class="w-full rounded-xl border border-(--color-border) p-2 text-sm focus:outline-none focus:ring-2 focus:ring-(--color-accent)/30 focus:border-(--color-accent)"
               />
             </div>
 
@@ -408,12 +525,14 @@ async function removeCover() {
                 data-testid="seo-toggle"
                 type="button"
                 class="flex w-full items-center justify-between p-3 text-sm font-semibold text-(--color-text)"
+                :aria-expanded="seoOpen"
+                aria-controls="post-seo-panel"
                 @click="toggleSeo"
               >
                 <span>تنظیمات سئو</span>
                 <AppIcon :name="seoOpen ? 'x' : 'plus'" :size="15" />
               </button>
-              <div v-if="seoOpen" class="space-y-3 border-t border-(--color-border-soft) p-3">
+              <div v-if="seoOpen" id="post-seo-panel" class="space-y-3 border-t border-(--color-border-soft) p-3">
                 <div>
                   <div class="mb-1 flex items-center justify-between">
                     <label class="text-xs text-(--color-text-muted)" for="post-meta-description">توضیح متا</label>
@@ -426,7 +545,7 @@ async function removeCover() {
                     data-testid="meta-description-input"
                     maxlength="300"
                     rows="3"
-                    class="w-full rounded-xl border border-(--color-border) p-2 text-sm"
+                    class="w-full rounded-xl border border-(--color-border) p-2 text-sm focus:outline-none focus:ring-2 focus:ring-(--color-accent)/30 focus:border-(--color-accent)"
                   />
                 </div>
                 <div>
@@ -450,24 +569,41 @@ async function removeCover() {
                 alt="کاور مطلب"
                 class="h-40 w-full rounded-xl object-cover"
               />
+              <input
+                ref="coverInputRef"
+                data-testid="cover-input"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                class="hidden"
+                :disabled="submitting"
+                @change="onCoverChange"
+              />
               <div class="flex items-center gap-3">
-                <label class="cursor-pointer rounded-xl bg-(--color-border-soft) px-3 py-1.5 text-sm font-semibold text-(--color-accent)">
-                  {{ post?.coverImageUrl ? 'تعویض کاور' : 'بارگذاری کاور' }}
-                  <input
-                    data-testid="cover-input"
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    class="hidden"
-                    :disabled="submitting"
-                    @change="onCoverChange"
-                  />
-                </label>
                 <AppButton
-                  v-if="post?.coverImageUrl"
+                  data-testid="cover-upload"
+                  variant="secondary"
+                  :disabled="submitting"
+                  :loading="submitting"
+                  @click="triggerCoverPicker"
+                >
+                  <template #icon><AppIcon name="plus" :size="15" /></template>
+                  {{ post?.coverImageUrl ? 'تعویض کاور' : 'بارگذاری کاور' }}
+                </AppButton>
+                <template v-if="confirmingCoverRemove">
+                  <span class="text-sm font-semibold text-(--tone-danger-text)">کاور حذف شود؟</span>
+                  <AppButton data-testid="confirm-remove-cover" variant="danger" :disabled="submitting" :loading="submitting" @click="confirmRemoveCover">
+                    حذف
+                  </AppButton>
+                  <AppButton data-testid="cancel-remove-cover" variant="ghost" :disabled="submitting" @click="cancelRemoveCover">
+                    انصراف
+                  </AppButton>
+                </template>
+                <AppButton
+                  v-else-if="post?.coverImageUrl"
                   data-testid="remove-cover"
                   variant="danger"
                   :disabled="submitting"
-                  @click="removeCover"
+                  @click="askRemoveCover"
                 >
                   حذف کاور
                 </AppButton>
@@ -483,7 +619,7 @@ async function removeCover() {
                 data-testid="body-input"
                 rows="18"
                 dir="auto"
-                class="w-full rounded-xl border border-(--color-border) p-2 font-mono text-sm leading-6"
+                class="w-full rounded-xl border border-(--color-border) p-2 font-mono text-sm leading-6 focus:outline-none focus:ring-2 focus:ring-(--color-accent)/30 focus:border-(--color-accent)"
               />
             </div>
           </AppCard>

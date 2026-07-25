@@ -83,6 +83,6 @@ describe('useApi', () => {
     const { apiFetch } = useApi()
     const { data, error } = await apiFetch('/ping')
     expect(data).toBeNull()
-    expect(error).toEqual({ status: 0, message: 'Network error' })
+    expect(error).toEqual({ status: 0, message: 'خطا در ارتباط با سرور' })
   })
 })

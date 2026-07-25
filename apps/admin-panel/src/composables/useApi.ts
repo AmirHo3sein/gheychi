@@ -38,7 +38,7 @@ export function useApi() {
       })
 
       if (!res.ok) {
-        let message = 'Something went wrong'
+        let message = 'خطایی رخ داد'
         try {
           message = (await res.json())?.message ?? message
         } catch {
@@ -58,7 +58,7 @@ export function useApi() {
       const data = res.status === 204 ? null : ((await res.json()) as T)
       return { data, error: null }
     } catch {
-      const apiError: ApiError = { status: 0, message: 'Network error' }
+      const apiError: ApiError = { status: 0, message: 'خطا در ارتباط با سرور' }
       if (!options.silent) useToast().push(apiError.message)
       return { data: null, error: apiError }
     }
