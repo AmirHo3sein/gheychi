@@ -15,6 +15,7 @@ vi.mock('@/pages/HoursView.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/pages/PhotosView.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/pages/ReviewsView.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/pages/EarningsView.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('@/pages/SalonSettingsView.vue', () => ({ default: { template: '<div />' } }))
 
 describe('router guard', () => {
   beforeEach(() => {
@@ -72,6 +73,33 @@ describe('router guard', () => {
     await router.push('/login')
     await router.isReady()
     expect(router.currentRoute.value.name).toBe('login')
+  })
+
+  it('lets a provider with a rejected salon through to /settings to fix what got them rejected', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: 's1', status: 'rejected' }) }))
+    useSessionStore().setUser({ id: 'u1', phone: '0912', name: 'Sara', gender: 'female', role: 'provider' })
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/settings')
+    await router.isReady()
+    expect(router.currentRoute.value.name).toBe('settings')
+  })
+
+  it('still bounces a provider with a rejected salon away from other protected routes to /pending-approval', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: 's1', status: 'rejected' }) }))
+    useSessionStore().setUser({ id: 'u1', phone: '0912', name: 'Sara', gender: 'female', role: 'provider' })
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/bookings')
+    await router.isReady()
+    expect(router.currentRoute.value.name).toBe('pending-approval')
+  })
+
+  it('still bounces a suspended salon away from /settings (only "rejected" gets the exception)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: 's1', status: 'suspended' }) }))
+    useSessionStore().setUser({ id: 'u1', phone: '0912', name: 'Sara', gender: 'female', role: 'provider' })
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/settings')
+    await router.isReady()
+    expect(router.currentRoute.value.name).toBe('pending-approval')
   })
 
   it('keeps a logged-in provider with no salon yet on /onboarding when navigating there directly', async () => {

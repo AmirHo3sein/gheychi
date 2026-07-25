@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
-import { useApi } from '@/composables/useApi'
+import { useApi, type ApiError } from '@/composables/useApi'
 import { useSessionStore, type SessionUser } from '@/stores/session'
 
 const router = useRouter()
@@ -17,13 +17,31 @@ const code = ref('')
 const submitting = ref(false)
 const formError = ref('')
 
+/**
+ * Maps an ApiError to an honest Persian message: a dead network (status 0) and a
+ * rate limit (429) are real, distinct causes and shouldn't be presented as bad input.
+ * `invalidMessage` is used for genuine validation failures (and any other status).
+ */
+function describeError(error: ApiError, invalidMessage: string): string {
+  if (error.status === 0) {
+    return 'اتصال اینترنت برقرار نیست. اتصال خود را بررسی کنید و دوباره تلاش کنید.'
+  }
+  if (error.status === 429) {
+    return 'درخواست‌های زیادی ارسال شده است. چند لحظه صبر کنید و دوباره تلاش کنید.'
+  }
+  if (error.status >= 500) {
+    return 'خطایی در سرور رخ داده است. لطفاً چند لحظه دیگر دوباره تلاش کنید.'
+  }
+  return invalidMessage
+}
+
 async function requestOtp() {
   submitting.value = true
   formError.value = ''
   const { error } = await apiFetch('/auth/request-otp', { method: 'POST', body: { phone: phone.value }, silent: true })
   submitting.value = false
   if (error) {
-    formError.value = 'شماره موبایل نامعتبر است'
+    formError.value = describeError(error, 'شماره موبایل نامعتبر است')
     return
   }
   step.value = 'code'
@@ -38,7 +56,7 @@ async function verifyOtp() {
   )
   submitting.value = false
   if (error || !data) {
-    formError.value = 'کد وارد شده اشتباه است'
+    formError.value = error ? describeError(error, 'کد وارد شده اشتباه است') : 'کد وارد شده اشتباه است'
     return
   }
 
@@ -49,8 +67,8 @@ async function verifyOtp() {
 
 <template>
   <div class="relative flex min-h-screen items-center justify-center overflow-hidden bg-(--color-surface) p-6">
-    <div class="mesh-a pointer-events-none absolute -top-20 -right-10 h-72 w-72 rounded-full bg-(--color-accent) opacity-20 blur-[90px]" />
-    <div class="mesh-b pointer-events-none absolute -bottom-24 -left-10 h-72 w-72 rounded-full bg-amber-300 opacity-20 blur-[90px]" />
+    <div class="mesh-a pointer-events-none absolute -top-20 -start-10 h-72 w-72 rounded-full bg-(--color-accent) opacity-20 blur-[90px]" />
+    <div class="mesh-b pointer-events-none absolute -bottom-24 -end-10 h-72 w-72 rounded-full bg-(--tone-warning-text) opacity-20 blur-[90px]" />
 
     <div class="relative w-full max-w-sm">
       <div class="login-stagger flex flex-col items-center text-center" style="animation-delay: 0s">
@@ -72,7 +90,7 @@ async function verifyOtp() {
             label="شماره موبایل"
             placeholder="شماره موبایل"
           />
-          <p v-if="formError" class="flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)">
+          <p v-if="formError" role="alert" aria-live="polite" class="flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)">
             <AppIcon name="warning" :size="16" class="shrink-0" />
             {{ formError }}
           </p>
@@ -94,7 +112,7 @@ async function verifyOtp() {
             :label="`کد تایید ارسال‌شده به ${phone}`"
             placeholder="------"
           />
-          <p v-if="formError" class="flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)">
+          <p v-if="formError" role="alert" aria-live="polite" class="flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)">
             <AppIcon name="warning" :size="16" class="shrink-0" />
             {{ formError }}
           </p>

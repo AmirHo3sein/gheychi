@@ -4,6 +4,7 @@ import { onMounted, ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import AppInput from '../ui/AppInput.vue'
 import AppButton from '../ui/AppButton.vue'
+import AppIcon from '../ui/AppIcon.vue'
 
 const model = defineModel<{ categoryId: number | null; name: string; price: number; durationMin: number }>({
   required: true,
@@ -11,16 +12,20 @@ const model = defineModel<{ categoryId: number | null; name: string; price: numb
 
 const { apiFetch } = useApi()
 const categories = ref<{ id: number; name: string }[]>([])
+const loading = ref(true)
 const loadError = ref(false)
 
 async function loadCategories() {
+  loading.value = true
   loadError.value = false
   const { data, error } = await apiFetch<{ id: number; name: string }[]>('/categories', { silent: true })
   if (error) {
     loadError.value = true
+    loading.value = false
     return
   }
   categories.value = data ?? []
+  loading.value = false
 }
 
 onMounted(loadCategories)
@@ -36,6 +41,17 @@ onMounted(loadCategories)
     >
       تلاش دوباره
     </AppButton>
+  </div>
+  <div v-else-if="loading" class="flex items-center justify-center py-8 text-(--color-text-muted)">
+    <AppIcon name="spinner" :size="20" class="animate-spin" />
+  </div>
+  <div
+    v-else-if="categories.length === 0"
+    data-testid="no-categories"
+    class="space-y-1 rounded-xl border border-dashed border-(--color-border) p-4 text-center"
+  >
+    <p class="text-sm font-medium text-(--color-text)">هنوز هیچ دسته‌بندی خدمتی در پلتفرم تعریف نشده است.</p>
+    <p class="text-xs text-(--color-text-muted)">برای افزودن اولین خدمت، ابتدا باید مدیریت پلتفرم دسته‌بندی تعریف کند. بعداً دوباره سر بزنید.</p>
   </div>
   <div v-else class="space-y-4">
     <div>

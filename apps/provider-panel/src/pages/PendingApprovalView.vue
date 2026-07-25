@@ -4,16 +4,26 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { useSalon } from '@/composables/useSalon'
 import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
 
 const { salon, refetch } = useSalon()
 const { apiFetch } = useApi()
+const { push: pushToast } = useToast()
 const submitting = ref(false)
+const refreshing = ref(false)
 
 async function resubmit() {
   submitting.value = true
   const { data } = await apiFetch('/salons/mine/resubmit', { method: 'POST' })
   submitting.value = false
   if (data) await refetch()
+}
+
+async function checkStatus() {
+  refreshing.value = true
+  const { error } = await refetch()
+  refreshing.value = false
+  if (error) pushToast('بررسی وضعیت با خطا مواجه شد. دوباره تلاش کنید.')
 }
 </script>
 
@@ -26,7 +36,7 @@ async function resubmit() {
     <p v-if="salon.rejectionReason" class="rounded-xl bg-(--tone-danger-bg) px-4 py-3 text-sm text-(--tone-danger-text)">
       {{ salon.rejectionReason }}
     </p>
-    <RouterLink to="/settings" class="text-sm font-semibold text-(--color-accent) hover:underline">ویرایش اطلاعات آرایشگاه</RouterLink>
+    <RouterLink to="/settings" class="text-sm font-semibold text-(--color-accent-text) hover:underline">ویرایش اطلاعات آرایشگاه</RouterLink>
     <AppButton data-testid="resubmit-button" type="button" block :disabled="submitting" :loading="submitting" @click="resubmit">
       {{ submitting ? 'در حال ارسال…' : 'ارسال مجدد برای بررسی' }}
     </AppButton>
@@ -49,7 +59,14 @@ async function resubmit() {
           : 'به محض تایید توسط تیم آرایشگاه، به شما اطلاع داده می‌شود.'
       }}
     </p>
-    <AppButton data-testid="refresh-status" type="button" variant="secondary" @click="refetch">
+    <AppButton
+      data-testid="refresh-status"
+      type="button"
+      variant="secondary"
+      :disabled="refreshing"
+      :loading="refreshing"
+      @click="checkStatus"
+    >
       بررسی وضعیت
     </AppButton>
   </div>

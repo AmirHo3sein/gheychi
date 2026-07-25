@@ -1,8 +1,20 @@
-import { mount } from '@vue/test-utils'
+import { mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import OnboardingView from './OnboardingView.vue'
+
+// SalonPinPicker.vue's map doesn't render meaningfully in jsdom/happy-dom (no real
+// layout/getBoundingClientRect), so tests go through its keyboard-accessible lat/lng
+// fallback inputs -- a real, user-reachable path (unlike directly poking component
+// state), and the exact path a keyboard-only user has to use since Leaflet's own
+// keyboard nav never moves the marker.
+async function setPinViaFallbackInputs(wrapper: VueWrapper, lat = 35.7, lng = 51.4) {
+  await wrapper.find('[data-testid="pin-lat"]').setValue(lat)
+  await wrapper.find('[data-testid="pin-lng"]').setValue(lng)
+  await wrapper.find('[data-testid="pin-lat"]').trigger('change')
+  await wrapper.find('[data-testid="pin-lng"]').trigger('change')
+}
 
 function makeRouter() {
   return createRouter({
@@ -37,10 +49,10 @@ describe('OnboardingView', () => {
     await wrapper.find('[data-testid="gender-target"]').setValue('women')
     await wrapper.find('[data-testid="city"]').setValue('تهران')
     await wrapper.find('[data-testid="address"]').setValue('خیابان ولیعصر، پلاک ۱')
-    // The map pin picker's Leaflet map doesn't render meaningfully in jsdom/happy-dom
-    // (no real layout/getBoundingClientRect) -- set the coordinates directly the way the
-    // picker's @update:model-value handler would.
-    await wrapper.setData({ form: { salonInfo: { lat: 35.7, lng: 51.4 } } })
+    // The map itself doesn't render meaningfully in jsdom/happy-dom (no real
+    // layout/getBoundingClientRect) -- go through the keyboard-accessible lat/lng
+    // fallback inputs instead, the same explicit-commit path a real user would use.
+    await setPinViaFallbackInputs(wrapper)
 
     expect((next.element as HTMLButtonElement).disabled).toBe(false)
   })
@@ -57,10 +69,7 @@ describe('OnboardingView', () => {
     await wrapper.find('[data-testid="city"]').setValue('تهران')
     await wrapper.find('[data-testid="address"]').setValue('خیابان ولیعصر، پلاک ۱')
     await wrapper.find('[data-testid="capacity"]').setValue(0)
-    // The map pin picker's Leaflet map doesn't render meaningfully in jsdom/happy-dom
-    // (no real layout/getBoundingClientRect) -- set the coordinates directly the way the
-    // picker's @update:model-value handler would.
-    await wrapper.setData({ form: { salonInfo: { lat: 35.7, lng: 51.4 } } })
+    await setPinViaFallbackInputs(wrapper)
 
     const next = wrapper.find('[data-testid="wizard-next"]')
     expect((next.element as HTMLButtonElement).disabled).toBe(true)
@@ -87,11 +96,14 @@ describe('OnboardingView', () => {
     await wrapper.find('[data-testid="gender-target"]').setValue('women')
     await wrapper.find('[data-testid="city"]').setValue('تهران')
     await wrapper.find('[data-testid="address"]').setValue('خیابان ولیعصر، پلاک ۱')
-    await wrapper.setData({ form: { salonInfo: { lat: 35.7, lng: 51.4 } } })
+    await setPinViaFallbackInputs(wrapper)
     await wrapper.find('[data-testid="wizard-next"]').trigger('click')
 
     await wrapper.find('[data-testid="day-0"] input[type=checkbox]').setValue(true)
     await wrapper.find('[data-testid="wizard-next"]').trigger('click')
+    // FirstServiceStep.vue's category select only renders once its own async
+    // GET /categories resolves (a brief loading state precedes it).
+    await new Promise((r) => setTimeout(r, 0))
 
     await wrapper.find('[data-testid="service-category"]').setValue('1')
     await wrapper.find('[data-testid="service-name"]').setValue('رنگ مو')
@@ -122,9 +134,14 @@ describe('OnboardingView', () => {
     await wrapper.find('[data-testid="gender-target"]').setValue('women')
     await wrapper.find('[data-testid="city"]').setValue('تهران')
     await wrapper.find('[data-testid="address"]').setValue('خیابان ولیعصر، پلاک ۱')
-    await wrapper.setData({ form: { salonInfo: { lat: 35.7, lng: 51.4 } } })
+    await setPinViaFallbackInputs(wrapper)
     await wrapper.find('[data-testid="wizard-next"]').trigger('click')
+
+    await wrapper.find('[data-testid="day-0"] input[type=checkbox]').setValue(true)
     await wrapper.find('[data-testid="wizard-next"]').trigger('click')
+    // FirstServiceStep.vue's category select only renders once its own async
+    // GET /categories resolves (a brief loading state precedes it).
+    await new Promise((r) => setTimeout(r, 0))
 
     await wrapper.find('[data-testid="service-category"]').setValue('1')
     await wrapper.find('[data-testid="service-name"]').setValue('رنگ مو')
@@ -155,11 +172,14 @@ describe('OnboardingView', () => {
     await wrapper.find('[data-testid="gender-target"]').setValue('women')
     await wrapper.find('[data-testid="city"]').setValue('تهران')
     await wrapper.find('[data-testid="address"]').setValue('خیابان ولیعصر، پلاک ۱')
-    await wrapper.setData({ form: { salonInfo: { lat: 35.7, lng: 51.4 } } })
+    await setPinViaFallbackInputs(wrapper)
     await wrapper.find('[data-testid="wizard-next"]').trigger('click')
 
     await wrapper.find('[data-testid="day-0"] input[type=checkbox]').setValue(true)
     await wrapper.find('[data-testid="wizard-next"]').trigger('click')
+    // FirstServiceStep.vue's category select only renders once its own async
+    // GET /categories resolves (a brief loading state precedes it).
+    await new Promise((r) => setTimeout(r, 0))
 
     await wrapper.find('[data-testid="service-category"]').setValue('1')
     await wrapper.find('[data-testid="service-name"]').setValue('رنگ مو')
@@ -211,8 +231,10 @@ describe('OnboardingView', () => {
     await wrapper.find('[data-testid="gender-target"]').setValue('women')
     await wrapper.find('[data-testid="city"]').setValue('تهران')
     await wrapper.find('[data-testid="address"]').setValue('خیابان ولیعصر، پلاک ۱')
-    await wrapper.setData({ form: { salonInfo: { lat: 35.7, lng: 51.4 } } })
+    await setPinViaFallbackInputs(wrapper)
     await wrapper.find('[data-testid="wizard-next"]').trigger('click')
+
+    await wrapper.find('[data-testid="day-0"] input[type=checkbox]').setValue(true)
     await wrapper.find('[data-testid="wizard-next"]').trigger('click')
     await new Promise((r) => setTimeout(r, 0))
 
@@ -229,5 +251,80 @@ describe('OnboardingView', () => {
     expect(retryFetchMock).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-testid="retry-categories"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="service-category"]').exists()).toBe(true)
+  })
+
+  // SalonPinPicker.vue used to emit its default center coordinate the instant it
+  // mounted, before the owner clicked or dragged anything -- silently satisfying the
+  // required lat/lng check with the wrong city's center for anyone who never touched
+  // the map. This pins the fix: mounting alone must never count as "set".
+  it('does not auto-commit the map default center on mount -- next stays disabled until the pin is explicitly set', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ([]) }))
+    const router = makeRouter()
+    await router.push('/onboarding')
+    await router.isReady()
+    const wrapper = mount(OnboardingView, { global: { plugins: [router] } })
+
+    await wrapper.find('[data-testid="salon-name"]').setValue('سالن سارا')
+    await wrapper.find('[data-testid="gender-target"]').setValue('women')
+    await wrapper.find('[data-testid="city"]').setValue('تهران')
+    await wrapper.find('[data-testid="address"]').setValue('خیابان ولیعصر، پلاک ۱')
+
+    // The map mounted (with its default center visible) but must not have silently
+    // emitted that as a committed pin.
+    const next = wrapper.find('[data-testid="wizard-next"]')
+    expect((next.element as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  // The map's required lat/lng field is otherwise unreachable by keyboard -- Leaflet's
+  // own keyboard nav pans/zooms but never moves the marker. These plain coordinate
+  // inputs are the accessible fallback path, and committing through them (a native
+  // `change`, i.e. an explicit edit+blur/Enter) must count exactly like a marker drag.
+  it('lets the owner set the map pin via the keyboard-accessible lat/lng fallback inputs', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ([]) }))
+    const router = makeRouter()
+    await router.push('/onboarding')
+    await router.isReady()
+    const wrapper = mount(OnboardingView, { global: { plugins: [router] } })
+
+    await wrapper.find('[data-testid="salon-name"]').setValue('سالن سارا')
+    await wrapper.find('[data-testid="gender-target"]').setValue('women')
+    await wrapper.find('[data-testid="city"]').setValue('تهران')
+    await wrapper.find('[data-testid="address"]').setValue('خیابان ولیعصر، پلاک ۱')
+
+    const next = wrapper.find('[data-testid="wizard-next"]')
+    expect((next.element as HTMLButtonElement).disabled).toBe(true)
+
+    await wrapper.find('[data-testid="pin-lat"]').setValue(35.7)
+    await wrapper.find('[data-testid="pin-lng"]').setValue(51.4)
+    await wrapper.find('[data-testid="pin-lat"]').trigger('change')
+    await wrapper.find('[data-testid="pin-lng"]').trigger('change')
+
+    expect((next.element as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  // An owner who leaves every day disabled on step 2 would go live completely
+  // unbookable with no warning -- next must stay disabled until at least one day is on.
+  it('keeps next disabled on the hours step until at least one day is enabled', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ([]) }))
+    const router = makeRouter()
+    await router.push('/onboarding')
+    await router.isReady()
+    const wrapper = mount(OnboardingView, { global: { plugins: [router] } })
+
+    await wrapper.find('[data-testid="salon-name"]').setValue('سالن سارا')
+    await wrapper.find('[data-testid="gender-target"]').setValue('women')
+    await wrapper.find('[data-testid="city"]').setValue('تهران')
+    await wrapper.find('[data-testid="address"]').setValue('خیابان ولیعصر، پلاک ۱')
+    await setPinViaFallbackInputs(wrapper)
+    await wrapper.find('[data-testid="wizard-next"]').trigger('click')
+
+    const next = wrapper.find('[data-testid="wizard-next"]')
+    expect((next.element as HTMLButtonElement).disabled).toBe(true)
+
+    await wrapper.find('[data-testid="day-0"] input[type=checkbox]').setValue(true)
+    expect((next.element as HTMLButtonElement).disabled).toBe(false)
+
+    await wrapper.find('[data-testid="day-0"] input[type=checkbox]').setValue(false)
+    expect((next.element as HTMLButtonElement).disabled).toBe(true)
   })
 })

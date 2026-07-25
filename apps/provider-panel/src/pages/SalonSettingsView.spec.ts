@@ -160,4 +160,52 @@ describe('SalonSettingsView', () => {
     await wrapper.get('[data-testid="capacity"]').setValue(5)
     expect((wrapper.get('[data-testid="save-button"]').element as HTMLButtonElement).disabled).toBe(false)
   })
+
+  it('shows a loading state, then a retry option instead of a blank form when the initial load fails', async () => {
+    fetchMock.mockResolvedValueOnce({ data: null, error: { status: 500, message: 'خطا' } })
+    const wrapper = mount(SalonSettingsView)
+
+    // Before the fetch resolves: no blank default form, no error -- a loading state.
+    expect(wrapper.find('[data-testid="salon-name"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="retry-settings"]').exists()).toBe(false)
+
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="retry-settings"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="salon-name"]').exists()).toBe(false)
+
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null })
+    await wrapper.get('[data-testid="retry-settings"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="retry-settings"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="salon-name"]').element as HTMLInputElement).toHaveProperty('value', 'سالن قدیمی')
+  })
+
+  // SalonPinPicker.vue is shared with OnboardingView -- this pins that loading an
+  // existing salon's real coordinates into the fallback inputs, and correcting them
+  // through that same keyboard-accessible path, round-trips correctly rather than the
+  // pin silently resetting to a hardcoded default center.
+  it('reflects the loaded pin in the lat/lng fallback inputs and saves a correction made through them', async () => {
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null })
+    const wrapper = mount(SalonSettingsView)
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect((wrapper.get('[data-testid="pin-lat"]').element as HTMLInputElement).value).toBe('35.7')
+    expect((wrapper.get('[data-testid="pin-lng"]').element as HTMLInputElement).value).toBe('51.4')
+
+    await wrapper.get('[data-testid="pin-lat"]').setValue(36.1)
+    await wrapper.get('[data-testid="pin-lat"]').trigger('change')
+
+    fetchMock.mockResolvedValueOnce({ data: { id: 's1' }, error: null })
+    await wrapper.get('[data-testid="save-button"]').trigger('click')
+
+    expect(fetchMock).toHaveBeenCalledWith('/salons/mine', {
+      method: 'PATCH',
+      body: expect.objectContaining({ lat: 36.1, lng: 51.4 }),
+    })
+  })
 })

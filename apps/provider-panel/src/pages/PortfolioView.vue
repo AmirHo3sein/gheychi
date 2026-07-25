@@ -26,6 +26,7 @@ const { apiFetch } = useApi()
 const items = ref<PortfolioItem[]>([])
 const services = ref<Service[]>([])
 const loading = ref(true)
+const loadError = ref(false)
 
 // Caption edit drafts, keyed by item id -- kept separate from PortfolioItem.caption
 // (rather than a direct v-model onto it) so the existing "no-op if unchanged from the
@@ -35,22 +36,35 @@ const loading = ref(true)
 const captionDrafts = reactive<Record<string, string>>({})
 
 async function load() {
-  const { data } = await apiFetch<PortfolioItem[]>('/salons/mine/portfolio', { silent: true })
-  items.value = data ?? []
+  loading.value = true
+  loadError.value = false
+
+  const [itemsRes, servicesRes] = await Promise.all([
+    apiFetch<PortfolioItem[]>('/salons/mine/portfolio', { silent: true }),
+    apiFetch<Service[]>('/salons/mine/services', { silent: true }),
+  ])
+
+  if (itemsRes.error || servicesRes.error) {
+    loadError.value = true
+    loading.value = false
+    return
+  }
+
+  items.value = itemsRes.data ?? []
   for (const p of items.value) captionDrafts[p.id] = p.caption ?? ''
+  services.value = servicesRes.data ?? []
   loading.value = false
 }
 
-onMounted(async () => {
-  const [servicesRes] = await Promise.all([apiFetch<Service[]>('/salons/mine/services', { silent: true }), load()])
-  services.value = servicesRes.data ?? []
-})
+onMounted(load)
 
 function onUploaded(item: PortfolioItem) {
   items.value.push(item)
+  captionDrafts[item.id] = item.caption ?? ''
 }
 
 async function removeItem(id: string) {
+  if (!window.confirm('این نمونه کار حذف شود؟')) return
   await apiFetch(`/salons/mine/portfolio/${id}`, { method: 'DELETE' })
   await load()
 }
@@ -64,7 +78,10 @@ async function saveCaption(item: PortfolioItem) {
     method: 'PATCH',
     body: { caption: caption || null },
   })
-  if (data) item.caption = data.caption
+  if (data) {
+    item.caption = data.caption
+    captionDrafts[item.id] = data.caption ?? ''
+  }
 }
 
 async function setService(item: PortfolioItem, event: Event) {
@@ -102,62 +119,95 @@ async function move(index: number, direction: -1 | 1) {
 
     <PhotoUploader endpoint="/salons/mine/portfolio" @uploaded="onUploaded" />
 
-    <EmptyState v-if="!loading && items.length === 0" icon="portfolio" message="هنوز نمونه کاری ثبت نشده است." />
+    <div v-if="loadError" class="space-y-3 rounded-2xl border border-dashed border-(--color-border) p-4 text-center">
+      <p class="text-sm text-(--tone-danger-text)">نمونه کارها بارگذاری نشد.</p>
+      <AppButton type="button" variant="secondary" data-testid="retry-portfolio" @click="load">تلاش دوباره</AppButton>
+    </div>
 
-    <div v-else class="space-y-3">
-      <div
-        v-for="(p, index) in items"
-        :key="p.id"
-        class="flex gap-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-3 shadow-(--shadow-sm)"
-      >
-        <div class="relative h-24 w-24 shrink-0">
-          <img :src="p.url" class="h-full w-full rounded-xl object-cover" />
-          <span
-            v-if="p.status === 'removed'"
-            data-testid="removed-badge"
-            class="absolute end-1 top-1 rounded-full bg-(--tone-danger-bg) px-1.5 py-0.5 text-[10px] font-bold text-(--tone-danger-text) shadow-(--shadow-sm)"
+    <template v-else>
+      <div v-if="loading" class="flex items-center justify-center py-8 text-(--color-text-muted)">
+        <AppIcon name="spinner" :size="20" class="animate-spin" />
+      </div>
+
+      <template v-else>
+        <EmptyState v-if="items.length === 0" icon="portfolio" message="هنوز نمونه کاری ثبت نشده است." />
+
+        <div v-else class="space-y-3">
+          <div
+            v-for="(p, index) in items"
+            :key="p.id"
+            class="flex gap-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-3 shadow-(--shadow-sm)"
           >
-            توسط مدیر حذف شد
-          </span>
-        </div>
-        <div class="min-w-0 flex-1 space-y-2">
-          <AppInput
-            v-model="captionDrafts[p.id]"
-            data-testid="item-caption"
-            :maxlength="300"
-            placeholder="توضیح نمونه کار"
-            @blur="saveCaption(p)"
-          />
-          <select
-            :value="p.serviceId ?? ''"
-            data-testid="item-service"
-            class="native-select w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-1.5 text-sm"
-            @change="setService(p, $event)"
-          >
-            <option value="">بدون خدمت مرتبط</option>
-            <option v-for="s in services" :key="s.id" :value="s.id">{{ s.name }}</option>
-          </select>
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-1">
-              <AppButton type="button" variant="secondary" data-testid="move-up" :disabled="index === 0" @click="move(index, -1)">
-                <template #icon><AppIcon name="chevron-up" :size="14" /></template>
-              </AppButton>
-              <AppButton
-                type="button"
-                variant="secondary"
-                data-testid="move-down"
-                :disabled="index === items.length - 1"
-                @click="move(index, 1)"
+            <div class="relative h-24 w-24 shrink-0">
+              <img :src="p.url" class="h-full w-full rounded-xl object-cover" />
+              <span
+                v-if="p.status === 'removed'"
+                data-testid="removed-badge"
+                class="absolute end-1 top-1 rounded-full bg-(--tone-danger-bg) px-1.5 py-0.5 text-[10px] font-bold text-(--tone-danger-text) shadow-(--shadow-sm)"
               >
-                <template #icon><AppIcon name="chevron-down" :size="14" /></template>
-              </AppButton>
+                توسط مدیر حذف شد
+              </span>
             </div>
-            <AppButton type="button" variant="danger" data-testid="delete-item" @click="removeItem(p.id)">
-              <template #icon><AppIcon name="trash" :size="15" /></template>
-            </AppButton>
+            <div class="min-w-0 flex-1 space-y-2">
+              <div>
+                <AppInput
+                  v-model="captionDrafts[p.id]"
+                  data-testid="item-caption"
+                  label="توضیح نمونه کار"
+                  :maxlength="300"
+                  placeholder="مثلاً رنگ و کوتاهی مو"
+                  @blur="saveCaption(p)"
+                />
+                <span class="tnum mt-1 block text-end text-xs text-(--color-text-muted)">
+                  {{ (captionDrafts[p.id] ?? '').length.toLocaleString('fa-IR') }}/۳۰۰
+                </span>
+              </div>
+              <select
+                :value="p.serviceId ?? ''"
+                data-testid="item-service"
+                class="native-select w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-1.5 text-sm"
+                @change="setService(p, $event)"
+              >
+                <option value="">بدون خدمت مرتبط</option>
+                <option v-for="s in services" :key="s.id" :value="s.id">{{ s.name }}</option>
+              </select>
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-1">
+                  <AppButton
+                    type="button"
+                    variant="secondary"
+                    data-testid="move-up"
+                    aria-label="جابه‌جایی به بالا"
+                    :disabled="index === 0"
+                    @click="move(index, -1)"
+                  >
+                    <template #icon><AppIcon name="chevron-up" :size="14" /></template>
+                  </AppButton>
+                  <AppButton
+                    type="button"
+                    variant="secondary"
+                    data-testid="move-down"
+                    aria-label="جابه‌جایی به پایین"
+                    :disabled="index === items.length - 1"
+                    @click="move(index, 1)"
+                  >
+                    <template #icon><AppIcon name="chevron-down" :size="14" /></template>
+                  </AppButton>
+                </div>
+                <AppButton
+                  type="button"
+                  variant="danger"
+                  data-testid="delete-item"
+                  aria-label="حذف نمونه کار"
+                  @click="removeItem(p.id)"
+                >
+                  <template #icon><AppIcon name="trash" :size="15" /></template>
+                </AppButton>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
+      </template>
+    </template>
   </div>
 </template>

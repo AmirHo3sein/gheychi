@@ -7,6 +7,17 @@ describe('PhotoUploader', () => {
     vi.unstubAllGlobals()
   })
 
+  it('keeps the file input focusable by keyboard (visually-hidden, not display:none)', () => {
+    const wrapper = mount(PhotoUploader)
+    const input = wrapper.find('input[type=file]')
+
+    // A `hidden`/display:none input is removed from the tab order entirely -- Tab/Enter
+    // can never reach it. The visually-hidden pattern keeps it focusable while still
+    // being visually imperceptible.
+    expect(input.classes()).not.toContain('hidden')
+    expect(input.attributes('style') ?? '').not.toContain('display: none')
+  })
+
   it('uploads a selected image file and emits uploaded', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

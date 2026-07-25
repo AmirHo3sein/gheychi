@@ -113,4 +113,65 @@ describe('PortfolioView', () => {
     expect(badges).toHaveLength(1)
     expect(badges[0]!.text()).toBe('توسط مدیر حذف شد')
   })
+
+  it('asks for confirmation before deleting an item, and skips the DELETE if declined', async () => {
+    const wrapper = await mountView()
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+
+    await wrapper.findAll('[data-testid="delete-item"]')[0]!.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(confirmSpy).toHaveBeenCalledWith('این نمونه کار حذف شود؟')
+    expect(fetchMock).not.toHaveBeenCalledWith('/salons/mine/portfolio/pf1', { method: 'DELETE' })
+
+    confirmSpy.mockRestore()
+  })
+
+  it('DELETEs and refetches once confirmation is accepted', async () => {
+    const wrapper = await mountView()
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    await wrapper.findAll('[data-testid="delete-item"]')[0]!.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(fetchMock).toHaveBeenCalledWith('/salons/mine/portfolio/pf1', { method: 'DELETE' })
+
+    confirmSpy.mockRestore()
+  })
+
+  it('resyncs the caption draft with the trimmed server value after a successful save', async () => {
+    const wrapper = await mountView()
+
+    const caption = wrapper.findAll('[data-testid="item-caption"]')[0]!
+    await caption.setValue('  کار جدید  ')
+    await caption.trigger('blur')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect((caption.element as HTMLInputElement).value).toBe('کار جدید')
+  })
+
+  it('shows a retry state when the initial load fails, and recovers on retry', async () => {
+    fetchMock.mockReset()
+    fetchMock.mockImplementation((path: string) => {
+      if (path === '/salons/mine/portfolio') return Promise.resolve({ data: null, error: { message: 'boom' } })
+      if (path === '/salons/mine/services') return Promise.resolve({ data: structuredClone(services), error: null })
+      return Promise.resolve({ data: null, error: null })
+    })
+
+    const wrapper = await mountView()
+    expect(wrapper.find('[data-testid="retry-portfolio"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="item-caption"]').exists()).toBe(false)
+
+    fetchMock.mockImplementation((path: string) => {
+      if (path === '/salons/mine/portfolio') return Promise.resolve({ data: structuredClone(items), error: null })
+      if (path === '/salons/mine/services') return Promise.resolve({ data: structuredClone(services), error: null })
+      return Promise.resolve({ data: null, error: null })
+    })
+    await wrapper.get('[data-testid="retry-portfolio"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="retry-portfolio"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="item-caption"]')).toHaveLength(2)
+  })
 })

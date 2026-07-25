@@ -1,7 +1,11 @@
 <!-- apps/provider-panel/src/components/onboarding/SalonInfoStep.vue -->
 <script setup lang="ts">
+import { useId } from 'vue'
 import SalonPinPicker from './SalonPinPicker.vue'
 import AppInput from '../ui/AppInput.vue'
+
+const descriptionId = useId()
+const genderTargetId = useId()
 
 const model = defineModel<{
   name: string
@@ -30,8 +34,9 @@ function onPin(pos: { lat: number; lng: number }) {
     />
 
     <div>
-      <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">توضیحات (اختیاری)</label>
+      <label :for="descriptionId" class="mb-1.5 block text-sm font-semibold text-(--color-text)">توضیحات (اختیاری)</label>
       <textarea
+        :id="descriptionId"
         v-model="model.description"
         rows="3"
         placeholder="چند جمله درباره آرایشگاه شما"
@@ -40,8 +45,9 @@ function onPin(pos: { lat: number; lng: number }) {
     </div>
 
     <div>
-      <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">مخاطب آرایشگاه</label>
+      <label :for="genderTargetId" class="mb-1.5 block text-sm font-semibold text-(--color-text)">مخاطب آرایشگاه</label>
       <select
+        :id="genderTargetId"
         v-model="model.genderTarget"
         data-testid="gender-target"
         class="native-select w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-3 text-sm"
@@ -78,13 +84,13 @@ function onPin(pos: { lat: number; lng: number }) {
       placeholder="آدرس کامل"
     />
 
-    <div>
-      <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">موقعیت روی نقشه</label>
+    <fieldset class="m-0 min-w-0 border-0 p-0">
+      <legend class="mb-1.5 block w-full text-sm font-semibold text-(--color-text)">موقعیت روی نقشه</legend>
       <SalonPinPicker
         :model-value="model.lat !== null && model.lng !== null ? { lat: model.lat, lng: model.lng } : null"
         :center="{ lat: 35.7, lng: 51.4 }"
         @update:model-value="onPin"
       />
-    </div>
+    </fieldset>
   </div>
 </template>

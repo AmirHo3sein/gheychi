@@ -70,6 +70,59 @@ describe('LoginView', () => {
     expect(wrapper.text()).toContain('شماره موبایل نامعتبر است')
   })
 
+  it('shows a network-problem message (not the invalid-input message) when the request fails offline', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+
+    const router = makeRouter()
+    await router.push('/login')
+    await router.isReady()
+    const wrapper = mount(LoginView, { global: { plugins: [router] } })
+
+    await wrapper.find('[data-testid="phone-input"]').setValue('09120000000')
+    await wrapper.find('[data-testid="phone-form"]').trigger('submit')
+    await new Promise((r) => setTimeout(r, 0))
+
+    const errorEl = wrapper.find('[role="alert"]')
+    expect(errorEl.exists()).toBe(true)
+    expect(errorEl.text()).toContain('اتصال اینترنت برقرار نیست')
+    expect(errorEl.text()).not.toContain('شماره موبایل نامعتبر است')
+  })
+
+  it('shows a rate-limit message (not the invalid-input message) on a 429 response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 429, json: async () => ({ message: 'too many requests' }) }))
+
+    const router = makeRouter()
+    await router.push('/login')
+    await router.isReady()
+    const wrapper = mount(LoginView, { global: { plugins: [router] } })
+
+    await wrapper.find('[data-testid="phone-input"]').setValue('09120000000')
+    await wrapper.find('[data-testid="phone-form"]').trigger('submit')
+    await new Promise((r) => setTimeout(r, 0))
+
+    const errorEl = wrapper.find('[role="alert"]')
+    expect(errorEl.exists()).toBe(true)
+    expect(errorEl.text()).toContain('چند لحظه صبر کنید')
+    expect(errorEl.text()).not.toContain('شماره موبایل نامعتبر است')
+  })
+
+  it('error message is announced via role="alert" for screen readers', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400, json: async () => ({ message: 'bad phone' }) }))
+
+    const router = makeRouter()
+    await router.push('/login')
+    await router.isReady()
+    const wrapper = mount(LoginView, { global: { plugins: [router] } })
+
+    await wrapper.find('[data-testid="phone-input"]').setValue('123')
+    await wrapper.find('[data-testid="phone-form"]').trigger('submit')
+    await new Promise((r) => setTimeout(r, 0))
+
+    const errorEl = wrapper.find('[role="alert"]')
+    expect(errorEl.exists()).toBe(true)
+    expect(errorEl.attributes('aria-live')).toBe('polite')
+  })
+
   it('shows an error and stays on the code step when verify-otp fails', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({}) }) // request-otp succeeds
@@ -91,6 +144,32 @@ describe('LoginView', () => {
 
     expect(wrapper.find('[data-testid="code-input"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('کد وارد شده اشتباه است')
+    expect(useSessionStore().isLoggedIn).toBe(false)
+  })
+
+  it('shows a server-error message (not the wrong-code message) on the code step when verify-otp 5xxs', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({}) }) // request-otp succeeds
+      .mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({ message: 'unavailable' }) }) // verify-otp 5xxs
+    vi.stubGlobal('fetch', fetchMock)
+
+    const router = makeRouter()
+    await router.push('/login')
+    await router.isReady()
+    const wrapper = mount(LoginView, { global: { plugins: [router] } })
+
+    await wrapper.find('[data-testid="phone-input"]').setValue('09120000000')
+    await wrapper.find('[data-testid="phone-form"]').trigger('submit')
+    await new Promise((r) => setTimeout(r, 0))
+
+    await wrapper.find('[data-testid="code-input"]').setValue('0000')
+    await wrapper.find('[data-testid="code-form"]').trigger('submit')
+    await new Promise((r) => setTimeout(r, 0))
+
+    const errorEl = wrapper.find('[role="alert"]')
+    expect(errorEl.exists()).toBe(true)
+    expect(errorEl.text()).toContain('خطایی در سرور رخ داده است')
+    expect(errorEl.text()).not.toContain('کد وارد شده اشتباه است')
     expect(useSessionStore().isLoggedIn).toBe(false)
   })
 })

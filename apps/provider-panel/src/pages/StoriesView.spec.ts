@@ -96,4 +96,70 @@ describe('StoriesView', () => {
     vi.unstubAllGlobals()
     wrapper.unmount()
   })
+
+  it('gives every delete button an accessible name', async () => {
+    const wrapper = await mountView()
+
+    const deleteButtons = wrapper.findAll('[data-testid="delete-story"]')
+    expect(deleteButtons.length).toBeGreaterThan(0)
+    for (const button of deleteButtons) {
+      expect(button.attributes('aria-label')).toBe('حذف استوری')
+    }
+    wrapper.unmount()
+  })
+
+  it('shows a loading spinner before the first fetch resolves', () => {
+    const wrapper = mount(StoriesView)
+
+    expect(wrapper.find('.animate-spin').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('هنوز استوری فعالی ندارید')
+    wrapper.unmount()
+  })
+
+  it('surfaces a retry affordance when the list fails to load', async () => {
+    fetchMock.mockImplementation((path: string) => {
+      if (path === '/salons/mine/stories') return Promise.resolve({ data: null, error: { status: 500, message: 'boom' } })
+      if (path === '/salons/mine/services') return Promise.resolve({ data: structuredClone(services), error: null })
+      return Promise.resolve({ data: null, error: null })
+    })
+    const wrapper = await mountView()
+
+    expect(wrapper.find('[data-testid="retry-stories"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="removed-badge"]').exists()).toBe(false)
+
+    fetchMock.mockImplementation((path: string) => {
+      if (path === '/salons/mine/stories') return Promise.resolve({ data: structuredClone(stories), error: null })
+      if (path === '/salons/mine/services') return Promise.resolve({ data: structuredClone(services), error: null })
+      return Promise.resolve({ data: null, error: null })
+    })
+    await wrapper.get('[data-testid="retry-stories"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[data-testid="cap-meter"]').text()).toContain('۲ از ۱۰ استوری فعال')
+    wrapper.unmount()
+  })
+
+  it('gates the uploader and shows the cap message once 10 stories are active', async () => {
+    const tenStories = Array.from({ length: 10 }, (_, i) => ({
+      id: `st-${i}`,
+      url: `http://localhost:3002/uploads/salons/s1/stories/${i}.jpg`,
+      caption: null,
+      serviceId: null,
+      status: 'published',
+      createdAt: inHours(-1),
+      expiresAt: inHours(23),
+    }))
+    fetchMock.mockImplementation((path: string) => {
+      if (path === '/salons/mine/stories') return Promise.resolve({ data: structuredClone(tenStories), error: null })
+      if (path === '/salons/mine/services') return Promise.resolve({ data: structuredClone(services), error: null })
+      return Promise.resolve({ data: null, error: null })
+    })
+    const wrapper = await mountView()
+
+    expect(wrapper.get('[data-testid="cap-reached"]').text()).toContain('به سقف ۱۰ استوری فعال رسیده‌اید')
+    expect(wrapper.text()).not.toContain('افزودن تصویر جدید')
+    wrapper.unmount()
+  })
 })

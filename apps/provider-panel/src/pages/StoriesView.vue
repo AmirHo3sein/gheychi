@@ -1,6 +1,6 @@
 <!-- apps/provider-panel/src/pages/StoriesView.vue -->
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, useId } from 'vue'
 import PhotoUploader from '@/components/photos/PhotoUploader.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -27,8 +27,11 @@ const { apiFetch } = useApi()
 const stories = ref<SalonStory[]>([])
 const services = ref<Service[]>([])
 const loading = ref(true)
+const loadError = ref(false)
 const caption = ref('')
 const serviceId = ref('')
+const serviceSelectId = useId()
+const deletingId = ref<string | null>(null)
 
 // GET /salons/mine/stories only ever returns unexpired rows (the API's expiry read
 // filter is authoritative), and admin-removed rows still occupy their cap slot until
@@ -50,7 +53,14 @@ const timer = setInterval(() => {
 onUnmounted(() => clearInterval(timer))
 
 async function load() {
-  const { data } = await apiFetch<SalonStory[]>('/salons/mine/stories', { silent: true })
+  loading.value = true
+  loadError.value = false
+  const { data, error } = await apiFetch<SalonStory[]>('/salons/mine/stories', { silent: true })
+  if (error) {
+    loadError.value = true
+    loading.value = false
+    return
+  }
   stories.value = data ?? []
   loading.value = false
 }
@@ -67,9 +77,12 @@ function onUploaded(story: SalonStory) {
 }
 
 async function removeStory(id: string) {
+  if (deletingId.value) return
   if (!window.confirm('این استوری حذف شود؟')) return
-  await apiFetch(`/salons/mine/stories/${id}`, { method: 'DELETE' })
-  await load()
+  deletingId.value = id
+  const { error } = await apiFetch(`/salons/mine/stories/${id}`, { method: 'DELETE' })
+  deletingId.value = null
+  if (!error) await load()
 }
 
 function serviceName(id: string | null) {
@@ -96,8 +109,9 @@ function serviceName(id: string | null) {
         <AppInput v-model="caption" data-testid="story-caption" :maxlength="200" placeholder="توضیح کوتاه" />
       </div>
       <div>
-        <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">خدمت مرتبط (اختیاری)</label>
+        <label :for="serviceSelectId" class="mb-1.5 block text-sm font-semibold text-(--color-text)">خدمت مرتبط (اختیاری)</label>
         <select
+          :id="serviceSelectId"
           v-model="serviceId"
           data-testid="story-service"
           class="native-select w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-3 text-sm"
@@ -106,39 +120,67 @@ function serviceName(id: string | null) {
           <option v-for="s in services" :key="s.id" :value="s.id">{{ s.name }}</option>
         </select>
       </div>
-      <PhotoUploader endpoint="/salons/mine/stories" :extra-fields="extraFields" @uploaded="onUploaded" />
+      <PhotoUploader v-if="activeCount < 10" endpoint="/salons/mine/stories" :extra-fields="extraFields" @uploaded="onUploaded" />
+      <p
+        v-else
+        data-testid="cap-reached"
+        class="rounded-xl bg-(--tone-warning-bg) p-3 text-sm text-(--tone-warning-text)"
+      >
+        به سقف ۱۰ استوری فعال رسیده‌اید.
+      </p>
       <p class="text-xs text-(--color-text-muted)">هر استوری ۲۴ ساعت پس از انتشار به‌صورت خودکار حذف می‌شود.</p>
     </div>
 
-    <EmptyState v-if="!loading && stories.length === 0" icon="stories" message="هنوز استوری فعالی ندارید." />
+    <div v-if="loadError" class="space-y-3 rounded-2xl border border-dashed border-(--color-border) p-4 text-center">
+      <p class="text-sm text-(--tone-danger-text)">استوری‌ها بارگذاری نشد.</p>
+      <AppButton type="button" variant="secondary" data-testid="retry-stories" @click="load">تلاش دوباره</AppButton>
+    </div>
 
-    <div v-else class="grid grid-cols-2 gap-3">
-      <div
-        v-for="s in stories"
-        :key="s.id"
-        class="overflow-hidden rounded-2xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-sm)"
-      >
-        <div class="relative aspect-square w-full">
-          <img :src="s.url" class="h-full w-full object-cover" />
-          <span
-            v-if="s.status === 'removed'"
-            data-testid="removed-badge"
-            class="absolute end-2 top-2 rounded-full bg-(--tone-danger-bg) px-2 py-0.5 text-[10px] font-bold text-(--tone-danger-text) shadow-(--shadow-sm)"
+    <template v-else>
+      <div v-if="loading" class="flex items-center justify-center py-8 text-(--color-text-muted)">
+        <AppIcon name="spinner" :size="20" class="animate-spin" />
+      </div>
+
+      <template v-else>
+        <EmptyState v-if="stories.length === 0" icon="stories" message="هنوز استوری فعالی ندارید." />
+
+        <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          <div
+            v-for="s in stories"
+            :key="s.id"
+            class="overflow-hidden rounded-2xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-sm)"
           >
-            توسط مدیر حذف شد
-          </span>
-        </div>
-        <div class="space-y-1.5 p-2">
-          <p v-if="s.caption" class="truncate text-xs text-(--color-text)">{{ s.caption }}</p>
-          <p v-if="serviceName(s.serviceId)" class="truncate text-xs text-(--color-accent)">{{ serviceName(s.serviceId) }}</p>
-          <div class="flex items-center justify-between">
-            <span class="tnum text-xs text-(--color-text-muted)">{{ formatRemainingTime(s.expiresAt, now) }}</span>
-            <AppButton type="button" variant="danger" data-testid="delete-story" @click="removeStory(s.id)">
-              <template #icon><AppIcon name="trash" :size="15" /></template>
-            </AppButton>
+            <div class="relative aspect-square w-full">
+              <img :src="s.url" :alt="s.caption ?? 'استوری'" class="h-full w-full object-cover" />
+              <span
+                v-if="s.status === 'removed'"
+                data-testid="removed-badge"
+                class="absolute end-2 top-2 rounded-full bg-(--tone-danger-bg) px-2 py-0.5 text-xs font-bold text-(--tone-danger-text) shadow-(--shadow-sm)"
+              >
+                توسط مدیر حذف شد
+              </span>
+            </div>
+            <div class="space-y-1.5 p-2">
+              <p v-if="s.caption" class="truncate text-xs text-(--color-text)">{{ s.caption }}</p>
+              <p v-if="serviceName(s.serviceId)" class="truncate text-xs text-(--color-accent-text)">{{ serviceName(s.serviceId) }}</p>
+              <div class="flex items-center justify-between">
+                <span class="tnum text-xs text-(--color-text-muted)">{{ formatRemainingTime(s.expiresAt, now) }}</span>
+                <AppButton
+                  type="button"
+                  variant="danger"
+                  aria-label="حذف استوری"
+                  data-testid="delete-story"
+                  :loading="deletingId === s.id"
+                  :disabled="deletingId === s.id"
+                  @click="removeStory(s.id)"
+                >
+                  <template #icon><AppIcon name="trash" :size="15" /></template>
+                </AppButton>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
+      </template>
+    </template>
   </div>
 </template>

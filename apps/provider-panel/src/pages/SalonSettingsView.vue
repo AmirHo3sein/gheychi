@@ -1,6 +1,6 @@
 <!-- apps/provider-panel/src/pages/SalonSettingsView.vue -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, useId } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import SalonInfoStep from '@/components/onboarding/SalonInfoStep.vue'
@@ -10,8 +10,11 @@ import AppInput from '@/components/ui/AppInput.vue'
 
 const { apiFetch } = useApi()
 const { push: pushToast } = useToast()
-const loaded = ref(false)
+const loading = ref(true)
+const loadError = ref(false)
 const saving = ref(false)
+const aboutId = useId()
+const instagramId = useId()
 
 const form = reactive({
   name: '',
@@ -73,17 +76,22 @@ interface SalonResponse extends Omit<typeof form, 'lat' | 'lng' | 'tagline' | 'a
 }
 
 async function load() {
-  const { data } = await apiFetch<SalonResponse>('/salons/mine', { silent: true })
-  if (data) {
-    const { location, tagline, about, instagramHandle, ...rest } = data
-    Object.assign(form, rest)
-    form.lng = location.coordinates[0]
-    form.lat = location.coordinates[1]
-    form.tagline = tagline ?? ''
-    form.about = about ?? ''
-    form.instagramHandle = instagramHandle ?? ''
+  loading.value = true
+  loadError.value = false
+  const { data, error } = await apiFetch<SalonResponse>('/salons/mine', { silent: true })
+  if (error || !data) {
+    loadError.value = true
+    loading.value = false
+    return
   }
-  loaded.value = true
+  const { location, tagline, about, instagramHandle, ...rest } = data
+  Object.assign(form, rest)
+  form.lng = location.coordinates[0]
+  form.lat = location.coordinates[1]
+  form.tagline = tagline ?? ''
+  form.about = about ?? ''
+  form.instagramHandle = instagramHandle ?? ''
+  loading.value = false
 }
 
 async function save() {
@@ -116,89 +124,103 @@ onMounted(load)
 </script>
 
 <template>
-  <div v-if="loaded" class="space-y-4 p-4">
+  <div class="space-y-4 p-4">
     <h1 class="text-lg font-bold text-(--color-text)">تنظیمات آرایشگاه</h1>
-    <div class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-5 shadow-(--shadow-sm)">
-      <SalonInfoStep v-model="form" />
+
+    <div v-if="loadError" class="space-y-3 rounded-xl border border-dashed border-(--color-border) p-4 text-center">
+      <p class="text-sm text-(--tone-danger-text)">اطلاعات آرایشگاه بارگذاری نشد.</p>
+      <AppButton variant="secondary" data-testid="retry-settings" @click="load">
+        تلاش دوباره
+      </AppButton>
     </div>
 
-    <div class="space-y-4 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-5 shadow-(--shadow-sm)">
-      <h2 class="font-bold text-(--color-text)">پروفایل عمومی</h2>
+    <div v-else-if="loading" class="flex items-center justify-center py-8 text-(--color-text-muted)">
+      <AppIcon name="spinner" :size="20" class="animate-spin" />
+    </div>
 
-      <div>
-        <div class="mb-1.5 flex items-center justify-between">
-          <label class="block text-sm font-semibold text-(--color-text)">شعار سالن</label>
-          <span class="tnum text-xs text-(--color-text-muted)">{{ form.tagline.length.toLocaleString('fa-IR') }}/۱۲۰</span>
-        </div>
-        <AppInput
-          v-model="form.tagline"
-          data-testid="tagline"
-          :maxlength="120"
-          placeholder="مثلاً زیبایی شما، تخصص ما"
-        />
+    <template v-else>
+      <div class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-5 shadow-(--shadow-sm)">
+        <SalonInfoStep v-model="form" />
       </div>
 
-      <div>
-        <div class="mb-1.5 flex items-center justify-between">
-          <label class="block text-sm font-semibold text-(--color-text)">درباره سالن</label>
-          <span class="tnum text-xs text-(--color-text-muted)">{{ form.about.length.toLocaleString('fa-IR') }}/۲۰۰۰</span>
-        </div>
-        <textarea
-          v-model="form.about"
-          data-testid="about"
-          rows="5"
-          maxlength="2000"
-          placeholder="داستان سالن، تخصص‌ها و هر چیزی که مشتری باید بداند"
-          class="w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-3 text-sm"
-        />
-        <p class="mt-1 text-xs text-(--color-text-muted)">شکست خط‌ها همان‌طور که می‌نویسید در صفحه عمومی نمایش داده می‌شوند.</p>
-      </div>
+      <div class="space-y-4 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-5 shadow-(--shadow-sm)">
+        <h2 class="font-bold text-(--color-text)">پروفایل عمومی</h2>
 
-      <div>
-        <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">آیدی اینستاگرام</label>
-        <div dir="ltr" class="flex items-center overflow-hidden rounded-xl border border-(--color-border) bg-(--color-surface-card)">
-          <span class="select-none border-e border-(--color-border) bg-(--color-border-soft) p-3 text-sm text-(--color-text-muted)">instagram.com/</span>
-          <input
-            v-model="form.instagramHandle"
-            data-testid="instagram-handle"
-            dir="ltr"
-            maxlength="30"
-            placeholder="my.salon"
-            class="w-full bg-transparent p-3 text-sm outline-none"
+        <div>
+          <AppInput
+            v-model="form.tagline"
+            label="شعار سالن"
+            data-testid="tagline"
+            :maxlength="120"
+            placeholder="مثلاً زیبایی شما، تخصص ما"
           />
+          <p class="tnum mt-1 text-end text-xs text-(--color-text-muted)">{{ form.tagline.length.toLocaleString('fa-IR') }}/۱۲۰</p>
         </div>
-        <p
-          v-if="!instagramHandleValid"
-          data-testid="instagram-error"
-          class="mt-1.5 flex items-center gap-1.5 text-xs text-(--tone-danger-text)"
+
+        <div>
+          <div class="mb-1.5 flex items-center justify-between">
+            <label :for="aboutId" class="block text-sm font-semibold text-(--color-text)">درباره سالن</label>
+            <span class="tnum text-xs text-(--color-text-muted)">{{ form.about.length.toLocaleString('fa-IR') }}/۲۰۰۰</span>
+          </div>
+          <textarea
+            :id="aboutId"
+            v-model="form.about"
+            data-testid="about"
+            rows="5"
+            maxlength="2000"
+            placeholder="داستان سالن، تخصص‌ها و هر چیزی که مشتری باید بداند"
+            class="w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-3 text-sm"
+          />
+          <p class="mt-1 text-xs text-(--color-text-muted)">شکست خط‌ها همان‌طور که می‌نویسید در صفحه عمومی نمایش داده می‌شوند.</p>
+        </div>
+
+        <div>
+          <label :for="instagramId" class="mb-1.5 block text-sm font-semibold text-(--color-text)">آیدی اینستاگرام</label>
+          <div dir="ltr" class="flex items-center overflow-hidden rounded-xl border border-(--color-border) bg-(--color-surface-card)">
+            <span class="select-none border-e border-(--color-border) bg-(--color-border-soft) p-3 text-sm text-(--color-text-muted)">instagram.com/</span>
+            <input
+              :id="instagramId"
+              v-model="form.instagramHandle"
+              data-testid="instagram-handle"
+              dir="ltr"
+              maxlength="30"
+              placeholder="my.salon"
+              class="w-full bg-transparent p-3 text-sm outline-none"
+            />
+          </div>
+          <p
+            v-if="!instagramHandleValid"
+            data-testid="instagram-error"
+            class="mt-1.5 flex items-center gap-1.5 text-xs text-(--color-danger)"
+          >
+            <AppIcon name="warning" :size="13" class="shrink-0" />
+            آیدی اینستاگرام فقط می‌تواند شامل حروف انگلیسی، عدد، نقطه و زیرخط باشد.
+          </p>
+        </div>
+
+        <div
+          v-if="form.tagline.trim() || form.about.trim()"
+          data-testid="profile-preview"
+          class="rounded-xl border border-dashed border-(--color-border) bg-(--color-surface) p-3"
         >
-          <AppIcon name="warning" :size="13" class="shrink-0" />
-          آیدی اینستاگرام فقط می‌تواند شامل حروف انگلیسی، عدد، نقطه و زیرخط باشد.
-        </p>
+          <p class="mb-2 text-xs font-semibold text-(--color-text-muted)">پیش‌نمایش صفحه عمومی</p>
+          <p v-if="form.tagline.trim()" class="text-sm text-(--color-text-muted)">{{ form.tagline.trim() }}</p>
+          <p v-if="form.about.trim()" class="mt-1 whitespace-pre-line text-sm text-(--color-text)">{{ aboutExcerpt }}</p>
+        </div>
       </div>
 
-      <div
-        v-if="form.tagline.trim() || form.about.trim()"
-        data-testid="profile-preview"
-        class="rounded-xl border border-dashed border-(--color-border) bg-(--color-surface) p-3"
+      <AppButton
+        data-testid="save-button"
+        type="button"
+        variant="primary"
+        block
+        :loading="saving"
+        :disabled="!isFormValid"
+        @click="save"
       >
-        <p class="mb-2 text-xs font-semibold text-(--color-text-muted)">پیش‌نمایش صفحه عمومی</p>
-        <p v-if="form.tagline.trim()" class="text-sm text-(--color-text-muted)">{{ form.tagline.trim() }}</p>
-        <p v-if="form.about.trim()" class="mt-1 whitespace-pre-line text-sm text-(--color-text)">{{ aboutExcerpt }}</p>
-      </div>
-    </div>
-
-    <AppButton
-      data-testid="save-button"
-      type="button"
-      variant="primary"
-      block
-      :loading="saving"
-      :disabled="!isFormValid"
-      @click="save"
-    >
-      <template #icon><AppIcon name="check" :size="16" /></template>
-      {{ saving ? 'در حال ذخیره…' : 'ذخیره' }}
-    </AppButton>
+        <template #icon><AppIcon name="check" :size="16" /></template>
+        {{ saving ? 'در حال ذخیره…' : 'ذخیره' }}
+      </AppButton>
+    </template>
   </div>
 </template>

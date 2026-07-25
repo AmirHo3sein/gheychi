@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetSalon, useSalon } from '@/composables/useSalon'
+import { resetToast, useToast } from '@/composables/useToast'
 import PendingApprovalView from './PendingApprovalView.vue'
 
 function makeRouter() {
@@ -17,6 +18,7 @@ function makeRouter() {
 describe('PendingApprovalView', () => {
   beforeEach(() => {
     resetSalon()
+    resetToast()
   })
 
   afterEach(() => {
@@ -47,6 +49,49 @@ describe('PendingApprovalView', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/salons/mine'), expect.anything())
+  })
+
+  it('shows a loading state on the refresh button while the status check is in flight, then clears it', async () => {
+    const router = makeRouter()
+    await router.push('/pending-approval')
+    await router.isReady()
+    const wrapper = mount(PendingApprovalView, { global: { plugins: [router] } })
+
+    let resolveFetch!: (value: { ok: boolean; status: number; json: () => Promise<unknown> }) => void
+    const fetchMock = vi.fn().mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFetch = resolve
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const refreshButton = wrapper.get('[data-testid="refresh-status"]')
+    await refreshButton.trigger('click')
+
+    expect((refreshButton.element as HTMLButtonElement).disabled).toBe(true)
+    expect(refreshButton.attributes('aria-busy')).toBe('true')
+
+    resolveFetch({ ok: true, status: 200, json: async () => ({ id: 's1', status: 'pending' }) })
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.vm.$nextTick()
+
+    expect((refreshButton.element as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('surfaces a toast when the status check fails instead of failing silently', async () => {
+    const router = makeRouter()
+    await router.push('/pending-approval')
+    await router.isReady()
+    const wrapper = mount(PendingApprovalView, { global: { plugins: [router] } })
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({ message: 'boom' }) }))
+
+    await wrapper.get('[data-testid="refresh-status"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.vm.$nextTick()
+
+    expect((wrapper.get('[data-testid="refresh-status"]').element as HTMLButtonElement).disabled).toBe(false)
+    expect(useToast().toasts.value.some((t) => t.message === 'بررسی وضعیت با خطا مواجه شد. دوباره تلاش کنید.')).toBe(true)
   })
 
   describe('when the salon is rejected', () => {
@@ -133,6 +178,41 @@ describe('PendingApprovalView', () => {
       await wrapper.vm.$nextTick()
 
       expect((resubmitButton.element as HTMLButtonElement).disabled).toBe(false)
+    })
+
+    it('the "ویرایش اطلاعات آرایشگاه" link is a real, clickable navigation to /settings (not dead text)', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: 's1',
+          name: 'x',
+          slug: 'x',
+          status: 'rejected',
+          genderTarget: 'women',
+          address: 'x',
+          city: 'x',
+          capacity: 1,
+          rejectionReason: 'آدرس نامعتبر است',
+        }),
+      }))
+      const { refetch } = useSalon()
+      await refetch()
+
+      const router = makeRouter()
+      await router.push('/pending-approval')
+      await router.isReady()
+      const wrapper = mount(PendingApprovalView, { global: { plugins: [router] } })
+
+      const settingsLink = wrapper.get('a')
+      expect(settingsLink.text()).toBe('ویرایش اطلاعات آرایشگاه')
+      await settingsLink.trigger('click')
+      // router.push() from a RouterLink click resolves asynchronously -- router.isReady()
+      // only tracks the router's *initial* navigation, not this follow-up one, so wait for
+      // the microtask queue to drain before asserting on the resulting route.
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(router.currentRoute.value.name).toBe('settings')
     })
   })
 })

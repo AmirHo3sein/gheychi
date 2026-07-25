@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import type { ApiError } from './useApi'
 import { useApi } from './useApi'
 
 export interface Salon {
@@ -19,7 +20,12 @@ const checked = ref(false)
 export function useSalon() {
   const { apiFetch } = useApi()
 
-  async function refetch(): Promise<void> {
+  // Returns the ApiError when the fetch failed with something other than a 404 (a 404
+  // legitimately means "no salon yet" and is not surfaced as an error), so callers that
+  // want to give feedback on a failed manual refresh (e.g. PendingApprovalView's "بررسی
+  // وضعیت" button) can do so -- existing callers that just `await refetch()` and ignore
+  // the return value are unaffected.
+  async function refetch(): Promise<{ error: ApiError | null }> {
     const { data, error } = await apiFetch<Salon>('/salons/mine', { silent: true, redirectOn401: false })
     if (error && error.status !== 404) {
       // A transient failure (network error, 500, etc.) isn't the same as "confirmed no
@@ -27,10 +33,11 @@ export function useSalon() {
       // possibly-still-valid previous fetch, so a flaky response can't bounce an already-
       // approved provider into onboarding.
       checked.value = true
-      return
+      return { error }
     }
     salon.value = data
     checked.value = true
+    return { error: null }
   }
 
   return { salon, checked, refetch }

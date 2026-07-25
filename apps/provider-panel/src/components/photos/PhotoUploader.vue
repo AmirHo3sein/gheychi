@@ -55,14 +55,20 @@ async function onFileChange(event: Event) {
 <template>
   <div>
     <label
-      class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-(--color-border) bg-(--color-surface-card) py-8 text-center transition-colors hover:border-(--color-accent)"
+      class="relative flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-(--color-border) bg-(--color-surface-card) py-8 text-center transition-colors hover:border-(--color-accent) has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-(--color-accent)/30"
     >
-      <div class="flex h-10 w-10 items-center justify-center rounded-full bg-(--tone-info-bg) text-(--color-accent)">
+      <div class="flex h-10 w-10 items-center justify-center rounded-full bg-(--color-accent-soft) text-(--color-accent-text)">
         <AppIcon name="upload" :size="18" />
       </div>
       <span class="text-sm font-semibold text-(--color-text)">{{ uploading ? 'در حال بارگذاری…' : 'افزودن تصویر جدید' }}</span>
       <span class="text-xs text-(--color-text-muted)">jpeg, png, webp</span>
-      <input type="file" accept="image/jpeg,image/png,image/webp" class="hidden" :disabled="uploading" @change="onFileChange" />
+      <input
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        class="absolute h-px w-px overflow-hidden opacity-0"
+        :disabled="uploading"
+        @change="onFileChange"
+      />
     </label>
     <p v-if="error" class="mt-2 flex items-center gap-1.5 text-sm text-(--tone-danger-text)">
       <AppIcon name="warning" :size="14" class="shrink-0" />

@@ -63,7 +63,13 @@ export function createAppRouter(history: RouterHistory): Router {
     }
 
     if (salon.value.status !== 'approved') {
-      return to.name === 'pending-approval' ? true : { name: 'pending-approval' }
+      // A rejected salon owner needs a real path to fix what got them rejected before
+      // resubmitting -- PendingApprovalView's "ویرایش اطلاعات آرایشگاه" link goes to
+      // /settings, so that route must stay reachable specifically in the rejected state.
+      // pending/suspended salons have no such editable-before-resubmit path, so they still
+      // get bounced straight back to pending-approval.
+      const rejectedSettingsAccess = salon.value.status === 'rejected' && to.name === 'settings'
+      return to.name === 'pending-approval' || rejectedSettingsAccess ? true : { name: 'pending-approval' }
     }
 
     if (to.name === 'onboarding' || to.name === 'pending-approval') {
