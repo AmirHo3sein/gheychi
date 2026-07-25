@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ConfigView from './ConfigView.vue'
 
@@ -52,8 +53,10 @@ describe('ConfigView', () => {
     const changedRows = wrapper.findAll('[data-testid="config-confirm-row"]')
     expect(changedRows).toHaveLength(1)
     expect(summary.text()).toContain('درصد پیش‌پرداخت')
-    expect(summary.text()).toContain('20')
-    expect(summary.text()).toContain('30')
+    // fa-IR locale formatting renders Persian-Indic digits (AdjustBalanceCard.vue's own
+    // toLocaleString('fa-IR') convention) -- 20 -> ۲۰, 30 -> ۳۰.
+    expect(summary.text()).toContain('۲۰')
+    expect(summary.text()).toContain('۳۰')
     expect(summary.text()).not.toContain('مهلت لغو رزرو')
 
     fetchMock.mockResolvedValueOnce({ data: null, error: null })
@@ -90,5 +93,97 @@ describe('ConfigView', () => {
     expect(fetchMock).not.toHaveBeenCalledWith('/admin/config', expect.objectContaining({ method: 'PATCH' }))
     // The edited value survives the cancel so the admin doesn't lose their in-progress edit.
     expect(wrapper.get('[data-testid="config-save-button"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('blocks save when a field is cleared to empty text instead of silently coercing to 0', async () => {
+    const wrapper = await mountView()
+    const inputs = wrapper.findAll('input[type="number"]')
+
+    await inputs[0].setValue(50) // deposit_percent: a genuine change, 20 -> 50
+    await inputs[2].setValue('') // cancellation_window_hours: cleared via select-all-delete
+
+    // Number('') === 0 must never silently win here -- save stays disabled and the row
+    // shows a distinguishing error, even though a real change exists elsewhere in the form.
+    expect(wrapper.get('[data-testid="config-save-button"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('این مقدار نمی‌تواند خالی باشد')
+
+    await wrapper.get('[data-testid="config-save-button"]').trigger('click')
+    expect(wrapper.find('[data-testid="config-confirm-summary"]').exists()).toBe(false)
+    expect(fetchMock).toHaveBeenCalledTimes(1) // only the initial GET -- nothing ever reached PATCH
+  })
+
+  it('blocks save when a percent-bounded field exceeds its 0-100 range', async () => {
+    const wrapper = await mountView()
+    const inputs = wrapper.findAll('input[type="number"]')
+
+    await inputs[0].setValue(150) // deposit_percent: capped at 100
+
+    expect(wrapper.get('[data-testid="config-save-button"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('باید بین')
+
+    await wrapper.get('[data-testid="config-save-button"]').trigger('click')
+    expect(wrapper.find('[data-testid="config-confirm-summary"]').exists()).toBe(false)
+  })
+
+  it('blocks save when a non-percent field goes negative', async () => {
+    const wrapper = await mountView()
+    const inputs = wrapper.findAll('input[type="number"]')
+
+    await inputs[2].setValue(-5) // cancellation_window_hours: floor is 0, no ceiling
+
+    expect(wrapper.get('[data-testid="config-save-button"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('باید حداقل')
+  })
+
+  it('recovers a valid value after an invalid edit, re-enabling save', async () => {
+    const wrapper = await mountView()
+    const inputs = wrapper.findAll('input[type="number"]')
+
+    await inputs[0].setValue('')
+    expect(wrapper.get('[data-testid="config-save-button"]').attributes('disabled')).toBeDefined()
+
+    await inputs[0].setValue(40)
+    expect(wrapper.get('[data-testid="config-save-button"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('این مقدار نمی‌تواند خالی باشد')
+  })
+
+  it('shows a loading state, then a retry-capable error state when the initial load fails', async () => {
+    fetchMock.mockResolvedValueOnce({ data: null, error: { status: 500, message: 'boom' } })
+    const wrapper = mount(ConfigView)
+
+    expect(wrapper.find('[data-testid="config-loading"]').exists()).toBe(true)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="config-load-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="config-save-button"]').exists()).toBe(false)
+
+    fetchMock.mockResolvedValueOnce({ data: CONFIG_ROWS.map((r) => ({ ...r })), error: null })
+    await wrapper.get('[data-testid="config-retry-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="config-load-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="config-save-button"]').exists()).toBe(true)
+  })
+
+  it('moves focus onto the confirm heading on opening the confirm screen, and back to save on cancel', async () => {
+    fetchMock.mockResolvedValueOnce({ data: CONFIG_ROWS.map((r) => ({ ...r })), error: null })
+    const wrapper = mount(ConfigView, { attachTo: document.body })
+    await flushPromises()
+
+    const inputs = wrapper.findAll('input[type="number"]')
+    await inputs[0].setValue(30)
+    await wrapper.get('[data-testid="config-save-button"]').trigger('click')
+    await nextTick()
+    await flushPromises()
+
+    expect(document.activeElement?.textContent).toContain('این تغییرات روی رفتار پلتفرم')
+
+    await wrapper.get('[data-testid="config-confirm-cancel"]').trigger('click')
+    await nextTick()
+    await flushPromises()
+
+    expect(document.activeElement?.getAttribute('data-testid')).toBe('config-save-button')
+
+    wrapper.unmount()
   })
 })

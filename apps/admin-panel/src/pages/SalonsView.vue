@@ -48,6 +48,9 @@ interface SalonListResponse {
 const { apiFetch } = useApi()
 const salons = ref<SalonRow[]>([])
 const loading = ref(true)
+// Distinct from "genuinely no results": a fetch failure must not be silently repainted as an
+// empty list (the operator would read that as "no salons match", not "the request failed").
+const loadError = ref(false)
 const page = ref(1)
 const total = ref(0)
 const pageSize = 20
@@ -59,20 +62,33 @@ const genderFilter = ref<'' | 'women' | 'men'>('')
 
 async function load() {
   loading.value = true
+  loadError.value = false
   const params = new URLSearchParams({ status: statusFilter.value, page: String(page.value), pageSize: String(pageSize) })
   if (cityFilter.value) params.set('city', cityFilter.value)
   if (nameFilter.value) params.set('name', nameFilter.value)
   if (genderFilter.value) params.set('genderTarget', genderFilter.value)
 
-  const { data } = await apiFetch<SalonListResponse>(`/admin/salons?${params.toString()}`, { silent: true })
-  salons.value = data?.items ?? []
-  total.value = data?.total ?? 0
+  const { data, error } = await apiFetch<SalonListResponse>(`/admin/salons?${params.toString()}`, { silent: true })
+  if (error) {
+    loadError.value = true
+    salons.value = []
+    total.value = 0
+  } else {
+    salons.value = data?.items ?? []
+    total.value = data?.total ?? 0
+  }
   loading.value = false
 }
 
 function loadFromFilterChange() {
-  page.value = 1 // any filter change invalidates the current page position
-  load()
+  // Any filter change invalidates the current page position. When we're past page 1, just
+  // reset it -- the page watcher below triggers the (single) reload; calling load() here too
+  // would fire a redundant concurrent second request.
+  if (page.value !== 1) {
+    page.value = 1
+  } else {
+    load()
+  }
 }
 
 function formatDate(iso: string): string {
@@ -102,21 +118,11 @@ watch(page, load)
   <div class="space-y-5 p-8">
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
-        <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">جست‌وجو</label>
-          <AppInput v-model="nameFilter" icon="search" placeholder="نام آرایشگاه" class="w-52" />
-        </div>
-        <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">شهر</label>
-          <AppSelect v-model="cityFilter" :options="CITY_OPTIONS" width="10rem" searchable />
-        </div>
-        <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">مخاطب</label>
-          <AppSelect v-model="genderFilter" :options="GENDER_OPTIONS" width="11rem" />
-        </div>
+        <AppInput v-model="nameFilter" icon="search" label="جست‌وجو" placeholder="نام آرایشگاه" class="w-52" />
+        <AppSelect v-model="cityFilter" :options="CITY_OPTIONS" label="شهر" width="10rem" searchable />
+        <AppSelect v-model="genderFilter" :options="GENDER_OPTIONS" label="مخاطب" width="11rem" />
         <div data-testid="status-filter">
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">وضعیت</label>
-          <AppSelect v-model="statusFilter" :options="STATUS_OPTIONS" width="11rem" />
+          <AppSelect v-model="statusFilter" :options="STATUS_OPTIONS" label="وضعیت" width="11rem" />
         </div>
         <AppButton
           v-if="hasActiveFilters"
@@ -131,39 +137,72 @@ watch(page, load)
       </div>
     </AppCard>
 
-    <EmptyState v-if="!loading && salons.length === 0" icon="salons" message="آرایشگاهی با این فیلترها یافت نشد." />
+    <AppCard
+      v-if="loadError"
+      :padded="false"
+      data-testid="load-error"
+      class="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center"
+    >
+      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)">
+        <AppIcon name="warning" :size="22" />
+      </div>
+      <p class="text-sm text-(--color-text-muted)">خطا در دریافت فهرست آرایشگاه‌ها.</p>
+      <AppButton type="button" variant="secondary" data-testid="retry-load" @click="load">تلاش دوباره</AppButton>
+    </AppCard>
+
+    <EmptyState v-else-if="!loading && salons.length === 0" icon="salons" message="آرایشگاهی با این فیلترها یافت نشد." />
 
     <AppCard v-else :padded="false" class="overflow-hidden">
-      <table class="w-full text-right text-sm">
-        <thead>
-          <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
-            <th class="px-5 py-3 font-semibold">نام</th>
-            <th class="px-5 py-3 font-semibold">شهر</th>
-            <th class="px-5 py-3 font-semibold">مخاطب</th>
-            <th class="px-5 py-3 font-semibold">وضعیت</th>
-            <th class="px-5 py-3 font-semibold">تاریخ ثبت</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="salon in salons"
-            :key="salon.id"
-            class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
-          >
-            <td class="px-5 py-3.5">
-              <RouterLink :to="`/salons/${salon.id}`" class="font-semibold text-(--color-text) hover:text-(--color-accent)">
-                {{ salon.name }}
-              </RouterLink>
-            </td>
-            <td class="px-5 py-3.5 text-(--color-text-muted)">{{ salon.city }}</td>
-            <td class="px-5 py-3.5 text-(--color-text-muted)">{{ genderTargetLabel(salon.genderTarget) }}</td>
-            <td class="px-5 py-3.5">
-              <StatusBadge :label="salonStatusLabel(salon.status).label" :tone="salonStatusLabel(salon.status).tone" />
-            </td>
-            <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDate(salon.createdAt) }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="relative">
+        <div
+          v-if="loading"
+          data-testid="table-loading"
+          class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-(--color-surface-card)/70"
+        >
+          <AppIcon name="spinner" :size="22" class="animate-spin text-(--color-text-muted)" />
+        </div>
+        <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
+          <thead>
+            <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
+              <th class="px-5 py-3 font-semibold">نام</th>
+              <th class="px-5 py-3 font-semibold">شهر</th>
+              <th class="px-5 py-3 font-semibold">مخاطب</th>
+              <th class="px-5 py-3 font-semibold">وضعیت</th>
+              <th class="px-5 py-3 font-semibold">تاریخ ثبت</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="salon in salons"
+              :key="salon.id"
+              class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
+            >
+              <td class="px-5 py-3.5">
+                <div class="flex items-center gap-2">
+                  <RouterLink :to="`/salons/${salon.id}`" class="font-semibold text-(--color-text) hover:text-(--color-accent-text)">
+                    {{ salon.name }}
+                  </RouterLink>
+                  <span
+                    v-if="salon.isFeatured"
+                    data-testid="featured-badge"
+                    title="نشان ویژه"
+                    class="inline-flex items-center gap-1 rounded-full bg-(--tone-warning-bg) px-2 py-0.5 text-[11px] font-semibold text-(--tone-warning-text)"
+                  >
+                    <AppIcon name="star" :size="11" />
+                    ویژه
+                  </span>
+                </div>
+              </td>
+              <td class="px-5 py-3.5 text-(--color-text-muted)">{{ salon.city }}</td>
+              <td class="px-5 py-3.5 text-(--color-text-muted)">{{ genderTargetLabel(salon.genderTarget) }}</td>
+              <td class="px-5 py-3.5">
+                <StatusBadge :label="salonStatusLabel(salon.status).label" :tone="salonStatusLabel(salon.status).tone" />
+              </td>
+              <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDate(salon.createdAt) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <Pagination :page="page" :page-size="pageSize" :total="total" @update:page="(p) => (page = p)" />
     </AppCard>
   </div>

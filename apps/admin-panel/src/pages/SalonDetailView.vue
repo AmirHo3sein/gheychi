@@ -58,18 +58,32 @@ const route = useRoute()
 const { apiFetch } = useApi()
 const salon = ref<SalonDetail | null>(null)
 const notFound = ref(false)
+// Only set when the salon has never successfully loaded and a non-404 error came back --
+// distinct from a transient refetch failure after an action, which must not blank the page
+// (see the comment in load() below).
+const loadError = ref(false)
+const loading = ref(false)
 
 const activeTab = ref<Tab>('info')
-// null = tab never opened -- each list is fetched lazily on first activation and then
-// kept fresh by reloading after every moderation action (success or lost race alike).
-const stories = ref<StoryRow[] | null>(null)
-const portfolioItems = ref<PortfolioRow[] | null>(null)
+// Per-tab status, not just null/array -- distinguishes "never opened" from "loading" from
+// "loaded" from "failed", so a fetch failure isn't silently indistinguishable from a
+// genuine empty list, and a switch-in gets a visible loading state.
+type ListStatus = 'idle' | 'loading' | 'loaded' | 'error'
+const storiesStatus = ref<ListStatus>('idle')
+const stories = ref<StoryRow[]>([])
+const portfolioStatus = ref<ListStatus>('idle')
+const portfolioItems = ref<PortfolioRow[]>([])
 
 async function load() {
+  // Only show the full-page loading state on the very first load, not on the silent
+  // refetch triggered after a successful moderation action.
+  loading.value = salon.value === null
   const { data, error } = await apiFetch<SalonDetail>(`/admin/salons/${route.params.id}`)
+  loading.value = false
   if (data) {
     salon.value = data
     notFound.value = false
+    loadError.value = false
     return
   }
   // Only a confirmed 404 means the record genuinely doesn't exist. Any other
@@ -77,23 +91,41 @@ async function load() {
   // onUpdated() right after a successful approve/reject/suspend -- must not
   // wipe already-known-good salon state; the apiFetch call above already
   // surfaces a toast for it.
-  if (error?.status === 404) notFound.value = true
+  if (error?.status === 404) {
+    notFound.value = true
+    return
+  }
+  // Only surface a persistent, retryable error state when there's nothing already on
+  // screen -- a transient post-action refetch failure keeps showing the known-good salon.
+  if (!salon.value) loadError.value = true
 }
 
 async function loadStories() {
+  storiesStatus.value = 'loading'
   const { data } = await apiFetch<StoryRow[]>(`/admin/salons/${route.params.id}/stories`, { silent: true })
-  stories.value = data ?? []
+  if (data) {
+    stories.value = data
+    storiesStatus.value = 'loaded'
+  } else {
+    storiesStatus.value = 'error'
+  }
 }
 
 async function loadPortfolio() {
+  portfolioStatus.value = 'loading'
   const { data } = await apiFetch<PortfolioRow[]>(`/admin/salons/${route.params.id}/portfolio`, { silent: true })
-  portfolioItems.value = data ?? []
+  if (data) {
+    portfolioItems.value = data
+    portfolioStatus.value = 'loaded'
+  } else {
+    portfolioStatus.value = 'error'
+  }
 }
 
 function selectTab(tab: Tab) {
   activeTab.value = tab
-  if (tab === 'stories' && stories.value === null) loadStories()
-  if (tab === 'portfolio' && portfolioItems.value === null) loadPortfolio()
+  if (tab === 'stories' && storiesStatus.value === 'idle') loadStories()
+  if (tab === 'portfolio' && portfolioStatus.value === 'idle') loadPortfolio()
 }
 
 function onUpdated(updated: { id: string; status: string }) {
@@ -115,18 +147,39 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="mx-auto max-w-2xl space-y-5 p-8">
-    <EmptyState v-if="notFound" icon="warning" message="آرایشگاه یافت نشد." />
+  <div class="mx-auto space-y-5 p-8" :class="activeTab === 'info' ? 'max-w-2xl' : 'max-w-6xl'">
+    <div v-if="loading && !salon" data-testid="salon-loading" class="flex justify-center py-20">
+      <AppIcon name="spinner" :size="28" class="animate-spin text-(--color-accent)" />
+    </div>
+
+    <EmptyState v-else-if="notFound" icon="warning" message="آرایشگاه یافت نشد." />
+
+    <div
+      v-else-if="loadError"
+      data-testid="salon-load-error"
+      class="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-(--tone-danger-text)/50 py-16 text-center"
+    >
+      <AppIcon name="warning" :size="22" class="text-(--tone-danger-text)" />
+      <p class="text-sm text-(--tone-danger-text)">بارگذاری اطلاعات آرایشگاه با خطا مواجه شد.</p>
+      <AppButton data-testid="salon-load-retry" type="button" variant="secondary" @click="load">تلاش مجدد</AppButton>
+    </div>
 
     <template v-else-if="salon">
       <AppCard :padded="false" class="p-2">
-        <div class="flex flex-wrap gap-1.5">
+        <div role="tablist" class="flex flex-wrap gap-1.5">
           <AppButton
             v-for="tab in TABS"
             :key="tab.key"
             :data-testid="`tab-${tab.key}`"
             type="button"
-            :variant="activeTab === tab.key ? 'primary' : 'ghost'"
+            role="tab"
+            :aria-selected="activeTab === tab.key"
+            variant="ghost"
+            :class="
+              activeTab === tab.key
+                ? 'bg-(--color-accent-soft)! text-(--color-accent-text)! hover:bg-(--color-accent-soft)! hover:text-(--color-accent-text)!'
+                : ''
+            "
             @click="selectTab(tab.key)"
           >
             {{ tab.label }}
@@ -185,51 +238,85 @@ onMounted(load)
       </template>
 
       <template v-else-if="activeTab === 'stories'">
+        <div v-if="storiesStatus === 'loading'" data-testid="stories-loading" class="flex justify-center py-16">
+          <AppIcon name="spinner" :size="24" class="animate-spin text-(--color-accent)" />
+        </div>
+
+        <div
+          v-else-if="storiesStatus === 'error'"
+          data-testid="stories-error"
+          class="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-(--tone-danger-text)/50 py-16 text-center"
+        >
+          <AppIcon name="warning" :size="22" class="text-(--tone-danger-text)" />
+          <p class="text-sm text-(--tone-danger-text)">بارگذاری استوری‌ها با خطا مواجه شد.</p>
+          <AppButton data-testid="stories-retry" type="button" variant="secondary" @click="loadStories">تلاش مجدد</AppButton>
+        </div>
+
         <EmptyState
-          v-if="stories !== null && stories.length === 0"
+          v-else-if="stories.length === 0"
           icon="sparkles"
           message="استوری‌ای برای این آرایشگاه ثبت نشده است."
         />
-        <div v-else-if="stories !== null" class="space-y-3">
-          <AppCard v-for="story in stories" :key="story.id" data-testid="story-card">
-            <div class="flex items-start gap-4">
-              <img :src="story.url" alt="" class="h-24 w-24 shrink-0 rounded-xl object-cover" />
-              <div class="min-w-0 flex-1">
-                <div class="flex flex-wrap items-center gap-2">
-                  <StatusBadge :label="showcaseStatusLabel(story.status).label" :tone="showcaseStatusLabel(story.status).tone" />
-                  <StatusBadge v-if="isExpired(story)" data-testid="expired-badge" label="منقضی شده" tone="neutral" />
-                </div>
-                <p v-if="story.caption" class="mt-2 text-sm leading-6 text-(--color-text)">{{ story.caption }}</p>
-                <p class="tnum mt-2 text-xs text-(--color-text-muted)">{{ formatDate(story.createdAt) }}</p>
+
+        <div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <AppCard v-for="story in stories" :key="story.id" data-testid="story-card" :padded="false" class="overflow-hidden">
+            <img
+              :src="story.url"
+              :alt="story.caption || 'تصویر استوری آرایشگاه در انتظار بررسی'"
+              class="h-48 w-full shrink-0 object-cover"
+            />
+            <div class="p-4">
+              <div class="flex flex-wrap items-center gap-2">
+                <StatusBadge :label="showcaseStatusLabel(story.status).label" :tone="showcaseStatusLabel(story.status).tone" />
+                <StatusBadge v-if="isExpired(story)" data-testid="expired-badge" label="منقضی شده" tone="neutral" />
               </div>
-            </div>
-            <div class="mt-4 border-t border-(--color-border-soft) pt-3.5">
-              <ShowcaseStatusActions kind="stories" :item-id="story.id" :status="story.status" @updated="loadStories" @refresh="loadStories" />
+              <p v-if="story.caption" class="mt-2 text-sm leading-6 text-(--color-text)">{{ story.caption }}</p>
+              <p class="tnum mt-2 text-xs text-(--color-text-muted)">{{ formatDate(story.createdAt) }}</p>
+              <div class="mt-4 border-t border-(--color-border-soft) pt-3.5">
+                <ShowcaseStatusActions kind="stories" :item-id="story.id" :status="story.status" @updated="loadStories" @refresh="loadStories" />
+              </div>
             </div>
           </AppCard>
         </div>
       </template>
 
       <template v-else-if="activeTab === 'portfolio'">
+        <div v-if="portfolioStatus === 'loading'" data-testid="portfolio-loading" class="flex justify-center py-16">
+          <AppIcon name="spinner" :size="24" class="animate-spin text-(--color-accent)" />
+        </div>
+
+        <div
+          v-else-if="portfolioStatus === 'error'"
+          data-testid="portfolio-error"
+          class="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-(--tone-danger-text)/50 py-16 text-center"
+        >
+          <AppIcon name="warning" :size="22" class="text-(--tone-danger-text)" />
+          <p class="text-sm text-(--tone-danger-text)">بارگذاری نمونه کارها با خطا مواجه شد.</p>
+          <AppButton data-testid="portfolio-retry" type="button" variant="secondary" @click="loadPortfolio">تلاش مجدد</AppButton>
+        </div>
+
         <EmptyState
-          v-if="portfolioItems !== null && portfolioItems.length === 0"
+          v-else-if="portfolioItems.length === 0"
           icon="brush"
           message="نمونه کاری برای این آرایشگاه ثبت نشده است."
         />
-        <div v-else-if="portfolioItems !== null" class="space-y-3">
-          <AppCard v-for="item in portfolioItems" :key="item.id" data-testid="portfolio-card">
-            <div class="flex items-start gap-4">
-              <img :src="item.url" alt="" class="h-24 w-24 shrink-0 rounded-xl object-cover" />
-              <div class="min-w-0 flex-1">
-                <div class="flex flex-wrap items-center gap-2">
-                  <StatusBadge :label="showcaseStatusLabel(item.status).label" :tone="showcaseStatusLabel(item.status).tone" />
-                </div>
-                <p v-if="item.caption" class="mt-2 text-sm leading-6 text-(--color-text)">{{ item.caption }}</p>
-                <p class="tnum mt-2 text-xs text-(--color-text-muted)">{{ formatDate(item.createdAt) }}</p>
+
+        <div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <AppCard v-for="item in portfolioItems" :key="item.id" data-testid="portfolio-card" :padded="false" class="overflow-hidden">
+            <img
+              :src="item.url"
+              :alt="item.caption || 'تصویر نمونه کار آرایشگاه در انتظار بررسی'"
+              class="h-48 w-full shrink-0 object-cover"
+            />
+            <div class="p-4">
+              <div class="flex flex-wrap items-center gap-2">
+                <StatusBadge :label="showcaseStatusLabel(item.status).label" :tone="showcaseStatusLabel(item.status).tone" />
               </div>
-            </div>
-            <div class="mt-4 border-t border-(--color-border-soft) pt-3.5">
-              <ShowcaseStatusActions kind="portfolio" :item-id="item.id" :status="item.status" @updated="loadPortfolio" @refresh="loadPortfolio" />
+              <p v-if="item.caption" class="mt-2 text-sm leading-6 text-(--color-text)">{{ item.caption }}</p>
+              <p class="tnum mt-2 text-xs text-(--color-text-muted)">{{ formatDate(item.createdAt) }}</p>
+              <div class="mt-4 border-t border-(--color-border-soft) pt-3.5">
+                <ShowcaseStatusActions kind="portfolio" :item-id="item.id" :status="item.status" @updated="loadPortfolio" @refresh="loadPortfolio" />
+              </div>
             </div>
           </AppCard>
         </div>

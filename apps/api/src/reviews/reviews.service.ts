@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, ILike, In, Repository } from 'typeorm';
 import { Booking } from '../booking/booking.entity';
 import { isUniqueViolation } from '../common/postgres-error-codes';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
@@ -186,23 +186,39 @@ export class ReviewsService {
 
   async listForAdmin(query: {
     salonId?: string;
+    salonName?: string;
     status?: 'published' | 'rejected';
     rating?: number;
     page?: number;
     pageSize?: number;
   }): Promise<{
-    items: Array<Review & { workerRating: { score: number; workerName: string } | null }>;
+    items: Array<Review & { workerRating: { score: number; workerName: string } | null; salonName: string }>;
     total: number;
     page: number;
     pageSize: number;
   }> {
     const where: Record<string, unknown> = {};
-    if (query.salonId) where.salonId = query.salonId;
     if (query.status) where.status = query.status;
     if (query.rating) where.rating = query.rating;
 
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
+
+    // salonId (exact) wins over salonName (fuzzy) if both are somehow present -- the
+    // admin-panel UI only ever sends one of the two. A salonName search resolves to a
+    // set of salon ids first (mirrors AdminSalonsController's own `name ILIKE` filter)
+    // rather than a query-builder join, since every other filter here is already a
+    // plain Repository `where` object.
+    if (query.salonId) {
+      where.salonId = query.salonId;
+    } else if (query.salonName) {
+      const matches = await this.salons.find({ where: { name: ILike(`%${query.salonName}%`) }, select: ['id'] });
+      if (matches.length === 0) {
+        return { items: [], total: 0, page, pageSize };
+      }
+      where.salonId = In(matches.map((s) => s.id));
+    }
+
     const [items, total] = await this.reviews.findAndCount({
       where,
       order: { createdAt: 'DESC' },
@@ -213,7 +229,9 @@ export class ReviewsService {
     // Admin panel's review moderation screen displays the linked worker rating (if
     // any) alongside the salon rating in each row (design spec §8) -- fetched here in
     // two small batched queries scoped to just this page's review ids, rather than a
-    // per-row round trip.
+    // per-row round trip. Salon name is batched the same way, mirroring
+    // listWorkerRatingsForAdmin() below -- the moderation queue is otherwise unusable
+    // for an operator with no idea which salon a review is about.
     const reviewIds = items.map((r) => r.id);
     const ratings = reviewIds.length ? await this.workerRatings.find({ where: { reviewId: In(reviewIds) } }) : [];
     const workerIds = [...new Set(ratings.map((r) => r.workerId))];
@@ -221,12 +239,17 @@ export class ReviewsService {
     const workerNameById = new Map(workerRows.map((w) => [w.id, w.name]));
     const ratingByReviewId = new Map(ratings.map((r) => [r.reviewId, r]));
 
+    const salonIds = [...new Set(items.map((r) => r.salonId))];
+    const salonRows = salonIds.length ? await this.salons.find({ where: { id: In(salonIds) } }) : [];
+    const salonNameById = new Map(salonRows.map((s) => [s.id, s.name]));
+
     return {
       items: items.map((review) => {
         const wr = ratingByReviewId.get(review.id);
         return {
           ...review,
           workerRating: wr ? { score: wr.rating, workerName: workerNameById.get(wr.workerId) ?? 'Unknown worker' } : null,
+          salonName: salonNameById.get(review.salonId) ?? 'Unknown salon',
         };
       }),
       total,
@@ -294,6 +317,16 @@ export class ReviewsService {
   async moderate(reviewId: string, status: 'published' | 'rejected'): Promise<Review> {
     const review = await this.reviews.findOneBy({ id: reviewId });
     if (!review) throw new NotFoundException('Review not found');
+    // A 'withdrawn' review is a customer's own soft-delete (DELETE /api/reviews/:id),
+    // not an admin moderation state -- there is no admin action that should be able to
+    // flip it back to 'published' (that would silently resurrect content the customer
+    // explicitly deleted) or to 'rejected' (it's already excluded from the aggregate).
+    // The admin-panel's ModerateReviewButton already hides its controls entirely for a
+    // withdrawn review, but this guard is the actual source of truth: it must hold even
+    // if a client bypasses that UI.
+    if (review.status === 'withdrawn') {
+      throw new ConflictException('این نظر توسط کاربر حذف شده و قابل تغییر وضعیت توسط مدیر نیست');
+    }
 
     await this.dataSource.transaction(async (em) => {
       await em.update(Review, { id: reviewId }, { status });

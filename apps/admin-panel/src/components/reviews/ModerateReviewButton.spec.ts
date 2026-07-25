@@ -51,6 +51,28 @@ describe('ModerateReviewButton', () => {
     expect(fetchMock).toHaveBeenCalledWith('/admin/reviews/r1', { method: 'PATCH', body: { status: 'published' } })
   })
 
+  it('renders variant="secondary" (not accent-filled) for the republish trigger and its confirm button -- The One Seal Rule', async () => {
+    const wrapper = mount(ModerateReviewButton, { props: { reviewId: 'r1', status: 'rejected' } })
+
+    const trigger = wrapper.get('[data-testid="republish-review"]')
+    expect(trigger.classes()).toContain('bg-(--color-border-soft)')
+    expect(trigger.classes()).not.toContain('bg-(--color-accent-strong)')
+
+    await trigger.trigger('click')
+    const confirm = wrapper.get('[data-testid="republish-review-confirm"]')
+    expect(confirm.classes()).toContain('bg-(--color-border-soft)')
+    expect(confirm.classes()).not.toContain('bg-(--color-accent-strong)')
+  })
+
+  it('P0: shows a non-actionable notice for a withdrawn review -- no republish/reject control at all', async () => {
+    const wrapper = mount(ModerateReviewButton, { props: { reviewId: 'r1', status: 'withdrawn' } })
+
+    expect(wrapper.find('[data-testid="withdrawn-notice"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="republish-review"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="reject-review"]').exists()).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('cancelling the confirm strip does not call the API and returns to the trigger view', async () => {
     const wrapper = mount(ModerateReviewButton, { props: { reviewId: 'r1', status: 'published' } })
 

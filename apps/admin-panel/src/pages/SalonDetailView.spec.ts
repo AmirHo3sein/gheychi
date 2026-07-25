@@ -83,6 +83,7 @@ describe('SalonDetailView', () => {
     expect(wrapper.text()).toContain('سالن نمونه')
 
     await wrapper.get('[data-testid="approve-button"]').trigger('click')
+    await wrapper.get('[data-testid="approve-confirm"]').trigger('click')
     await flushPromises()
 
     expect(fetchMock).toHaveBeenCalledTimes(3)
@@ -217,6 +218,7 @@ describe('SalonDetailView', () => {
     expect(card.text()).toContain('حذف شده')
 
     await card.get('[data-testid="restore-button"]').trigger('click')
+    await card.get('[data-testid="restore-confirm"]').trigger('click')
     await flushPromises()
 
     expect(fetchMock).toHaveBeenCalledWith('/admin/portfolio/p1/status', {
@@ -225,5 +227,87 @@ describe('SalonDetailView', () => {
     })
     expect(fetchMock).toHaveBeenCalledTimes(4)
     expect(wrapper.get('[data-testid="portfolio-card"]').text()).toContain('منتشر شده')
+  })
+
+  it('shows a loading indicator while the initial salon fetch is in flight', async () => {
+    let resolveFetch!: (value: { data: typeof salon; error: null }) => void
+    fetchMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFetch = resolve
+      }),
+    )
+    const wrapper = await mountWithRouter()
+
+    expect(wrapper.find('[data-testid="salon-loading"]').exists()).toBe(true)
+
+    resolveFetch({ data: salon, error: null })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="salon-loading"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('سالن نمونه')
+  })
+
+  it('shows a persistent, retryable error state (not a permanently blank page) when the initial load fails non-404', async () => {
+    fetchMock.mockResolvedValueOnce({ data: null, error: { status: 500, message: 'Server error' } })
+
+    const wrapper = await mountWithRouter()
+
+    expect(wrapper.find('[data-testid="salon-load-error"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('یافت نشد')
+
+    fetchMock.mockResolvedValueOnce({ data: salon, error: null })
+    await wrapper.get('[data-testid="salon-load-retry"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="salon-load-error"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('سالن نمونه')
+  })
+
+  it('shows a distinct, retryable error state for a failed stories fetch, not a false empty state', async () => {
+    fetchMock
+      .mockResolvedValueOnce({ data: salon, error: null })
+      .mockResolvedValueOnce({ data: null, error: { status: 500, message: 'Server error' } })
+
+    const wrapper = await mountWithRouter()
+    await wrapper.get('[data-testid="tab-stories"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="stories-error"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('استوری‌ای برای این آرایشگاه ثبت نشده است.')
+
+    fetchMock.mockResolvedValueOnce({ data: [activeStory], error: null })
+    await wrapper.get('[data-testid="stories-retry"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="stories-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="story-card"]').exists()).toBe(true)
+  })
+
+  it('gives content images under moderation a real, descriptive alt (not decorative alt="")', async () => {
+    fetchMock
+      .mockResolvedValueOnce({ data: salon, error: null })
+      .mockResolvedValueOnce({ data: [activeStory, removedExpiredStory], error: null })
+
+    const wrapper = await mountWithRouter()
+    await wrapper.get('[data-testid="tab-stories"]').trigger('click')
+    await flushPromises()
+
+    const images = wrapper.findAll('[data-testid="story-card"] img')
+    // A caption present is used as the alt text; no caption falls back to a real
+    // descriptive label -- never alt="".
+    expect(images[0]!.attributes('alt')).toBe(activeStory.caption)
+    expect(images[1]!.attributes('alt')).not.toBe('')
+    expect(images[1]!.attributes('alt')).toBeTruthy()
+  })
+
+  it('marks the tab control with ARIA tab semantics', async () => {
+    fetchMock.mockResolvedValueOnce({ data: salon, error: null })
+    const wrapper = await mountWithRouter()
+
+    expect(wrapper.find('[role="tablist"]').exists()).toBe(true)
+    const infoTab = wrapper.get('[data-testid="tab-info"]')
+    expect(infoTab.attributes('role')).toBe('tab')
+    expect(infoTab.attributes('aria-selected')).toBe('true')
+    expect(wrapper.get('[data-testid="tab-stories"]').attributes('aria-selected')).toBe('false')
   })
 })

@@ -382,3 +382,143 @@ describe('ReviewsService.moderateWorkerRating', () => {
     ]);
   });
 });
+
+describe('ReviewsService.moderate -- admin moderation, guarded against a customer-withdrawn review', () => {
+  let service: ReviewsService;
+  let reviewsFindOneBy: jest.Mock;
+  let transaction: jest.Mock;
+  let em: ReturnType<typeof makeFakeEm>;
+
+  beforeEach(async () => {
+    reviewsFindOneBy = jest.fn();
+    em = makeFakeEm({ salon: { avg_rating: '4.20', review_count: 5 } });
+    transaction = jest.fn((cb: (em: unknown) => unknown) => cb(em));
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ReviewsService,
+        { provide: getRepositoryToken(Review), useValue: { findOneBy: reviewsFindOneBy } },
+        { provide: getRepositoryToken(Booking), useValue: {} },
+        { provide: getRepositoryToken(Salon), useValue: {} },
+        { provide: getRepositoryToken(Worker), useValue: {} },
+        { provide: getRepositoryToken(WorkerRating), useValue: {} },
+        { provide: DataSource, useValue: { transaction } },
+        { provide: PlatformConfigService, useValue: {} },
+      ],
+    }).compile();
+    service = moduleRef.get(ReviewsService);
+  });
+
+  it('404s for a nonexistent review', async () => {
+    reviewsFindOneBy.mockResolvedValue(null);
+    await expect(service.moderate('missing', 'rejected')).rejects.toBeInstanceOf(NotFoundException);
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('flips status and recomputes the salon aggregate for a published/rejected review', async () => {
+    reviewsFindOneBy.mockResolvedValueOnce({ id: 'r1', status: 'published', salonId: 'salon-1' }).mockResolvedValueOnce({
+      id: 'r1',
+      status: 'rejected',
+      salonId: 'salon-1',
+    });
+
+    await service.moderate('r1', 'rejected');
+
+    expect(em.update).toHaveBeenCalledWith(Review, { id: 'r1' }, { status: 'rejected' });
+  });
+
+  // The P0 case: a withdrawn review is the customer's own soft-delete, not an admin
+  // moderation state. Nothing an admin PATCHes should be able to flip it back to
+  // 'published' (silently resurrecting deleted content) or on to 'rejected'. This must
+  // hold regardless of the admin-panel UI's own guard, since it's the actual source of
+  // truth for the mutation.
+  it('409s attempting to moderate a withdrawn review, in either direction, without touching the transaction', async () => {
+    reviewsFindOneBy.mockResolvedValue({ id: 'r1', status: 'withdrawn', salonId: 'salon-1' });
+
+    await expect(service.moderate('r1', 'published')).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.moderate('r1', 'rejected')).rejects.toBeInstanceOf(ConflictException);
+    expect(transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('ReviewsService.listForAdmin', () => {
+  let service: ReviewsService;
+  let reviewsFindAndCount: jest.Mock;
+  let salonsFind: jest.Mock;
+  let workerRatingsFind: jest.Mock;
+  let workersFind: jest.Mock;
+
+  beforeEach(async () => {
+    reviewsFindAndCount = jest.fn();
+    salonsFind = jest.fn();
+    workerRatingsFind = jest.fn().mockResolvedValue([]);
+    workersFind = jest.fn().mockResolvedValue([]);
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ReviewsService,
+        { provide: getRepositoryToken(Review), useValue: { findAndCount: reviewsFindAndCount } },
+        { provide: getRepositoryToken(Booking), useValue: {} },
+        { provide: getRepositoryToken(Salon), useValue: { find: salonsFind } },
+        { provide: getRepositoryToken(Worker), useValue: { find: workersFind } },
+        { provide: getRepositoryToken(WorkerRating), useValue: { find: workerRatingsFind } },
+        { provide: DataSource, useValue: {} },
+        { provide: PlatformConfigService, useValue: {} },
+      ],
+    }).compile();
+    service = moduleRef.get(ReviewsService);
+  });
+
+  it('joins salon name onto every row, including a withdrawn one, when no status filter narrows the query', async () => {
+    reviewsFindAndCount.mockResolvedValue([
+      [
+        { id: 'r1', salonId: 'salon-1', status: 'published' },
+        { id: 'r2', salonId: 'salon-1', status: 'withdrawn' },
+      ],
+      2,
+    ]);
+    salonsFind.mockResolvedValue([{ id: 'salon-1', name: 'سالن نمونه' }]);
+
+    const result = await service.listForAdmin({});
+
+    // No status filter passed through to the repository -- 'withdrawn' rows are
+    // deliberately visible to an operator (transparency), only non-actionable via
+    // ModerateReviewButton/moderate()'s own guard, not hidden from the list.
+    expect(reviewsFindAndCount).toHaveBeenCalledWith(
+      expect.objectContaining({ where: {} }),
+    );
+    expect(result.items.map((r) => r.salonName)).toEqual(['سالن نمونه', 'سالن نمونه']);
+  });
+
+  it('resolves a salonName filter to matching salon ids via ILIKE before querying reviews', async () => {
+    reviewsFindAndCount.mockResolvedValue([[{ id: 'r1', salonId: 'salon-1', status: 'published' }], 1]);
+    salonsFind.mockResolvedValueOnce([{ id: 'salon-1' }]).mockResolvedValueOnce([{ id: 'salon-1', name: 'سالن نمونه' }]);
+
+    const result = await service.listForAdmin({ salonName: 'نمونه' });
+
+    expect(reviewsFindAndCount).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { salonId: expect.anything() } }),
+    );
+    expect(result.items[0].salonName).toBe('سالن نمونه');
+  });
+
+  it('short-circuits to an empty page when a salonName filter matches no salon, without querying reviews', async () => {
+    salonsFind.mockResolvedValueOnce([]);
+
+    const result = await service.listForAdmin({ salonName: 'ناموجود' });
+
+    expect(result).toEqual({ items: [], total: 0, page: 1, pageSize: 20 });
+    expect(reviewsFindAndCount).not.toHaveBeenCalled();
+  });
+
+  it('an exact salonId filter takes precedence over salonName when both are present', async () => {
+    reviewsFindAndCount.mockResolvedValue([[], 0]);
+
+    await service.listForAdmin({ salonId: 'salon-1', salonName: 'ignored' });
+
+    expect(reviewsFindAndCount).toHaveBeenCalledWith(expect.objectContaining({ where: { salonId: 'salon-1' } }));
+    // salonName-resolution branch never runs -- salons.find is only called for it, never
+    // for display batching here since there are zero result rows.
+    expect(salonsFind).not.toHaveBeenCalled();
+  });
+});

@@ -4,7 +4,7 @@
      AdminWorkerRatingsController -- a distinct resource/moderation surface from reviews,
      per the design spec's "conflate two different moderation surfaces" note). -->
 <script setup lang="ts">
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -15,6 +15,16 @@ const emit = defineEmits<{ updated: [rating: { id: string; status: string }] }>(
 const { apiFetch } = useApi()
 const submitting = ref(false)
 const confirming = ref(false)
+const confirmButtonRef = ref<InstanceType<typeof AppButton> | null>(null)
+
+// The v-if/v-else swap below unmounts the clicked toggle button the instant `confirming`
+// flips, which drops keyboard focus to <body> with no visible indicator. Move focus onto
+// the newly-mounted confirm control instead, once it exists in the DOM.
+async function askConfirm() {
+  confirming.value = true
+  await nextTick()
+  confirmButtonRef.value?.$el?.focus()
+}
 
 async function toggle() {
   submitting.value = true
@@ -37,7 +47,7 @@ async function toggle() {
       type="button"
       variant="danger"
       :disabled="submitting"
-      @click="confirming = true"
+      @click="askConfirm"
     >
       <template #icon><AppIcon name="x" :size="15" /></template>
       رد امتیاز
@@ -48,7 +58,7 @@ async function toggle() {
       type="button"
       variant="primary"
       :disabled="submitting"
-      @click="confirming = true"
+      @click="askConfirm"
     >
       <template #icon><AppIcon name="check" :size="15" /></template>
       انتشار مجدد
@@ -60,6 +70,7 @@ async function toggle() {
       {{ status === 'published' ? 'این امتیاز رد شود؟' : 'این امتیاز دوباره منتشر شود؟' }}
     </span>
     <AppButton
+      ref="confirmButtonRef"
       :data-testid="status === 'published' ? 'reject-worker-rating-confirm' : 'republish-worker-rating-confirm'"
       type="button"
       :variant="status === 'published' ? 'danger' : 'primary'"

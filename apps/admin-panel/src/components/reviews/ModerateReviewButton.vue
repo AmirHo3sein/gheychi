@@ -5,7 +5,12 @@ import { useApi } from '@/composables/useApi'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 
-const props = defineProps<{ reviewId: string; status: 'published' | 'rejected' }>()
+// 'withdrawn' = the customer soft-deleted their own review (DELETE /api/reviews/:id) --
+// distinct from an admin 'rejected' moderation call. It is NOT a third moderation
+// state an admin cycles through: see the withdrawn branch below, and
+// ReviewsService.moderate() (apps/api/src/reviews/reviews.service.ts) which 409s if
+// this component's guard is ever bypassed.
+const props = defineProps<{ reviewId: string; status: 'published' | 'rejected' | 'withdrawn' }>()
 const emit = defineEmits<{ updated: [review: { id: string; status: string }] }>()
 
 const { apiFetch } = useApi()
@@ -26,7 +31,16 @@ async function toggle() {
 </script>
 
 <template>
-  <div v-if="!confirming" class="flex flex-wrap gap-2.5">
+  <!-- P0 fix: a withdrawn review is the customer's own deletion, not an admin
+       rejection to reverse. No "republish"/"reject" control is offered for it at
+       all -- un-deleting someone else's deletion is not a routine moderation action,
+       so there is nothing here to make "distinctly worded" safe to click; the backend
+       has no path back from 'withdrawn' either (see reviews.service.ts). -->
+  <p v-if="status === 'withdrawn'" data-testid="withdrawn-notice" class="text-sm text-(--color-text-muted)">
+    این نظر توسط کاربر حذف شده و قابل تعدیل توسط مدیر نیست.
+  </p>
+
+  <div v-else-if="!confirming" class="flex flex-wrap gap-2.5">
     <AppButton
       v-if="status === 'published'"
       data-testid="reject-review"
@@ -42,7 +56,7 @@ async function toggle() {
       v-else
       data-testid="republish-review"
       type="button"
-      variant="primary"
+      variant="secondary"
       :disabled="submitting"
       @click="confirming = true"
     >
@@ -58,7 +72,7 @@ async function toggle() {
     <AppButton
       :data-testid="status === 'published' ? 'reject-review-confirm' : 'republish-review-confirm'"
       type="button"
-      :variant="status === 'published' ? 'danger' : 'primary'"
+      :variant="status === 'published' ? 'danger' : 'secondary'"
       :disabled="submitting"
       @click="toggle"
     >

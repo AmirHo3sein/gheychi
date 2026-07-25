@@ -68,6 +68,33 @@ describe('ReportsView', () => {
     expect(wrapper.get('[data-testid="quoted-review"]').text()).toContain('برخورد بسیار بد بود')
   })
 
+  it('gives a review-targeted report a deep link to the salon-scoped reviews queue, so an admin can reach the flagged content', async () => {
+    fetchMock.mockResolvedValue({
+      data: {
+        items: [{ ...report, targetType: 'review', reviewId: 'rev1', reviewRating: 1, reviewComment: 'برخورد بسیار بد بود' }],
+        total: 1,
+        page: 1,
+        pageSize: 10,
+      },
+      error: null,
+    })
+    const wrapper = mount(ReportsView, mountOptions)
+    await flushPromises()
+
+    const escalationLink = wrapper
+      .findAllComponents(RouterLinkStub)
+      .find((link) => link.attributes('data-testid') === 'review-escalation-link')
+    expect(escalationLink?.props('to')).toBe('/reviews?salonId=s1')
+  })
+
+  it('does not render a review-escalation link for salon-targeted reports', async () => {
+    fetchMock.mockResolvedValue({ data: { items: [{ ...report }], total: 1, page: 1, pageSize: 10 }, error: null })
+    const wrapper = mount(ReportsView, mountOptions)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="review-escalation-link"]').exists()).toBe(false)
+  })
+
   it('does not render any quoted content block for salon-targeted reports', async () => {
     fetchMock.mockResolvedValue({ data: { items: [{ ...report }], total: 1, page: 1, pageSize: 10 }, error: null })
     const wrapper = mount(ReportsView, mountOptions)
@@ -237,5 +264,41 @@ describe('ReportsView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('گزارشی با این وضعیت وجود ندارد.')
+  })
+
+  it('shows a loading indicator while the initial fetch is in flight', async () => {
+    let resolveFetch!: (value: { data: { items: never[]; total: number; page: number; pageSize: number }; error: null }) => void
+    fetchMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFetch = resolve
+      }),
+    )
+    const wrapper = mount(ReportsView, mountOptions)
+
+    expect(wrapper.find('[data-testid="reports-loading"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="reports-error"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('گزارشی با این وضعیت وجود ندارد.')
+
+    resolveFetch({ data: { items: [], total: 0, page: 1, pageSize: 10 }, error: null })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="reports-loading"]').exists()).toBe(false)
+  })
+
+  it('shows a distinct error state with retry when the fetch fails, instead of reading as an empty queue', async () => {
+    fetchMock.mockResolvedValue({ data: null, error: { status: 500, message: 'Internal error' } })
+    const wrapper = mount(ReportsView, mountOptions)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="reports-error"]').exists()).toBe(true)
+    // A silently-broken queue must never render as a truthful "all clear" empty state.
+    expect(wrapper.text()).not.toContain('گزارشی با این وضعیت وجود ندارد.')
+
+    fetchMock.mockResolvedValue({ data: { items: [{ ...report }], total: 1, page: 1, pageSize: 10 }, error: null })
+    await wrapper.get('[data-testid="reports-retry"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="reports-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="report-card"]').exists()).toBe(true)
   })
 })

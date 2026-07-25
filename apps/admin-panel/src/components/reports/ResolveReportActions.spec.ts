@@ -46,6 +46,32 @@ describe('ResolveReportActions', () => {
     expect(wrapper.emitted('updated')?.[0]).toEqual([{ id: 'r1', status: 'dismissed' }])
   })
 
+  it('renders the entry-step resolve button as secondary, never accent-filled (One Seal Rule: many open cards render this at once)', async () => {
+    const wrapper = mount(ResolveReportActions, { props: { reportId: 'r1' } })
+
+    const resolveButton = wrapper.get('[data-testid="resolve-button"]')
+    expect(resolveButton.classes().join(' ')).toContain('bg-(--color-border-soft)')
+    expect(resolveButton.classes().join(' ')).not.toContain('bg-(--color-accent-strong)')
+  })
+
+  it('binds the commit-step submit button to the actual action: danger when dismissing, primary when resolving', async () => {
+    const wrapper = mount(ResolveReportActions, { props: { reportId: 'r1' } })
+
+    // Dismiss (a destructive action) must commit with the same danger styling its entry
+    // button already has -- never look identical to the affirmative resolve path.
+    await wrapper.get('[data-testid="dismiss-button"]').trigger('click')
+    let submit = wrapper.get('[data-testid="submit-resolution"]')
+    expect(submit.classes().join(' ')).toContain('bg-(--color-danger-strong)')
+    expect(submit.classes().join(' ')).not.toContain('bg-(--color-accent-strong)')
+
+    await wrapper.get('[data-testid="cancel-resolution"]').trigger('click')
+
+    await wrapper.get('[data-testid="resolve-button"]').trigger('click')
+    submit = wrapper.get('[data-testid="submit-resolution"]')
+    expect(submit.classes().join(' ')).toContain('bg-(--color-accent-strong)')
+    expect(submit.classes().join(' ')).not.toContain('bg-(--color-danger-strong)')
+  })
+
   it('collapses the panel and emits refresh instead of updated when the PATCH fails (409 lost race)', async () => {
     fetchMock.mockResolvedValueOnce({
       data: null,

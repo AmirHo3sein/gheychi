@@ -20,6 +20,11 @@ const SALON_STATUS: Record<string, LabelEntry> = {
 const REVIEW_STATUS: Record<string, LabelEntry> = {
   published: { label: 'منتشر شده', tone: 'success' },
   rejected: { label: 'رد شده', tone: 'danger' },
+  // Customer self-deleted (DELETE /api/reviews/:id) -- distinct from an admin 'rejected'
+  // call, and distinct enough visually that it doesn't read as just another
+  // moderation-queue state. worker_ratings.status never has this value (see
+  // worker-rating.entity.ts), so reviewStatusLabel()'s reuse there is unaffected.
+  withdrawn: { label: 'حذف شده توسط کاربر', tone: 'neutral' },
 }
 
 const USER_STATUS: Record<string, LabelEntry> = {

@@ -3,6 +3,7 @@
 import { onMounted, ref, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
 import ResolveReportActions from '@/components/reports/ResolveReportActions.vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
@@ -55,6 +56,10 @@ interface ReportListResponse {
 const { apiFetch } = useApi()
 const reports = ref<ReportRow[]>([])
 const loading = ref(true)
+// Distinguishes a genuinely empty queue from a failed fetch -- a silently-broken "all
+// clear" queue is a real trust-and-safety risk on this page specifically, so the error
+// is surfaced instead of being swallowed by `silent: true`.
+const loadError = ref(false)
 const page = ref(1)
 const total = ref(0)
 const pageSize = 10
@@ -63,14 +68,16 @@ const statusFilter = ref<'open' | 'resolved' | 'dismissed'>('open')
 
 async function load() {
   loading.value = true
+  loadError.value = false
   const params = new URLSearchParams({
     status: statusFilter.value,
     page: String(page.value),
     pageSize: String(pageSize),
   })
-  const { data } = await apiFetch<ReportListResponse>(`/admin/reports?${params.toString()}`, { silent: true })
+  const { data, error } = await apiFetch<ReportListResponse>(`/admin/reports?${params.toString()}`, { silent: true })
   reports.value = data?.items ?? []
   total.value = data?.total ?? 0
+  loadError.value = error !== null
   loading.value = false
   // Resolving the last item on a page > 1 can leave us past the end (empty page, total > 0,
   // Pagination hidden) — step back so the admin isn't stranded; the page watcher reloads.
@@ -117,7 +124,24 @@ watch(page, load)
       </div>
     </AppCard>
 
-    <EmptyState v-if="!loading && reports.length === 0" icon="flag" message="گزارشی با این وضعیت وجود ندارد." />
+    <div v-if="loading" class="flex h-40 items-center justify-center" role="status" aria-label="در حال بارگذاری" data-testid="reports-loading">
+      <AppIcon name="spinner" :size="24" class="animate-spin text-(--color-text-muted)" />
+    </div>
+
+    <div
+      v-else-if="loadError"
+      data-testid="reports-error"
+      class="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-(--tone-danger-text) py-16 text-center"
+    >
+      <AppIcon name="warning" :size="22" class="text-(--tone-danger-text)" />
+      <p class="text-sm text-(--tone-danger-text)">بارگذاری گزارش‌ها با خطا مواجه شد. ممکن است گزارش‌های باز دیده‌نشده وجود داشته باشند.</p>
+      <AppButton type="button" variant="secondary" data-testid="reports-retry" @click="load">
+        <template #icon><AppIcon name="reset" :size="15" /></template>
+        تلاش مجدد
+      </AppButton>
+    </div>
+
+    <EmptyState v-else-if="reports.length === 0" icon="flag" message="گزارشی با این وضعیت وجود ندارد." />
 
     <div v-else class="space-y-3">
       <AppCard v-for="report in reports" :key="report.id" data-testid="report-card">
@@ -125,7 +149,7 @@ watch(page, load)
           <div class="flex flex-wrap items-center gap-2 text-sm">
             <span class="tnum font-semibold text-(--color-text)">{{ report.reporterPhone }}</span>
             <span class="text-(--color-text-muted)">درباره</span>
-            <RouterLink :to="`/salons/${report.salonId}`" class="font-semibold text-(--color-accent) hover:opacity-80">
+            <RouterLink :to="`/salons/${report.salonId}`" class="font-semibold text-(--color-accent-text) hover:opacity-80">
               {{ report.salonName }}
             </RouterLink>
           </div>
@@ -140,6 +164,17 @@ watch(page, load)
             نظر گزارش‌شده — امتیاز {{ report.reviewRating ?? '—' }}
           </p>
           <p class="text-sm text-(--color-text)">{{ report.reviewComment ?? '(بدون متن)' }}</p>
+          <!-- Only salon-target reports get a natural escalation path via the salon-name
+               link above; review-target reports need their own way to reach the flagged
+               content, since ReviewsView.vue has no per-review deep link, only salonId. -->
+          <RouterLink
+            :to="`/reviews?salonId=${report.salonId}`"
+            data-testid="review-escalation-link"
+            class="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-(--color-accent-text) hover:opacity-80"
+          >
+            <AppIcon name="reviews" :size="13" />
+            مشاهده نظرات این سالن
+          </RouterLink>
         </div>
 
         <!-- Gated on targetType, NOT the storyId FK: ON DELETE SET NULL nulls the FK when
@@ -151,7 +186,11 @@ watch(page, load)
             استوری گزارش‌شده
           </p>
           <template v-if="report.storyUrl">
-            <img :src="report.storyUrl" alt="" class="h-24 w-24 rounded-xl object-cover" />
+            <img
+              :src="report.storyUrl"
+              :alt="report.storyCaption || 'تصویر استوری گزارش‌شده'"
+              class="h-24 w-24 rounded-xl object-cover"
+            />
             <p v-if="report.storyCaption" class="mt-2 text-sm text-(--color-text)">{{ report.storyCaption }}</p>
           </template>
           <p v-else class="text-sm text-(--color-text-muted)">منقضی شده</p>
@@ -163,7 +202,11 @@ watch(page, load)
             نمونه کار گزارش‌شده
           </p>
           <template v-if="report.portfolioItemUrl">
-            <img :src="report.portfolioItemUrl" alt="" class="h-24 w-24 rounded-xl object-cover" />
+            <img
+              :src="report.portfolioItemUrl"
+              :alt="report.portfolioItemCaption || 'تصویر نمونه‌کار گزارش‌شده'"
+              class="h-24 w-24 rounded-xl object-cover"
+            />
             <p v-if="report.portfolioItemCaption" class="mt-2 text-sm text-(--color-text)">{{ report.portfolioItemCaption }}</p>
           </template>
           <p v-else class="text-sm text-(--color-text-muted)">منقضی شده</p>

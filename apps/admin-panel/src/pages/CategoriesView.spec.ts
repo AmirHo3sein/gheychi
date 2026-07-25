@@ -69,3 +69,46 @@ describe('CategoriesView delete', () => {
     expect(wrapper.find('[data-testid="confirm-delete"]').exists()).toBe(false)
   })
 })
+
+describe('CategoriesView rename', () => {
+  beforeEach(() => {
+    fetchMock.mockReset()
+    fetchMock.mockResolvedValueOnce({ data: categories.map((c) => ({ ...c })), error: null })
+  })
+
+  it('cancels an in-progress rename without saving, leaving the original name intact', async () => {
+    const wrapper = await mountView()
+
+    await wrapper.findAll('[title="ویرایش"]')[0].trigger('click')
+    const editInput = wrapper.find('[data-testid="edit-name-input"]')
+    expect(editInput.exists()).toBe(true)
+    await editInput.setValue('نام تغییر یافته')
+
+    await wrapper.get('[data-testid="cancel-edit"]').trigger('click')
+    await flushPromises()
+
+    // Only the initial GET /categories fired — no PATCH was ever sent.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('اصلاح مو')
+    expect(wrapper.text()).not.toContain('نام تغییر یافته')
+    // Edit mode is closed — the name input is gone.
+    expect(wrapper.find('[data-testid="edit-name-input"]').exists()).toBe(false)
+  })
+
+  it('submits a rename on Enter in the edit input', async () => {
+    fetchMock.mockResolvedValueOnce({ data: { id: 1, name: 'اصلاح مو (جدید)', icon: 'scissors' }, error: null })
+    const wrapper = await mountView()
+
+    await wrapper.findAll('[title="ویرایش"]')[0].trigger('click')
+    const editInput = wrapper.find('[data-testid="edit-name-input"]')
+    await editInput.setValue('اصلاح مو (جدید)')
+    await editInput.trigger('keyup.enter')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith('/admin/categories/1', {
+      method: 'PATCH',
+      body: { name: 'اصلاح مو (جدید)' },
+    })
+    expect(wrapper.text()).toContain('اصلاح مو (جدید)')
+  })
+})

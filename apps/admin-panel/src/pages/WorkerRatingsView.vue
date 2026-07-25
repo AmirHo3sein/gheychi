@@ -1,28 +1,13 @@
 <!-- apps/admin-panel/src/pages/WorkerRatingsView.vue -->
 <!--
-  Mirrors ReviewsView.vue's exact shape (filter card, list, publish/reject toggle,
-  pagination) per the design spec (§8, "Worker Ratings Moderation ... mirrors the
-  existing Reviews moderation screen exactly").
+  Table-based list+moderate screen for worker ratings, mirroring the shape every other
+  admin list screen already uses (SalonsView, UsersView, CouponsView, ReferralsView,
+  WalletView, AuditLogView, BlogPostsView), per DESIGN.md's Density-First Rule.
 
-  JUDGMENT CALL / KNOWN GAP: the implemented backend (apps/api/src/reviews/) only ships
-  PATCH /admin/worker-ratings/:id/status (AdminWorkerRatingsController) -- there is no
-  GET list endpoint for admin worker-rating moderation anywhere in the codebase (grepped
-  reviews/, salons/public-salon-content.controller.ts, and every DTO under reviews/dto and
-  salons/dto -- the only other worker-rating read is the PUBLIC, published-only,
-  single-worker-scoped GET /salons/:slug/workers/:id/ratings, which can't power an
-  admin-wide moderation queue since it can't surface 'rejected' rows or cross salons).
-  AdminReviewQueryDto/ReviewsService.listForAdmin() also has no query param that scopes
-  down to worker-rated reviews only, so there's no existing mechanism to reuse via a query
-  param either.
-
-  This page is therefore written against GET /admin/worker-ratings (query: status,
-  salonId, page, pageSize -> {items, total, page, pageSize}), following the exact
-  convention every other admin list+moderate pair in this codebase already uses
-  (GET/PATCH /admin/reviews, /admin/reports, /admin/salons, ...) and reusing the resource
-  base path the real PATCH endpoint already established (admin/worker-ratings/:id/status).
-  That GET endpoint does not exist yet server-side -- this page will 404 until a matching
-  ReviewsService.listForWorkerRatingsAdmin()-style method and controller @Get() are added
-  alongside AdminWorkerRatingsController. Flagged here rather than silently assumed.
+  Backed by GET /admin/worker-ratings (query: status, salonId, page, pageSize ->
+  {items, total, page, pageSize}), which AdminWorkerRatingsController.list()
+  (apps/api/src/reviews/) actually serves, alongside the existing PATCH
+  /admin/worker-ratings/:id/status moderation endpoint this page's row action calls.
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
@@ -82,15 +67,24 @@ async function load() {
   if (salonIdFilter.value) params.set('salonId', salonIdFilter.value)
   if (statusFilter.value) params.set('status', statusFilter.value)
 
-  const { data } = await apiFetch<WorkerRatingListResponse>(`/admin/worker-ratings?${params.toString()}`, { silent: true })
+  // Deliberately NOT silent: salonId is free-text here but validated server-side with
+  // @IsUUID() (400 on anything else). Swallowing that error would repaint as a false "no
+  // ratings found" empty state instead of telling the operator their input was rejected.
+  const { data } = await apiFetch<WorkerRatingListResponse>(`/admin/worker-ratings?${params.toString()}`)
   ratings.value = data?.items ?? []
   total.value = data?.total ?? 0
   loading.value = false
 }
 
 function loadFromFilterChange() {
-  page.value = 1
-  load()
+  // Any filter change invalidates the current page position. When we're past page 1, just
+  // reset it -- the page watcher below triggers the (single) reload; calling load() here too
+  // would fire a redundant concurrent second request.
+  if (page.value !== 1) {
+    page.value = 1
+  } else {
+    load()
+  }
 }
 
 function onUpdated(ratingId: string, status: string) {
@@ -115,13 +109,18 @@ watch(page, load)
   <div class="space-y-5 p-8">
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
-        <div class="w-52">
-          <AppInput v-model="salonIdFilter" icon="search" label="شناسه آرایشگاه" placeholder="جست‌وجو…" />
-        </div>
-        <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">وضعیت</label>
-          <AppSelect v-model="statusFilter" :options="STATUS_OPTIONS" width="10rem" />
-        </div>
+        <!-- Labeled and formatted as a UUID lookup, not free-text search: the backend DTO
+             validates salonId with @IsUUID(), and the salon-name link in the table below
+             is how an operator actually obtains one from this same screen. -->
+        <AppInput
+          v-model="salonIdFilter"
+          icon="search"
+          label="شناسه آرایشگاه (UUID)"
+          placeholder="شناسه کامل را وارد کنید"
+          dir="ltr"
+          class="w-52"
+        />
+        <AppSelect v-model="statusFilter" :options="STATUS_OPTIONS" label="وضعیت" width="10rem" />
         <AppButton v-if="hasActiveFilters" type="button" variant="ghost" class="mb-2" @click="clearFilters">
           <template #icon>
             <AppIcon name="reset" :size="15" />
@@ -133,40 +132,68 @@ watch(page, load)
 
     <EmptyState v-if="!loading && ratings.length === 0" icon="worker-ratings" message="امتیازی با این فیلترها یافت نشد." />
 
-    <div v-else class="space-y-3">
-      <AppCard v-for="rating in ratings" :key="rating.id">
-        <div class="flex items-start justify-between gap-4">
-          <div>
-            <div class="flex items-center gap-1 text-(--color-accent)">
-              <AppIcon
-                v-for="n in 5"
-                :key="n"
-                name="star"
-                :size="16"
-                :fill="n <= rating.rating ? 'currentColor' : 'none'"
-                :class="n > rating.rating && 'text-(--color-border)'"
-              />
-              <span class="tnum mr-1 text-sm font-bold text-(--color-text)">{{ rating.rating }}.0</span>
-            </div>
-            <p class="mt-1.5 text-sm text-(--color-text-muted)">
-              <span class="font-semibold text-(--color-text)">{{ rating.workerName }}</span>
-              — {{ rating.salonName }}
-            </p>
-          </div>
-          <StatusBadge :label="reviewStatusLabel(rating.status).label" :tone="reviewStatusLabel(rating.status).tone" />
+    <AppCard v-else :padded="false" class="overflow-hidden">
+      <div class="relative">
+        <div
+          v-if="loading"
+          data-testid="table-loading"
+          role="status"
+          aria-label="در حال بارگذاری"
+          class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-(--color-surface-card)/70"
+        >
+          <AppIcon name="spinner" :size="22" class="animate-spin text-(--color-text-muted)" />
         </div>
-
-        <div class="mt-4 border-t border-(--color-border-soft) pt-3.5">
-          <ModerateWorkerRatingButton
-            :rating-id="rating.id"
-            :status="rating.status"
-            @updated="(r) => onUpdated(r.id, r.status)"
-          />
-        </div>
-      </AppCard>
-    </div>
-
-    <AppCard v-if="!loading && ratings.length > 0" :padded="false">
+        <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
+          <thead>
+            <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
+              <th class="px-5 py-3 font-semibold">کارمند</th>
+              <th class="px-5 py-3 font-semibold">آرایشگاه</th>
+              <th class="px-5 py-3 font-semibold">امتیاز</th>
+              <th class="px-5 py-3 font-semibold">وضعیت</th>
+              <th class="px-5 py-3 font-semibold">اقدام</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="rating in ratings"
+              :key="rating.id"
+              class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
+            >
+              <td class="px-5 py-3.5 font-semibold text-(--color-text)">{{ rating.workerName }}</td>
+              <td class="px-5 py-3.5">
+                <!-- Click-through to the salon detail page -- also how an operator gets a
+                     valid UUID to paste into the salon-id filter above. -->
+                <RouterLink :to="`/salons/${rating.salonId}`" class="text-(--color-text) hover:text-(--color-accent-text)">
+                  {{ rating.salonName }}
+                </RouterLink>
+              </td>
+              <td class="px-5 py-3.5">
+                <div class="flex items-center gap-1 text-(--color-accent-strong)">
+                  <AppIcon
+                    v-for="n in 5"
+                    :key="n"
+                    name="star"
+                    :size="16"
+                    :fill="n <= rating.rating ? 'currentColor' : 'none'"
+                    :class="n > rating.rating && 'text-(--color-border)'"
+                  />
+                  <span class="tnum mr-1 text-sm font-bold text-(--color-text)">{{ rating.rating }}.0</span>
+                </div>
+              </td>
+              <td class="px-5 py-3.5">
+                <StatusBadge :label="reviewStatusLabel(rating.status).label" :tone="reviewStatusLabel(rating.status).tone" />
+              </td>
+              <td class="px-5 py-3.5">
+                <ModerateWorkerRatingButton
+                  :rating-id="rating.id"
+                  :status="rating.status"
+                  @updated="(r) => onUpdated(r.id, r.status)"
+                />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <Pagination :page="page" :page-size="pageSize" :total="total" @update:page="(p) => (page = p)" />
     </AppCard>
   </div>

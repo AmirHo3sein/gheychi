@@ -6,6 +6,7 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon, { type IconName } from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 
 interface Category {
   id: number
@@ -15,6 +16,7 @@ interface Category {
 
 const { apiFetch } = useApi()
 const categories = ref<Category[]>([])
+const loading = ref(true)
 const newName = ref('')
 const newIcon = ref('')
 const editingId = ref<number | null>(null)
@@ -32,8 +34,10 @@ function iconFor(icon: string): IconName {
 }
 
 async function load() {
+  loading.value = true
   const { data } = await apiFetch<Category[]>('/categories', { silent: true })
   categories.value = data ?? []
+  loading.value = false
 }
 
 async function add() {
@@ -54,6 +58,10 @@ function startEdit(category: Category) {
   editingId.value = category.id
   editName.value = category.name
   confirmingId.value = null
+}
+
+function cancelEdit() {
+  editingId.value = null
 }
 
 async function saveEdit() {
@@ -101,9 +109,22 @@ onMounted(load)
         <AppIcon name="plus" :size="16" class="text-(--color-accent)" />
         افزودن دسته‌بندی جدید
       </p>
-      <form class="flex gap-2.5" @submit.prevent="add">
-        <AppInput v-model="newIcon" placeholder="کلید آیکون" :maxlength="20" class="w-28" />
+      <form class="flex items-end gap-2.5" @submit.prevent="add">
+        <div>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">کلید آیکون</label>
+          <div class="flex items-center gap-2">
+            <AppInput v-model="newIcon" placeholder="کلید آیکون" :maxlength="20" class="w-28" />
+            <div
+              data-testid="new-icon-preview"
+              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-(--color-border-soft) text-(--color-accent)"
+              title="پیش‌نمایش آیکون"
+            >
+              <AppIcon :name="iconFor(newIcon)" :size="19" />
+            </div>
+          </div>
+        </div>
         <div class="min-w-0 flex-1">
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">نام دسته‌بندی</label>
           <AppInput v-model="newName" placeholder="نام دسته‌بندی" :maxlength="60" />
         </div>
         <AppButton type="submit" variant="primary" :disabled="submitting || !newName.trim()">
@@ -113,56 +134,91 @@ onMounted(load)
       </form>
     </AppCard>
 
-    <div>
-      <p class="mb-3 text-sm font-bold text-(--color-text-muted)">{{ categories.length }} دسته‌بندی</p>
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <AppCard
-          v-for="category in categories"
-          :key="category.id"
-          :padded="false"
-          class="flex items-center gap-3 p-3.5 transition-shadow hover:shadow-(--shadow-lg)"
-        >
-          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-(--color-border-soft) text-(--color-accent)">
-            <AppIcon :name="iconFor(category.icon)" :size="19" />
-          </div>
-
-          <template v-if="confirmingId === category.id">
-            <span class="min-w-0 flex-1 truncate text-sm font-semibold text-(--tone-danger-text)">
-              «{{ category.name }}» حذف شود؟
-            </span>
-            <AppButton data-testid="confirm-delete" variant="danger" :disabled="submitting" @click="confirmDelete">
-              حذف
-            </AppButton>
-            <AppButton data-testid="cancel-delete" variant="ghost" :disabled="submitting" @click="confirmingId = null">
-              انصراف
-            </AppButton>
-          </template>
-
-          <template v-else>
-            <div v-if="editingId === category.id" class="min-w-0 flex-1">
-              <AppInput v-model="editName" :maxlength="60" />
-            </div>
-            <span v-else class="min-w-0 flex-1 truncate text-sm font-semibold text-(--color-text)">{{ category.name }}</span>
-            <AppButton v-if="editingId === category.id" variant="primary" :disabled="submitting" @click="saveEdit">
-              ذخیره
-            </AppButton>
-            <template v-else>
-              <AppButton variant="secondary" :disabled="submitting" title="ویرایش" @click="startEdit(category)">
-                <template #icon><AppIcon name="pencil" :size="15" /></template>
-              </AppButton>
-              <AppButton
-                data-testid="delete-category"
-                variant="danger"
-                :disabled="submitting"
-                title="حذف"
-                @click="askDelete(category)"
-              >
-                <template #icon><AppIcon name="x" :size="15" /></template>
-              </AppButton>
-            </template>
-          </template>
-        </AppCard>
-      </div>
+    <div v-if="loading" class="flex items-center justify-center py-16" role="status" aria-label="در حال بارگذاری">
+      <AppIcon name="spinner" :size="24" class="animate-spin text-(--color-text-muted)" />
     </div>
+
+    <EmptyState
+      v-else-if="categories.length === 0"
+      icon="tag"
+      message="هنوز دسته‌بندی‌ای ثبت نشده است. برای افزودن، از فرم بالا استفاده کنید."
+    />
+
+    <AppCard v-else :padded="false" class="overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-right text-sm">
+          <thead>
+            <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
+              <th class="px-5 py-3 font-semibold">آیکون</th>
+              <th class="px-5 py-3 font-semibold">نام دسته‌بندی</th>
+              <th class="px-5 py-3"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="category in categories"
+              :key="category.id"
+              class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
+            >
+              <td class="px-5 py-3.5">
+                <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-(--color-border-soft) text-(--color-accent)">
+                  <AppIcon :name="iconFor(category.icon)" :size="19" />
+                </div>
+              </td>
+
+              <template v-if="confirmingId === category.id">
+                <td colspan="2" class="px-5 py-3.5">
+                  <div class="flex flex-wrap items-center gap-2.5">
+                    <span class="text-sm font-semibold text-(--tone-danger-text)">«{{ category.name }}» حذف شود؟</span>
+                    <AppButton data-testid="confirm-delete" variant="danger" :disabled="submitting" @click="confirmDelete">
+                      حذف
+                    </AppButton>
+                    <AppButton data-testid="cancel-delete" variant="ghost" :disabled="submitting" @click="confirmingId = null">
+                      انصراف
+                    </AppButton>
+                  </div>
+                </td>
+              </template>
+
+              <template v-else-if="editingId === category.id">
+                <td class="px-5 py-3.5">
+                  <AppInput v-model="editName" data-testid="edit-name-input" :maxlength="60" @keyup.enter="saveEdit" />
+                </td>
+                <td class="px-5 py-3.5">
+                  <div class="flex gap-2.5">
+                    <AppButton data-testid="save-edit" variant="secondary" :disabled="submitting" @click="saveEdit">
+                      ذخیره
+                    </AppButton>
+                    <AppButton data-testid="cancel-edit" variant="ghost" :disabled="submitting" @click="cancelEdit">
+                      انصراف
+                    </AppButton>
+                  </div>
+                </td>
+              </template>
+
+              <template v-else>
+                <td class="px-5 py-3.5 font-semibold text-(--color-text)">{{ category.name }}</td>
+                <td class="px-5 py-3.5">
+                  <div class="flex gap-2.5">
+                    <AppButton variant="secondary" :disabled="submitting" title="ویرایش" @click="startEdit(category)">
+                      <template #icon><AppIcon name="pencil" :size="15" /></template>
+                    </AppButton>
+                    <AppButton
+                      data-testid="delete-category"
+                      variant="danger"
+                      :disabled="submitting"
+                      title="حذف"
+                      @click="askDelete(category)"
+                    >
+                      <template #icon><AppIcon name="x" :size="15" /></template>
+                    </AppButton>
+                  </div>
+                </td>
+              </template>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </AppCard>
   </div>
 </template>

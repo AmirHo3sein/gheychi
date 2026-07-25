@@ -42,12 +42,25 @@ describe('ShowcaseStatusActions', () => {
     })
   })
 
-  it('restores a removed item directly, with no reason prompt', async () => {
-    fetchMock.mockResolvedValueOnce({ data: { id: 'st1', status: 'published' }, error: null })
+  it('does not call the API on the first restore click -- it only reveals a confirm strip, with no reason prompt', async () => {
     const wrapper = mount(ShowcaseStatusActions, { props: { kind: 'stories', itemId: 'st1', status: 'removed' } })
 
     expect(wrapper.find('[data-testid="remove-button"]').exists()).toBe(false)
     await wrapper.get('[data-testid="restore-button"]').trigger('click')
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="restore-button"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="remove-reason-input"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="restore-confirm"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="restore-cancel"]').exists()).toBe(true)
+  })
+
+  it('restores a removed item once the confirm strip is confirmed', async () => {
+    fetchMock.mockResolvedValueOnce({ data: { id: 'st1', status: 'published' }, error: null })
+    const wrapper = mount(ShowcaseStatusActions, { props: { kind: 'stories', itemId: 'st1', status: 'removed' } })
+
+    await wrapper.get('[data-testid="restore-button"]').trigger('click')
+    await wrapper.get('[data-testid="restore-confirm"]').trigger('click')
 
     expect(fetchMock).toHaveBeenCalledWith('/admin/stories/st1/status', {
       method: 'PATCH',
@@ -55,6 +68,17 @@ describe('ShowcaseStatusActions', () => {
     })
     await flushPromises()
     expect(wrapper.emitted('updated')?.[0]).toEqual([{ id: 'st1', status: 'published' }])
+  })
+
+  it('cancelling the restore confirm strip does not call the API and returns to the trigger view', async () => {
+    const wrapper = mount(ShowcaseStatusActions, { props: { kind: 'portfolio', itemId: 'p1', status: 'removed' } })
+
+    await wrapper.get('[data-testid="restore-button"]').trigger('click')
+    await wrapper.get('[data-testid="restore-cancel"]').trigger('click')
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="restore-button"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="restore-confirm"]').exists()).toBe(false)
   })
 
   it('emits refresh (not updated) and collapses the prompt when the PATCH fails (409 lost race)', async () => {

@@ -58,7 +58,7 @@ async function submit() {
       <AppButton
         data-testid="resolve-button"
         type="button"
-        variant="primary"
+        variant="secondary"
         :disabled="submitting"
         @click="openNote('resolved')"
       >
@@ -88,13 +88,14 @@ async function submit() {
         placeholder="در صورت نیاز، توضیح تصمیم را بنویسید…"
         rows="2"
         maxlength="1000"
-        class="w-full rounded-xl border border-(--color-border) p-3 text-sm"
+        class="w-full rounded-xl border border-(--color-border) p-3 text-sm [color-scheme:light_dark]"
       />
       <div class="flex gap-2.5">
         <AppButton
           data-testid="submit-resolution"
           type="button"
-          variant="primary"
+          :variant="showNoteFor === 'dismissed' ? 'danger' : 'primary'"
+          :loading="submitting"
           :disabled="submitting"
           @click="submit"
         >

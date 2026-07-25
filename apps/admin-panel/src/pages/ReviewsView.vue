@@ -31,10 +31,18 @@ const RATING_OPTIONS = [
 interface ReviewRow {
   id: string
   salonId: string
+  // Joined server-side by ReviewsService.listForAdmin() -- without this an operator
+  // scanning the unfiltered queue had no way to tell which salon a review was about.
+  salonName: string
   rating: number
   comment: string | null
-  status: 'published' | 'rejected'
+  // 'withdrawn' = the customer soft-deleted their own review (DELETE /api/reviews/:id).
+  // The unfiltered ("همه وضعیت‌ها") admin list can return these -- they must be typed
+  // and handled distinctly from an admin 'rejected' call, never treated as "just
+  // another non-published state" (see ModerateReviewButton.vue).
+  status: 'published' | 'rejected' | 'withdrawn'
   salonReply: string | null
+  createdAt: string
   // JUDGMENT CALL / KNOWN GAP: ReviewsService.listForAdmin() (apps/api/src/reviews/reviews.service.ts)
   // currently returns bare Review rows with no join onto worker_ratings -- there is no
   // backend field to read here yet. Declared optional so this renders nothing until the
@@ -58,14 +66,17 @@ const page = ref(1)
 const total = ref(0)
 const pageSize = 10
 
-const salonIdFilter = ref('')
+// Salon *name* search (server-side ILIKE via AdminReviewQueryDto.salonName), not a raw
+// salon id -- an operator has no reason to know a salon's UUID by heart. See
+// ReviewsService.listForAdmin() for the resolve-name-to-ids step this drives.
+const salonNameFilter = ref('')
 const statusFilter = ref<'' | 'published' | 'rejected'>('')
 const ratingFilter = ref<'' | number>('')
 
 async function load() {
   loading.value = true
   const params = new URLSearchParams({ page: String(page.value), pageSize: String(pageSize) })
-  if (salonIdFilter.value) params.set('salonId', salonIdFilter.value)
+  if (salonNameFilter.value) params.set('salonName', salonNameFilter.value)
   if (statusFilter.value) params.set('status', statusFilter.value)
   if (ratingFilter.value) params.set('rating', String(ratingFilter.value))
 
@@ -86,15 +97,19 @@ function onUpdated(reviewId: string, status: string) {
 }
 
 function clearFilters() {
-  salonIdFilter.value = ''
+  salonNameFilter.value = ''
   statusFilter.value = ''
   ratingFilter.value = ''
 }
 
-const hasActiveFilters = computed(() => !!salonIdFilter.value || !!statusFilter.value || !!ratingFilter.value)
+function formatDate(iso: string): string {
+  return new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
+}
+
+const hasActiveFilters = computed(() => !!salonNameFilter.value || !!statusFilter.value || !!ratingFilter.value)
 
 onMounted(load)
-watch(salonIdFilter, debounce(loadFromFilterChange, 350))
+watch(salonNameFilter, debounce(loadFromFilterChange, 350))
 watch([statusFilter, ratingFilter], loadFromFilterChange)
 watch(page, load)
 </script>
@@ -104,8 +119,8 @@ watch(page, load)
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">شناسه آرایشگاه</label>
-          <AppInput v-model="salonIdFilter" icon="search" placeholder="جست‌وجو…" class="w-52" />
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">نام آرایشگاه</label>
+          <AppInput v-model="salonNameFilter" icon="search" placeholder="جست‌وجو…" class="w-52" />
         </div>
         <div>
           <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">وضعیت</label>
@@ -128,21 +143,34 @@ watch(page, load)
       </div>
     </AppCard>
 
-    <EmptyState v-if="!loading && reviews.length === 0" icon="reviews" message="نظری با این فیلترها یافت نشد." />
+    <div
+      v-if="loading"
+      class="flex h-40 items-center justify-center"
+      role="status"
+      aria-label="در حال بارگذاری"
+      data-testid="reviews-loading"
+    >
+      <AppIcon name="spinner" :size="24" class="animate-spin text-(--color-text-muted)" />
+    </div>
+
+    <EmptyState v-else-if="reviews.length === 0" icon="reviews" message="نظری با این فیلترها یافت نشد." />
 
     <div v-else class="space-y-3">
       <AppCard v-for="review in reviews" :key="review.id">
         <div class="flex items-start justify-between gap-4">
-          <div class="flex items-center gap-1 text-(--color-accent)">
-            <AppIcon
-              v-for="n in 5"
-              :key="n"
-              name="star"
-              :size="16"
-              :fill="n <= review.rating ? 'currentColor' : 'none'"
-              :class="n > review.rating && 'text-(--color-border)'"
-            />
-            <span class="tnum mr-1 text-sm font-bold text-(--color-text)">{{ review.rating }}.0</span>
+          <div>
+            <div class="flex items-center gap-1 text-(--color-accent)">
+              <AppIcon
+                v-for="n in 5"
+                :key="n"
+                name="star"
+                :size="16"
+                :fill="n <= review.rating ? 'currentColor' : 'none'"
+                :class="n > review.rating && 'text-(--color-border)'"
+              />
+              <span class="tnum mr-1 text-sm font-bold text-(--color-text)">{{ review.rating }}.0</span>
+            </div>
+            <p class="mt-1.5 text-sm font-semibold text-(--color-text)">{{ review.salonName }}</p>
           </div>
           <StatusBadge :label="reviewStatusLabel(review.status).label" :tone="reviewStatusLabel(review.status).tone" />
         </div>
@@ -169,6 +197,8 @@ watch(page, load)
           <p class="mb-1 text-xs font-semibold text-(--color-text-muted)">پاسخ آرایشگاه</p>
           <p class="text-sm text-(--color-text)">{{ review.salonReply }}</p>
         </div>
+
+        <p class="tnum mt-3 text-xs text-(--color-text-muted)">{{ formatDate(review.createdAt) }}</p>
 
         <div class="mt-4 border-t border-(--color-border-soft) pt-3.5">
           <ModerateReviewButton

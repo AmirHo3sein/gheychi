@@ -23,6 +23,10 @@ const emit = defineEmits<{
 
 const { apiFetch } = useApi()
 const showReason = ref(false)
+// restore() makes a story/portfolio item publicly visible again -- the Uniform
+// Consequence Rule requires the same confirm-before-commit step remove() already has,
+// just without a reason field. Mirrors ModerateReviewButton.vue's confirm strip.
+const confirmingRestore = ref(false)
 const reason = ref('')
 const submitting = ref(false)
 
@@ -31,8 +35,13 @@ function openReason() {
   reason.value = ''
 }
 
+function openRestoreConfirm() {
+  confirmingRestore.value = true
+}
+
 function collapse() {
   showReason.value = false
+  confirmingRestore.value = false
   reason.value = ''
 }
 
@@ -62,13 +71,14 @@ async function setStatus(status: 'published' | 'removed') {
 
 <template>
   <div>
-    <div v-if="!showReason" class="flex flex-wrap gap-2.5">
+    <div v-if="!showReason && !confirmingRestore" class="flex flex-wrap gap-2.5">
       <AppButton
         v-if="status === 'published'"
         data-testid="remove-button"
         type="button"
         variant="danger"
         :disabled="submitting"
+        :loading="submitting"
         @click="openReason"
       >
         <template #icon><AppIcon name="x" :size="16" /></template>
@@ -80,23 +90,52 @@ async function setStatus(status: 'published' | 'removed') {
         type="button"
         variant="primary"
         :disabled="submitting"
-        @click="setStatus('published')"
+        :loading="submitting"
+        @click="openRestoreConfirm"
       >
         <template #icon><AppIcon name="reset" :size="16" /></template>
         بازگردانی
       </AppButton>
     </div>
 
+    <div v-else-if="confirmingRestore" class="flex flex-wrap items-center gap-2.5 text-sm">
+      <span class="text-(--color-text)">این مورد بازگردانی و دوباره در دسترس عموم قرار داده شود؟</span>
+      <AppButton
+        data-testid="restore-confirm"
+        type="button"
+        variant="primary"
+        :disabled="submitting"
+        :loading="submitting"
+        @click="setStatus('published')"
+      >
+        بازگردانی
+      </AppButton>
+      <AppButton
+        data-testid="restore-cancel"
+        type="button"
+        variant="secondary"
+        :disabled="submitting"
+        :loading="submitting"
+        @click="confirmingRestore = false"
+      >
+        انصراف
+      </AppButton>
+    </div>
+
     <div v-else class="space-y-3">
       <label class="block text-sm font-semibold text-(--color-text)">دلیل حذف (اختیاری)</label>
-      <!-- maxlength mirrors the backend DTO's @MaxLength(500) on reason. -->
+      <!-- maxlength mirrors the backend DTO's @MaxLength(500) on reason. Border bumped
+           from the app-wide --color-border (functionally invisible as a field boundary,
+           1.21:1 against white) to --color-text-muted for this reason field specifically --
+           see SalonStatusActions.vue's identical note; the same fix should eventually land
+           as a shared token/AppTextarea change rather than being repeated per-component. -->
       <textarea
         v-model="reason"
         data-testid="remove-reason-input"
         placeholder="برای سابقه رسیدگی، دلیل حذف را بنویسید…"
         rows="2"
         maxlength="500"
-        class="w-full rounded-xl border border-(--color-border) p-3 text-sm"
+        class="w-full rounded-xl border border-(--color-text-muted) p-3 text-sm"
       />
       <div class="flex gap-2.5">
         <AppButton
@@ -104,6 +143,7 @@ async function setStatus(status: 'published' | 'removed') {
           type="button"
           variant="danger"
           :disabled="submitting"
+          :loading="submitting"
           @click="setStatus('removed')"
         >
           ثبت نهایی
@@ -113,6 +153,7 @@ async function setStatus(status: 'published' | 'removed') {
           type="button"
           variant="secondary"
           :disabled="submitting"
+          :loading="submitting"
           @click="collapse"
         >
           انصراف
