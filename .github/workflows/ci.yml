@@ -57,6 +57,17 @@ jobs:
       - name: Create apps/api/.env for dev-mode servers (used by Playwright e2e)
         run: cp .env.example apps/api/.env
 
+      # Typecheck ran nowhere in CI until now, which is how a broken `nuxt typecheck` in
+      # user-app went unnoticed indefinitely and how response-shape drift between the API and
+      # its frontends reached main more than once. Runs before the tests because it is fast
+      # and its failures are usually the root cause of the test failures that follow.
+      - name: Typecheck
+        run: |
+          pnpm --filter @arayeshgah/api typecheck
+          pnpm --filter @arayeshgah/user-app typecheck
+          pnpm --filter @arayeshgah/provider-panel typecheck
+          pnpm --filter @arayeshgah/admin-panel typecheck
+
       - name: Backend unit tests
         run: pnpm --filter @arayeshgah/api test
 

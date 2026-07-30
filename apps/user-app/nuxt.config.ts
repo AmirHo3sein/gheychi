@@ -1,5 +1,12 @@
 import tailwindcss from '@tailwindcss/vite'
 
+/**
+ * The plugin-array type Nuxt itself expects, derived from its own config signature rather
+ * than imported from 'vite' -- `vite` is not a direct dependency of this workspace, and
+ * adding it would risk pinning a third copy of the very package this works around.
+ */
+type NuxtVitePlugins = NonNullable<NonNullable<Parameters<typeof defineNuxtConfig>[0]['vite']>['plugins']>
+
 export default defineNuxtConfig({
   compatibilityDate: '2026-07-05',
   // Needed so composables like `navigateTo` still resolve the Nuxt app instance after
@@ -29,7 +36,14 @@ export default defineNuxtConfig({
     },
   },
   vite: {
-    plugins: [tailwindcss()],
+    // This cast bridges a genuine dual-Vite install, not a mistake in this config.
+    // Nuxt 4.4 peers on Vite 7 while vitest 3.2 bundles Vite 6, so pnpm keeps both trees and
+    // @tailwindcss/vite's Plugin resolves against a different `vite` than the one typing this
+    // field. The two Plugin interfaces are structurally identical apart from `hotUpdate`'s
+    // `this` type, so they are interchangeable at runtime -- the build and dev server have
+    // always worked; only `nuxt typecheck` failed, which is why it was never in CI.
+    // Remove this cast once vitest and Nuxt agree on one major (vitest 4 peers on Vite 7).
+    plugins: [tailwindcss()] as NuxtVitePlugins,
     server: {
       // Vite's dependency optimizer only discovers a lazily-loaded route's dependencies the
       // first time that route is actually visited (dynamic imports aren't part of the initial
