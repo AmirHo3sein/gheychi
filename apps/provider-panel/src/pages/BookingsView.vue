@@ -98,6 +98,16 @@ async function assignWorker(booking: Booking, event: Event) {
     submittingId.value = null
   }
 }
+// Slot instants are real UTC (see availability.util.ts); pin the salon's own timezone rather
+// than relying on the browser's, so a provider viewing from another timezone still sees the
+// appointment time their salon actually operates on.
+function formatBookingDateTime(iso: string): string {
+  return new Intl.DateTimeFormat('fa-IR', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Asia/Tehran',
+  }).format(new Date(iso))
+}
 </script>
 
 <template>
@@ -127,7 +137,7 @@ async function assignWorker(booking: Booking, event: Event) {
             </div>
             <StatusBadge :label="bookingStatusLabel(b.status).label" :tone="bookingStatusLabel(b.status).tone" />
           </div>
-          <p class="tnum text-sm text-(--color-text-muted)">{{ new Date(b.startsAt).toLocaleString('fa-IR') }}</p>
+          <p class="tnum text-sm text-(--color-text-muted)">{{ formatBookingDateTime(b.startsAt) }}</p>
 
           <div v-if="b.status === 'confirmed' && workers.length > 0">
             <label :for="`worker-select-${b.id}`" class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">تخصیص کارمند</label>

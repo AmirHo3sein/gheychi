@@ -79,6 +79,12 @@ const QUICK_LINKS: Array<{ to: string; label: string; icon: IconName }> = [
   { to: '/team', label: 'تیم', icon: 'team' },
   { to: '/settings', label: 'تنظیمات', icon: 'settings' },
 ]
+// Pinned to the salon's timezone, not the browser's -- see BookingsView's equivalent.
+function formatBookingTime(iso: string): string {
+  return new Intl.DateTimeFormat('fa-IR', { timeStyle: 'short', timeZone: 'Asia/Tehran' }).format(
+    new Date(iso),
+  )
+}
 </script>
 
 <template>
@@ -120,7 +126,7 @@ const QUICK_LINKS: Array<{ to: string; label: string; icon: IconName }> = [
           <AppCard v-for="b in todaysBookings" :key="b.id" :padded="false" class="p-3">
             <div class="flex items-center justify-between">
               <p class="text-sm font-semibold text-(--color-text)">{{ serviceName(b.serviceId) }}</p>
-              <p class="tnum text-sm font-bold text-(--color-accent-text)">{{ new Date(b.startsAt).toLocaleTimeString('fa-IR') }}</p>
+              <p class="tnum text-sm font-bold text-(--color-accent-text)">{{ formatBookingTime(b.startsAt) }}</p>
             </div>
           </AppCard>
         </div>
