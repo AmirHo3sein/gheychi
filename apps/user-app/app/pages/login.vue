@@ -49,6 +49,25 @@ const RESEND_COOLDOWN_SEC = 45
 const resendCooldown = ref(0)
 let cooldownTimer: ReturnType<typeof setInterval> | undefined
 
+// Expiry is a SEPARATE clock from the resend cooldown above, and conflating the two is
+// exactly the trap this screen used to set: the only visible number was the 45s cooldown,
+// which reads as "time left on my code" while the code actually lives 120s. A user who
+// waited past that got "wrong code" for digits that were correct but stale. Both clocks are
+// now shown for what they are, and the TTL comes from the API (expiresInSec) rather than a
+// hardcoded 120 here that could silently drift from OtpService.
+const codeExpiresIn = ref(0)
+let expiryTimer: ReturnType<typeof setInterval> | undefined
+// Only claim anything about expiry when the API actually told us the TTL -- otherwise a
+// response without expiresInSec would render an immediate, false "your code expired".
+const codeTtlKnown = ref(false)
+
+// The limiter allows only 3 requests per hour while the cooldown re-arms every 45s, so the
+// UI used to invite a user to burn every attempt in ~90 seconds and then locked them out for
+// the rest of the hour with no warning. The API now reports what's left so we can say so.
+const resendsRemaining = ref<number | null>(null)
+
+const codeExpired = computed(() => step.value === 'code' && codeTtlKnown.value && codeExpiresIn.value <= 0)
+
 function startCooldown() {
   resendCooldown.value = RESEND_COOLDOWN_SEC
   clearInterval(cooldownTimer)
@@ -57,16 +76,42 @@ function startCooldown() {
     if (resendCooldown.value <= 0) clearInterval(cooldownTimer)
   }, 1000)
 }
-onUnmounted(() => clearInterval(cooldownTimer))
+
+function startExpiryCountdown(seconds: number) {
+  clearInterval(expiryTimer)
+  codeTtlKnown.value = seconds > 0
+  codeExpiresIn.value = seconds
+  if (!codeTtlKnown.value) return
+  expiryTimer = setInterval(() => {
+    codeExpiresIn.value -= 1
+    if (codeExpiresIn.value <= 0) clearInterval(expiryTimer)
+  }, 1000)
+}
+
+onUnmounted(() => {
+  clearInterval(cooldownTimer)
+  clearInterval(expiryTimer)
+})
 
 async function requestOtp() {
   submitting.value = true
   formError.value = ''
-  const { error } = await apiFetch('/auth/request-otp', { method: 'POST', body: { phone: phone.value }, silent: true })
+  const { data, error } = await apiFetch<{ expiresInSec: number; resendsRemaining: number }>(
+    '/auth/request-otp',
+    { method: 'POST', body: { phone: phone.value }, silent: true },
+  )
   submitting.value = false
-  if (error) { formError.value = 'شماره موبایل نامعتبر است'; return }
+  if (error) {
+    // Only a genuine 4xx-validation failure means the number itself is wrong; a 429 or a
+    // dead network must not be reported as bad input (see describeAuthError).
+    formError.value = describeAuthError(error, 'شماره موبایل نامعتبر است')
+    return
+  }
+  code.value = ''
   step.value = 'code'
   startCooldown()
+  startExpiryCountdown(data?.expiresInSec ?? 0)
+  resendsRemaining.value = data?.resendsRemaining ?? null
 }
 
 const REFERRAL_STATUS_MESSAGE: Record<string, string> = {
@@ -88,7 +133,13 @@ async function verifyOtp() {
     referralStatus?: 'applied' | 'invalid_code' | 'referral_type_disabled'
   }>('/auth/verify-otp', { method: 'POST', body, silent: true })
   submitting.value = false
-  if (error || !data) { formError.value = 'کد وارد شده اشتباه است'; return }
+  if (error || !data) {
+    // 401 here covers wrong / expired / burned-by-retries alike -- the API doesn't
+    // distinguish them, so CODE_REJECTED_MESSAGE names both causes rather than asserting
+    // the code was simply mistyped.
+    formError.value = error ? describeAuthError(error, CODE_REJECTED_MESSAGE) : CODE_REJECTED_MESSAGE
+    return
+  }
 
   if (data.referralStatus) useToast().push(REFERRAL_STATUS_MESSAGE[data.referralStatus] ?? '')
 
@@ -236,6 +287,24 @@ const STEP_HINT: Record<typeof step.value, string> = {
                 required
                 autofocus
               />
+              <!-- The code's real remaining life. Without this the only number on screen was
+                   the resend cooldown, which a user reasonably reads as their code's expiry. -->
+              <p
+                v-if="codeTtlKnown && !codeExpired"
+                data-testid="code-expiry"
+                aria-live="polite"
+                class="tnum text-center text-sm text-(--color-text-muted)"
+              >
+                اعتبار کد: {{ formatCountdown(codeExpiresIn) }}
+              </p>
+              <p
+                v-else-if="codeExpired"
+                data-testid="code-expired"
+                role="alert"
+                class="text-center text-sm font-semibold text-(--color-danger)"
+              >
+                {{ CODE_EXPIRED_MESSAGE }}
+              </p>
               <button
                 v-if="!showReferralCode"
                 type="button"
@@ -258,11 +327,27 @@ const STEP_HINT: Record<typeof step.value, string> = {
                 <button
                   type="button"
                   class="font-medium text-(--color-accent) transition-opacity disabled:cursor-not-allowed disabled:text-(--color-text-muted) disabled:opacity-70"
-                  :disabled="resendCooldown > 0"
+                  :disabled="resendCooldown > 0 || resendsRemaining === 0"
                   @click="requestOtp"
                 >
                   {{ resendCooldown > 0 ? `ارسال مجدد کد (${resendCooldown})` : 'ارسال مجدد کد' }}
                 </button>
+              </p>
+              <!-- Resends are capped at 3/hour server-side. Saying so up front is the whole
+                   point: the cooldown re-arms every 45s, so without this a user could burn
+                   every attempt in a minute and a half and only find out by being locked
+                   out. `null` = we haven't issued one this session yet, so say nothing. -->
+              <p
+                v-if="resendsRemaining !== null && resendsRemaining <= 1"
+                data-testid="resend-limit-warning"
+                aria-live="polite"
+                class="text-center text-xs text-(--color-text-muted)"
+              >
+                {{
+                  resendsRemaining === 0
+                    ? 'سهمیه درخواست کد تمام شد. تا یک ساعت آینده امکان درخواست کد جدید نیست.'
+                    : 'این آخرین درخواست کد مجاز شما در یک ساعت گذشته است.'
+                }}
               </p>
             </form>
 

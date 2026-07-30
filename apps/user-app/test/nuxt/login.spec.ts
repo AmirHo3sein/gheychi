@@ -165,3 +165,86 @@ describe('login page - referral code entry', () => {
     expect(toasts.value.length).toBe(before)
   })
 })
+
+describe('login page - OTP expiry and resend budget', () => {
+  beforeEach(() => {
+    fetchMock.mockReset()
+    navigateToMock.mockReset()
+    vi.stubGlobal('$fetch', fetchStub)
+    routeQuery = {}
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it('shows the code\'s real remaining life, not just the resend cooldown', async () => {
+    // The bug this pins: the only number on the code step used to be the 45s resend
+    // cooldown, which reads as "time left on my code" while the code actually lives 120s.
+    fetchMock.mockResolvedValueOnce({ expiresInSec: 120, resendsRemaining: 2 })
+    const wrapper = await mountSuspended(LoginPage)
+    await goToCodeStep(wrapper)
+
+    const expiry = wrapper.find('[data-testid="code-expiry"]')
+    expect(expiry.exists()).toBe(true)
+    expect(expiry.text()).toContain('2:00')
+    expect(wrapper.find('[data-testid="code-expired"]').exists()).toBe(false)
+  })
+
+  it('says nothing about expiry when the API did not report a TTL', async () => {
+    // Deriving "expired" from a missing field would render an immediate, false
+    // "your code expired" against an API that predates expiresInSec.
+    fetchMock.mockResolvedValueOnce(undefined)
+    const wrapper = await mountSuspended(LoginPage)
+    await goToCodeStep(wrapper)
+
+    expect(wrapper.find('[data-testid="code-expiry"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="code-expired"]').exists()).toBe(false)
+  })
+
+  it('announces expiry once the countdown runs out, instead of waiting for a failed submit', async () => {
+    vi.useFakeTimers()
+    fetchMock.mockResolvedValueOnce({ expiresInSec: 2, resendsRemaining: 2 })
+    const wrapper = await mountSuspended(LoginPage)
+    await wrapper.find('input[type="tel"]').setValue('09120000000')
+    await wrapper.find('form').trigger('submit.prevent')
+    await vi.runOnlyPendingTimersAsync()
+
+    await vi.advanceTimersByTimeAsync(2000)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="code-expired"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="code-expiry"]').exists()).toBe(false)
+  })
+
+  it('warns on the last allowed resend so the hour-long lockout is not a surprise', async () => {
+    // The limiter allows 3 requests/hour while the cooldown re-arms every 45s, so without
+    // this a user could burn the whole budget in ~90s and only find out by being locked out.
+    fetchMock.mockResolvedValueOnce({ expiresInSec: 120, resendsRemaining: 1 })
+    const wrapper = await mountSuspended(LoginPage)
+    await goToCodeStep(wrapper)
+
+    const warning = wrapper.find('[data-testid="resend-limit-warning"]')
+    expect(warning.exists()).toBe(true)
+    expect(warning.text()).toContain('آخرین')
+  })
+
+  it('states the budget is spent and disables resend when none remain', async () => {
+    fetchMock.mockResolvedValueOnce({ expiresInSec: 120, resendsRemaining: 0 })
+    const wrapper = await mountSuspended(LoginPage)
+    await goToCodeStep(wrapper)
+
+    expect(wrapper.find('[data-testid="resend-limit-warning"]').text()).toContain('یک ساعت')
+    const resend = wrapper.findAll('button').find((b) => b.text().includes('ارسال مجدد'))
+    expect(resend?.attributes('disabled')).toBeDefined()
+  })
+
+  it('stays silent about the resend budget while it is comfortably unspent', async () => {
+    fetchMock.mockResolvedValueOnce({ expiresInSec: 120, resendsRemaining: 2 })
+    const wrapper = await mountSuspended(LoginPage)
+    await goToCodeStep(wrapper)
+
+    expect(wrapper.find('[data-testid="resend-limit-warning"]').exists()).toBe(false)
+  })
+})

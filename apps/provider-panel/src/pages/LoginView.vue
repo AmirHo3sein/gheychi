@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
-import { useApi, type ApiError } from '@/composables/useApi'
+import { useApi } from '@/composables/useApi'
 import { useSessionStore, type SessionUser } from '@/stores/session'
+import { CODE_EXPIRED_MESSAGE, CODE_REJECTED_MESSAGE, describeAuthError, formatCountdown } from '@/utils/auth-errors'
 
 const router = useRouter()
 const { apiFetch } = useApi()
@@ -17,34 +18,45 @@ const code = ref('')
 const submitting = ref(false)
 const formError = ref('')
 
-/**
- * Maps an ApiError to an honest Persian message: a dead network (status 0) and a
- * rate limit (429) are real, distinct causes and shouldn't be presented as bad input.
- * `invalidMessage` is used for genuine validation failures (and any other status).
- */
-function describeError(error: ApiError, invalidMessage: string): string {
-  if (error.status === 0) {
-    return 'اتصال اینترنت برقرار نیست. اتصال خود را بررسی کنید و دوباره تلاش کنید.'
-  }
-  if (error.status === 429) {
-    return 'درخواست‌های زیادی ارسال شده است. چند لحظه صبر کنید و دوباره تلاش کنید.'
-  }
-  if (error.status >= 500) {
-    return 'خطایی در سرور رخ داده است. لطفاً چند لحظه دیگر دوباره تلاش کنید.'
-  }
-  return invalidMessage
+// The code lives 120s (OtpService.OTP_TTL_SEC, reported by the API as expiresInSec so this
+// screen never hardcodes its own copy). Without a visible expiry the 401 for a timed-out
+// code reads as "you mistyped it", and the user retypes the same correct digits.
+const codeExpiresIn = ref(0)
+let expiryTimer: ReturnType<typeof setInterval> | undefined
+// Only claim anything about expiry when the API actually told us the TTL. Deriving
+// "expired" from a missing/zero field would make an API that predates expiresInSec (or any
+// response we couldn't parse) render an immediate, false "your code expired" the moment the
+// step opens -- strictly worse than saying nothing about expiry at all.
+const codeTtlKnown = ref(false)
+const codeExpired = computed(() => step.value === 'code' && codeTtlKnown.value && codeExpiresIn.value <= 0)
+
+function startExpiryCountdown(seconds: number) {
+  clearInterval(expiryTimer)
+  codeTtlKnown.value = seconds > 0
+  codeExpiresIn.value = seconds
+  if (!codeTtlKnown.value) return
+  expiryTimer = setInterval(() => {
+    codeExpiresIn.value -= 1
+    if (codeExpiresIn.value <= 0) clearInterval(expiryTimer)
+  }, 1000)
 }
+onUnmounted(() => clearInterval(expiryTimer))
 
 async function requestOtp() {
   submitting.value = true
   formError.value = ''
-  const { error } = await apiFetch('/auth/request-otp', { method: 'POST', body: { phone: phone.value }, silent: true })
+  const { data, error } = await apiFetch<{ expiresInSec: number }>(
+    '/auth/request-otp',
+    { method: 'POST', body: { phone: phone.value }, silent: true },
+  )
   submitting.value = false
   if (error) {
-    formError.value = describeError(error, 'شماره موبایل نامعتبر است')
+    formError.value = describeAuthError(error, 'شماره موبایل نامعتبر است')
     return
   }
+  code.value = ''
   step.value = 'code'
+  startExpiryCountdown(data?.expiresInSec ?? 0)
 }
 
 async function verifyOtp() {
@@ -56,7 +68,7 @@ async function verifyOtp() {
   )
   submitting.value = false
   if (error || !data) {
-    formError.value = error ? describeError(error, 'کد وارد شده اشتباه است') : 'کد وارد شده اشتباه است'
+    formError.value = error ? describeAuthError(error, CODE_REJECTED_MESSAGE) : CODE_REJECTED_MESSAGE
     return
   }
 
@@ -112,6 +124,23 @@ async function verifyOtp() {
             :label="`کد تایید ارسال‌شده به ${phone}`"
             placeholder="------"
           />
+          <!-- The code's real remaining life, so a timed-out code isn't mistaken for a typo. -->
+          <p
+            v-if="codeTtlKnown && !codeExpired"
+            data-testid="code-expiry"
+            aria-live="polite"
+            class="tnum text-center text-sm text-(--color-text-muted)"
+          >
+            اعتبار کد: {{ formatCountdown(codeExpiresIn) }}
+          </p>
+          <p
+            v-else-if="codeExpired"
+            data-testid="code-expired"
+            role="alert"
+            class="text-center text-sm font-semibold text-(--tone-danger-text)"
+          >
+            {{ CODE_EXPIRED_MESSAGE }}
+          </p>
           <p v-if="formError" role="alert" aria-live="polite" class="flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)">
             <AppIcon name="warning" :size="16" class="shrink-0" />
             {{ formError }}

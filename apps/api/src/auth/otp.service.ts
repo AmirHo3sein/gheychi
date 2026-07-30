@@ -3,16 +3,34 @@ import { randomInt } from 'crypto';
 import Redis from 'ioredis';
 import { REDIS } from '../redis/redis.module';
 
-const OTP_TTL_SEC = 120;
-const RATE_LIMIT_MAX = 3;
-const RATE_WINDOW_SEC = 3600;
+export const OTP_TTL_SEC = 120;
+export const RATE_LIMIT_MAX = 3;
+export const RATE_WINDOW_SEC = 3600;
 const MAX_VERIFY_ATTEMPTS = 5;
+
+export interface IssuedOtp {
+  code: string;
+  /**
+   * How long the code stays valid. Returned to the client rather than left for each
+   * frontend to hardcode -- three separate login screens would otherwise each carry
+   * their own copy of this number, free to drift from the real TTL enforced here.
+   */
+  expiresInSec: number;
+  /**
+   * How many further requests this phone may make inside the current rate window.
+   * Surfaced so a client can warn before the last one instead of letting the user
+   * discover the limit by getting locked out. Not a disclosure risk: the limiter is
+   * keyed on the phone the caller already supplied and is applied whether or not an
+   * account exists, so this reveals nothing about account existence.
+   */
+  resendsRemaining: number;
+}
 
 @Injectable()
 export class OtpService {
   constructor(@Inject(REDIS) private readonly redis: Redis) {}
 
-  async issue(phone: string): Promise<string> {
+  async issue(phone: string): Promise<IssuedOtp> {
     const rlKey = `otp:rl:${phone}`;
     const count = await this.redis.incr(rlKey);
     if (count === 1) await this.redis.expire(rlKey, RATE_WINDOW_SEC);
@@ -22,7 +40,11 @@ export class OtpService {
     const code = randomInt(100000, 1000000).toString();
     await this.redis.set(`otp:${phone}`, code, 'EX', OTP_TTL_SEC);
     await this.redis.del(`otp:att:${phone}`);
-    return code;
+    return {
+      code,
+      expiresInSec: OTP_TTL_SEC,
+      resendsRemaining: Math.max(0, RATE_LIMIT_MAX - count),
+    };
   }
 
   async verify(phone: string, code: string): Promise<boolean> {

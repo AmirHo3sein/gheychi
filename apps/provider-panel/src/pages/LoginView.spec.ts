@@ -102,7 +102,7 @@ describe('LoginView', () => {
 
     const errorEl = wrapper.find('[role="alert"]')
     expect(errorEl.exists()).toBe(true)
-    expect(errorEl.text()).toContain('چند لحظه صبر کنید')
+    expect(errorEl.text()).toContain('تا یک ساعت آینده')
     expect(errorEl.text()).not.toContain('شماره موبایل نامعتبر است')
   })
 
@@ -143,7 +143,7 @@ describe('LoginView', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     expect(wrapper.find('[data-testid="code-input"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('کد وارد شده اشتباه است')
+    expect(wrapper.text()).toContain('نادرست یا منقضی شده است')
     expect(useSessionStore().isLoggedIn).toBe(false)
   })
 
@@ -169,7 +169,7 @@ describe('LoginView', () => {
     const errorEl = wrapper.find('[role="alert"]')
     expect(errorEl.exists()).toBe(true)
     expect(errorEl.text()).toContain('خطایی در سرور رخ داده است')
-    expect(errorEl.text()).not.toContain('کد وارد شده اشتباه است')
+    expect(errorEl.text()).not.toContain('نادرست یا منقضی شده است')
     expect(useSessionStore().isLoggedIn).toBe(false)
   })
 })

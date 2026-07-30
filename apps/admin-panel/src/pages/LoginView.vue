@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { nextTick, ref } from 'vue'
+import { computed, nextTick, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import { useSessionStore } from '@/stores/session'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
+import { CODE_EXPIRED_MESSAGE, CODE_REJECTED_MESSAGE, describeAuthError, formatCountdown } from '@/utils/auth-errors'
 
 const { apiFetch } = useApi()
 const session = useSessionStore()
@@ -18,20 +19,47 @@ const errorMessage = ref('')
 const submitting = ref(false)
 const codeInputRef = ref<InstanceType<typeof AppInput> | null>(null)
 
+// The code lives 120s (OtpService.OTP_TTL_SEC, reported by the API as expiresInSec rather
+// than hardcoded per screen). Without a visible expiry the 401 for a timed-out code reads as
+// "you mistyped it", so the admin retypes the same correct digits and fails again.
+const codeExpiresIn = ref(0)
+let expiryTimer: ReturnType<typeof setInterval> | undefined
+// Only claim anything about expiry when the API actually told us the TTL -- otherwise a
+// response without expiresInSec would render an immediate, false "your code expired".
+const codeTtlKnown = ref(false)
+const codeExpired = computed(() => step.value === 'code' && codeTtlKnown.value && codeExpiresIn.value <= 0)
+
+function startExpiryCountdown(seconds: number) {
+  clearInterval(expiryTimer)
+  codeTtlKnown.value = seconds > 0
+  codeExpiresIn.value = seconds
+  if (!codeTtlKnown.value) return
+  expiryTimer = setInterval(() => {
+    codeExpiresIn.value -= 1
+    if (codeExpiresIn.value <= 0) clearInterval(expiryTimer)
+  }, 1000)
+}
+onUnmounted(() => clearInterval(expiryTimer))
+
 async function requestOtp() {
   errorMessage.value = ''
   submitting.value = true
-  const { error } = await apiFetch('/auth/request-otp', {
+  const { data, error } = await apiFetch<{ expiresInSec: number }>('/auth/request-otp', {
     method: 'POST',
     body: { phone: phone.value },
     silent: true,
   })
   submitting.value = false
   if (error) {
-    errorMessage.value = error.message
+    // Never surface error.message directly: the API's strings are English ('Too many OTP
+    // requests'), which would land untranslated in this Persian-only UI, and a 429 rendered
+    // as-is tells the admin nothing about the hour-long window they just hit.
+    errorMessage.value = describeAuthError(error, 'شماره موبایل نامعتبر است')
     return
   }
+  code.value = ''
   step.value = 'code'
+  startExpiryCountdown(data?.expiresInSec ?? 0)
   await nextTick()
   codeInputRef.value?.$el?.querySelector('input')?.focus()
 }
@@ -54,7 +82,7 @@ async function verifyOtp() {
   })
   submitting.value = false
   if (error || !data) {
-    errorMessage.value = error?.message ?? 'کد وارد شده نامعتبر است'
+    errorMessage.value = error ? describeAuthError(error, CODE_REJECTED_MESSAGE) : CODE_REJECTED_MESSAGE
     return
   }
   session.setUser(data.user)
@@ -114,6 +142,23 @@ async function verifyOtp() {
           autocomplete="one-time-code"
           :error="step === 'code' ? errorMessage : ''"
         />
+        <!-- The code's real remaining life, so a timed-out code isn't mistaken for a typo. -->
+        <p
+          v-if="codeTtlKnown && !codeExpired"
+          data-testid="code-expiry"
+          aria-live="polite"
+          class="tnum text-center text-sm text-(--color-text-muted)"
+        >
+          اعتبار کد: {{ formatCountdown(codeExpiresIn) }}
+        </p>
+        <p
+          v-else-if="codeExpired"
+          data-testid="code-expired"
+          role="alert"
+          class="text-center text-sm font-semibold text-(--tone-danger-text)"
+        >
+          {{ CODE_EXPIRED_MESSAGE }}
+        </p>
         <AppButton type="submit" data-testid="submit-code" :loading="submitting" size="lg" block>
           {{ submitting ? 'در حال بررسی…' : 'تایید و ورود' }}
         </AppButton>

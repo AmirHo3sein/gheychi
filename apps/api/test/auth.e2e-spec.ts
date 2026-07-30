@@ -28,6 +28,39 @@ describe('Auth (e2e)', () => {
     expect(await redis.get(`otp:${phone}`)).toMatch(/^\d{6}$/);
   });
 
+  it('reports the code TTL and the remaining resend budget to the client', async () => {
+    // The three login screens render an expiry countdown and a "last resend" warning from
+    // these fields. If they ever stop being returned the UI silently degrades to the old
+    // behaviour (no expiry shown, and an unannounced hour-long lockout after 3 requests),
+    // so the contract is asserted here rather than only in the service unit test.
+    const fresh = '09121230099';
+    await redis.del(`otp:rl:${fresh}`);
+
+    const first = await request(app.getHttpServer())
+      .post('/api/auth/request-otp')
+      .send({ phone: fresh })
+      .expect(201);
+    expect(first.body.expiresInSec).toBeGreaterThan(0);
+    // Matches the TTL Redis actually applied, so the countdown can't drift from the real one.
+    expect(first.body.expiresInSec).toBe(await redis.ttl(`otp:${fresh}`));
+    expect(first.body.resendsRemaining).toBe(2);
+
+    const second = await request(app.getHttpServer())
+      .post('/api/auth/request-otp')
+      .send({ phone: fresh })
+      .expect(201);
+    expect(second.body.resendsRemaining).toBe(1);
+
+    const third = await request(app.getHttpServer())
+      .post('/api/auth/request-otp')
+      .send({ phone: fresh })
+      .expect(201);
+    expect(third.body.resendsRemaining).toBe(0);
+
+    // The budget the client was told about is the one the limiter actually enforces.
+    await request(app.getHttpServer()).post('/api/auth/request-otp').send({ phone: fresh }).expect(429);
+  });
+
   it('rejects a wrong code', () =>
     request(app.getHttpServer())
       .post('/api/auth/verify-otp')

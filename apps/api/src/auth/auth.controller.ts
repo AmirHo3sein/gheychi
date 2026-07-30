@@ -35,9 +35,11 @@ export class AuthController {
 
   @Post('request-otp')
   async requestOtp(@Body() dto: RequestOtpDto) {
-    const code = await this.otp.issue(dto.phone);
+    const { code, expiresInSec, resendsRemaining } = await this.otp.issue(dto.phone);
     await this.sms.sendOtp(dto.phone, code);
-    return { ok: true };
+    // expiresInSec/resendsRemaining let the login screens show an honest expiry countdown
+    // and warn before the last allowed resend, instead of each hardcoding its own guess.
+    return { ok: true, expiresInSec, resendsRemaining };
   }
 
   @Post('verify-otp')

@@ -60,7 +60,10 @@ describe('LoginView', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.find('[data-testid="code-input"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('too many requests')
+    // The API's own message is English ('too many requests'); this screen must never render
+    // it verbatim, and a 429 has to name the real hour-long window it just hit.
+    expect(wrapper.text()).not.toContain('too many requests')
+    expect(wrapper.text()).toContain('تا یک ساعت آینده')
   })
 
   it('verifies the code and navigates to / on success', async () => {
@@ -95,7 +98,7 @@ describe('LoginView', () => {
   it('shows an error and stays on the code step when verify-otp fails', async () => {
     fetchMock
       .mockResolvedValueOnce({ data: { ok: true }, error: null })
-      .mockResolvedValueOnce({ data: null, error: { status: 400, message: 'کد وارد شده اشتباه است' } })
+      .mockResolvedValueOnce({ data: null, error: { status: 401, message: 'Invalid or expired code' } })
     const { wrapper, router } = await mountWithRouter()
 
     await wrapper.get('[data-testid="phone-input"]').setValue('09120000900')
@@ -108,7 +111,9 @@ describe('LoginView', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.find('[data-testid="code-input"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('کد وارد شده اشتباه است')
+    // 401 covers wrong / expired / burned-by-retries alike, so the copy names both causes.
+    expect(wrapper.text()).not.toContain('Invalid or expired code')
+    expect(wrapper.text()).toContain('نادرست یا منقضی شده است')
     expect(useSessionStore().isLoggedIn).toBe(false)
     expect(router.currentRoute.value.name).toBe('login')
   })
