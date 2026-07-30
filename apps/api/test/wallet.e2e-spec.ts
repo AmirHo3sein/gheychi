@@ -20,7 +20,7 @@ describe('Wallet ledger + admin manual adjustment (e2e)', () => {
       .get('/api/admin/users?phone=09122320002')
       .set('Cookie', adminCookie)
       .expect(200);
-    customerUserId = users.body[0].id;
+    customerUserId = users.body.items[0].id;
   });
 
   afterAll(async () => {

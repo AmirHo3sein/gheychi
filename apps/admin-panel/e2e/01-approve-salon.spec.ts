@@ -29,7 +29,10 @@ test('log in as admin, approve a pending salon', async ({ page, request }) => {
   await expect(page).toHaveURL(/\/salons\/[0-9a-f-]+/)
   const salonId = page.url().split('/salons/')[1]
 
+  // Approving is confirm-before-commit (same treatment reject/suspend already had, minus the
+  // reason field): the first click only opens the confirm strip, `approve-confirm` commits.
   await page.getByTestId('approve-button').click()
+  await page.getByTestId('approve-confirm').click()
 
   // Verify the status genuinely flipped via a follow-up API call, not just a UI assertion --
   // the page's own text would say "approved" either way if the click handler were a no-op

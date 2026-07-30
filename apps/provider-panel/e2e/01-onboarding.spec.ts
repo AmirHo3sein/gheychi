@@ -24,8 +24,14 @@ test('login, complete onboarding wizard, land on pending-approval', async ({ pag
   await page.getByTestId('gender-target').selectOption('women')
   await page.getByTestId('city').fill('تهران')
   await page.getByTestId('address').fill('خیابان آزادی، پلاک ۲')
-  // SalonPinPicker emits a default coordinate as soon as its Leaflet map mounts --
-  // waiting for the next button to enable covers that without polling the map directly.
+  // SalonPinPicker deliberately does NOT auto-emit a coordinate on mount -- doing so used
+  // to let an owner submit a listing whose geo-point silently defaulted to the map's
+  // starting center. lat/lng only becomes "set" once the owner drags/clicks the map or
+  // fills the coordinate inputs, so the wizard genuinely cannot advance until then.
+  await page.getByTestId('pin-lat').fill('35.7')
+  await page.getByTestId('pin-lat').dispatchEvent('change')
+  await page.getByTestId('pin-lng').fill('51.4')
+  await page.getByTestId('pin-lng').dispatchEvent('change')
   await expect(page.getByTestId('wizard-next')).toBeEnabled({ timeout: 15_000 })
   await page.getByTestId('wizard-next').click()
 
