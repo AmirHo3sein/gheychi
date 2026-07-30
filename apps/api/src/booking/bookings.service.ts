@@ -50,7 +50,7 @@ export class BookingsService {
   async createHold(
     userId: string,
     dto: CreateBookingDto,
-  ): Promise<{ booking: Booking; paymentUrl: string; couponApplied: boolean }> {
+  ): Promise<{ booking: Booking; paymentUrl: string; couponApplied: boolean; paymentRequired: boolean }> {
     const salon = await this.salons.findOneBy({ id: dto.salonId, status: 'approved' });
     if (!salon) throw new NotFoundException('Salon not found');
 
@@ -126,7 +126,19 @@ export class BookingsService {
 
         const depositPercent = await this.config.getDepositPercent();
         const depositMin = await this.config.getDepositMinToman();
+        // Capped at finalPrice by calculateDeposit, so a fully-discounted booking (100%-off
+        // coupon, or a fixed-amount referral coupon worth at least the price) lands on 0.
         const deposit = calculateDeposit(finalPrice, depositPercent, depositMin);
+        // Nothing to collect => no gateway session and no Payment row at all, and the
+        // booking is confirmed outright instead of being held in pending_payment. Sending
+        // the customer to Zarinpal for 0 toman is not an option: the gateway rejects a
+        // zero amount, which would 500 the booking request and leave a hold to expire.
+        // A missing Payment row is already the "nothing was ever captured" case everywhere
+        // that reads one -- cancel()'s payment UPDATE matches no row, attemptRefund()
+        // skips, findMine()'s refundStatus stays null, getEarnings() counts nothing, and
+        // the referral first_paid_booking trigger correctly never fires for a free booking
+        // -- so this needs no special-casing outside createHold.
+        const requiresPayment = deposit > 0;
 
         const savedBooking = await em.save(
           Booking,
@@ -138,7 +150,7 @@ export class BookingsService {
             endsAt,
             priceSnapshot: finalPrice,
             depositAmount: deposit,
-            status: 'pending_payment',
+            status: requiresPayment ? 'pending_payment' : 'confirmed',
             // Only the coupon that actually produced the price is recorded against the
             // booking -- a losing coupon was never applied to it in any sense.
             couponId: couponApplied ? coupon!.id : null,
@@ -151,15 +163,17 @@ export class BookingsService {
             originalPriceSnapshot: winner !== null ? service.price : null,
           }),
         );
-        await em.save(
-          Payment,
-          em.create(Payment, {
-            bookingId: savedBooking.id,
-            amount: deposit,
-            gateway: 'zarinpal',
-            status: 'initiated',
-          }),
-        );
+        if (requiresPayment) {
+          await em.save(
+            Payment,
+            em.create(Payment, {
+              bookingId: savedBooking.id,
+              amount: deposit,
+              gateway: 'zarinpal',
+              status: 'initiated',
+            }),
+          );
+        }
 
         if (couponApplied) {
           try {
@@ -197,12 +211,36 @@ export class BookingsService {
       await this.redis.del(lockKey);
     }
 
+    // A fully-discounted booking has nothing to charge for: it was committed as 'confirmed'
+    // above, so there is no payment session to open. (couponApplied, returned by both
+    // branches below, is false when no code was sent AND when a sent code lost to the
+    // service's own discount -- the caller needs it to avoid telling the customer their code
+    // was used when it wasn't; the booking's own price/discount columns already record what
+    // was actually charged.)
+    if (depositAmount === 0) {
+      // Already 'confirmed' inside the transaction above. Send the same notifications the
+      // payment callback sends on a confirmation -- otherwise the salon would never learn
+      // about a free booking. Best-effort, exactly as in notifyConfirmed's own caller: the
+      // booking is committed, so a notification failure must not surface as a failed
+      // request (the customer would retry and double-book).
+      try {
+        await this.paymentsService.notifyConfirmed(booking.id);
+      } catch (err) {
+        this.logger.error(
+          `Failed to notify the zero-deposit confirmation of booking ${booking.id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      // There is no gateway URL for a booking with nothing to pay, but the field is on the
+      // wire and the user-app navigates to it unconditionally, so it points at the booking
+      // itself -- the honest destination. Deliberately NOT the payment-callback page: that
+      // page's success copy says the deposit was received, which would be a lie here.
+      // `paymentRequired: false` is the explicit signal for clients that want to branch.
+      const frontendBase = this.nestConfig.get('FRONTEND_BASE_URL', 'http://localhost:3003');
+      return { booking, paymentUrl: `${frontendBase}/bookings/${booking.id}`, couponApplied, paymentRequired: false };
+    }
+
     const paymentUrl = await this.createPaymentSession(booking, salon.name, depositAmount);
-    // couponApplied is false both when no code was sent and when a sent code lost to the
-    // service's own discount -- the caller needs it to avoid telling the customer their
-    // code was used when it wasn't (the booking's own price/discount columns already say
-    // what was actually charged).
-    return { booking, paymentUrl, couponApplied };
+    return { booking, paymentUrl, couponApplied, paymentRequired: true };
   }
 
   // Shared by createHold and retryPayment -- both need to obtain a fresh Zarinpal

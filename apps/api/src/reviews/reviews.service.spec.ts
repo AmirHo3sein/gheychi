@@ -47,13 +47,54 @@ describe('ReviewsService.findForSalon', () => {
 
   it('returns published reviews newest-first for an approved salon', async () => {
     salonFindOneBy.mockResolvedValue({ id: 's1', status: 'approved' });
-    const rows = [{ id: 'r1' }];
-    reviewsFind.mockResolvedValue(rows);
-    await expect(service.findForSalon('s1')).resolves.toBe(rows);
+    const replyAt = new Date('2026-07-02T00:00:00Z');
+    const createdAt = new Date('2026-07-01T00:00:00Z');
+    reviewsFind.mockResolvedValue([
+      {
+        id: 'r1',
+        bookingId: 'b1',
+        salonId: 's1',
+        userId: 'u1',
+        rating: 4,
+        comment: 'Good',
+        status: 'published',
+        salonReply: 'Thanks!',
+        salonReplyAt: replyAt,
+        createdAt,
+      },
+    ]);
+    await expect(service.findForSalon('s1')).resolves.toEqual([
+      { id: 'r1', rating: 4, comment: 'Good', salonReply: 'Thanks!', salonReplyAt: replyAt, createdAt },
+    ]);
     expect(reviewsFind).toHaveBeenCalledWith({
       where: { salonId: 's1', status: 'published' },
       order: { createdAt: 'DESC' },
     });
+  });
+
+  // This endpoint is unauthenticated, so the projection is a privacy boundary, not a
+  // cosmetic one -- pinned by key set (not just by absence of the two known-sensitive
+  // fields) so a future `find()`/entity change can't silently re-widen the payload.
+  it('never exposes reviewer identity or the source booking on the public payload', async () => {
+    salonFindOneBy.mockResolvedValue({ id: 's1', status: 'approved' });
+    reviewsFind.mockResolvedValue([
+      {
+        id: 'r1',
+        bookingId: 'b1',
+        salonId: 's1',
+        userId: 'u1',
+        rating: 5,
+        comment: null,
+        status: 'published',
+        salonReply: null,
+        salonReplyAt: null,
+        createdAt: new Date('2026-07-01T00:00:00Z'),
+      },
+    ]);
+    const [review] = await service.findForSalon('s1');
+    expect(Object.keys(review).sort()).toEqual(
+      ['comment', 'createdAt', 'id', 'rating', 'salonReply', 'salonReplyAt'],
+    );
   });
 });
 

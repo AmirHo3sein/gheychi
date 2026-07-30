@@ -81,16 +81,32 @@ const displayPrice = computed(() => {
   return applyDiscount(page.value.service.price, page.value.service.discountPercent)
 })
 
+// Did the applied coupon actually WIN against the service's own discount? /coupons/validate
+// exposes no winner/applied flag of its own (unlike POST /bookings, which returns
+// `couponApplied`), so it has to be derived: `finalPrice` is the best of BOTH candidates, so
+// the coupon only won if that price beats what the service's own discount alone would have
+// produced. A tie is deliberately NOT a win -- resolveBestPriceWithWinner() keeps the
+// earlier candidate (the service) on an equal resulting price, so an equally-good coupon
+// changes nothing about what's charged. `finalPrice` itself always comes from the server;
+// only the service-alone comparison price is computed here, with applyDiscount() mirroring
+// the server's percent rounding exactly (see app/utils/discount.ts).
+const couponWon = computed(() => {
+  const coupon = appliedCoupon.value
+  if (!coupon) return false
+  return coupon.finalPrice < applyDiscount(coupon.originalPrice, coupon.serviceDiscountPercent)
+})
+
 // "You saved X toman" -- always correct regardless of discount kind (percent or
 // fixed), since it's derived from the two authoritative prices rather than from any
-// percent figure. Only meaningful once a coupon is applied and it actually won
-// against the service's own discount (i.e. finalPrice < originalPrice); a coupon that
-// didn't beat the service discount, or a service-only discount with no coupon
-// applied, has nothing coupon-specific worth calling out here.
+// percent figure. Gated on couponWon: this line credits the COUPON with the saving, so a
+// service-only discount that the coupon merely failed to beat must never be reported here
+// (it used to be -- any positive originalPrice - finalPrice counted, so a weak coupon on a
+// 30%-off service claimed the service's own 90,000 toman as the coupon's work). A genuine
+// win always implies a positive saving (finalPrice < the service-alone price <=
+// originalPrice), so no second sign check is needed.
 const couponSavings = computed(() => {
-  if (!appliedCoupon.value) return null
-  const savings = appliedCoupon.value.originalPrice - appliedCoupon.value.finalPrice
-  return savings > 0 ? savings : null
+  if (!couponWon.value || !appliedCoupon.value) return null
+  return appliedCoupon.value.originalPrice - appliedCoupon.value.finalPrice
 })
 
 // Mirrors calculateDeposit() in apps/api/src/booking/deposit.util.ts -- this is a
@@ -105,8 +121,34 @@ const estimatedDeposit = computed(() => {
   if (appliedCoupon.value) return appliedCoupon.value.estimatedDeposit
   const discountedPrice = applyDiscount(page.value.service.price, page.value.service.discountPercent)
   const pct = Math.round((discountedPrice * page.value.terms.depositPercent) / 100)
-  return Math.max(pct, page.value.terms.depositMinToman)
+  // The discounted price is a hard ceiling, exactly as in calculateDeposit(): the minimum is
+  // a floor on a normal price, never a licence to quote more than the service costs. Without
+  // this Math.min, any service cheaper than depositMinToman was quoted a deposit ABOVE its
+  // own price here while the server (correctly capped) charged less -- an over-quote on the
+  // one number the customer is deciding on.
+  return Math.max(0, Math.min(Math.max(pct, page.value.terms.depositMinToman), discountedPrice))
 })
+
+// The API's 4xx bodies are the only explanation of WHY a coupon or a hold was refused, and
+// every one a customer can act on is already written for them in Persian (CouponsService's
+// four distinct rejections: unknown code, expired, already redeemed by this user, redemption
+// cap full). But not every message on those paths is customer copy -- createHold's
+// `startsAt must be a valid future date-time` and the salon/service 404s are developer-facing
+// English -- so a message with no Persian in it is treated as unusable and falls back to
+// generic copy rather than being shown verbatim.
+const PERSIAN_TEXT = /[\u0600-\u06FF]/
+function customerFacingMessage(message: string | undefined): string | null {
+  return message && PERSIAN_TEXT.test(message) ? message : null
+}
+
+// A coupon rejection from POST /bookings arrives as a plain 400 with no machine-readable
+// code, so the only signal available is that the message names the coupon -- "کد تخفیف"
+// appears in every one of CouponsService.resolveAndValidate's rejections and in createHold's
+// own duplicate-redemption catch. Copy-coupled by necessity; an error code on the response
+// body would make this robust (reported upstream).
+function mentionsCoupon(message: string): boolean {
+  return message.includes('کد تخفیف')
+}
 
 async function applyCoupon() {
   const code = couponCode.value.trim()
@@ -120,8 +162,18 @@ async function applyCoupon() {
   })
   couponApplying.value = false
   if (error || !data) {
-    couponError.value = 'کد تخفیف نامعتبر است'
     appliedCoupon.value = null
+    // Same reasoning as confirmBooking's 401 branch: useApi has already started the
+    // redirect to /login, and "invalid code" would be an outright lie about a session
+    // that simply expired.
+    if (error?.status === 401) return
+    // The four coupon rejections are distinct and actionable -- an expired code, a code
+    // this user already used, and a code whose redemption cap is full all told the customer
+    // "کد تخفیف نامعتبر است" before this, sending them off to re-check a code they typed
+    // perfectly. A non-400 carries no coupon-specific meaning, so it keeps generic copy.
+    couponError.value =
+      (error?.status === 400 ? customerFacingMessage(error.message) : null) ??
+      'بررسی کد تخفیف ممکن نشد، لطفا دوباره تلاش کنید'
     return
   }
   appliedCoupon.value = { ...data, code }
@@ -148,9 +200,31 @@ async function confirmBooking() {
     // a local error message would just flash "an error occurred" right as the user is
     // being navigated away.
     if (error?.status === 401) return
-    submitError.value = error?.status === 409
-      ? 'این نوبت همین الان رزرو شد، لطفا زمان دیگری را انتخاب کنید'
-      : 'خطایی رخ داد، لطفا دوباره تلاش کنید'
+    if (error?.status === 409) {
+      submitError.value = 'این نوبت همین الان رزرو شد، لطفا زمان دیگری را انتخاب کنید'
+      selectedSlot.value = null
+      return
+    }
+
+    const reason = error?.status === 400 ? customerFacingMessage(error.message) : null
+
+    // createHold re-validates the coupon inside its own transaction, so a code that passed
+    // the preview minutes ago can still be refused here (expired in between, redemption cap
+    // filled by someone else). That refusal used to become "an error occurred, try again"
+    // AND cleared the slot -- so the customer re-picked a slot, failed identically, and had
+    // no way to learn that the coupon was the blocker. The dead code is dropped instead and
+    // the slot is deliberately KEPT: the slot was never the problem, and the retry now
+    // succeeds without the code.
+    if (appliedCoupon.value && reason && mentionsCoupon(reason)) {
+      appliedCoupon.value = null
+      couponError.value = reason
+      submitError.value = 'کد تخفیف از این رزرو برداشته شد؛ می‌توانید بدون آن پرداخت را ادامه دهید'
+      return
+    }
+
+    // Anything else (a stale/past slot, a server error) genuinely invalidates the chosen
+    // slot, so clearing it and making the customer re-pick is the right recovery.
+    submitError.value = reason ?? 'خطایی رخ داد، لطفا دوباره تلاش کنید'
     selectedSlot.value = null
     return
   }
@@ -229,10 +303,21 @@ async function confirmBooking() {
             اعمال
           </BaseButton>
         </div>
-        <p v-if="appliedCoupon" aria-live="polite" class="flex items-center gap-1 text-xs text-(--color-success)">
-          <BaseIcon name="check-circle" :size="14" />
+        <!-- Two honest outcomes for a VALID coupon, and the color carries which one it is:
+             it beat the service's own discount (success green, with the amount it saved), or
+             it didn't (muted, stating plainly that the price is unchanged). The old fallback
+             here said "کد تخفیف با موفقیت اعمال شد" for the second case, which -- next to a
+             price that hadn't moved -- read as either a bug or a broken promise. Both stay
+             inside the one aria-live region so the swap is announced, not just recolored. -->
+        <p
+          v-if="appliedCoupon"
+          aria-live="polite"
+          class="flex items-start gap-1 text-xs"
+          :class="couponSavings ? 'text-(--color-success)' : 'text-(--color-text-muted)'"
+        >
+          <BaseIcon :name="couponSavings ? 'check-circle' : 'alert-circle'" :size="14" class="shrink-0" />
           <span v-if="couponSavings">شما {{ couponSavings.toLocaleString('fa-IR') }} تومان صرفه‌جویی کردید</span>
-          <span v-else>کد تخفیف با موفقیت اعمال شد</span>
+          <span v-else>این کد تخفیف معتبر است، اما از تخفیف فعلی این خدمت بیشتر نیست؛ قیمت تغییری نمی‌کند</span>
         </p>
       </div>
 
@@ -242,8 +327,11 @@ async function confirmBooking() {
     </BaseCard>
 
     <!-- Deliberately outside the `selectedSlot` block above: confirmBooking() resets
-    selectedSlot to null in the same branch that sets this message (e.g. on a 409), so
-    nesting it inside that v-if would make the error disappear the instant it's set. -->
+    selectedSlot to null in the same branch that sets this message (a 409, or any non-coupon
+    failure), so nesting it inside that v-if would make the error disappear the instant it's
+    set. The coupon-rejected-at-submit branch keeps the slot, so its message renders here
+    with the confirm sheet still open above it -- which is the point: the retry is one tap
+    away and no longer needs the code. -->
     <p v-if="submitError" role="alert" aria-live="assertive" class="text-(--color-danger) text-sm">{{ submitError }}</p>
   </div>
 </template>

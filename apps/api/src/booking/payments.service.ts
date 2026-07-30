@@ -13,12 +13,31 @@ import { releaseCouponRedemption } from './coupon-release.util';
 import { PAYMENT_GATEWAY, PaymentGateway, PaymentRefundResult } from './payment-gateway';
 import { Payment } from './payment.entity';
 
-export type CallbackOutcome = 'success' | 'failed' | 'already-confirmed' | 'unknown-authority';
+// 'refunding' is NOT a flavour of 'failed': the gateway captured the money and a refund is
+// owed (queued, in flight, or already completed). It exists because collapsing it into
+// 'failed' told the customer "no payment happened and no booking exists" while their bank
+// statement showed the deduction -- the exact opposite of the truth about their money.
+// 'failed' now means strictly "nothing was captured" (declined, cancelled at the bank).
+export type CallbackOutcome = 'success' | 'failed' | 'refunding' | 'already-confirmed' | 'unknown-authority';
 
 // What handleCallback's capture transaction actually did. 'dead-booking' means the
 // booking is no longer in pending_payment, so the capture must be refunded rather
 // than confirmed -- never resurrected into a slot that was already released.
 type CaptureOutcome = 'captured' | 'duplicate' | 'dead-booking';
+
+// What recoverCapturedOnDeadBooking found/did -- see its doc comment.
+type CaptureRecovery = 'refund-queued' | 'already-paid' | 'already-handled';
+
+/**
+ * Translates a late-capture recovery into what the customer is told. Every path into
+ * recoverCapturedOnDeadBooking has already had a SUCCESSFUL verify, so the money is
+ * definitely captured: 'failed' -- "no payment happened, no booking exists" -- is never a
+ * true statement here, whichever concurrent writer ended up owning the refund. Only a
+ * concurrent callback that genuinely confirmed the booking ('already-paid') is a success.
+ */
+function captureRecoveryOutcome(recovery: CaptureRecovery): CallbackOutcome {
+  return recovery === 'already-paid' ? 'success' : 'refunding';
+}
 
 @Injectable()
 export class PaymentsService {
@@ -49,8 +68,11 @@ export class PaymentsService {
     }
     // The capture is already on record and a refund is owed or already issued -- the
     // booking is not coming back, and re-verifying would only risk re-queueing work.
+    // Reported as 'refunding', not 'failed': both of these statuses mean money WAS
+    // captured (cancel() and reconciliation only ever reach them from a paid deposit), so
+    // this is also what a customer sees when they refresh the callback URL afterwards.
     if (payment.status === 'refund_pending' || payment.status === 'refunded') {
-      return { status: 'failed', bookingId: payment.bookingId };
+      return { status: 'refunding', bookingId: payment.bookingId };
     }
 
     // 'initiated' or 'failed' from here on. A 'failed' payment is NOT a dead end this
@@ -95,7 +117,7 @@ export class PaymentsService {
       // definition its booking has left pending_payment, so it must not be resurrected
       // -- queue the refund instead.
       const recovery = await this.recoverCapturedOnDeadBooking(payment, authority, verify.refId);
-      return { status: recovery === 'already-paid' ? 'success' : 'failed', bookingId: payment.bookingId };
+      return { status: captureRecoveryOutcome(recovery), bookingId: payment.bookingId };
     }
 
     // Zarinpal's callback is a browser redirect, not a server-issued webhook --
@@ -171,7 +193,7 @@ export class PaymentsService {
     }
 
     const recovery = await this.recoverCapturedOnDeadBooking(payment, authority, verify.refId);
-    return { status: recovery === 'already-paid' ? 'success' : 'failed', bookingId: payment.bookingId };
+    return { status: captureRecoveryOutcome(recovery), bookingId: payment.bookingId };
   }
 
   /**
@@ -193,7 +215,7 @@ export class PaymentsService {
     payment: Payment,
     authority: string,
     refId: string | null,
-  ): Promise<'refund-queued' | 'already-paid' | 'already-handled'> {
+  ): Promise<CaptureRecovery> {
     const current = await this.payments.findOneBy({ id: payment.id });
     if (!current) return 'already-handled';
     if (current.status === 'paid') return 'already-paid';
@@ -368,7 +390,13 @@ export class PaymentsService {
     });
   }
 
-  private async notifyConfirmed(bookingId: string): Promise<void> {
+  /**
+   * The "booking is confirmed" customer+owner notification. Public because confirmation no
+   * longer happens only on this module's payment callback: a fully-discounted booking has a
+   * zero deposit, so BookingsService.createHold confirms it outright with no payment
+   * session and calls this directly -- the salon must still be told about it.
+   */
+  async notifyConfirmed(bookingId: string): Promise<void> {
     const booking = await this.bookings.findOneBy({ id: bookingId });
     if (!booking) return;
     const salon = await this.salonsService.findById(booking.salonId);

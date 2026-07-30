@@ -79,6 +79,137 @@ describe('BookingsService.getEarnings', () => {
   });
 });
 
+describe('BookingsService.createHold -- deposit is capped at the price being charged', () => {
+  let service: BookingsService;
+  let emCount: jest.Mock;
+  let emSave: jest.Mock;
+  let requestPayment: jest.Mock;
+  let notifyConfirmed: jest.Mock;
+  let resolveAndValidate: jest.Mock;
+  let redisSet: jest.Mock;
+  let redisDel: jest.Mock;
+
+  // Cheap enough that the live config's 200,000-toman minimum would otherwise exceed it.
+  const SERVICE = {
+    id: 'service-1',
+    salonId: 'salon-1',
+    price: 150_000,
+    durationMin: 30,
+    discountPercent: null as number | null,
+    isActive: true,
+  };
+  const DTO = { salonId: 'salon-1', serviceId: 'service-1', startsAt: new Date(Date.now() + 86_400_000).toISOString() };
+
+  function savedBooking(): Record<string, unknown> {
+    return emSave.mock.calls.find(([entity]) => entity === Booking)![1] as Record<string, unknown>;
+  }
+
+  beforeEach(async () => {
+    emCount = jest.fn().mockResolvedValue(0);
+    emSave = jest.fn(async (entity: unknown, obj: Record<string, unknown>) => ({
+      id: entity === Payment ? 'pay-1' : 'booking-1',
+      ...obj,
+    }));
+    requestPayment = jest.fn().mockResolvedValue({ authority: 'AUTH-1', paymentUrl: 'https://pay.example/AUTH-1' });
+    notifyConfirmed = jest.fn().mockResolvedValue(undefined);
+    resolveAndValidate = jest.fn();
+    redisSet = jest.fn().mockResolvedValue('OK');
+    redisDel = jest.fn().mockResolvedValue(1);
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        BookingsService,
+        { provide: getRepositoryToken(Booking), useValue: {} },
+        { provide: getRepositoryToken(Payment), useValue: {} },
+        {
+          provide: getRepositoryToken(Salon),
+          useValue: { findOneBy: jest.fn().mockResolvedValue({ id: 'salon-1', name: 'Test Salon', capacity: 1 }) },
+        },
+        { provide: getRepositoryToken(SalonService), useValue: { findOneBy: jest.fn().mockResolvedValue({ ...SERVICE }) } },
+        { provide: getRepositoryToken(Worker), useValue: {} },
+        {
+          provide: DataSource,
+          useValue: {
+            // Serves both the createHold transaction and createPaymentSession's own.
+            transaction: jest.fn((cb: (em: unknown) => unknown) =>
+              cb({ count: emCount, create: (_e: unknown, obj: unknown) => obj, save: emSave, update: jest.fn(), query: jest.fn() }),
+            ),
+          },
+        },
+        {
+          provide: PlatformConfigService,
+          useValue: {
+            getDepositPercent: jest.fn().mockResolvedValue(20),
+            getDepositMinToman: jest.fn().mockResolvedValue(200_000),
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            getOrThrow: jest.fn().mockReturnValue('http://localhost:3002'),
+            get: jest.fn().mockReturnValue('http://front.example'),
+          },
+        },
+        { provide: REDIS, useValue: { set: redisSet, del: redisDel } },
+        { provide: PAYMENT_GATEWAY, useValue: { requestPayment } },
+        { provide: PaymentsService, useValue: { attemptRefund: jest.fn(), notifyConfirmed } },
+        { provide: AlertsService, useValue: { raise: jest.fn() } },
+        { provide: CouponsService, useValue: { resolveAndValidate } },
+        { provide: ReferralsService, useValue: { tryGrantReward: jest.fn().mockResolvedValue(undefined) } },
+      ],
+    }).compile();
+
+    service = moduleRef.get(BookingsService);
+  });
+
+  it('charges the whole price rather than the higher configured minimum on a cheap service', async () => {
+    const result = await service.createHold('customer-1', DTO);
+
+    // 20% of 150,000 is 30,000 and the minimum is 200,000 -- the price is the ceiling.
+    expect(savedBooking().depositAmount).toBe(150_000);
+    expect(savedBooking().status).toBe('pending_payment');
+    expect(requestPayment).toHaveBeenCalledWith(150_000, expect.any(String), expect.any(String));
+    expect(result.paymentRequired).toBe(true);
+    expect(result.paymentUrl).toBe('https://pay.example/AUTH-1');
+  });
+
+  it('confirms a fully-discounted booking outright: no deposit, no Payment row, no gateway session', async () => {
+    resolveAndValidate.mockResolvedValue({ id: 'coupon-1', discountPercent: 100, discountFixedAmount: null });
+
+    const result = await service.createHold('customer-1', { ...DTO, couponCode: 'FREE100' });
+
+    expect(savedBooking().depositAmount).toBe(0);
+    expect(savedBooking().priceSnapshot).toBe(0);
+    // Confirmed inside the transaction -- there is no payment to wait for, and a
+    // pending_payment hold would just expire and release the slot.
+    expect(savedBooking().status).toBe('confirmed');
+    // No Payment row: a missing payment is already every reader's "nothing was captured".
+    expect(emSave).not.toHaveBeenCalledWith(Payment, expect.anything());
+    // Never send a customer to a payment gateway for 0 toman (Zarinpal rejects it outright,
+    // which would 500 the booking request).
+    expect(requestPayment).not.toHaveBeenCalled();
+    // The salon still has to be told about the booking.
+    expect(notifyConfirmed).toHaveBeenCalledWith('booking-1');
+    expect(result.paymentRequired).toBe(false);
+    expect(result.couponApplied).toBe(true);
+    // Deliberately the booking page, not /booking/callback -- that page's success copy
+    // claims the deposit was received, which would be untrue here.
+    expect(result.paymentUrl).toBe('http://front.example/bookings/booking-1');
+    expect(redisDel).toHaveBeenCalled(); // the per-salon lock is still released
+  });
+
+  it('still returns the confirmed free booking when the confirmation notification fails', async () => {
+    resolveAndValidate.mockResolvedValue({ id: 'coupon-1', discountPercent: 100, discountFixedAmount: null });
+    notifyConfirmed.mockRejectedValue(new Error('sms provider down'));
+
+    const result = await service.createHold('customer-1', { ...DTO, couponCode: 'FREE100' });
+
+    // The booking is already committed; failing the request would invite a double-book.
+    expect(result.booking.id).toBe('booking-1');
+    expect(result.paymentRequired).toBe(false);
+  });
+});
+
 describe('BookingsService.cancel', () => {
   let service: BookingsService;
   let bookingsFindOneBy: jest.Mock;

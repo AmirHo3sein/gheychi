@@ -21,16 +21,39 @@ const SERVICE = { id: 'svc-1', name: 'Haircut', price: 300_000, durationMin: 30 
 const TERMS = { depositPercent: 20, depositMinToman: 200_000, cancellationWindowHours: 24 }
 const SLOT_ISO = '2026-07-10T09:00:00.000Z'
 
+// Shape matches how ofetch surfaces an HTTP error response: the status hangs off
+// `response`, and the API's own JSON body (with its Persian `message`) off `data`.
+function apiError(status: number, message?: string) {
+  return { rejectWith: { response: { status }, data: message ? { message } : undefined } }
+}
+
+// Drives the coupon field exactly as a customer would -- type the code, press "اعمال" --
+// rather than poking the component's internals, so the assertions below stay about what the
+// page tells the customer.
+async function applyCouponCode(wrapper: Awaited<ReturnType<typeof mountSuspended>>, code: string) {
+  await wrapper.find('input').setValue(code)
+  await wrapper.findAll('button').find((b: DOMWrapper<Element>) => b.text() === 'اعمال')!.trigger('click')
+  await flushPromises()
+}
+
 function stubPageLoad(
   bookingsBehavior: 'success' | { rejectWith: unknown },
   couponValidateResponse?: unknown,
+  // Overrides the single service the page resolves, for tests that need a different price
+  // (e.g. one below depositMinToman). Defaults to the shared SERVICE fixture.
+  service: typeof SERVICE = SERVICE,
 ) {
   fetchMock.mockImplementation(async (path: string, opts?: { method?: string }) => {
     if (path === '/salons/test-salon') return SALON
-    if (path === '/salons/test-salon/services') return [SERVICE]
+    if (path === '/salons/test-salon/services') return [service]
     if (path === '/platform-config/booking-terms') return TERMS
     if (path === `/salons/${SALON.id}/availability`) return []
-    if (path === '/coupons/validate' && opts?.method === 'POST') return couponValidateResponse
+    if (path === '/coupons/validate' && opts?.method === 'POST') {
+      if (couponValidateResponse && typeof couponValidateResponse === 'object' && 'rejectWith' in couponValidateResponse) {
+        throw (couponValidateResponse as { rejectWith: unknown }).rejectWith
+      }
+      return couponValidateResponse
+    }
     if (path === '/bookings' && opts?.method === 'POST') {
       if (bookingsBehavior === 'success') return { booking: { id: 'b1' }, paymentUrl: 'http://gateway.example/pay' }
       throw bookingsBehavior.rejectWith
@@ -70,6 +93,22 @@ describe('booking confirm page', () => {
     const expectedDeposit = Math.max(Math.round((SERVICE.price * TERMS.depositPercent) / 100), TERMS.depositMinToman)
     expect(expectedDeposit).toBe(200_000)
     expect(wrapper.text()).toContain(expectedDeposit.toLocaleString('fa-IR'))
+  })
+
+  // The fixture price (300,000) sits above depositMinToman, so the case above never
+  // exercises the cap. calculateDeposit() caps the deposit at the price -- the minimum is a
+  // floor on a normal price, not a licence to quote more than the service costs -- and this
+  // page duplicates that formula for its pre-submit estimate. Before the cap was mirrored
+  // here, a 150,000-toman service was quoted 200,000 while the server charged 150,000.
+  it('caps the deposit estimate at the service price for a service cheaper than depositMinToman', async () => {
+    stubPageLoad('success', undefined, { ...SERVICE, price: 150_000 })
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+
+    expect(wrapper.text()).toContain((150_000).toLocaleString('fa-IR'))
+    expect(wrapper.text()).not.toContain((200_000).toLocaleString('fa-IR'))
   })
 
   it('on a 409 from POST /bookings, shows the conflict message and clears the selected slot', async () => {
@@ -116,9 +155,7 @@ describe('booking confirm page', () => {
 
     await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
     await nextTick()
-    await wrapper.find('input').setValue('SAVE30')
-    await wrapper.findAll('button').find((b: DOMWrapper<Element>) => b.text() === 'اعمال')!.trigger('click')
-    await flushPromises()
+    await applyCouponCode(wrapper, 'SAVE30')
 
     // Savings amount: originalPrice - finalPrice = 90,000
     expect(wrapper.text()).toContain('شما')
@@ -144,9 +181,7 @@ describe('booking confirm page', () => {
 
     await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
     await nextTick()
-    await wrapper.find('input').setValue('SAVE50K')
-    await wrapper.findAll('button').find((b: DOMWrapper<Element>) => b.text() === 'اعمال')!.trigger('click')
-    await flushPromises()
+    await applyCouponCode(wrapper, 'SAVE50K')
 
     // Savings amount: originalPrice - finalPrice = 50,000, always correct regardless of kind.
     expect(wrapper.text()).toContain('شما')
@@ -157,6 +192,144 @@ describe('booking confirm page', () => {
     // input's own label/placeholder use the word "تخفیف" without a percent sign, so
     // asserting on '٪' specifically avoids a false failure from those).
     expect(wrapper.text()).not.toContain('٪')
+  })
+
+  // The saving line credits the COUPON. `finalPrice` from /coupons/validate is the best of
+  // BOTH candidates, so "originalPrice - finalPrice > 0" is also true for a coupon that lost
+  // to the service's own discount -- which used to print "شما ۹۰,۰۰۰ تومان صرفه‌جویی کردید"
+  // for a coupon that saved the customer nothing at all.
+  it('does NOT credit a coupon with the service discount\'s saving when the coupon lost', async () => {
+    stubPageLoad('success', {
+      valid: true,
+      // A weak 10% coupon against a service that already discounts 30% -- the service wins,
+      // so finalPrice is exactly what the service discount alone would have produced.
+      couponDiscountPercent: 10,
+      couponDiscountKind: 'percent',
+      couponDiscountValue: 10,
+      serviceDiscountPercent: 30,
+      appliedDiscountPercent: 30,
+      originalPrice: 300_000,
+      finalPrice: 210_000,
+      estimatedDeposit: 200_000,
+    })
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+    await applyCouponCode(wrapper, 'WEAK10')
+
+    expect(wrapper.text()).not.toContain('صرفه‌جویی کردید')
+    expect(wrapper.text()).not.toContain((90_000).toLocaleString('fa-IR'))
+    // ...and says so plainly instead of the old "applied successfully" next to an unmoved price.
+    expect(wrapper.text()).toContain('قیمت تغییری نمی‌کند')
+    // The badge still shows the service's real 30% -- that discount is genuinely applied.
+    expect(wrapper.text()).toContain('٪' + (30).toLocaleString('fa-IR'))
+  })
+
+  // A tie is not a win: resolveBestPriceWithWinner() keeps the earlier candidate (the
+  // service) on an equal resulting price, so an equally-good coupon changes nothing.
+  it('treats a coupon that merely ties the service discount as not having won', async () => {
+    stubPageLoad('success', {
+      valid: true,
+      couponDiscountPercent: 30,
+      couponDiscountKind: 'percent',
+      couponDiscountValue: 30,
+      serviceDiscountPercent: 30,
+      appliedDiscountPercent: 30,
+      originalPrice: 300_000,
+      finalPrice: 210_000,
+      estimatedDeposit: 200_000,
+    })
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+    await applyCouponCode(wrapper, 'TIE30')
+
+    expect(wrapper.text()).not.toContain('صرفه‌جویی کردید')
+    expect(wrapper.text()).toContain('قیمت تغییری نمی‌کند')
+  })
+
+  // Every coupon rejection used to collapse into "کد تخفیف نامعتبر است", telling a customer
+  // whose code was expired (or already used, or capped out) to re-check a code they typed
+  // perfectly. The API's 400 body already says which it is, in Persian.
+  it('surfaces the API\'s own reason when POST /coupons/validate rejects the code', async () => {
+    stubPageLoad('success', apiError(400, 'کد تخفیف منقضی شده است'))
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+    await applyCouponCode(wrapper, 'EXPIRED')
+
+    expect(wrapper.text()).toContain('کد تخفیف منقضی شده است')
+    expect(wrapper.text()).not.toContain('کد تخفیف نامعتبر است')
+  })
+
+  // A 500/network failure on the preview says nothing about the code itself, so it must not
+  // be dressed up as a verdict on it.
+  it('falls back to generic copy when the coupon check fails for a non-400 reason', async () => {
+    stubPageLoad('success', apiError(500))
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+    await applyCouponCode(wrapper, 'ANYCODE')
+
+    expect(wrapper.text()).toContain('بررسی کد تخفیف ممکن نشد')
+  })
+
+  // createHold re-validates the coupon inside its own transaction, so a code that passed the
+  // preview can still be refused at submit time. That used to surface as "an error occurred,
+  // try again" AND wipe the selected slot -- leaving the dead coupon applied, so re-picking a
+  // slot failed identically forever with no hint that the code was the blocker.
+  it('drops the coupon, keeps the slot, and explains the retry when POST /bookings rejects the code', async () => {
+    stubPageLoad(apiError(400, 'ظرفیت استفاده از این کد تخفیف تکمیل شده است'), {
+      valid: true,
+      couponDiscountPercent: 30,
+      couponDiscountKind: 'percent',
+      couponDiscountValue: 30,
+      serviceDiscountPercent: null,
+      appliedDiscountPercent: 30,
+      originalPrice: 300_000,
+      finalPrice: 210_000,
+      estimatedDeposit: 200_000,
+    })
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+    await applyCouponCode(wrapper, 'CAPPED')
+    expect(wrapper.text()).toContain('صرفه‌جویی کردید')
+
+    await wrapper.find('[data-testid="confirm-booking-button"]').trigger('click')
+    await flushPromises()
+
+    // The real reason, not "خطایی رخ داد".
+    expect(wrapper.text()).toContain('ظرفیت استفاده از این کد تخفیف تکمیل شده است')
+    expect(wrapper.text()).not.toContain('خطایی رخ داد')
+    // Says the code is gone and the booking can go through without it.
+    expect(wrapper.text()).toContain('می‌توانید بدون آن پرداخت را ادامه دهید')
+    // The coupon is actually dropped (its saving line is gone), so the retry sends no code...
+    expect(wrapper.text()).not.toContain('صرفه‌جویی کردید')
+    // ...and the slot -- which was never the problem -- survives, so that retry is one tap away.
+    expect(wrapper.find('[data-testid="confirm-booking-button"]').exists()).toBe(true)
+  })
+
+  // The counterpart: a 400 with no coupon involved (createHold's only other one is a
+  // past/invalid startsAt) does invalidate the slot, and its message is a developer-facing
+  // English string that must never be shown to a customer.
+  it('clears the slot and never shows a non-Persian API message on a non-coupon 400', async () => {
+    stubPageLoad(apiError(400, 'startsAt must be a valid future date-time'))
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+    await wrapper.find('[data-testid="confirm-booking-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('startsAt')
+    expect(wrapper.text()).toContain('خطایی رخ داد، لطفا دوباره تلاش کنید')
+    expect(wrapper.find('[data-testid="confirm-booking-button"]').exists()).toBe(false)
   })
 
   // Product Principle #3 (a booking's financial commitment must never feel hidden or
@@ -241,9 +414,7 @@ describe('booking confirm page', () => {
     // announced without needing to touch the shared BaseInput component.
     expect(wrapper.find('input').element.closest('[role="alert"]')).toBeTruthy()
 
-    await wrapper.find('input').setValue('SAVE30')
-    await wrapper.findAll('button').find((b: DOMWrapper<Element>) => b.text() === 'اعمال')!.trigger('click')
-    await flushPromises()
+    await applyCouponCode(wrapper, 'SAVE30')
 
     const successEl = wrapper.findAll('[aria-live="polite"]').find((el: DOMWrapper<Element>) => el.text().includes('صرفه‌جویی کردید'))
     expect(successEl).toBeTruthy()

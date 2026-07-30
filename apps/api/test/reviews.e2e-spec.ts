@@ -229,6 +229,13 @@ describe('Reviews — public listing (e2e)', () => {
     expect(res.body).toHaveLength(1);
     expect(res.body[0].rating).toBe(4);
     expect(res.body[0].comment).toBe('Good');
+
+    // The listing is unauthenticated, so the payload must never carry reviewer
+    // identity or the booking it came from -- asserted on the wire (not just at the
+    // service boundary) since that's what an anonymous scraper actually sees.
+    expect(Object.keys(res.body[0]).sort()).toEqual(
+      ['comment', 'createdAt', 'id', 'rating', 'salonReply', 'salonReplyAt'],
+    );
   });
 });
 

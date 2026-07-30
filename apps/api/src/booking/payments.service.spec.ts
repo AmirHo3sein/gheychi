@@ -205,7 +205,9 @@ describe('PaymentsService.handleCallback lost-CAS recovery', () => {
 
     const result = await service.handleCallback('AUTH123', 'OK');
 
-    expect(result).toEqual({ status: 'failed', bookingId: 'booking-1' });
+    // 'refunding', never 'failed': the money WAS captured and is being sent back, so the
+    // customer must not be told that no payment happened.
+    expect(result).toEqual({ status: 'refunding', bookingId: 'booking-1' });
     expect(paymentsUpdate).toHaveBeenCalledWith(
       { id: 'pay-1', status: 'failed' },
       expect.objectContaining({ status: 'refund_pending', refId: 'REF-1', refundRequestedAt: expect.any(Date) }),
@@ -323,7 +325,9 @@ describe('PaymentsService.handleCallback — capture, dead bookings and unknown 
 
     const result = await service.handleCallback('AUTH123', 'OK');
 
-    expect(result).toEqual({ status: 'failed', bookingId: 'booking-1' });
+    // The booking is gone but the deposit was captured and is being refunded -- reported as
+    // 'refunding' so the callback page can say so instead of "payment failed".
+    expect(result).toEqual({ status: 'refunding', bookingId: 'booking-1' });
     expect(emUpdate).not.toHaveBeenCalledWith(Payment, expect.anything(), expect.objectContaining({ status: 'paid' }));
     expect(paymentsUpdate).toHaveBeenCalledWith(
       { id: 'pay-1', status: 'initiated' },
@@ -341,7 +345,7 @@ describe('PaymentsService.handleCallback — capture, dead bookings and unknown 
     const result = await service.handleCallback('AUTH123', 'OK');
 
     expect(verifyPayment).toHaveBeenCalledWith('AUTH123', 200_000);
-    expect(result).toEqual({ status: 'failed', bookingId: 'booking-1' });
+    expect(result).toEqual({ status: 'refunding', bookingId: 'booking-1' });
     expect(paymentsUpdate).toHaveBeenCalledWith(
       { id: 'pay-1', status: 'failed' },
       expect.objectContaining({ status: 'refund_pending', refId: 'REF-1', refundRequestedAt: expect.any(Date) }),
@@ -372,13 +376,34 @@ describe('PaymentsService.handleCallback — capture, dead bookings and unknown 
     expect(raise).not.toHaveBeenCalled();
   });
 
-  it('does not re-verify a payment already queued for refund', async () => {
+  it('does not re-verify a payment already queued for refund, and reports it as refunding', async () => {
     paymentsFindOneBy.mockResolvedValue({ ...INITIATED_PAYMENT, status: 'refund_pending' });
 
     const result = await service.handleCallback('AUTH123', 'OK');
 
-    expect(result).toEqual({ status: 'failed', bookingId: 'booking-1' });
+    // A refresh of the callback URL after the refund was queued: money was captured, so
+    // 'failed' would again tell the customer the opposite of the truth.
+    expect(result).toEqual({ status: 'refunding', bookingId: 'booking-1' });
     expect(verifyPayment).not.toHaveBeenCalled();
+  });
+
+  it('reports an already-refunded payment as refunding rather than failed', async () => {
+    paymentsFindOneBy.mockResolvedValue({ ...INITIATED_PAYMENT, status: 'refunded' });
+
+    const result = await service.handleCallback('AUTH123', 'OK');
+
+    expect(result).toEqual({ status: 'refunding', bookingId: 'booking-1' });
+    expect(verifyPayment).not.toHaveBeenCalled();
+  });
+
+  it('still reports a genuine decline as failed (nothing captured)', async () => {
+    verifyPayment.mockResolvedValue({ success: false, refId: null });
+
+    const result = await service.handleCallback('AUTH123', 'OK');
+
+    // The whole point of the third state: 'failed' stays reserved for "no money moved".
+    expect(result).toEqual({ status: 'failed', bookingId: 'booking-1' });
+    expect(paymentsUpdate).not.toHaveBeenCalled();
   });
 
   it('cancels a status-guarded booking and releases its coupon when the gateway reports NOK', async () => {

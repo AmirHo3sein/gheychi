@@ -10,6 +10,13 @@ import { CreateReviewDto, UpdateReviewDto } from './dto/review.dto';
 import { Review, ReviewStatus } from './review.entity';
 import { WorkerRating } from './worker-rating.entity';
 
+// The public shape of a review -- exactly what the unauthenticated salon-profile
+// listing exposes. Deliberately excludes userId/bookingId (reviewer identity and the
+// booking it came from) and status (the listing is published-only by construction).
+// salonReplyAt is the salon's own reply timestamp, safe to publish alongside the reply
+// itself; no consumer renders it yet, but it's the natural companion to salonReply.
+export type PublicReview = Pick<Review, 'id' | 'rating' | 'comment' | 'salonReply' | 'salonReplyAt' | 'createdAt'>;
+
 @Injectable()
 export class ReviewsService {
   constructor(
@@ -188,14 +195,24 @@ export class ReviewsService {
     }
   }
 
-  async findForSalon(salonId: string): Promise<Review[]> {
+  async findForSalon(salonId: string): Promise<PublicReview[]> {
     // Public sub-resources of a salon 404 when the salon is not approved -- the same
     // policy PublicSalonContentController.requireSalonId() applies to the public
     // services/hours/photos listings via SalonsService.findPublicBySlug(). Without
     // this check, reviews of pending/suspended salons were publicly listable by id.
     const salon = await this.salons.findOneBy({ id: salonId, status: 'approved' });
     if (!salon) throw new NotFoundException();
-    return this.reviews.find({ where: { salonId, status: 'published' }, order: { createdAt: 'DESC' } });
+    const rows = await this.reviews.find({ where: { salonId, status: 'published' }, order: { createdAt: 'DESC' } });
+    // Projected, never the raw entity: this endpoint is unauthenticated
+    // (SalonReviewsController has no AuthGuard), and a Review row carries userId and
+    // bookingId. Returning those would let anyone scrape the platform and correlate a
+    // customer's whole review history across salons by their user UUID, or pair a
+    // review to a specific booking. Same shape as the other public sub-resource
+    // listings in PublicSalonContentController -- an explicit field subset, so adding
+    // a column to the entity can never silently widen the public payload.
+    return rows.map(({ id, rating, comment, salonReply, salonReplyAt, createdAt }) => ({
+      id, rating, comment, salonReply, salonReplyAt, createdAt,
+    }));
   }
 
   async listForAdmin(query: {

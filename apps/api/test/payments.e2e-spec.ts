@@ -175,7 +175,11 @@ describe('Payments — callback (e2e)', () => {
       .get('/api/payments/callback')
       .query({ Authority: authority, Status: 'OK' })
       .expect(302);
-    expect(res.headers.location).toBe(`http://localhost:3003/booking/callback?status=failed&bookingId=${bookingId}`);
+    // 'refunding', not 'failed': the money WAS captured and a refund is queued, so the
+    // failure page ("no payment happened, no booking exists") would tell the customer the
+    // opposite of what their bank statement shows. 'failed' is now reserved for a genuine
+    // decline where nothing was captured.
+    expect(res.headers.location).toBe(`http://localhost:3003/booking/callback?status=refunding&bookingId=${bookingId}`);
 
     const [booking] = await ds.query(`SELECT status FROM bookings WHERE id = $1`, [bookingId]);
     expect(booking.status).toBe('expired'); // never re-confirmed into a released slot
@@ -209,7 +213,8 @@ describe('Payments — callback (e2e)', () => {
       .get('/api/payments/callback')
       .query({ Authority: authority, Status: 'OK' })
       .expect(302);
-    expect(res.headers.location).toBe(`http://localhost:3003/booking/callback?status=failed&bookingId=${bookingId}`);
+    // Same as the expired-booking case above: captured money being sent back is 'refunding'.
+    expect(res.headers.location).toBe(`http://localhost:3003/booking/callback?status=refunding&bookingId=${bookingId}`);
 
     const [payment] = await ds.query(`SELECT status, refund_requested_at FROM payments WHERE booking_id = $1`, [bookingId]);
     expect(payment.status).toBe('refund_pending');
