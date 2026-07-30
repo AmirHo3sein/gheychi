@@ -9,6 +9,7 @@ import AppInput from '@/components/ui/AppInput.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
+import { validateWorkingHours } from '@/utils/working-hours'
 
 interface WorkingHour {
   weekday: number
@@ -20,8 +21,6 @@ interface ScheduleException {
   date: string
   isClosed: boolean
 }
-
-const WEEKDAY_LABELS = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه']
 
 const { apiFetch } = useApi()
 const { push: pushToast } = useToast()
@@ -75,15 +74,9 @@ async function loadAll() {
 
 onMounted(loadAll)
 
-function validateHours(): { message: string; invalid: number[] } {
-  const invalid = hours.value.filter((h) => h.enabled && h.closeTime <= h.openTime).map((h) => h.weekday)
-  if (invalid.length === 0) return { message: '', invalid: [] }
-  const names = invalid.map((w) => WEEKDAY_LABELS[w]).join('، ')
-  return { message: `ساعت پایان باید بعد از ساعت شروع باشد: ${names}`, invalid }
-}
-
 async function saveHours() {
-  const validation = validateHours()
+  // Same rule the onboarding wizard's step 2 gates on -- see utils/working-hours.ts.
+  const validation = validateWorkingHours(hours.value)
   hoursError.value = validation.message
   invalidWeekdays.value = validation.invalid
   if (validation.message) return

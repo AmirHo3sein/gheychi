@@ -22,8 +22,9 @@ const REVIEW_STATUS: Record<string, LabelEntry> = {
   rejected: { label: 'رد شده', tone: 'danger' },
   // Customer self-deleted (DELETE /api/reviews/:id) -- distinct from an admin 'rejected'
   // call, and distinct enough visually that it doesn't read as just another
-  // moderation-queue state. worker_ratings.status never has this value (see
-  // worker-rating.entity.ts), so reviewStatusLabel()'s reuse there is unaffected.
+  // moderation-queue state. worker_ratings.status never carries this value itself (see
+  // worker-rating.entity.ts) -- a rating whose parent review was withdrawn borrows this
+  // entry via workerRatingStatusLabel() below.
   withdrawn: { label: 'حذف شده توسط کاربر', tone: 'neutral' },
 }
 
@@ -49,6 +50,17 @@ export function salonStatusLabel(status: string): LabelEntry {
 
 export function reviewStatusLabel(status: string): LabelEntry {
   return REVIEW_STATUS[status] ?? { label: status, tone: 'neutral' }
+}
+
+/**
+ * A worker rating's own status is only published/rejected (worker-rating.entity.ts), but
+ * ReviewsService.remove() cascades a customer's own review deletion onto it as
+ * 'rejected' -- so the rating row alone cannot be told apart from an admin rejection.
+ * The parent review's status is what disambiguates, and it wins here: a withdrawn parent
+ * is a customer deletion, not a moderation decision an admin can reverse.
+ */
+export function workerRatingStatusLabel(status: string, reviewStatus: string): LabelEntry {
+  return reviewStatusLabel(reviewStatus === 'withdrawn' ? 'withdrawn' : status)
 }
 
 // Shared by salon stories and portfolio items (both carry the same two-state enum).

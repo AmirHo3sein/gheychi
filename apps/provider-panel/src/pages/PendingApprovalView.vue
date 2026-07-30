@@ -59,6 +59,19 @@ async function checkStatus() {
           : 'به محض تایید توسط تیم آرایشگاه، به شما اطلاع داده می‌شود.'
       }}
     </p>
+    <!-- The onboarding wizard creates the salon before it saves the hours and the first
+         service, so a failure on either leaves a pending salon with those missing and no
+         way back into the wizard after a reload. These two links are the only entry point
+         to fix that -- the router opens exactly these routes for a pending salon (see the
+         pendingRepairAccess exception in router/index.ts). -->
+    <div v-if="salon?.status === 'pending'" class="flex flex-col items-center gap-1.5 text-sm">
+      <span class="text-xs text-(--color-text-muted)">اگر ساعات کاری یا خدمات شما کامل ثبت نشده است:</span>
+      <div class="flex items-center gap-4">
+        <RouterLink to="/hours" class="font-semibold text-(--color-accent-text) hover:underline">ساعات کاری</RouterLink>
+        <RouterLink to="/services" class="font-semibold text-(--color-accent-text) hover:underline">خدمات و قیمت‌ها</RouterLink>
+      </div>
+    </div>
+
     <AppButton
       data-testid="refresh-status"
       type="button"

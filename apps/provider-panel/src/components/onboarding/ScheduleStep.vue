@@ -1,8 +1,8 @@
 <!-- apps/provider-panel/src/components/onboarding/ScheduleStep.vue -->
 <script setup lang="ts">
-const WEEKDAYS = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه']
+import { WEEKDAY_LABELS, type WorkingHourRow } from '@/utils/working-hours'
 
-const model = defineModel<Array<{ weekday: number; openTime: string; closeTime: string; enabled: boolean }>>({
+const model = defineModel<WorkingHourRow[]>({
   required: true,
 })
 
@@ -20,11 +20,12 @@ withDefaults(defineProps<{ invalidWeekdays?: number[] }>(), { invalidWeekdays: (
     >
       <label class="flex min-h-11 w-24 shrink-0 items-center gap-2 text-sm font-medium text-(--color-text)">
         <input v-model="day.enabled" type="checkbox" class="h-4 w-4 accent-(--color-accent)" />
-        {{ WEEKDAYS[day.weekday] }}
+        {{ WEEKDAY_LABELS[day.weekday] }}
       </label>
       <input
         v-model="day.openTime"
         :disabled="!day.enabled"
+        :aria-invalid="invalidWeekdays.includes(day.weekday) || undefined"
         type="time"
         class="tnum min-h-11 flex-1 rounded-xl border border-(--color-border) bg-(--color-surface) p-2 text-sm disabled:opacity-50"
       />
@@ -32,6 +33,7 @@ withDefaults(defineProps<{ invalidWeekdays?: number[] }>(), { invalidWeekdays: (
       <input
         v-model="day.closeTime"
         :disabled="!day.enabled"
+        :aria-invalid="invalidWeekdays.includes(day.weekday) || undefined"
         type="time"
         class="tnum min-h-11 flex-1 rounded-xl border border-(--color-border) bg-(--color-surface) p-2 text-sm disabled:opacity-50"
       />

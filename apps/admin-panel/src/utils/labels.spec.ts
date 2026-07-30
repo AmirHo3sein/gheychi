@@ -8,9 +8,11 @@ import {
   referralStatusLabel,
   referralTypeLabel,
   reportStatusLabel,
+  reviewStatusLabel,
   rewardKindLabel,
   rewardKindUnit,
   showcaseStatusLabel,
+  workerRatingStatusLabel,
 } from './labels'
 
 describe('auditActionLabel', () => {
@@ -56,6 +58,22 @@ describe('showcaseStatusLabel', () => {
 
   it('falls back to the raw value for unknown statuses', () => {
     expect(showcaseStatusLabel('expired')).toEqual({ label: 'expired', tone: 'neutral' })
+  })
+})
+
+describe('workerRatingStatusLabel', () => {
+  it("uses the rating's own status while the parent review is a live one", () => {
+    expect(workerRatingStatusLabel('published', 'published')).toEqual(reviewStatusLabel('published'))
+    expect(workerRatingStatusLabel('rejected', 'published')).toEqual(reviewStatusLabel('rejected'))
+    // Parent rejected by an admin, rating still published: the rating's own state is what
+    // the moderation screen is about, so nothing is overridden.
+    expect(workerRatingStatusLabel('published', 'rejected')).toEqual(reviewStatusLabel('published'))
+  })
+
+  it("reports a withdrawn parent as the customer's own deletion, not an admin rejection", () => {
+    // worker_ratings.status is cascaded to 'rejected' by ReviewsService.remove(), which is
+    // indistinguishable from an admin rejection without the parent's status.
+    expect(workerRatingStatusLabel('rejected', 'withdrawn')).toEqual({ label: 'حذف شده توسط کاربر', tone: 'neutral' })
   })
 })
 

@@ -85,9 +85,18 @@ describe('Payment reconciliation job (e2e)', () => {
 
     const ds = app.get(DataSource);
     // force MockPaymentGateway.verifyPayment to report failure by rewriting the authority
-    // to start with the sentinel prefix it checks for
+    // to start with the sentinel prefix it checks for. The job now re-verifies EVERY
+    // authority ever issued for the payment (payment_authorities, not just the current
+    // one), so the sentinel has to be applied to the ledger row too -- otherwise the
+    // untouched original still verifies successfully and this booking is legitimately
+    // confirmed rather than cancelled.
     await ds.query(
       `UPDATE payments SET authority = 'MOCK-FAIL-' || authority, created_at = now() - interval '25 minutes' WHERE booking_id = $1`,
+      [created.body.booking.id],
+    );
+    await ds.query(
+      `UPDATE payment_authorities pa SET authority = 'MOCK-FAIL-' || pa.authority
+       FROM payments p WHERE p.id = pa.payment_id AND p.booking_id = $1`,
       [created.body.booking.id],
     );
 
@@ -99,6 +108,44 @@ describe('Payment reconciliation job (e2e)', () => {
       .set('Cookie', customerCookie)
       .expect(200);
     expect(booking.body.status).toBe('cancelled_by_user');
+  });
+
+  it('confirms via a SUPERSEDED authority when the current one never succeeded', async () => {
+    // retryPayment overwrites payments.authority while the customer's earlier Zarinpal
+    // tab stays chargeable. Reconciling only the current authority would declare this a
+    // failure and cancel the booking with the deposit still captured on the old session.
+    const created = await request(app.getHttpServer())
+      .post('/api/bookings')
+      .set('Cookie', customerCookie)
+      .send({ salonId, serviceId, startsAt: new Date(Date.now() + 120 * 60 * 60_000).toISOString() })
+      .expect(201);
+    const bookingId = created.body.booking.id;
+    const oldAuthority = new URL(created.body.paymentUrl).searchParams.get('Authority')!;
+
+    await request(app.getHttpServer())
+      .post(`/api/bookings/${bookingId}/retry-payment`)
+      .set('Cookie', customerCookie)
+      .expect(200);
+
+    const ds = app.get(DataSource);
+    // Only the NEWEST session is made to fail -- the older one is the one that was paid.
+    await ds.query(
+      `UPDATE payment_authorities pa SET authority = 'MOCK-FAIL-' || pa.authority
+       FROM payments p WHERE p.id = pa.payment_id AND p.booking_id = $1 AND pa.authority = p.authority`,
+      [bookingId],
+    );
+    await ds.query(
+      `UPDATE payments SET authority = 'MOCK-FAIL-' || authority, created_at = now() - interval '25 minutes' WHERE booking_id = $1`,
+      [bookingId],
+    );
+
+    expect(await job.run()).toBe(1);
+
+    const [payment] = await ds.query(`SELECT status, authority FROM payments WHERE booking_id = $1`, [bookingId]);
+    expect(payment.status).toBe('paid');
+    expect(payment.authority).toBe(oldAuthority); // the session that actually captured
+    const [booking] = await ds.query(`SELECT status FROM bookings WHERE id = $1`, [bookingId]);
+    expect(booking.status).toBe('confirmed');
   });
 
   it('ignores payments that are not yet stale', async () => {

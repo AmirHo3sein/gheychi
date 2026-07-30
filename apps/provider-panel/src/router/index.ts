@@ -69,7 +69,17 @@ export function createAppRouter(history: RouterHistory): Router {
       // pending/suspended salons have no such editable-before-resubmit path, so they still
       // get bounced straight back to pending-approval.
       const rejectedSettingsAccess = salon.value.status === 'rejected' && to.name === 'settings'
-      return to.name === 'pending-approval' || rejectedSettingsAccess ? true : { name: 'pending-approval' }
+      // The onboarding wizard creates the salon *before* it saves the hours and the first
+      // service, so a failure on either of those later calls leaves a pending salon that
+      // can't be completed from the wizard once the page is reloaded. Let a pending salon
+      // reach exactly those two screens to finish the job -- otherwise an admin can approve
+      // a listing with no hours and no services, which is unbookable. Safe: nothing about a
+      // non-approved salon is publicly visible or bookable.
+      const pendingRepairAccess =
+        salon.value.status === 'pending' && (to.name === 'hours' || to.name === 'services')
+      return to.name === 'pending-approval' || rejectedSettingsAccess || pendingRepairAccess
+        ? true
+        : { name: 'pending-approval' }
     }
 
     if (to.name === 'onboarding' || to.name === 'pending-approval') {

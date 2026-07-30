@@ -516,7 +516,7 @@ describe('ReferralsService', () => {
         );
       });
 
-      it('blocks redemption once the cap is already reached (count === max), creates no row', async () => {
+      it('blocks redemption with referrer_limit_reached once the cap is already reached (count === max), creates no row', async () => {
         referralCodesRepo.findOneBy.mockResolvedValue(makeReferralCode());
         workersRepo.findOneBy.mockResolvedValue(null);
         salonsRepo.findOneBy.mockResolvedValue(null);
@@ -524,10 +524,12 @@ describe('ReferralsService', () => {
         const em = makeEm(); // must come first -- makeEm() creates a fresh referralCount mock
         referralCount.mockResolvedValue(3);
 
-        // R10 deliberately reuses 'referral_type_disabled' rather than a 4th status.
+        // A spent cap reports its OWN status. It used to reuse 'referral_type_disabled',
+        // which made the invitee's login screen blame the platform ("rewards not enabled
+        // yet") for one referrer running out of invites -- two unrelated causes, one message.
         const result = await service.applyReferralAtRegistration('new-user-1', 'ABC12345', em);
 
-        expect(result).toEqual({ status: 'referral_type_disabled' });
+        expect(result).toEqual({ status: 'referrer_limit_reached' });
         expect(referralInsert).not.toHaveBeenCalled();
       });
 
@@ -541,7 +543,7 @@ describe('ReferralsService', () => {
 
         const result = await service.applyReferralAtRegistration('new-user-1', 'ABC12345', em);
 
-        expect(result).toEqual({ status: 'referral_type_disabled' });
+        expect(result).toEqual({ status: 'referrer_limit_reached' });
         expect(referralInsert).not.toHaveBeenCalled();
       });
 

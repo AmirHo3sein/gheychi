@@ -124,10 +124,16 @@ describe('login page - referral code entry', () => {
     expect(wrapper.text()).toContain('چند قدم تا شروع')
   })
 
+  // Only 'applied' persisted a referrals row. The other statuses each mean nothing was
+  // recorded and nothing can be recorded later (redemption only happens inside the
+  // registration transaction), so none of their messages may promise a reward -- the
+  // disabled one used to say "کد معرف ثبت شد" (recorded) with rewards "coming soon",
+  // which is the DEFAULT path for early users and a promise no endpoint can ever honour.
   it.each([
     ['applied', 'کد معرف با موفقیت ثبت شد'],
     ['invalid_code', 'کد معرف وارد شده معتبر نیست'],
-    ['referral_type_disabled', 'کد معرف ثبت شد؛ پاداش‌های معرفی به‌زودی فعال می‌شود'],
+    ['referral_type_disabled', 'کد معرف ثبت نشد؛ پاداش‌های معرفی هنوز فعال نشده است'],
+    ['referrer_limit_reached', 'کد معرف ثبت نشد؛ سهمیه دعوت این معرف تکمیل شده است'],
   ] as const)('toasts the right message for referralStatus=%s', async (status, expectedMessage) => {
     fetchMock.mockImplementation(async (path: string) => {
       if (path === '/auth/request-otp') return undefined
@@ -163,6 +169,70 @@ describe('login page - referral code entry', () => {
     await flushPromises()
 
     expect(toasts.value.length).toBe(before)
+  })
+})
+
+describe('login page - push subscription ownership', () => {
+  beforeEach(() => {
+    fetchMock.mockReset()
+    navigateToMock.mockReset()
+    vi.stubGlobal('$fetch', fetchStub)
+    routeQuery = {}
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    // @ts-expect-error -- test-only cleanup of a property defined directly on navigator
+    delete navigator.serviceWorker
+  })
+
+  it('rebinds this browser existing push subscription to the account that just logged in', async () => {
+    // A push subscription belongs to the browser, not the account: on a shared device the
+    // push_subscriptions row still points at the previous user, so their appointment
+    // notifications would keep arriving here. POST /push/subscribe re-owns the endpoint.
+    const getSubscription = vi.fn().mockResolvedValue({
+      endpoint: 'https://push.example/abc',
+      toJSON: () => ({ endpoint: 'https://push.example/abc', keys: { p256dh: 'p', auth: 'a' } }),
+    })
+    Object.defineProperty(navigator, 'serviceWorker', {
+      value: { ready: Promise.resolve({ pushManager: { getSubscription, subscribe: vi.fn() } }) },
+      configurable: true,
+    })
+    vi.stubGlobal('PushManager', class {})
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/auth/request-otp') return undefined
+      if (path === '/auth/verify-otp') return { user: EXISTING_USER, isNewUser: false }
+      if (path === '/push/subscribe') return { ok: true }
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+
+    const wrapper = await mountSuspended(LoginPage)
+    await goToCodeStep(wrapper)
+    await wrapper.find('input[inputmode="numeric"]').setValue('123456')
+    await wrapper.find('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/push/subscribe',
+      expect.objectContaining({ method: 'POST', body: { endpoint: 'https://push.example/abc', p256dh: 'p', auth: 'a' } }),
+    )
+    expect(navigateToMock).toHaveBeenCalledWith('/')
+  })
+
+  it('does not touch /push/subscribe on a browser without push support', async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/auth/request-otp') return undefined
+      if (path === '/auth/verify-otp') return { user: EXISTING_USER, isNewUser: false }
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+
+    const wrapper = await mountSuspended(LoginPage)
+    await goToCodeStep(wrapper)
+    await wrapper.find('input[inputmode="numeric"]').setValue('123456')
+    await wrapper.find('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(fetchMock).not.toHaveBeenCalledWith('/push/subscribe', expect.anything())
   })
 })
 

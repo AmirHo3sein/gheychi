@@ -7,7 +7,7 @@ import { PlatformConfigService } from '../platform-config/platform-config.servic
 import { Salon } from '../salons/salon.entity';
 import { Worker } from '../salons/worker.entity';
 import { CreateReviewDto, UpdateReviewDto } from './dto/review.dto';
-import { Review } from './review.entity';
+import { Review, ReviewStatus } from './review.entity';
 import { WorkerRating } from './worker-rating.entity';
 
 @Injectable()
@@ -156,6 +156,20 @@ export class ReviewsService {
     const rating = await this.workerRatings.findOneBy({ id });
     if (!rating) throw new NotFoundException('Worker rating not found');
 
+    // A worker rating's edit/delete lifecycle is always driven through its parent
+    // Review, never independently (design spec §"Worker ratings"). remove() cascades a
+    // customer's own deletion onto the rating as 'rejected' -- the only value
+    // worker_ratings.status allows -- so the rating row on its own is indistinguishable
+    // from an admin rejection; the parent's status is the only thing that tells them
+    // apart. Without this guard, 'انتشار مجدد' would re-count a rating the customer
+    // deleted back into workers.rating_avg/rating_count and the public list. Mirrors
+    // moderate()'s guard on the review itself and is likewise the source of truth: it
+    // must hold even if a client bypasses the admin-panel UI.
+    const review = await this.reviews.findOneBy({ id: rating.reviewId });
+    if (review?.status === 'withdrawn') {
+      throw new ConflictException('نظر مربوط به این امتیاز توسط کاربر حذف شده و قابل تغییر وضعیت توسط مدیر نیست');
+    }
+
     await this.dataSource.transaction(async (em) => {
       await em.update(WorkerRating, { id }, { status });
       await this.recomputeWorkerRating(em, rating.workerId);
@@ -268,7 +282,7 @@ export class ReviewsService {
     page?: number;
     pageSize?: number;
   }): Promise<{
-    items: Array<WorkerRating & { workerName: string; salonName: string }>;
+    items: Array<WorkerRating & { workerName: string; salonName: string; reviewStatus: ReviewStatus }>;
     total: number;
     page: number;
     pageSize: number;
@@ -288,18 +302,28 @@ export class ReviewsService {
 
     const workerIds = [...new Set(items.map((r) => r.workerId))];
     const salonIds = [...new Set(items.map((r) => r.salonId))];
-    const [workerRows, salonRows] = await Promise.all([
+    const reviewIds = [...new Set(items.map((r) => r.reviewId))];
+    const [workerRows, salonRows, reviewRows] = await Promise.all([
       workerIds.length ? this.workers.find({ where: { id: In(workerIds) } }) : Promise.resolve([]),
       salonIds.length ? this.salons.find({ where: { id: In(salonIds) } }) : Promise.resolve([]),
+      reviewIds.length ? this.reviews.find({ where: { id: In(reviewIds) } }) : Promise.resolve([]),
     ]);
     const workerNameById = new Map(workerRows.map((w) => [w.id, w.name]));
     const salonNameById = new Map(salonRows.map((s) => [s.id, s.name]));
+    const reviewStatusById = new Map(reviewRows.map((r) => [r.id, r.status]));
 
     return {
+      // reviewStatus is what lets the admin panel tell a customer's own deletion
+      // (parent review 'withdrawn', cascaded here as 'rejected') apart from a genuine
+      // admin rejection, and render the former as a non-actionable notice instead of a
+      // live 'انتشار مجدد' button that moderateWorkerRating() would 409 anyway.
+      // Defaults to 'published' (i.e. "not withdrawn") if the parent somehow can't be
+      // read, matching that guard's own permissive branch rather than locking a row.
       items: items.map((r) => ({
         ...r,
         workerName: workerNameById.get(r.workerId) ?? 'Unknown worker',
         salonName: salonNameById.get(r.salonId) ?? 'Unknown salon',
+        reviewStatus: reviewStatusById.get(r.reviewId) ?? 'published',
       })),
       total,
       page,

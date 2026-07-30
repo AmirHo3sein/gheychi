@@ -60,6 +60,48 @@ describe('auth.global middleware', () => {
     expect(navigateToMock).not.toHaveBeenCalled()
   })
 
+  it('sends a logged-in user with no gender to /profile instead of a home page that cannot load', async () => {
+    // The account is real and the cookie is valid, but `gender` is a REQUIRED /search
+    // param -- without it the home page could only ever render its retry-forever error
+    // card. Trivially reachable: verify-otp sets the session before login.vue's profile
+    // step, so abandoning the tab there leaves the account permanently in this state.
+    const session = useSessionStore()
+    session.setUser({ id: '1', phone: '09120000000', name: 'Test', gender: null, role: 'customer' })
+
+    await authMiddleware(toRoute('/'), toRoute('/'))
+
+    expect(navigateToMock).toHaveBeenCalledTimes(1)
+    expect(navigateToMock).toHaveBeenCalledWith('/profile')
+  })
+
+  it('sends a logged-in user with no name to /profile as well', async () => {
+    const session = useSessionStore()
+    session.setUser({ id: '1', phone: '09120000000', name: null, gender: 'female', role: 'customer' })
+
+    await authMiddleware(toRoute('/bookings'), toRoute('/'))
+
+    expect(navigateToMock).toHaveBeenCalledWith('/profile')
+  })
+
+  it('does not bounce the incomplete-profile user off /profile itself, or off a public route', async () => {
+    const session = useSessionStore()
+    session.setUser({ id: '1', phone: '09120000000', name: null, gender: null, role: 'customer' })
+
+    await authMiddleware(toRoute('/profile'), toRoute('/'))
+    await authMiddleware(toRoute('/salons/best-salon-tehran'), toRoute('/'))
+
+    expect(navigateToMock).not.toHaveBeenCalled()
+  })
+
+  it('leaves a complete profile alone', async () => {
+    const session = useSessionStore()
+    session.setUser({ id: '1', phone: '09120000000', name: 'Test', gender: 'female', role: 'customer' })
+
+    await authMiddleware(toRoute('/'), toRoute('/'))
+
+    expect(navigateToMock).not.toHaveBeenCalled()
+  })
+
   it('does not let a slow initial probe clobber a session set elsewhere while the probe was still in flight', async () => {
     // Reproduces a real race: this middleware's own /auth/me probe (fired on the very
     // first navigation, while the session is still anonymous) can still be in flight

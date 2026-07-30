@@ -327,4 +327,40 @@ describe('OnboardingView', () => {
     await wrapper.find('[data-testid="day-0"] input[type=checkbox]').setValue(false)
     expect((next.element as HTMLButtonElement).disabled).toBe(true)
   })
+
+  // submit() POSTs /salons *before* it PUTs the hours, and the API 400s any
+  // openTime >= closeTime -- so an invalid range that gets past step 2 leaves the owner with
+  // a created-but-hourless salon that no retry of the same payload can ever fix. Step 2 has
+  // to catch it, name the offending day, and say that overnight ranges aren't supported.
+  it('keeps next disabled on the hours step when an enabled day closes before it opens', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ([]) }))
+    const router = makeRouter()
+    await router.push('/onboarding')
+    await router.isReady()
+    const wrapper = mount(OnboardingView, { global: { plugins: [router] } })
+
+    await wrapper.find('[data-testid="salon-name"]').setValue('سالن سارا')
+    await wrapper.find('[data-testid="gender-target"]').setValue('women')
+    await wrapper.find('[data-testid="city"]').setValue('تهران')
+    await wrapper.find('[data-testid="address"]').setValue('خیابان ولیعصر، پلاک ۱')
+    await setPinViaFallbackInputs(wrapper)
+    await wrapper.find('[data-testid="wizard-next"]').trigger('click')
+
+    // An overnight barbershop: 20:00 -> 02:00, a legitimate business the API can't store.
+    await wrapper.find('[data-testid="day-2"] input[type=checkbox]').setValue(true)
+    const [openInput, closeInput] = wrapper.findAll('[data-testid="day-2"] input[type=time]')
+    await openInput!.setValue('20:00')
+    await closeInput!.setValue('02:00')
+
+    const next = wrapper.find('[data-testid="wizard-next"]')
+    expect((next.element as HTMLButtonElement).disabled).toBe(true)
+    expect(wrapper.find('[data-testid="disabled-hint"]').text()).toContain('بازه شبانه')
+    expect(wrapper.find('[data-testid="disabled-hint"]').text()).toContain('سه‌شنبه')
+    // The offending day is marked in place, not just described in the hint.
+    expect(openInput!.attributes('aria-invalid')).toBe('true')
+
+    await closeInput!.setValue('23:00')
+    expect((next.element as HTMLButtonElement).disabled).toBe(false)
+    expect(wrapper.find('[data-testid="disabled-hint"]').exists()).toBe(false)
+  })
 })

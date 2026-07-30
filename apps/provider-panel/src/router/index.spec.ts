@@ -102,6 +102,30 @@ describe('router guard', () => {
     expect(router.currentRoute.value.name).toBe('pending-approval')
   })
 
+  // The onboarding wizard creates the salon before saving hours/first service, so a failure
+  // on either leaves a pending salon that can't be completed from the wizard after a reload.
+  // Those two screens have to stay reachable, or an admin can approve an unbookable listing.
+  it.each([
+    ['/hours', 'hours'],
+    ['/services', 'services'],
+  ])('lets a provider with a pending salon through to %s to finish a half-created onboarding', async (path, name) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: 's1', status: 'pending' }) }))
+    useSessionStore().setUser({ id: 'u1', phone: '0912', name: 'Sara', gender: 'female', role: 'provider' })
+    const router = createAppRouter(createMemoryHistory())
+    await router.push(path)
+    await router.isReady()
+    expect(router.currentRoute.value.name).toBe(name)
+  })
+
+  it('does not extend the pending hours/services exception to a suspended salon', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: 's1', status: 'suspended' }) }))
+    useSessionStore().setUser({ id: 'u1', phone: '0912', name: 'Sara', gender: 'female', role: 'provider' })
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/hours')
+    await router.isReady()
+    expect(router.currentRoute.value.name).toBe('pending-approval')
+  })
+
   it('keeps a logged-in provider with no salon yet on /onboarding when navigating there directly', async () => {
     vi.stubGlobal('fetch', vi.fn((url: string) => {
       if (url.includes('/auth/me')) {

@@ -38,6 +38,11 @@ const newService = reactive({
 
 const categoryOptions = computed<SelectOption[]>(() => categories.value.map((c) => ({ value: c.id, label: c.name })))
 
+// The price field edits a draft string rather than s.price directly: AppInput needs a real
+// two-way v-model target, and updatePrice() below has to be able to put a rejected edit back
+// to the last persisted price (same reason PortfolioView.vue keeps captionDrafts).
+const priceDrafts = reactive<Record<string, string>>({})
+
 async function load() {
   loading.value = true
   loadError.value = false
@@ -54,6 +59,7 @@ async function load() {
   }
 
   services.value = servicesRes.data ?? []
+  for (const s of services.value) priceDrafts[s.id] = String(s.price)
   categories.value = categoriesRes.data ?? []
   loading.value = false
 }
@@ -68,6 +74,13 @@ async function addService() {
   }
   if (newService.name.trim().length < 2) {
     createError.value = 'نام خدمت باید حداقل ۲ حرف باشد.'
+    return
+  }
+  // An emptied price field arrives here as 0 (Number('') === 0), and the API's @Min(0)
+  // accepts it -- which would publish a free, bookable service with a 0 deposit. Same guard
+  // as updatePrice() below; a genuinely free service isn't something this screen offers.
+  if (!Number.isInteger(newService.price) || newService.price <= 0) {
+    createError.value = 'قیمت خدمت باید یک عدد صحیح بزرگ‌تر از صفر باشد.'
     return
   }
 
@@ -103,16 +116,47 @@ async function deactivate(service: Service) {
   const { error } = await apiFetch(`/salons/mine/services/${service.id}`, { method: 'DELETE' })
   if (!error) {
     services.value = services.value.filter((s) => s.id !== service.id)
+    delete priceDrafts[service.id]
     pushToast('خدمت غیرفعال شد')
   }
 }
 
-async function updatePrice(service: Service, price: number) {
-  const { error } = await apiFetch(`/salons/mine/services/${service.id}`, { method: 'PATCH', body: { price } })
-  if (!error) {
-    service.price = price
-    pushToast('قیمت به‌روزرسانی شد')
+// The price field commits on `change` (i.e. on blur), and its value is the salon's public,
+// bookable price -- so it gets both a validity guard and a confirm, unlike the discount
+// field below. Two reasons the guard is not paranoia: a `type="number"` input silently
+// discards Persian digits, so the natural "select all, retype ۱۸۰۰۰۰" leaves the field
+// empty and fires `change` on blur; and the API's @Min(0) happily accepts the resulting 0,
+// which makes the service free to book with a 0 deposit. On any rejected value the input is
+// put back to the price we last knew about, so the field never shows something that isn't
+// what the salon is actually charging.
+async function updatePrice(service: Service) {
+  // Vue casts a v-model on an `<input type="number">` to a real number (and leaves anything
+  // unparseable as the raw string), so the draft is only nominally a string -- normalize.
+  const raw = String(priceDrafts[service.id] ?? '').trim()
+  const price = Number(raw)
+  // Integer-only mirrors UpdateServiceDto's @IsInt -- a fractional toman would just 400.
+  if (raw === '' || !Number.isInteger(price) || price <= 0) {
+    priceDrafts[service.id] = String(service.price)
+    pushToast('قیمت باید یک عدد صحیح بزرگ‌تر از صفر باشد.')
+    return
   }
+  if (price === service.price) return
+
+  const confirmed = window.confirm(
+    `قیمت «${service.name}» از ${service.price.toLocaleString('fa-IR')} به ${price.toLocaleString('fa-IR')} تومان تغییر کند؟`,
+  )
+  if (!confirmed) {
+    priceDrafts[service.id] = String(service.price)
+    return
+  }
+
+  const { error } = await apiFetch(`/salons/mine/services/${service.id}`, { method: 'PATCH', body: { price } })
+  if (error) {
+    priceDrafts[service.id] = String(service.price)
+    return
+  }
+  service.price = price
+  pushToast('قیمت به‌روزرسانی شد')
 }
 
 async function updateDiscount(service: Service, value: string) {
@@ -160,11 +204,12 @@ async function updateDiscount(service: Service, value: string) {
           </div>
           <div class="flex items-center gap-2">
             <AppInput
-              :model-value="String(s.price)"
+              v-model="priceDrafts[s.id]"
               label="قیمت (تومان)"
               type="number"
+              min="1"
               class="tnum w-32"
-              @change="updatePrice(s, +($event.target as HTMLInputElement).value)"
+              @change="updatePrice(s)"
             />
             <AppInput
               :model-value="s.discountPercent != null ? String(s.discountPercent) : ''"

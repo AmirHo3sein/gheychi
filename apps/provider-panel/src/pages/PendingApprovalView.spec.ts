@@ -11,8 +11,21 @@ function makeRouter() {
     routes: [
       { path: '/pending-approval', name: 'pending-approval', component: PendingApprovalView },
       { path: '/settings', name: 'settings', component: { template: '<div />' } },
+      { path: '/hours', name: 'hours', component: { template: '<div />' } },
+      { path: '/services', name: 'services', component: { template: '<div />' } },
     ],
   })
+}
+
+const PENDING_SALON = {
+  id: 's1',
+  name: 'x',
+  slug: 'x',
+  status: 'pending',
+  genderTarget: 'women',
+  address: 'x',
+  city: 'x',
+  capacity: 1,
 }
 
 describe('PendingApprovalView', () => {
@@ -92,6 +105,46 @@ describe('PendingApprovalView', () => {
 
     expect((wrapper.get('[data-testid="refresh-status"]').element as HTMLButtonElement).disabled).toBe(false)
     expect(useToast().toasts.value.some((t) => t.message === 'بررسی وضعیت با خطا مواجه شد. دوباره تلاش کنید.')).toBe(true)
+  })
+
+  // The onboarding wizard creates the salon before it saves the hours and the first service,
+  // so a failure on either leaves a pending salon with those missing. This page is where the
+  // owner lands after a reload, so it has to be the way back in -- the router opens exactly
+  // /hours and /services for a pending salon.
+  it('offers a pending salon a way into /hours and /services to finish a half-created onboarding', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => PENDING_SALON }))
+    const { refetch } = useSalon()
+    await refetch()
+
+    const router = makeRouter()
+    await router.push('/pending-approval')
+    await router.isReady()
+    const wrapper = mount(PendingApprovalView, { global: { plugins: [router] } })
+
+    const hoursLink = wrapper.findAll('a').find((a) => a.attributes('href') === '/hours')!
+    expect(wrapper.findAll('a').some((a) => a.attributes('href') === '/services')).toBe(true)
+
+    await hoursLink.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(router.currentRoute.value.name).toBe('hours')
+  })
+
+  it('does not offer those links to a suspended salon -- the router bounces them anyway', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ...PENDING_SALON, status: 'suspended' }),
+    }))
+    const { refetch } = useSalon()
+    await refetch()
+
+    const router = makeRouter()
+    await router.push('/pending-approval')
+    await router.isReady()
+    const wrapper = mount(PendingApprovalView, { global: { plugins: [router] } })
+
+    expect(wrapper.findAll('a').length).toBe(0)
   })
 
   describe('when the salon is rejected', () => {

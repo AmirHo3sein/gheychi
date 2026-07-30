@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
+import { BookingExpiryJob } from '../src/booking/booking-expiry.job';
 import { PushService } from '../src/push/push.service';
 import { loginAs } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
@@ -143,11 +144,79 @@ describe('Payments — callback (e2e)', () => {
     expect(booking.body.status).toBe('cancelled_by_user');
   });
 
-  it('404s for an authority that does not exist', () =>
-    request(app.getHttpServer())
+  // Previously asserted a raw 404. That response reached the CUSTOMER's browser, arriving
+  // straight from the bank and quite possibly after a real deduction; the unresolvable
+  // authority is now reported to operators as money-critical instead, and the customer
+  // gets the normal failure page (no bookingId, which that page already handles).
+  it('redirects an unresolvable authority to the failure page instead of 404ing at the customer', async () => {
+    const res = await request(app.getHttpServer())
       .get('/api/payments/callback')
       .query({ Authority: 'MOCK-doesnotexist', Status: 'OK' })
-      .expect(404));
+      .expect(302);
+    expect(res.headers.location).toBe('http://localhost:3003/booking/callback?status=failed');
+  });
+
+  it('does not resurrect an expired booking on a late callback -- it refunds the capture', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/api/bookings')
+      .set('Cookie', customerCookie)
+      .send({ salonId, serviceId, startsAt: futureIso(144) })
+      .expect(201);
+    const bookingId = created.body.booking.id;
+    const authority = extractAuthority(created.body.paymentUrl);
+
+    // Age the hold past the TTL and let BookingExpiryJob release the slot -- it flips the
+    // booking to 'expired' but deliberately leaves the payment 'initiated'.
+    const ds = app.get(DataSource);
+    await ds.query(`UPDATE bookings SET created_at = now() - interval '20 minutes' WHERE id = $1`, [bookingId]);
+    expect(await app.get(BookingExpiryJob).run()).toBeGreaterThanOrEqual(1);
+
+    const res = await request(app.getHttpServer())
+      .get('/api/payments/callback')
+      .query({ Authority: authority, Status: 'OK' })
+      .expect(302);
+    expect(res.headers.location).toBe(`http://localhost:3003/booking/callback?status=failed&bookingId=${bookingId}`);
+
+    const [booking] = await ds.query(`SELECT status FROM bookings WHERE id = $1`, [bookingId]);
+    expect(booking.status).toBe('expired'); // never re-confirmed into a released slot
+    const [payment] = await ds.query(`SELECT status, ref_id, refund_requested_at FROM payments WHERE booking_id = $1`, [
+      bookingId,
+    ]);
+    // The money Zarinpal captured is queued for a real refund (RefundRetryJob performs it),
+    // exactly as the reconciliation path has always treated the same situation.
+    expect(payment.status).toBe('refund_pending');
+    expect(payment.ref_id).not.toBeNull();
+    expect(payment.refund_requested_at).not.toBeNull();
+  });
+
+  it('recovers a capture that lands after the payment was already marked failed', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/api/bookings')
+      .set('Cookie', customerCookie)
+      .send({ salonId, serviceId, startsAt: futureIso(168) })
+      .expect(201);
+    const bookingId = created.body.booking.id;
+    const authority = extractAuthority(created.body.paymentUrl);
+
+    // Exactly the state cancel() (pending_payment branch) and reconciliation's
+    // verify-failed branch leave behind: booking cancelled, payment 'failed'. No job ever
+    // revisits a 'failed' payment, so a callback dropping it was silent money loss.
+    const ds = app.get(DataSource);
+    await ds.query(`UPDATE bookings SET status = 'cancelled_by_user' WHERE id = $1`, [bookingId]);
+    await ds.query(`UPDATE payments SET status = 'failed' WHERE booking_id = $1`, [bookingId]);
+
+    const res = await request(app.getHttpServer())
+      .get('/api/payments/callback')
+      .query({ Authority: authority, Status: 'OK' })
+      .expect(302);
+    expect(res.headers.location).toBe(`http://localhost:3003/booking/callback?status=failed&bookingId=${bookingId}`);
+
+    const [payment] = await ds.query(`SELECT status, refund_requested_at FROM payments WHERE booking_id = $1`, [bookingId]);
+    expect(payment.status).toBe('refund_pending');
+    expect(payment.refund_requested_at).not.toBeNull();
+    const [booking] = await ds.query(`SELECT status FROM bookings WHERE id = $1`, [bookingId]);
+    expect(booking.status).toBe('cancelled_by_user'); // the dead booking stays dead
+  });
 
   it('redirects to the frontend booking callback page on success', async () => {
     const created = await request(app.getHttpServer())

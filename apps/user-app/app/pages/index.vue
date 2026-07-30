@@ -21,9 +21,22 @@ const salonCoords = ref<Record<string, { lat: number; lng: number }>>({})
 
 const searchGender = computed(() => toSearchGender(session.user?.gender))
 
+// /search's `gender` param is REQUIRED, so with no gender on the account there is no valid
+// request to make: ofetch drops the undefined param and the API 400s, which used to land on
+// the generic "something went wrong" card whose retry button could only ever fail again.
+// auth.global.ts sends such a user to /profile before this page renders; this is the local
+// guard for the same precondition (e.g. the value is cleared while this page is open).
+const needsProfile = computed(() => !searchGender.value)
+
 let requestSeq = 0
 
 async function loadSalons() {
+  if (needsProfile.value) {
+    salons.value = []
+    searchError.value = false
+    loading.value = false
+    return
+  }
   const seq = ++requestSeq
   loading.value = true
   searchError.value = false
@@ -189,7 +202,24 @@ watch(view, (v) => {
       </div>
     </div>
 
-    <LazySalonMap v-if="view === 'map'" :salons="salons" :center="coords" :salon-coords="salonCoords" />
+    <!-- No gender on the account means no searchable request exists at all, so say what's
+         missing and where to fix it instead of showing an error the user can't act on. -->
+    <div
+      v-if="needsProfile"
+      data-testid="needs-profile"
+      role="status"
+      class="flex flex-col items-center gap-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-6 text-center"
+    >
+      <BaseIcon name="user" :size="20" class="text-(--color-accent)" />
+      <p class="text-sm text-(--color-text)">برای نمایش سالن‌های مناسب شما، ابتدا پروفایل خود را تکمیل کنید.</p>
+      <NuxtLink
+        to="/profile"
+        class="inline-flex items-center justify-center rounded-xl bg-(--color-accent-strong) px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-(--color-accent-deep)"
+      >
+        تکمیل پروفایل
+      </NuxtLink>
+    </div>
+    <LazySalonMap v-else-if="view === 'map'" :salons="salons" :center="coords" :salon-coords="salonCoords" />
     <template v-else>
       <p v-if="loading" role="status" class="py-8 text-center text-sm text-(--color-text-muted)">در حال بارگذاری...</p>
       <div v-else-if="searchError" role="alert" class="flex flex-col items-center gap-3 rounded-2xl border border-(--color-danger-soft) bg-(--color-danger-soft) p-6 text-center">

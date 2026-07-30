@@ -16,6 +16,7 @@ import { Worker } from '../salons/worker.entity';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { Booking, BookingStatus } from './booking.entity';
+import { releaseCouponRedemption } from './coupon-release.util';
 import { CreateBookingDto } from './dto/booking.dto';
 import { calculateDeposit } from './deposit.util';
 import { DiscountCandidate, resolveBestPriceWithWinner } from './discount.util';
@@ -46,7 +47,10 @@ export class BookingsService {
     private readonly referralsService: ReferralsService,
   ) {}
 
-  async createHold(userId: string, dto: CreateBookingDto): Promise<{ booking: Booking; paymentUrl: string }> {
+  async createHold(
+    userId: string,
+    dto: CreateBookingDto,
+  ): Promise<{ booking: Booking; paymentUrl: string; couponApplied: boolean }> {
     const salon = await this.salons.findOneBy({ id: dto.salonId, status: 'approved' });
     if (!salon) throw new NotFoundException('Salon not found');
 
@@ -74,6 +78,7 @@ export class BookingsService {
 
     let booking: Booking;
     let depositAmount: number;
+    let couponApplied: boolean;
     try {
       const result = await this.dataSource.transaction(async (em) => {
         const overlapping = await em.count(Booking, {
@@ -110,6 +115,14 @@ export class BookingsService {
         const { finalPrice, winner } = resolveBestPriceWithWinner(service.price, [serviceCandidate, couponCandidate]);
         const discountPercent = winner?.kind === 'percent' ? winner.value : null;
         const discountFixedAmount = winner?.kind === 'fixed' ? winner.value : null;
+        // A coupon that LOSES the comparison must not be spent. resolveBestPriceWithWinner
+        // returns the winning candidate by identity, so this is the one honest test of
+        // "did the code actually make the customer's price lower than the service's own
+        // discount already did" -- presence of a valid coupon is not that test. Applying
+        // a 10% code to a service already 30% off used to consume the code (permanently,
+        // via UNIQUE(coupon_id, user_id)) for exactly zero benefit, and on a tie the
+        // service discount wins, so the code survives for a booking where it can help.
+        const couponApplied = coupon !== null && winner === couponCandidate;
 
         const depositPercent = await this.config.getDepositPercent();
         const depositMin = await this.config.getDepositMinToman();
@@ -126,7 +139,9 @@ export class BookingsService {
             priceSnapshot: finalPrice,
             depositAmount: deposit,
             status: 'pending_payment',
-            couponId: coupon ? coupon.id : null,
+            // Only the coupon that actually produced the price is recorded against the
+            // booking -- a losing coupon was never applied to it in any sense.
+            couponId: couponApplied ? coupon!.id : null,
             // Both service.discountPercent and coupon.discountPercent/discountFixedAmount
             // are DB-CHECK-constrained to be strictly positive whenever non-null, so
             // `winner` (if present) always carries a genuinely positive value here --
@@ -146,14 +161,19 @@ export class BookingsService {
           }),
         );
 
-        if (coupon) {
+        if (couponApplied) {
           try {
             await em.save(
               CouponRedemption,
               em.create(CouponRedemption, {
-                couponId: coupon.id,
+                couponId: coupon!.id,
                 userId,
                 bookingId: savedBooking.id,
+                // In this branch the coupon IS the winner, so finalPrice is the price the
+                // coupon itself produced -- service.price - finalPrice is the coupon's own
+                // effect, not the service discount's. (Before the couponApplied gate above
+                // this same expression credited the service discount's value to the coupon
+                // whenever the service discount won, inflating usage reporting.)
                 discountAmount: service.price - finalPrice,
               }),
             );
@@ -168,16 +188,21 @@ export class BookingsService {
           }
         }
 
-        return { booking: savedBooking, depositAmount: deposit };
+        return { booking: savedBooking, depositAmount: deposit, couponApplied };
       });
       booking = result.booking;
       depositAmount = result.depositAmount;
+      couponApplied = result.couponApplied;
     } finally {
       await this.redis.del(lockKey);
     }
 
     const paymentUrl = await this.createPaymentSession(booking, salon.name, depositAmount);
-    return { booking, paymentUrl };
+    // couponApplied is false both when no code was sent and when a sent code lost to the
+    // service's own discount -- the caller needs it to avoid telling the customer their
+    // code was used when it wasn't (the booking's own price/discount columns already say
+    // what was actually charged).
+    return { booking, paymentUrl, couponApplied };
   }
 
   // Shared by createHold and retryPayment -- both need to obtain a fresh Zarinpal
@@ -191,7 +216,27 @@ export class BookingsService {
       callbackUrl,
     );
     try {
-      await this.payments.update({ bookingId: booking.id }, { authority });
+      await this.dataSource.transaction(async (em) => {
+        await em.update(Payment, { bookingId: booking.id }, { authority });
+        // Append-only companion write: payments.authority holds only the CURRENT
+        // session, so a retry used to orphan the previous one -- a customer paying
+        // through their still-open first Zarinpal tab hit a 404 and their money was
+        // recorded nowhere. payment_authorities keeps every authority ever issued so
+        // PaymentsService can resolve any of them, and reconciliation can re-verify
+        // all of them. Same transaction as the payments write, so the two can never
+        // disagree about which sessions exist.
+        //
+        // Raw SQL by choice: this ledger is written here and read in exactly two
+        // places, always by payment_id/authority, so an entity + repository (and its
+        // module registration) would be pure ceremony. ON CONFLICT keeps the write
+        // idempotent if the same session mint is ever replayed.
+        await em.query(
+          `INSERT INTO payment_authorities (payment_id, authority)
+           SELECT id, $2 FROM payments WHERE booking_id = $1
+           ON CONFLICT (authority) DO NOTHING`,
+          [booking.id, authority],
+        );
+      });
     } catch (err) {
       // Zarinpal already generated a real, chargeable authority at this point --
       // if persisting it fails, a later callback carrying this exact authority
@@ -327,6 +372,9 @@ export class BookingsService {
         // for a payment we marked 'failed' -- but this guard ensures we never
         // clobber a payment that already progressed past 'initiated'.
         await em.update(Payment, { bookingId: booking.id, status: 'initiated' }, { status: 'failed' });
+        // Nothing was captured, so the coupon code this hold consumed goes back to the
+        // customer -- otherwise cancelling before paying would burn it for life.
+        await releaseCouponRedemption(em, booking.id);
       }
     });
 

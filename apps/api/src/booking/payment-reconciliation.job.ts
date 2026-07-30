@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, LessThan, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { Booking } from './booking.entity';
+import { releaseCouponRedemption } from './coupon-release.util';
 import { PAYMENT_GATEWAY, PaymentGateway } from './payment-gateway';
 import { Payment } from './payment.entity';
 
@@ -33,11 +34,20 @@ export class PaymentReconciliationJob {
 
     let reconciled = 0;
     for (const payment of stale) {
-      if (!payment.authority) continue;
+      const authorities = await this.loadAuthorities(payment);
+      if (authorities.length === 0) continue;
       try {
-        const verify = await this.gateway.verifyPayment(payment.authority, payment.amount);
+        // Every authority ever issued for this payment is re-verified, newest first --
+        // not just payments.authority. retryPayment supersedes that column while the
+        // customer's earlier Zarinpal tab stays chargeable, so a customer who paid
+        // through the superseded session and never came back to the site would
+        // otherwise be reconciled as a failure with their money still captured. The
+        // first authority that verifies is the paying one; a verify that THROWS is left
+        // to the outer catch (unknown state -- retried next tick), never treated as a
+        // decline.
+        const verified = await this.verifyAny(authorities, payment.amount);
         await this.dataSource.transaction(async (em) => {
-          if (verify.success) {
+          if (verified) {
             const result = await em.update(
               Booking,
               { id: payment.bookingId, status: 'pending_payment' },
@@ -56,13 +66,16 @@ export class PaymentReconciliationJob {
                 { id: payment.id, status: 'initiated' },
                 {
                   status: 'refund_pending',
-                  refId: verify.refId,
+                  refId: verified.refId,
                   refundRequestedAt: new Date(),
+                  // The session that actually captured, which is the one to refund --
+                  // not necessarily the last one retryPayment minted.
+                  authority: verified.authority,
                 },
               );
               if (queued.affected) {
                 this.logger.error(
-                  `Payment ${payment.id} (authority ${payment.authority}) was confirmed by Zarinpal after its booking ${payment.bookingId} already left pending_payment -- queueing automatic refund`,
+                  `Payment ${payment.id} (authority ${verified.authority}) was confirmed by Zarinpal after its booking ${payment.bookingId} already left pending_payment -- queueing automatic refund`,
                 );
                 await this.alerts.raise({
                   key: `late-capture:${payment.id}`,
@@ -75,7 +88,7 @@ export class PaymentReconciliationJob {
               await em.update(
                 Payment,
                 { id: payment.id, status: 'initiated' },
-                { status: 'paid', refId: verify.refId, paidAt: new Date() },
+                { status: 'paid', refId: verified.refId, paidAt: new Date(), authority: verified.authority },
               );
             }
           } else {
@@ -93,6 +106,10 @@ export class PaymentReconciliationJob {
               { status: 'cancelled_by_user' },
             );
             await em.update(Payment, { id: payment.id, status: 'initiated' }, { status: 'failed' });
+            // No capture ever happened, so give the customer back the coupon code this
+            // hold consumed -- unconditional and idempotent, so it also covers the case
+            // where the booking had already expired (BookingExpiryJob released it too).
+            await releaseCouponRedemption(em, payment.bookingId);
           }
         });
         reconciled++;
@@ -103,7 +120,7 @@ export class PaymentReconciliationJob {
         // in this batch -- log and move on. This payment stays 'initiated'
         // and is retried on the next tick, same as before this run touched it.
         this.logger.error(
-          `Failed to reconcile payment ${payment.id} (authority ${payment.authority}): ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to reconcile payment ${payment.id} (authorities ${authorities.join(', ')}): ${err instanceof Error ? err.message : String(err)}`,
         );
         await this.alerts.raise({
           key: `reconcile-failed:${payment.id}`,
@@ -114,5 +131,35 @@ export class PaymentReconciliationJob {
       }
     }
     return reconciled;
+  }
+
+  /**
+   * Every Zarinpal session ever issued for this payment, newest first. payments.authority
+   * only holds the most recent one -- retryPayment overwrites it -- while the superseded
+   * sessions stay chargeable, so reconciling on the current authority alone can declare a
+   * payment failed while the money sits captured on an older session. payment_authorities
+   * (migration 1753700000000) is the append-only record; payments.authority is still
+   * folded in as a fallback in case a row predates that ledger.
+   */
+  private async loadAuthorities(payment: Payment): Promise<string[]> {
+    const rows = await this.payments.manager.query<Array<{ authority: string }>>(
+      `SELECT authority FROM payment_authorities WHERE payment_id = $1 ORDER BY created_at DESC`,
+      [payment.id],
+    );
+    const authorities = rows.map((row) => row.authority);
+    if (payment.authority && !authorities.includes(payment.authority)) authorities.unshift(payment.authority);
+    return authorities;
+  }
+
+  // First authority that Zarinpal confirms as captured, or null if it declines them all.
+  private async verifyAny(
+    authorities: string[],
+    amount: number,
+  ): Promise<{ authority: string; refId: string | null } | null> {
+    for (const authority of authorities) {
+      const verify = await this.gateway.verifyPayment(authority, amount);
+      if (verify.success) return { authority, refId: verify.refId };
+    }
+    return null;
   }
 }

@@ -191,5 +191,121 @@ describe('Bookings — create hold (e2e)', () => {
         .post('/api/bookings/00000000-0000-0000-0000-000000000000/retry-payment')
         .set('Cookie', customerCookie)
         .expect(404));
+
+    it('still honours the SUPERSEDED authority when the customer pays through their older Zarinpal tab', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/api/bookings')
+        .set('Cookie', customerCookie)
+        .send({ salonId, serviceId, startsAt: futureIso(168) })
+        .expect(201);
+      const bookingId = created.body.booking.id;
+      const firstAuthority = new URL(created.body.paymentUrl).searchParams.get('Authority')!;
+
+      const retried = await request(app.getHttpServer())
+        .post(`/api/bookings/${bookingId}/retry-payment`)
+        .set('Cookie', customerCookie)
+        .expect(200);
+      const secondAuthority = new URL(retried.body.paymentUrl).searchParams.get('Authority')!;
+      expect(secondAuthority).not.toBe(firstAuthority);
+
+      // The first Zarinpal session stays chargeable. This used to 404 (the payment row
+      // only remembers the newest authority), leaving a real deduction recorded nowhere.
+      const callback = await request(app.getHttpServer())
+        .get('/api/payments/callback')
+        .query({ Authority: firstAuthority, Status: 'OK' })
+        .expect(302);
+      expect(callback.headers.location).toContain(`status=success&bookingId=${bookingId}`);
+
+      const ds = app.get(DataSource);
+      const [payment] = await ds.query(`SELECT status, authority FROM payments WHERE booking_id = $1`, [bookingId]);
+      expect(payment.status).toBe('paid');
+      // ...and the payment now names the session that actually captured, so a refund
+      // would be issued against the right transaction.
+      expect(payment.authority).toBe(firstAuthority);
+    });
+  });
+
+  // Discount resolution is "larger discount wins, never stacked" (see discount.util.ts).
+  // A coupon that loses that comparison must not be consumed: UNIQUE(coupon_id, user_id)
+  // makes a redemption permanent, so spending it for zero benefit locks the customer out
+  // of the code for life -- and for a referral-issued coupon destroys a granted reward.
+  describe('coupon redemption is gated on the coupon actually winning', () => {
+    let ownerCookie: string;
+    let discountedServiceId: string;
+
+    beforeAll(async () => {
+      ownerCookie = await loginAs(app, '09125550001');
+      const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+      const serviceRes = await request(app.getHttpServer())
+        .post('/api/salons/mine/services')
+        .set('Cookie', ownerCookie)
+        .send({
+          categoryId: categoriesRes.body[0].id,
+          name: 'Colour (30% off)',
+          price: 2000000,
+          durationMin: 60,
+          discountPercent: 30,
+        })
+        .expect(201);
+      discountedServiceId = serviceRes.body.id;
+    });
+
+    it('does not redeem a coupon that loses to the service discount, and leaves it reusable', async () => {
+      await request(app.getHttpServer())
+        .post('/api/salons/mine/coupons')
+        .set('Cookie', ownerCookie)
+        .send({ code: 'WEAK10', discountPercent: 10 })
+        .expect(201);
+
+      const loser = await loginAs(app, '09121110021');
+      const created = await request(app.getHttpServer())
+        .post('/api/bookings')
+        .set('Cookie', loser)
+        .send({ salonId, serviceId: discountedServiceId, startsAt: futureIso(200), couponCode: 'WEAK10' })
+        .expect(201);
+
+      expect(created.body.couponApplied).toBe(false);
+      expect(created.body.booking.priceSnapshot).toBe(1400000); // the service's own 30%, not 10%
+      expect(created.body.booking.couponId).toBeNull();
+
+      const ds = app.get(DataSource);
+      const redemptions = await ds.query(`SELECT id FROM coupon_redemptions WHERE booking_id = $1`, [
+        created.body.booking.id,
+      ]);
+      expect(redemptions).toHaveLength(0);
+
+      // The whole point: the code is still available for a booking where it helps.
+      await request(app.getHttpServer())
+        .post('/api/coupons/validate')
+        .set('Cookie', loser)
+        .send({ code: 'WEAK10', salonId, serviceId: discountedServiceId })
+        .expect(201);
+    });
+
+    it('redeems a winning coupon and records the COUPON\'s own discount amount', async () => {
+      await request(app.getHttpServer())
+        .post('/api/salons/mine/coupons')
+        .set('Cookie', ownerCookie)
+        .send({ code: 'STRONG50', discountPercent: 50 })
+        .expect(201);
+
+      const winner = await loginAs(app, '09121110022');
+      const created = await request(app.getHttpServer())
+        .post('/api/bookings')
+        .set('Cookie', winner)
+        .send({ salonId, serviceId: discountedServiceId, startsAt: futureIso(224), couponCode: 'STRONG50' })
+        .expect(201);
+
+      expect(created.body.couponApplied).toBe(true);
+      expect(created.body.booking.priceSnapshot).toBe(1000000); // the coupon's 50% beats 30%
+      expect(created.body.booking.couponId).not.toBeNull();
+
+      const ds = app.get(DataSource);
+      const [redemption] = await ds.query(`SELECT discount_amount FROM coupon_redemptions WHERE booking_id = $1`, [
+        created.body.booking.id,
+      ]);
+      // The coupon's own effect (2,000,000 -> 1,000,000), never the service discount's.
+      expect(Number(redemption.discount_amount)).toBe(1000000);
+    });
   });
 });

@@ -16,7 +16,13 @@ import { QualifyingEvent, ReferralRewardType, ReferralType, RewardKind } from '.
 import { ReferralReward, ReferralRewardStatus, RewardBeneficiaryRole } from './referral-reward.entity';
 import { Referral, ReferralStatus } from './referral.entity';
 
-export type ReferralApplyStatus = 'applied' | 'invalid_code' | 'referral_type_disabled';
+// Every status other than 'applied' means NOTHING was persisted -- no `referrals` row
+// exists and, since redemption is only reachable on the isNew branch of verify-otp against
+// a UNIQUE referred_user_id, no later request can attach the code to this account. The two
+// no-row causes are kept apart (rather than both reported as 'referral_type_disabled', as
+// they were until this fix) because they need different words for the invitee: the reward
+// type being off is a platform-wide state, a spent cap belongs to that one referrer.
+export type ReferralApplyStatus = 'applied' | 'invalid_code' | 'referral_type_disabled' | 'referrer_limit_reached';
 
 // Reward-kind support as of Slice 6: ALL FIVE reward kinds are now supported for both
 // beneficiary sides. wallet_credit/cashback/loyalty_points pay out as a
@@ -387,7 +393,10 @@ export class ReferralsService {
           status: Not('cancelled'),
         },
       });
-      if (existingCount >= rewardType.maxReferralsPerReferrer) return { status: 'referral_type_disabled' };
+      // Its own status, not 'referral_type_disabled': the referral system is working fine
+      // here, this one referrer has simply spent their quota -- and the invitee is told
+      // exactly that instead of a message about rewards not being enabled yet.
+      if (existingCount >= rewardType.maxReferralsPerReferrer) return { status: 'referrer_limit_reached' };
     }
 
     const salonId = await this.resolveSalonId(referralType, referralCode.ownerUserId, em);

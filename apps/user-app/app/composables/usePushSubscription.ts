@@ -34,11 +34,48 @@ export function usePushSubscription() {
     supported.value = 'serviceWorker' in navigator && 'PushManager' in window
   })
 
+  /**
+   * Re-POSTs the browser's *existing* subscription so the push_subscriptions row for
+   * this endpoint is owned by whoever is logged in RIGHT NOW. The browser's PushManager
+   * is per-device, not per-user: on a shared device the row keeps `user_id` of whoever
+   * subscribed first, so without this rebind user B would keep receiving user A's
+   * appointment notifications, and B's own toggle-off (a DELETE scoped to
+   * `{ endpoint, userId: B }`) would delete nothing. Idempotent -- POST /push/subscribe
+   * updates `user_id` in place for an already-known endpoint.
+   *
+   * Returns whether the server acknowledged the (re)binding. Deliberately silent and
+   * never redirect-on-401: this is background repair triggered by a page mount or a
+   * fresh login, and must never toast at, or navigate, a user who didn't ask for it.
+   */
+  async function rebindOwnership(sub: PushSubscription): Promise<boolean> {
+    const json = sub.toJSON()
+    const { error } = await apiFetch('/push/subscribe', {
+      method: 'POST',
+      body: { endpoint: json.endpoint, p256dh: json.keys?.p256dh, auth: json.keys?.auth },
+      silent: true,
+      redirectOn401: false,
+    })
+    return !error
+  }
+
+  /** Rebinds this browser's subscription (if any) to the current session. No-op if none. */
+  async function rebindToCurrentUser() {
+    if (!supported.value) return
+    const reg = await navigator.serviceWorker.ready
+    const sub = await reg.pushManager.getSubscription()
+    if (sub) await rebindOwnership(sub)
+  }
+
   async function refreshStatus() {
     if (!supported.value) return
     const reg = await navigator.serviceWorker.ready
     const sub = await reg.pushManager.getSubscription()
-    isSubscribed.value = !!sub
+    // A browser subscription alone is NOT proof that notifications reach *this* user --
+    // it says nothing about which account the server has the endpoint filed under. So
+    // rebind first and only claim "on" once the server acknowledged it; a failed rebind
+    // reports "off", which is both honest (nothing will arrive for this account) and
+    // recoverable -- tapping the toggle re-subscribes to the same endpoint and re-POSTs.
+    isSubscribed.value = sub ? await rebindOwnership(sub) : false
   }
 
   async function subscribe() {
@@ -92,5 +129,5 @@ export function usePushSubscription() {
     isSubscribed.value = false
   }
 
-  return { supported, isSubscribed, refreshStatus, subscribe, unsubscribe }
+  return { supported, isSubscribed, refreshStatus, rebindToCurrentUser, subscribe, unsubscribe }
 }

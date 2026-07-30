@@ -17,12 +17,15 @@ mockNuxtImport('navigateTo', () => navigateToMock)
 const USER = { id: 'u1', phone: '09120000000', name: 'Existing Name', gender: 'male' as const, role: 'customer' as const }
 
 // Dispatch by URL -- the page fetches /favorites on mount, and hits /auth/profile /
-// /auth/logout from user actions.
+// /auth/logout from user actions. /push/subscribe only shows up once a test opts into a
+// push-capable browser: refreshStatus rebinds the endpoint to the current user (POST) and
+// logout unbinds it (DELETE).
 function stub(overrides: Record<string, unknown> = {}) {
   fetchMock.mockImplementation(async (path: string) => {
     if (path === '/favorites') return []
     if (path === '/auth/profile') return { ...USER, ...overrides }
     if (path === '/auth/logout') return undefined
+    if (path === '/push/subscribe') return { ok: true }
     throw new Error(`unexpected fetch path in test: ${path}`)
   })
 }
@@ -32,13 +35,20 @@ function stub(overrides: Record<string, unknown> = {}) {
 // so the push-toggle section stays absent for every test that doesn't opt in via
 // stubSupportedBrowser(), same idiom as usePushSubscription.spec.ts.
 function stubSupportedBrowser(subscribed: boolean) {
-  const getSubscription = vi.fn().mockResolvedValue(subscribed ? { endpoint: 'https://push.example/abc' } : null)
+  const browserUnsubscribe = vi.fn().mockResolvedValue(true)
+  const subscription = {
+    endpoint: 'https://push.example/abc',
+    toJSON: () => ({ endpoint: 'https://push.example/abc', keys: { p256dh: 'p', auth: 'a' } }),
+    unsubscribe: browserUnsubscribe,
+  }
+  const getSubscription = vi.fn().mockResolvedValue(subscribed ? subscription : null)
   const registration = { pushManager: { subscribe: vi.fn(), getSubscription } }
   Object.defineProperty(navigator, 'serviceWorker', {
     value: { ready: Promise.resolve(registration) },
     configurable: true,
   })
   vi.stubGlobal('PushManager', class {})
+  return { browserUnsubscribe }
 }
 
 describe('profile page', () => {
@@ -70,6 +80,35 @@ describe('profile page', () => {
     const genderLabel = wrapper.findAll('label').find((l) => l.text() === 'جنسیت')
     expect(genderLabel).toBeTruthy()
     expect(genderLabel!.attributes('for')).toBe(genderSelect.attributes('id'))
+  })
+
+  it('leaves an unset gender visibly unset instead of pre-answering it as female', async () => {
+    // Pre-selecting a value made the field look answered while the account still had
+    // gender = null server-side -- and this field decides which salons the user is shown
+    // at all, so it must never be filled in on the user's behalf.
+    useSessionStore().setUser({ ...USER, name: null, gender: null })
+    stub()
+    const wrapper = await mountSuspended(ProfilePage)
+    await flushPromises()
+
+    const select = wrapper.find('select')
+    expect((select.element as HTMLSelectElement).value).toBe('')
+    expect(select.find('option[value=""]').exists()).toBe(true)
+  })
+
+  it('refuses to save while the gender is unset, with a Persian inline error and no API call', async () => {
+    useSessionStore().setUser({ ...USER, gender: null })
+    stub()
+    const wrapper = await mountSuspended(ProfilePage)
+    await flushPromises()
+    fetchMock.mockClear()
+
+    await wrapper.find('input[type="text"]').setValue('Valid Name')
+    await wrapper.find('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('جنسیت را انتخاب کنید')
+    expect(fetchMock).not.toHaveBeenCalledWith('/auth/profile', expect.anything())
   })
 
   it('shows a Persian inline error and never calls the API when the name is too short', async () => {
@@ -156,6 +195,49 @@ describe('profile page', () => {
     expect(logoutButton!.classes().join(' ')).not.toContain('--color-ad')
 
     await logoutButton!.trigger('click')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith('/auth/logout', expect.objectContaining({ method: 'POST' }))
+    expect(useSessionStore().user).toBeNull()
+    expect(navigateToMock).toHaveBeenCalledWith('/login')
+  })
+
+  it('unbinds this browser push subscription before clearing the session on logout', async () => {
+    // DELETE /push/subscribe is scoped to { endpoint, userId }, so it only works while the
+    // session cookie is still present. Without this, the row stayed owned by the user who
+    // logged out and the next person on a shared device kept receiving their appointment
+    // notifications while their own toggle-off deleted nothing.
+    stub()
+    const { browserUnsubscribe } = stubSupportedBrowser(true)
+    const wrapper = await mountSuspended(ProfilePage)
+    await flushPromises()
+
+    await wrapper.findAll('button').find((b) => b.text() === 'خروج از حساب')!.trigger('click')
+    await flushPromises()
+
+    const paths = fetchMock.mock.calls.map((c) => `${c[0]} ${(c[1] as { method?: string })?.method ?? 'GET'}`)
+    expect(paths).toContain('/push/subscribe DELETE')
+    expect(paths.indexOf('/push/subscribe DELETE')).toBeLessThan(paths.indexOf('/auth/logout POST'))
+    expect(browserUnsubscribe).toHaveBeenCalledTimes(1)
+    expect(useSessionStore().user).toBeNull()
+    expect(navigateToMock).toHaveBeenCalledWith('/login')
+  })
+
+  it('still logs the user out when the push unbind fails', async () => {
+    // A user must always be able to leave -- a dead service worker or a failing DELETE
+    // cannot be allowed to trap them in the session.
+    const { browserUnsubscribe } = stubSupportedBrowser(true)
+    browserUnsubscribe.mockRejectedValue(new Error('service worker gone'))
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/favorites') return []
+      if (path === '/push/subscribe') throw { response: { status: 500 }, statusMessage: 'Server error' }
+      if (path === '/auth/logout') return undefined
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    const wrapper = await mountSuspended(ProfilePage)
+    await flushPromises()
+
+    await wrapper.findAll('button').find((b) => b.text() === 'خروج از حساب')!.trigger('click')
     await flushPromises()
 
     expect(fetchMock).toHaveBeenCalledWith('/auth/logout', expect.objectContaining({ method: 'POST' }))

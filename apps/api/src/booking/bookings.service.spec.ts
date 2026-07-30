@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
+import { CouponRedemption } from '../coupons/coupon-redemption.entity';
 import { CouponsService } from '../coupons/coupons.service';
 import { REDIS } from '../redis/redis.module';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
@@ -83,6 +84,7 @@ describe('BookingsService.cancel', () => {
   let bookingsFindOneBy: jest.Mock;
   let salonsFindOneBy: jest.Mock;
   let emUpdate: jest.Mock;
+  let emDelete: jest.Mock;
   let attemptRefund: jest.Mock;
 
   const BOOKING = {
@@ -95,6 +97,7 @@ describe('BookingsService.cancel', () => {
 
   beforeEach(async () => {
     emUpdate = jest.fn().mockResolvedValue({ affected: 1 });
+    emDelete = jest.fn().mockResolvedValue({ affected: 0 });
     attemptRefund = jest.fn().mockResolvedValue('refunded');
     bookingsFindOneBy = jest.fn();
     salonsFindOneBy = jest.fn().mockResolvedValue({ id: 'salon-1', ownerId: 'owner-1' });
@@ -107,7 +110,12 @@ describe('BookingsService.cancel', () => {
         { provide: getRepositoryToken(Salon), useValue: { findOneBy: salonsFindOneBy } },
         { provide: getRepositoryToken(SalonService), useValue: {} },
         { provide: getRepositoryToken(Worker), useValue: {} },
-        { provide: DataSource, useValue: { transaction: jest.fn((cb: (em: unknown) => unknown) => cb({ update: emUpdate })) } },
+        {
+          provide: DataSource,
+          useValue: {
+            transaction: jest.fn((cb: (em: unknown) => unknown) => cb({ update: emUpdate, delete: emDelete })),
+          },
+        },
         {
           provide: PlatformConfigService,
           useValue: { getCancellationWindowHours: jest.fn().mockResolvedValue(24) },
@@ -157,6 +165,17 @@ describe('BookingsService.cancel', () => {
     // callback captured money mid-cancel) is never clobbered to 'failed'.
     expect(emUpdate).toHaveBeenCalledWith(Payment, { bookingId: 'booking-1', status: 'initiated' }, { status: 'failed' });
     expect(attemptRefund).not.toHaveBeenCalled();
+    // Nothing was captured, so the coupon code the hold consumed is handed back --
+    // cancelling before paying must not burn it for life.
+    expect(emDelete).toHaveBeenCalledWith(CouponRedemption, expect.objectContaining({ bookingId: expect.anything() }));
+  });
+
+  it('does NOT release the coupon redemption when the deposit was actually captured', async () => {
+    bookingsFindOneBy.mockResolvedValue({ ...BOOKING }); // confirmed -> deposit captured
+
+    await service.cancel('booking-1', 'owner-1');
+
+    expect(emDelete).not.toHaveBeenCalled();
   });
 
   it('still succeeds the cancel when the inline refund attempt reports pending', async () => {
@@ -184,6 +203,7 @@ describe('BookingsService.retryPayment authority persist failure', () => {
   let bookingsFindOneBy: jest.Mock;
   let salonsFindOneBy: jest.Mock;
   let paymentsUpdate: jest.Mock;
+  let authoritiesInsert: jest.Mock;
   let requestPayment: jest.Mock;
   let raise: jest.Mock;
 
@@ -196,7 +216,10 @@ describe('BookingsService.retryPayment authority persist failure', () => {
       depositAmount: 100_000,
     });
     salonsFindOneBy = jest.fn().mockResolvedValue({ id: 'salon-1', name: 'Test Salon', ownerId: 'owner-1' });
+    // The authority write and its append-only payment_authorities companion run in one
+    // transaction; this mock fails the payments.authority update inside it.
     paymentsUpdate = jest.fn().mockRejectedValue(new Error('db down'));
+    authoritiesInsert = jest.fn().mockResolvedValue(undefined);
     requestPayment = jest.fn().mockResolvedValue({ authority: 'AUTH-NEW', paymentUrl: 'https://pay.example/AUTH-NEW' });
     raise = jest.fn().mockResolvedValue(undefined);
 
@@ -204,11 +227,16 @@ describe('BookingsService.retryPayment authority persist failure', () => {
       providers: [
         BookingsService,
         { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy } },
-        { provide: getRepositoryToken(Payment), useValue: { update: paymentsUpdate } },
+        { provide: getRepositoryToken(Payment), useValue: {} },
         { provide: getRepositoryToken(Salon), useValue: { findOneBy: salonsFindOneBy } },
         { provide: getRepositoryToken(SalonService), useValue: {} },
         { provide: getRepositoryToken(Worker), useValue: {} },
-        { provide: DataSource, useValue: {} },
+        {
+          provide: DataSource,
+          useValue: {
+            transaction: jest.fn((cb: (em: unknown) => unknown) => cb({ update: paymentsUpdate, query: authoritiesInsert })),
+          },
+        },
         { provide: PlatformConfigService, useValue: {} },
         { provide: ConfigService, useValue: { getOrThrow: jest.fn().mockReturnValue('http://localhost:3002') } },
         { provide: REDIS, useValue: {} },

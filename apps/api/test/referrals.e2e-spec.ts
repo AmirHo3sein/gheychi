@@ -267,10 +267,12 @@ describe('Referral codes + tracking (e2e)', () => {
       expect(mine.body.total).toBe(2);
     });
 
-    it('the third redemption is blocked (count 2 >= 2) -- referral_type_disabled, creates no row', async () => {
+    it('the third redemption is blocked (count 2 >= 2) -- referrer_limit_reached, creates no row', async () => {
       const code = await request(app.getHttpServer()).get('/api/referrals/my-code').set('Cookie', cappedReferrerCookie).expect(200);
       const { body } = await verifyOtpAndLogin(app, REFERRED_C, { referralCode: code.body.code });
-      expect(body.referralStatus).toBe('referral_type_disabled');
+      // Its own status, distinct from the reward type being disabled: both persist no row,
+      // but only one of them is about this referrer.
+      expect(body.referralStatus).toBe('referrer_limit_reached');
 
       const mine = await request(app.getHttpServer()).get('/api/referrals/mine').set('Cookie', cappedReferrerCookie).expect(200);
       expect(mine.body.total).toBe(2); // still 2 -- no row was created for REFERRED_C

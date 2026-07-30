@@ -1,8 +1,12 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import { resetToast, useToast } from '@/composables/useToast'
 import ServicesView from './ServicesView.vue'
 
+// Always handed to a mock as a fresh copy: the component keeps the objects the fetch mock
+// returns and writes back to them on a successful save, so sharing this reference would let
+// one test's price update leak into the next test's starting state.
 const SERVICE = {
   id: 'svc-1',
   categoryId: 1,
@@ -24,7 +28,7 @@ describe('ServicesView', () => {
 
   it('does not deactivate a service without confirmation, and the row stays untouched', async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [SERVICE] }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
     vi.stubGlobal('fetch', fetchMock)
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
@@ -45,7 +49,7 @@ describe('ServicesView', () => {
 
   it('deactivates a service after confirmation, sending a real DELETE and removing the row', async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [SERVICE] }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
       .mockResolvedValueOnce({ ok: true, status: 204, json: async () => null }) // DELETE service
     vi.stubGlobal('fetch', fetchMock)
@@ -65,7 +69,7 @@ describe('ServicesView', () => {
 
   it('renders no checkbox for the active state -- deactivation is an explicit danger action, not a bare toggle', async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [SERVICE] }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
     vi.stubGlobal('fetch', fetchMock)
 
@@ -92,7 +96,7 @@ describe('ServicesView', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({ message: 'boom' }) }) // GET services fails
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [SERVICE] }) // GET services (retry)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services (retry)
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories (retry)
     vi.stubGlobal('fetch', fetchMock)
 
@@ -109,10 +113,12 @@ describe('ServicesView', () => {
 
   it('shows a success toast after updating a price', async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [SERVICE] }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ...SERVICE, price: 150000 }) }) // PATCH price
     vi.stubGlobal('fetch', fetchMock)
+    // A price change is money-facing and commits on blur, so it now goes through a confirm.
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     const wrapper = mount(ServicesView)
     await new Promise((r) => setTimeout(r, 0))
@@ -128,6 +134,80 @@ describe('ServicesView', () => {
     expect(patchCall[1]).toMatchObject({ method: 'PATCH' })
     expect(JSON.parse(patchCall[1].body)).toEqual({ price: 150000 })
     expect(useToast().toasts.value.some((t) => t.message === 'قیمت به‌روزرسانی شد')).toBe(true)
+  })
+
+  // A `type="number"` input drops Persian digits entirely, so the natural "select all and
+  // retype ۱۸۰۰۰۰" leaves the field empty and fires `change` on blur. That used to PATCH
+  // { price: 0 } -- which the API's @Min(0) accepts -- and then report success, publishing a
+  // free, bookable service.
+  it.each([['', 'empty'], ['0', 'zero'], ['-5', 'negative'], ['۱۸۰۰۰۰', 'Persian digits (dropped by type=number)']])(
+    'refuses to save %s (%s) as a price, restores the previous value and warns instead of reporting success',
+    async (value) => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      vi.stubGlobal('fetch', fetchMock)
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+      const wrapper = mount(ServicesView)
+      await new Promise((r) => setTimeout(r, 0))
+
+      const input = wrapper.findAll('input[type="number"]')[0]!
+      await input.setValue(value)
+      await input.trigger('change')
+      await new Promise((r) => setTimeout(r, 0))
+
+      // Only the two initial GETs happened -- no PATCH was fired.
+      expect(fetchMock.mock.calls.length).toBe(2)
+      expect(confirmSpy).not.toHaveBeenCalled()
+      expect((input.element as HTMLInputElement).value).toBe('100000')
+      expect(useToast().toasts.value.some((t) => t.message === 'قیمت باید یک عدد صحیح بزرگ‌تر از صفر باشد.')).toBe(true)
+      expect(useToast().toasts.value.some((t) => t.message === 'قیمت به‌روزرسانی شد')).toBe(false)
+    },
+  )
+
+  it('does not save a price change when the confirm is declined, and puts the field back', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+    vi.stubGlobal('fetch', fetchMock)
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+
+    const wrapper = mount(ServicesView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    const input = wrapper.findAll('input[type="number"]')[0]!
+    await input.setValue('1')
+    await input.trigger('change')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(fetchMock.mock.calls.length).toBe(2)
+    expect((input.element as HTMLInputElement).value).toBe('100000')
+    expect(useToast().toasts.value.some((t) => t.message === 'قیمت به‌روزرسانی شد')).toBe(false)
+  })
+
+  it('shows an inline error and skips the request when adding a service with an empty price', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(ServicesView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    await wrapper.findAll('input[type="text"]').at(-1)!.setValue('رنگ مو')
+    // AppSelect wraps vue-multiselect (no native <select> to set), so drive its contract.
+    await wrapper.findComponent(AppSelect).vm.$emit('update:modelValue', 1)
+    // The new-service price field: first number input, since no service rows are rendered.
+    await wrapper.findAll('input[type="number"]')[0]!.setValue('')
+
+    const addButton = wrapper.findAll('button').find((b) => b.text().includes('افزودن'))!
+    await addButton.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(wrapper.text()).toContain('قیمت خدمت باید یک عدد صحیح بزرگ‌تر از صفر باشد')
+    // Only the two initial GETs happened -- no POST was fired.
+    expect(fetchMock.mock.calls.length).toBe(2)
   })
 
   it('shows an inline error and skips the request when adding a service without a category', async () => {

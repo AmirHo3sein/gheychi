@@ -44,8 +44,8 @@ export class Payment {
   @Column({ type: 'varchar', default: 'initiated' })
   status: PaymentStatus;
 
-  // Set at the exact moment status flips to 'paid' (handleCallback's transitioned
-  // branch, and PaymentReconciliationJob's success branch). Referral reward granting's
+  // Set at the exact moment status flips to 'paid' (handleCallback's 'captured' capture
+  // outcome, and PaymentReconciliationJob's success branch). Referral reward granting's
   // R7 hold-back window ("first_paid_booking" grants require the payment to have been
   // paid for at least grant_holdback_hours) is measured from this timestamp, not
   // createdAt -- a payment can sit 'initiated' for a while before a late callback or

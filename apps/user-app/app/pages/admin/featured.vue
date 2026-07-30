@@ -8,10 +8,25 @@ interface AdminSalon { id: string; name: string; city: string; isFeatured: boole
 // unwrapped via `.items` before it's assigned/iterated below.
 interface AdminSalonsResponse { items: AdminSalon[]; total: number; page: number; pageSize: number }
 
+// Featuring is only meaningful for an APPROVED salon: SearchService.search() filters
+// every listing (featured/ad-boosted results included) to status = 'approved', so
+// is_featured on any other row is a flag search can never surface -- the toggle looks
+// like it worked and changes nothing anyone can see. /admin/salons defaults to
+// status=pending when the param is omitted (AdminSalonsController.list()), i.e. exactly
+// the salons that must NOT be listed here, so the filter is always sent explicitly.
+const STATUS = 'approved'
+// The endpoint's own @Max(100) cap (AdminSalonQueryDto) -- one request per 100 salons,
+// paged below rather than fetched all at once, since an approved-salon list grows
+// unbounded with the platform.
+const PAGE_SIZE = 100
+
 const { apiFetch } = useApi()
 const salons = ref<AdminSalon[]>([])
 const savingId = ref<string | null>(null)
 const loading = ref(true)
+const page = ref(1)
+const total = ref(0)
+const pageCount = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)))
 
 // One "تا تاریخ" date-input value per row, keyed by salon id. Bound via v-model
 // instead of the old document.getElementById(`until-${id}`) lookup. Preserved (not
@@ -21,8 +36,10 @@ const untilInputs = ref<Record<string, string>>({})
 
 async function load() {
   loading.value = true
-  const { data } = await apiFetch<AdminSalonsResponse>('/admin/salons', { silent: true })
+  const params = new URLSearchParams({ status: STATUS, page: String(page.value), pageSize: String(PAGE_SIZE) })
+  const { data } = await apiFetch<AdminSalonsResponse>(`/admin/salons?${params.toString()}`, { silent: true })
   salons.value = data?.items ?? []
+  total.value = data?.total ?? 0
   for (const salon of salons.value) {
     if (!(salon.id in untilInputs.value)) untilInputs.value[salon.id] = ''
   }
@@ -30,6 +47,7 @@ async function load() {
 }
 
 onMounted(load)
+watch(page, load)
 
 async function toggle(salon: AdminSalon, featuredUntilInput: string) {
   savingId.value = salon.id
@@ -49,9 +67,19 @@ useSeoMeta({ title: 'مدیریت سالن‌های ویژه — آرایشگا�
 
 <template>
   <div class="p-4 space-y-4">
-    <h1 class="text-lg font-bold text-(--color-text)">مدیریت سالن‌های ویژه (تبلیغ)</h1>
+    <div class="space-y-1">
+      <h1 class="text-lg font-bold text-(--color-text)">مدیریت سالن‌های ویژه (تبلیغ)</h1>
+      <!-- Says out loud why a pending salon is missing from the list: nothing but an
+           approved salon can appear in search, featured or not. -->
+      <p class="text-sm text-(--color-text-muted)">
+        تنها سالن‌های تاییدشده در این فهرست دیده می‌شوند، چون فقط آن‌ها در نتایج جستجو نمایش داده می‌شوند.
+      </p>
+    </div>
 
-    <p v-if="loading" class="flex items-center justify-center gap-2 py-8 text-sm text-(--color-text-muted)">
+    <!-- Only the very first load blanks the screen. A page-change reload keeps the
+         (stale) rows and the pager mounted, dimmed -- unmounting the just-clicked
+         next/prev button would drop keyboard focus to <body> mid-navigation. -->
+    <p v-if="loading && !salons.length" class="flex items-center justify-center gap-2 py-8 text-sm text-(--color-text-muted)">
       <BaseIcon name="spinner" :size="18" class="animate-spin" />
       در حال بارگذاری...
     </p>
@@ -61,11 +89,11 @@ useSeoMeta({ title: 'مدیریت سالن‌های ویژه — آرایشگا�
       data-testid="featured-empty"
       class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-6 text-center text-sm text-(--color-text-muted)"
     >
-      سالنی برای نمایش وجود ندارد
+      سالن تاییدشده‌ای برای نمایش وجود ندارد
     </p>
 
     <BaseCard v-else padding="none" class="overflow-hidden">
-      <div class="overflow-x-auto">
+      <div class="overflow-x-auto transition-opacity" :class="loading && 'opacity-50'" :aria-busy="loading">
         <table class="w-full min-w-[640px] text-sm">
           <thead>
             <tr class="border-b border-(--color-border)">
@@ -111,6 +139,22 @@ useSeoMeta({ title: 'مدیریت سالن‌های ویژه — آرایشگا�
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div
+        v-if="pageCount > 1"
+        data-testid="featured-pager"
+        class="flex items-center justify-between gap-3 border-t border-(--color-border) p-3"
+      >
+        <BaseButton variant="secondary" data-testid="featured-prev" :disabled="loading || page <= 1" @click="page--">
+          صفحه قبل
+        </BaseButton>
+        <p class="text-xs text-(--color-text-muted)">
+          صفحه {{ page }} از {{ pageCount }} — {{ total }} سالن تاییدشده
+        </p>
+        <BaseButton variant="secondary" data-testid="featured-next" :disabled="loading || page >= pageCount" @click="page++">
+          صفحه بعد
+        </BaseButton>
       </div>
     </BaseCard>
   </div>

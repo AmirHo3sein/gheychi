@@ -7,9 +7,15 @@ const { supported: pushSupported, isSubscribed, refreshStatus, subscribe, unsubs
 
 const favorites = ref<FavoriteSalon[]>([])
 const name = ref(session.user?.name ?? '')
-const gender = ref(session.user?.gender ?? 'female')
+// Never default an UNSET gender to a value: this field decides which salons the user is
+// shown at all (see toSearchGender/index.vue), so pre-answering it silently picks a whole
+// product experience on the user's behalf -- and, worse, makes the profile look complete
+// while the account still has gender = null server-side. '' renders as the placeholder
+// option, exactly like login.vue's profile step.
+const gender = ref<'female' | 'male' | ''>(session.user?.gender ?? '')
 const savingProfile = ref(false)
 const nameError = ref('')
+const genderError = ref('')
 
 onMounted(async () => {
   // refreshStatus() (push-subscription status) and the favorites fetch are independent --
@@ -34,12 +40,30 @@ function validateName(): boolean {
   return true
 }
 
+// Reachable now that an unset gender stays unset: the API's own @IsIn(['female','male'])
+// would reject '' with an English message through the generic toast.
+function validateGender(): boolean {
+  if (gender.value === '') {
+    genderError.value = 'جنسیت را انتخاب کنید'
+    return false
+  }
+  genderError.value = ''
+  return true
+}
+
 watch(name, () => {
   if (nameError.value) nameError.value = ''
 })
 
+watch(gender, () => {
+  if (genderError.value) genderError.value = ''
+})
+
 async function saveProfile() {
-  if (!validateName()) return
+  // Both run, not short-circuited -- a user with two invalid fields should see both errors.
+  const validName = validateName()
+  const validGender = validateGender()
+  if (!validName || !validGender) return
   savingProfile.value = true
   const { data } = await apiFetch('/auth/profile', { method: 'PATCH', body: { name: name.value, gender: gender.value } })
   savingProfile.value = false
@@ -54,7 +78,20 @@ async function togglePush() {
   else await subscribe()
 }
 
+// Unbinding this browser's push subscription must happen BEFORE the session cookie is
+// cleared -- DELETE /push/subscribe is scoped to { endpoint, userId }, so afterwards the
+// row would be stranded owned by the user who just left and the next person to log in on
+// this device would keep receiving their appointment notifications. It is also time-boxed
+// rather than merely try/caught: `navigator.serviceWorker.ready` never rejects, it simply
+// never resolves when there's no active registration, and a user must always be able to
+// log out regardless of what the service worker is doing.
+const PUSH_UNBIND_TIMEOUT_MS = 2000
+
 async function logout() {
+  await Promise.race([
+    unsubscribe().catch(() => {}),
+    new Promise((resolve) => setTimeout(resolve, PUSH_UNBIND_TIMEOUT_MS)),
+  ])
   await apiFetch('/auth/logout', { method: 'POST' })
   session.setUser(null)
   await navigateTo('/login')
@@ -70,7 +107,8 @@ useSeoMeta({ title: 'پروفایل — آرایشگاه' })
       <p class="text-sm text-(--color-text-muted)">{{ session.user?.phone }}</p>
       <form class="space-y-4" @submit.prevent="saveProfile">
         <BaseInput v-model="name" type="text" label="نام" placeholder="نام" :maxlength="100" required :error="nameError" />
-        <BaseSelect v-model="gender" label="جنسیت" required>
+        <BaseSelect v-model="gender" label="جنسیت" required :error="genderError">
+          <option value="" disabled>انتخاب کنید</option>
           <option value="female">زن</option>
           <option value="male">مرد</option>
         </BaseSelect>

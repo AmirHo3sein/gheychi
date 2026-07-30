@@ -22,11 +22,12 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { debounce } from '@/utils/debounce'
-import { reviewStatusLabel } from '@/utils/labels'
+import { workerRatingStatusLabel } from '@/utils/labels'
 
 // worker_ratings.status only ever has these two values (no 'withdrawn' -- see
-// worker-rating.entity.ts), same two-state shape as Review, so reviewStatusLabel()
-// is reused as-is rather than declaring a duplicate label map.
+// worker-rating.entity.ts): a rating whose customer deleted the parent review is
+// cascaded to 'rejected' too, and is only distinguishable via `reviewStatus` below, so
+// filtering by 'rejected' deliberately returns both kinds.
 const STATUS_OPTIONS = [
   { value: '', label: 'همه وضعیت‌ها' },
   { value: 'published', label: 'منتشر شده' },
@@ -41,6 +42,9 @@ interface WorkerRatingRow {
   salonName: string
   rating: number
   status: 'published' | 'rejected'
+  // Parent Review's status -- the only thing that tells an admin rejection apart from
+  // the customer having deleted their own review (see workerRatingStatusLabel).
+  reviewStatus: 'published' | 'rejected' | 'withdrawn'
   createdAt: string
 }
 
@@ -181,12 +185,16 @@ watch(page, load)
                 </div>
               </td>
               <td class="px-5 py-3.5">
-                <StatusBadge :label="reviewStatusLabel(rating.status).label" :tone="reviewStatusLabel(rating.status).tone" />
+                <StatusBadge
+                  :label="workerRatingStatusLabel(rating.status, rating.reviewStatus).label"
+                  :tone="workerRatingStatusLabel(rating.status, rating.reviewStatus).tone"
+                />
               </td>
               <td class="px-5 py-3.5">
                 <ModerateWorkerRatingButton
                   :rating-id="rating.id"
                   :status="rating.status"
+                  :review-status="rating.reviewStatus"
                   @updated="(r) => onUpdated(r.id, r.status)"
                 />
               </td>

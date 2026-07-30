@@ -6,6 +6,7 @@ definePageMeta({ layout: 'bare' })
 const { apiFetch } = useApi()
 const session = useSessionStore()
 const route = useRoute()
+const { rebindToCurrentUser: rebindPushSubscription } = usePushSubscription()
 
 const step = ref<'phone' | 'code' | 'profile'>('phone')
 const phone = ref('')
@@ -114,10 +115,17 @@ async function requestOtp() {
   resendsRemaining.value = data?.resendsRemaining ?? null
 }
 
+// Only 'applied' means a `referrals` row was actually written. Every other status is a
+// no-row outcome, and since a code can only ever be redeemed inside the registration
+// transaction itself (see the comment on showReferralCode above), nothing can attach it
+// later -- so none of them may imply the code was kept for a reward "coming soon". The
+// disabled case in particular is the DEFAULT for early users (every reward type ships
+// disabled), which is exactly why saying "ثبت شد" there was a promise nobody could keep.
 const REFERRAL_STATUS_MESSAGE: Record<string, string> = {
   applied: 'کد معرف با موفقیت ثبت شد',
   invalid_code: 'کد معرف وارد شده معتبر نیست',
-  referral_type_disabled: 'کد معرف ثبت شد؛ پاداش‌های معرفی به‌زودی فعال می‌شود',
+  referral_type_disabled: 'کد معرف ثبت نشد؛ پاداش‌های معرفی هنوز فعال نشده است',
+  referrer_limit_reached: 'کد معرف ثبت نشد؛ سهمیه دعوت این معرف تکمیل شده است',
 }
 
 async function verifyOtp() {
@@ -130,7 +138,7 @@ async function verifyOtp() {
   const { data, error } = await apiFetch<{
     user: SessionUser
     isNewUser: boolean
-    referralStatus?: 'applied' | 'invalid_code' | 'referral_type_disabled'
+    referralStatus?: 'applied' | 'invalid_code' | 'referral_type_disabled' | 'referrer_limit_reached'
   }>('/auth/verify-otp', { method: 'POST', body, silent: true })
   submitting.value = false
   if (error || !data) {
@@ -144,6 +152,12 @@ async function verifyOtp() {
   if (data.referralStatus) useToast().push(REFERRAL_STATUS_MESSAGE[data.referralStatus] ?? '')
 
   session.setUser(data.user)
+  // A push subscription belongs to the BROWSER, not to an account: on a shared device the
+  // push_subscriptions row still points at whoever logged in here last, so rebind it to the
+  // account that just signed in -- otherwise the previous user's appointment notifications
+  // keep arriving on this device. Not awaited: the POST already carries the session cookie
+  // verify-otp just set, and login must not wait on (or fail because of) a service worker.
+  void rebindPushSubscription()
   if (!data.user.name || !data.user.gender) {
     step.value = 'profile'
   } else {

@@ -10,6 +10,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import { useApi } from '@/composables/useApi'
 import { useSalon } from '@/composables/useSalon'
 import { useSessionStore } from '@/stores/session'
+import { validateWorkingHours } from '@/utils/working-hours'
 
 const STEP_LABELS = ['اطلاعات آرایشگاه', 'ساعات کاری', 'اولین خدمت']
 
@@ -74,9 +75,15 @@ const isSalonInfoValid = computed(
     form.salonInfo.lng !== null,
 )
 
+// Same rule HoursView.vue saves against (utils/working-hours.ts). Step 2 has to enforce it
+// too: submit() POSTs /salons before it PUTs the hours, so an openTime >= closeTime the
+// API rejects would leave the owner with an already-created salon and no hours -- and
+// retrying the same invalid range can never succeed.
+const hoursValidation = computed(() => validateWorkingHours(form.hours))
+
 // An owner who submits with zero enabled days would go live completely unbookable
 // with no warning -- require at least one before step 2 can advance.
-const isHoursValid = computed(() => form.hours.some((h) => h.enabled))
+const isHoursValid = computed(() => form.hours.some((h) => h.enabled) && hoursValidation.value.message === '')
 
 const isServiceValid = computed(
   () =>
@@ -101,7 +108,7 @@ const disabledHint = computed(() => {
     return 'برای ادامه، نام، مخاطب، شهر، آدرس، ظرفیت (۱ تا ۵۰) و موقعیت روی نقشه را کامل کنید.'
   }
   if (step.value === 2 && !isHoursValid.value) {
-    return 'حداقل یک روز کاری را فعال کنید تا آرایشگاه قابل رزرو باشد.'
+    return hoursValidation.value.message || 'حداقل یک روز کاری را فعال کنید تا آرایشگاه قابل رزرو باشد.'
   }
   if (step.value === 3 && !isServiceValid.value) {
     return 'برای ثبت، دسته‌بندی، نام خدمت (حداقل ۲ حرف)، قیمت و مدت زمان معتبر (۵ تا ۶۰۰ دقیقه) وارد کنید.'
@@ -162,7 +169,9 @@ async function submit() {
       body: { hours: enabledHours },
     })
     if (hoursError) {
-      submitError.value = 'ثبت ساعات کاری ناموفق بود. دوباره تلاش کنید.'
+      // The salon row already exists at this point, so point at the step that can actually
+      // fix this instead of inviting a retry of the exact same rejected payload.
+      submitError.value = 'ثبت ساعات کاری ناموفق بود. با دکمه «قبلی» ساعات کاری را بررسی و دوباره تلاش کنید.'
       submitting.value = false
       return
     }
@@ -229,7 +238,7 @@ async function submit() {
       class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-5 shadow-(--shadow-sm) focus:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40"
     >
       <SalonInfoStep v-if="step === 1" v-model="form.salonInfo" />
-      <ScheduleStep v-else-if="step === 2" v-model="form.hours" />
+      <ScheduleStep v-else-if="step === 2" v-model="form.hours" :invalid-weekdays="hoursValidation.invalid" />
       <FirstServiceStep v-else v-model="form.service" />
     </div>
 

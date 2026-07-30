@@ -340,11 +340,13 @@ describe('ReviewsService.update / remove -- ownership and edit-window enforcemen
 
 describe('ReviewsService.moderateWorkerRating', () => {
   let service: ReviewsService;
+  let reviewsFindOneBy: jest.Mock;
   let workerRatingsFindOneBy: jest.Mock;
   let transaction: jest.Mock;
   let em: ReturnType<typeof makeFakeEm>;
 
   beforeEach(async () => {
+    reviewsFindOneBy = jest.fn().mockResolvedValue({ id: 'review-1', status: 'published' });
     workerRatingsFindOneBy = jest.fn();
     em = makeFakeEm({ worker: { avg_rating: '3.50', rating_count: 2 } });
     transaction = jest.fn((cb: (em: unknown) => unknown) => cb(em));
@@ -352,7 +354,7 @@ describe('ReviewsService.moderateWorkerRating', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         ReviewsService,
-        { provide: getRepositoryToken(Review), useValue: {} },
+        { provide: getRepositoryToken(Review), useValue: { findOneBy: reviewsFindOneBy } },
         { provide: getRepositoryToken(Booking), useValue: {} },
         { provide: getRepositoryToken(Salon), useValue: {} },
         { provide: getRepositoryToken(Worker), useValue: {} },
@@ -370,7 +372,7 @@ describe('ReviewsService.moderateWorkerRating', () => {
   });
 
   it('flips status and recomputes the worker aggregate from source of truth', async () => {
-    workerRatingsFindOneBy.mockResolvedValue({ id: 'wr-1', workerId: 'worker-1' });
+    workerRatingsFindOneBy.mockResolvedValue({ id: 'wr-1', workerId: 'worker-1', reviewId: 'review-1' });
 
     await service.moderateWorkerRating('wr-1', 'rejected');
 
@@ -380,6 +382,19 @@ describe('ReviewsService.moderateWorkerRating', () => {
       '3.50',
       2,
     ]);
+  });
+
+  // The mirror of moderate()'s withdrawn guard: remove() cascades a customer's own
+  // review deletion onto the rating as 'rejected' (the only value the column allows),
+  // so without consulting the parent an 'انتشار مجدد' click would silently resurrect a
+  // deleted rating into workers.rating_avg/rating_count and the public list.
+  it('409s moderating a rating whose parent review the customer withdrew, in either direction, without touching the transaction', async () => {
+    workerRatingsFindOneBy.mockResolvedValue({ id: 'wr-1', workerId: 'worker-1', reviewId: 'review-1' });
+    reviewsFindOneBy.mockResolvedValue({ id: 'review-1', status: 'withdrawn' });
+
+    await expect(service.moderateWorkerRating('wr-1', 'published')).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.moderateWorkerRating('wr-1', 'rejected')).rejects.toBeInstanceOf(ConflictException);
+    expect(transaction).not.toHaveBeenCalled();
   });
 });
 
@@ -520,5 +535,83 @@ describe('ReviewsService.listForAdmin', () => {
     // salonName-resolution branch never runs -- salons.find is only called for it, never
     // for display batching here since there are zero result rows.
     expect(salonsFind).not.toHaveBeenCalled();
+  });
+});
+
+describe('ReviewsService.listWorkerRatingsForAdmin', () => {
+  let service: ReviewsService;
+  let workerRatingsFindAndCount: jest.Mock;
+  let reviewsFind: jest.Mock;
+  let salonsFind: jest.Mock;
+  let workersFind: jest.Mock;
+
+  beforeEach(async () => {
+    workerRatingsFindAndCount = jest.fn();
+    reviewsFind = jest.fn().mockResolvedValue([]);
+    salonsFind = jest.fn().mockResolvedValue([{ id: 'salon-1', name: 'سالن نمونه' }]);
+    workersFind = jest.fn().mockResolvedValue([{ id: 'worker-1', name: 'سارا' }]);
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ReviewsService,
+        { provide: getRepositoryToken(Review), useValue: { find: reviewsFind } },
+        { provide: getRepositoryToken(Booking), useValue: {} },
+        { provide: getRepositoryToken(Salon), useValue: { find: salonsFind } },
+        { provide: getRepositoryToken(Worker), useValue: { find: workersFind } },
+        { provide: getRepositoryToken(WorkerRating), useValue: { findAndCount: workerRatingsFindAndCount } },
+        { provide: DataSource, useValue: {} },
+        { provide: PlatformConfigService, useValue: {} },
+      ],
+    }).compile();
+    service = moduleRef.get(ReviewsService);
+  });
+
+  // Both rows carry status 'rejected' on the rating itself -- only the parent review's
+  // status distinguishes an admin rejection from a customer's own deletion cascade, so
+  // the admin panel can render the latter non-actionable (see moderateWorkerRating).
+  it("surfaces each row's parent review status alongside the joined worker/salon names", async () => {
+    workerRatingsFindAndCount.mockResolvedValue([
+      [
+        { id: 'wr-1', reviewId: 'review-1', workerId: 'worker-1', salonId: 'salon-1', rating: 5, status: 'rejected' },
+        { id: 'wr-2', reviewId: 'review-2', workerId: 'worker-1', salonId: 'salon-1', rating: 4, status: 'rejected' },
+      ],
+      2,
+    ]);
+    reviewsFind.mockResolvedValue([
+      { id: 'review-1', status: 'published' },
+      { id: 'review-2', status: 'withdrawn' },
+    ]);
+
+    const result = await service.listWorkerRatingsForAdmin({});
+
+    expect(result.items.map((r) => r.reviewStatus)).toEqual(['published', 'withdrawn']);
+    expect(result.items[0].workerName).toBe('سارا');
+    expect(result.items[0].salonName).toBe('سالن نمونه');
+  });
+
+  it('falls back to a non-withdrawn parent status when the review row cannot be read', async () => {
+    workerRatingsFindAndCount.mockResolvedValue([
+      [{ id: 'wr-1', reviewId: 'review-1', workerId: 'worker-1', salonId: 'salon-1', rating: 5, status: 'published' }],
+      1,
+    ]);
+    reviewsFind.mockResolvedValue([]);
+
+    const result = await service.listWorkerRatingsForAdmin({});
+
+    expect(result.items[0].reviewStatus).toBe('published');
+  });
+
+  it('skips the join queries entirely for an empty page', async () => {
+    workerRatingsFindAndCount.mockResolvedValue([[], 0]);
+
+    const result = await service.listWorkerRatingsForAdmin({ salonId: 'salon-1', status: 'rejected' });
+
+    expect(workerRatingsFindAndCount).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { salonId: 'salon-1', status: 'rejected' } }),
+    );
+    expect(result).toEqual({ items: [], total: 0, page: 1, pageSize: 20 });
+    expect(reviewsFind).not.toHaveBeenCalled();
+    expect(salonsFind).not.toHaveBeenCalled();
+    expect(workersFind).not.toHaveBeenCalled();
   });
 });

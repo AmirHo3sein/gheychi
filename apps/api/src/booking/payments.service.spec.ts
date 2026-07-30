@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
+import { CouponRedemption } from '../coupons/coupon-redemption.entity';
 import { PushService } from '../push/push.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { SMS_PROVIDER } from '../sms/sms.provider';
@@ -223,6 +224,222 @@ describe('PaymentsService.handleCallback lost-CAS recovery', () => {
 
     expect(result).toEqual({ status: 'success', bookingId: 'booking-1' });
     expect(paymentsUpdate).not.toHaveBeenCalled();
+    expect(raise).not.toHaveBeenCalled();
+  });
+});
+
+describe('PaymentsService.handleCallback — capture, dead bookings and unknown authorities', () => {
+  let service: PaymentsService;
+  let paymentsFindOneBy: jest.Mock;
+  let paymentsUpdate: jest.Mock;
+  // Raw read of the append-only payment_authorities ledger (no ORM entity by design).
+  let authoritiesQuery: jest.Mock;
+  let verifyPayment: jest.Mock;
+  let emUpdate: jest.Mock;
+  let emDelete: jest.Mock;
+  let smsSend: jest.Mock;
+  let raise: jest.Mock;
+
+  const INITIATED_PAYMENT = {
+    id: 'pay-1',
+    bookingId: 'booking-1',
+    authority: 'AUTH123',
+    amount: 200_000,
+    status: 'initiated',
+  };
+
+  beforeEach(async () => {
+    paymentsFindOneBy = jest.fn().mockResolvedValue({ ...INITIATED_PAYMENT });
+    paymentsUpdate = jest.fn().mockResolvedValue({ affected: 1 });
+    authoritiesQuery = jest.fn().mockResolvedValue([]);
+    verifyPayment = jest.fn().mockResolvedValue({ success: true, refId: 'REF-1' });
+    emUpdate = jest.fn().mockResolvedValue({ affected: 1 });
+    emDelete = jest.fn().mockResolvedValue({ affected: 0 });
+    smsSend = jest.fn().mockResolvedValue(undefined);
+    raise = jest.fn().mockResolvedValue(undefined);
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PaymentsService,
+        {
+          provide: getRepositoryToken(Payment),
+          useValue: {
+            findOneBy: paymentsFindOneBy,
+            update: paymentsUpdate,
+            manager: { query: authoritiesQuery },
+          },
+        },
+        {
+          provide: getRepositoryToken(Booking),
+          useValue: {
+            findOneBy: jest
+              .fn()
+              .mockResolvedValue({ id: 'booking-1', userId: 'user-1', salonId: 'salon-1', startsAt: new Date() }),
+          },
+        },
+        {
+          provide: DataSource,
+          useValue: {
+            transaction: jest.fn(async (cb: (em: unknown) => unknown) => cb({ update: emUpdate, delete: emDelete })),
+          },
+        },
+        {
+          provide: SalonsService,
+          useValue: { findById: jest.fn().mockResolvedValue({ id: 'salon-1', ownerId: 'owner-1', name: 'S', address: 'A' }) },
+        },
+        { provide: UsersService, useValue: { findById: jest.fn().mockResolvedValue({ id: 'user-1', phone: '09120000000' }) } },
+        { provide: SMS_PROVIDER, useValue: { send: smsSend } },
+        { provide: PAYMENT_GATEWAY, useValue: { verifyPayment } },
+        { provide: PushService, useValue: { sendToUser: jest.fn().mockResolvedValue(undefined) } },
+        { provide: AlertsService, useValue: { raise } },
+        { provide: ReferralsService, useValue: { reverseIfNeeded: jest.fn().mockResolvedValue(undefined) } },
+      ],
+    }).compile();
+
+    service = moduleRef.get(PaymentsService);
+  });
+
+  it('confirms only a booking still in pending_payment, and records the session that paid', async () => {
+    const result = await service.handleCallback('AUTH123', 'OK');
+
+    expect(result).toEqual({ status: 'success', bookingId: 'booking-1' });
+    expect(emUpdate).toHaveBeenCalledWith(
+      Booking,
+      { id: 'booking-1', status: 'pending_payment' },
+      { status: 'confirmed' },
+    );
+    expect(emUpdate).toHaveBeenCalledWith(
+      Payment,
+      { id: 'pay-1', status: 'initiated' },
+      expect.objectContaining({ status: 'paid', refId: 'REF-1', paidAt: expect.any(Date), authority: 'AUTH123' }),
+    );
+  });
+
+  it('never resurrects a booking that already left pending_payment -- refunds the late capture instead', async () => {
+    // BookingExpiryJob flipped the booking to 'expired' but left the payment
+    // 'initiated', so the payment CAS alone would still have succeeded and
+    // re-confirmed a slot that was released and may already be rebooked.
+    emUpdate.mockImplementation(async (entity: unknown) => (entity === Booking ? { affected: 0 } : { affected: 1 }));
+
+    const result = await service.handleCallback('AUTH123', 'OK');
+
+    expect(result).toEqual({ status: 'failed', bookingId: 'booking-1' });
+    expect(emUpdate).not.toHaveBeenCalledWith(Payment, expect.anything(), expect.objectContaining({ status: 'paid' }));
+    expect(paymentsUpdate).toHaveBeenCalledWith(
+      { id: 'pay-1', status: 'initiated' },
+      expect.objectContaining({ status: 'refund_pending', refId: 'REF-1', refundRequestedAt: expect.any(Date) }),
+    );
+    expect(raise).toHaveBeenCalledWith(expect.objectContaining({ key: 'late-capture:pay-1', severity: 'warning' }));
+    expect(smsSend).not.toHaveBeenCalled(); // never a "booking confirmed" SMS for a dead booking
+  });
+
+  it('verifies a success callback even when the payment was already marked failed, and queues the refund', async () => {
+    // cancel() / reconciliation mark a payment 'failed' without asking Zarinpal, so a
+    // payment completed afterwards is real money -- and no job ever revisits 'failed'.
+    paymentsFindOneBy.mockResolvedValue({ ...INITIATED_PAYMENT, status: 'failed' });
+
+    const result = await service.handleCallback('AUTH123', 'OK');
+
+    expect(verifyPayment).toHaveBeenCalledWith('AUTH123', 200_000);
+    expect(result).toEqual({ status: 'failed', bookingId: 'booking-1' });
+    expect(paymentsUpdate).toHaveBeenCalledWith(
+      { id: 'pay-1', status: 'failed' },
+      expect.objectContaining({ status: 'refund_pending', refId: 'REF-1', refundRequestedAt: expect.any(Date) }),
+    );
+    expect(raise).toHaveBeenCalledWith(expect.objectContaining({ key: 'late-capture:pay-1', severity: 'warning' }));
+  });
+
+  it('leaves an already-failed payment alone when the gateway reports failure too', async () => {
+    paymentsFindOneBy.mockResolvedValue({ ...INITIATED_PAYMENT, status: 'failed' });
+
+    const result = await service.handleCallback('AUTH123', 'NOK');
+
+    expect(result).toEqual({ status: 'failed', bookingId: 'booking-1' });
+    expect(verifyPayment).not.toHaveBeenCalled();
+    expect(emUpdate).not.toHaveBeenCalled(); // no second cancellation write
+    expect(paymentsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('leaves an already-failed payment alone when the verify declines it', async () => {
+    paymentsFindOneBy.mockResolvedValue({ ...INITIATED_PAYMENT, status: 'failed' });
+    verifyPayment.mockResolvedValue({ success: false, refId: null });
+
+    const result = await service.handleCallback('AUTH123', 'OK');
+
+    expect(result).toEqual({ status: 'failed', bookingId: 'booking-1' });
+    expect(emUpdate).not.toHaveBeenCalled();
+    expect(paymentsUpdate).not.toHaveBeenCalled();
+    expect(raise).not.toHaveBeenCalled();
+  });
+
+  it('does not re-verify a payment already queued for refund', async () => {
+    paymentsFindOneBy.mockResolvedValue({ ...INITIATED_PAYMENT, status: 'refund_pending' });
+
+    const result = await service.handleCallback('AUTH123', 'OK');
+
+    expect(result).toEqual({ status: 'failed', bookingId: 'booking-1' });
+    expect(verifyPayment).not.toHaveBeenCalled();
+  });
+
+  it('cancels a status-guarded booking and releases its coupon when the gateway reports NOK', async () => {
+    const result = await service.handleCallback('AUTH123', 'NOK');
+
+    expect(result).toEqual({ status: 'failed', bookingId: 'booking-1' });
+    expect(emUpdate).toHaveBeenCalledWith(Payment, { id: 'pay-1', status: 'initiated' }, { status: 'failed' });
+    // Status-guarded: an already-expired booking must not be rewritten as cancelled_by_user.
+    expect(emUpdate).toHaveBeenCalledWith(
+      Booking,
+      { id: 'booking-1', status: 'pending_payment' },
+      { status: 'cancelled_by_user' },
+    );
+    // Nothing was captured, so the coupon code the hold consumed goes back.
+    expect(emDelete).toHaveBeenCalledWith(CouponRedemption, expect.objectContaining({ bookingId: expect.anything() }));
+  });
+
+  it('resolves a SUPERSEDED authority through the ledger instead of 404ing on it', async () => {
+    // retryPayment overwrote payments.authority with a newer session; the customer paid
+    // through their still-open older tab.
+    paymentsFindOneBy.mockResolvedValueOnce(null).mockResolvedValue({ ...INITIATED_PAYMENT, authority: 'AUTH-NEW' });
+    authoritiesQuery.mockResolvedValue([{ payment_id: 'pay-1' }]);
+
+    const result = await service.handleCallback('AUTH-OLD', 'OK');
+
+    expect(result).toEqual({ status: 'success', bookingId: 'booking-1' });
+    expect(authoritiesQuery).toHaveBeenCalledWith(expect.stringContaining('payment_authorities'), ['AUTH-OLD']);
+    // The paying session replaces the superseded one, so a refund targets the real transaction.
+    expect(emUpdate).toHaveBeenCalledWith(
+      Payment,
+      { id: 'pay-1', status: 'initiated' },
+      expect.objectContaining({ status: 'paid', authority: 'AUTH-OLD' }),
+    );
+  });
+
+  it('treats a genuinely unknown authority as money-critical instead of throwing a 404 at the customer', async () => {
+    paymentsFindOneBy.mockResolvedValue(null);
+
+    const result = await service.handleCallback('GARBAGE', 'OK');
+
+    expect(result).toEqual({ status: 'unknown-authority', bookingId: null });
+    expect(raise).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'unknown-authority', severity: 'critical' }),
+    );
+  });
+
+  it('does not alert for an unknown authority on a failed callback (public endpoint, no money involved)', async () => {
+    paymentsFindOneBy.mockResolvedValue(null);
+
+    const result = await service.handleCallback('GARBAGE', 'NOK');
+
+    expect(result).toEqual({ status: 'unknown-authority', bookingId: null });
+    expect(raise).not.toHaveBeenCalled();
+  });
+
+  it('handles a callback with no Authority at all without querying on an undefined value', async () => {
+    const result = await service.handleCallback('', 'OK');
+
+    expect(result).toEqual({ status: 'unknown-authority', bookingId: null });
+    expect(paymentsFindOneBy).not.toHaveBeenCalled();
+    expect(authoritiesQuery).not.toHaveBeenCalled();
     expect(raise).not.toHaveBeenCalled();
   });
 });

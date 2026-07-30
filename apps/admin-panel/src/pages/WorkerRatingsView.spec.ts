@@ -20,6 +20,7 @@ const rating = {
   salonName: 'سالن زیبایی نگین',
   rating: 4,
   status: 'published' as const,
+  reviewStatus: 'published' as const,
   createdAt: '2026-07-20T09:30:00.000Z',
 }
 
@@ -107,6 +108,36 @@ describe('WorkerRatingsView', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock).toHaveBeenLastCalledWith('/admin/worker-ratings?page=1&pageSize=10&status=rejected')
+  })
+
+  // Both rows are 'rejected' on the rating itself; only the parent review's status says
+  // whether that was an admin decision or the cascade of the customer deleting their own
+  // review. The latter must read as a customer deletion and offer no republish button --
+  // moderateWorkerRating() 409s on it, and one click would otherwise look like it
+  // resurrected the rating into the worker's average.
+  it('renders a customer-withdrawn parent as a deletion, with no moderation control', async () => {
+    fetchMock.mockResolvedValue({
+      data: {
+        items: [
+          { ...rating, id: 'wr-1', status: 'rejected', reviewStatus: 'rejected' },
+          { ...rating, id: 'wr-2', status: 'rejected', reviewStatus: 'withdrawn' },
+        ],
+        total: 2,
+        page: 1,
+        pageSize: 10,
+      },
+      error: null,
+    })
+    const wrapper = mount(WorkerRatingsView, mountOptions)
+    await flushPromises()
+
+    const rows = wrapper.findAll('tbody tr')
+    expect(rows[0]!.text()).toContain('رد شده')
+    expect(rows[0]!.find('[data-testid="republish-worker-rating"]').exists()).toBe(true)
+
+    expect(rows[1]!.text()).toContain('حذف شده توسط کاربر')
+    expect(rows[1]!.find('[data-testid="withdrawn-notice"]').exists()).toBe(true)
+    expect(rows[1]!.find('[data-testid="republish-worker-rating"]').exists()).toBe(false)
   })
 
   it('shows an empty state when nothing matches', async () => {
