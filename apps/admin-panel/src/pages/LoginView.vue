@@ -94,8 +94,8 @@ async function verifyOtp() {
   <div class="flex min-h-screen items-center justify-center bg-(--color-surface-card) px-8 py-12 sm:px-16">
     <div class="mx-auto w-full max-w-sm">
       <div class="login-stagger flex items-center gap-2.5" style="animation-delay: 0s">
-        <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-(--color-accent) text-lg font-black text-white">آ</div>
-        <span class="text-sm font-bold text-(--color-text)">پنل مدیریت آرایشگاه</span>
+        <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-(--color-accent) text-lg font-black text-white">ق</div>
+        <span class="text-sm font-bold text-(--color-text)">پنل مدیریت قیچی</span>
       </div>
 
       <div class="login-stagger mt-10" style="animation-delay: 0.12s">

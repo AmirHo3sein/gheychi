@@ -13,14 +13,14 @@ describe('buildAllowedOrigins', () => {
 
   it('uses configured env vars when set', () => {
     const config = new ConfigService({
-      FRONTEND_BASE_URL: 'https://app.arayeshgah.ir',
-      PROVIDER_APP_BASE_URL: 'https://provider.arayeshgah.ir',
-      ADMIN_APP_BASE_URL: 'https://admin.arayeshgah.ir',
+      FRONTEND_BASE_URL: 'https://app.gheychi.ir',
+      PROVIDER_APP_BASE_URL: 'https://provider.gheychi.ir',
+      ADMIN_APP_BASE_URL: 'https://admin.gheychi.ir',
     });
     expect(buildAllowedOrigins(config)).toEqual([
-      'https://app.arayeshgah.ir',
-      'https://provider.arayeshgah.ir',
-      'https://admin.arayeshgah.ir',
+      'https://app.gheychi.ir',
+      'https://provider.gheychi.ir',
+      'https://admin.gheychi.ir',
     ]);
   });
 });

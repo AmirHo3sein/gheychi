@@ -87,7 +87,7 @@ describe('Blog CMS — lifecycle (e2e)', () => {
         bodyMarkdown: BODY_MARKDOWN,
         excerpt: 'خلاصه مطلب برای فهرست بلاگ',
         categoryId,
-        authorName: 'تیم آرایشگاه',
+        authorName: 'تیم قیچی',
         metaDescription: 'توضیح متا برای سئو',
         ogTitle: 'عنوان اشتراک‌گذاری بلاگ',
       })
@@ -167,7 +167,7 @@ describe('Blog CMS — lifecycle (e2e)', () => {
       coverImageUrl: null,
       categoryName: 'Skincare Tips',
       categorySlug: 'skincare-tips',
-      authorName: 'تیم آرایشگاه',
+      authorName: 'تیم قیچی',
     });
     expect(new Date(item.publishedAt).getTime()).toBe(new Date(firstPublishedAt).getTime());
     expect(item).not.toHaveProperty('bodyMarkdown');
@@ -204,7 +204,7 @@ describe('Blog CMS — lifecycle (e2e)', () => {
     expect(res.body.bodyMarkdown).toBe(BODY_MARKDOWN);
     expect(res.body.metaDescription).toBe('توضیح متا برای سئو');
     expect(res.body.ogTitle).toBe('عنوان اشتراک‌گذاری بلاگ');
-    expect(res.body.authorName).toBe('تیم آرایشگاه');
+    expect(res.body.authorName).toBe('تیم قیچی');
     expect(res.body.categoryName).toBe('Skincare Tips');
     expect(res.body.categorySlug).toBe(categorySlug);
     expect(res.body.coverImageUrl).toContain('/uploads/');

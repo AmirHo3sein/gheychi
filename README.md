@@ -1,6 +1,6 @@
-# Arayeshgah
+# Gheychi
 
-Salon discovery & booking marketplace (Iran). Spec: `docs/superpowers/specs/2026-07-04-arayeshgah-marketplace-design.md`.
+Salon discovery & booking marketplace (Iran). Spec: `docs/superpowers/specs/2026-07-04-gheychi-marketplace-design.md`.
 
 ## Structure
 
@@ -15,7 +15,7 @@ Salon discovery & booking marketplace (Iran). Spec: `docs/superpowers/specs/2026
 docker compose up -d          # postgres (postgis) + redis
 cp .env.example apps/api/.env
 pnpm install
-pnpm --filter @arayeshgah/api migration:run
+pnpm --filter @gheychi/api migration:run
 pnpm dev:api                  # http://localhost:3002/api/health
 ```
 
@@ -31,8 +31,8 @@ pnpm dev:user-app                                   # http://localhost:3003
 ## Tests
 
 ```bash
-pnpm --filter @arayeshgah/api test        # unit
-pnpm --filter @arayeshgah/api test:e2e    # e2e (needs docker services)
+pnpm --filter @gheychi/api test        # unit
+pnpm --filter @gheychi/api test:e2e    # e2e (needs docker services)
 ```
 
 ## Booking & payments (Plan 2)
@@ -124,7 +124,7 @@ CORS now also allows `ADMIN_APP_BASE_URL` (default `http://localhost:3005`) as a
 Closes the six trust-and-safety gaps carried since Plans 5/6 — no new product surface beyond these. Spec: `docs/superpowers/specs/2026-07-10-plan-7-platform-hardening-design.md`.
 
 - **Admin audit log** — every admin mutation (salon status/featured, user status, review moderation, category create/update/delete, config update, report resolve) writes an `audit_log` row via a declarative `@AuditAction` decorator + interceptor; audit-insert failures are logged and swallowed, never failing the admin's request. Browse via `GET /api/admin/audit-log` (filterable by actor/action/target-type/date, paginated) or the admin-panel's Audit Log page. No before/after value snapshots in v1 — the log answers "who did what, to what, with what input, when."
-- **First-admin bootstrap** — `pnpm --filter @arayeshgah/api create-admin 09121234567` idempotently creates the user if missing and sets `role='admin'`, `status='active'`; the first admin is no longer a manual DB update. (pnpm 9 sometimes leaks a `--` separator into forwarded script args — the script tolerates both `create-admin 09...` and `create-admin -- 09...`.)
+- **First-admin bootstrap** — `pnpm --filter @gheychi/api create-admin 09121234567` idempotently creates the user if missing and sets `role='admin'`, `status='active'`; the first admin is no longer a manual DB update. (pnpm 9 sometimes leaks a `--` separator into forwarded script args — the script tolerates both `create-admin 09...` and `create-admin -- 09...`.)
 - **Reports** — a verified customer (at least one `completed` booking at the salon) can report a salon or one of its reviews from the salon profile page: `POST /api/reports` (one *open* report per reporter per target, enforced by a partial unique index → 409), `GET /api/reports/eligibility?salonId=` gates the UI. Admins work the queue via `GET/PATCH /api/admin/reports` and the admin-panel Reports page. Resolving a report doesn't itself moderate anything — the queue links to the existing, already-audited moderation actions.
 - **Category delete** — `DELETE /api/admin/categories/:id` with restrict semantics: a category referenced by any salon service (active or not) 409s, mirroring the DB's FK. Reassign-or-cascade is deferred until someone actually needs it.
 - **Cascade suspend** — suspending a user now also suspends their `approved` salon in the same transaction, recording `suspended_cause='owner_suspended'`; reactivating the user restores only cascade-suspended salons — a salon an admin suspended directly (`suspended_cause='admin'`) stays suspended. Public review listing (`GET /api/salons/:salonId/reviews`) now also requires the salon to be `approved`.

@@ -75,8 +75,8 @@ export default defineNuxtConfig({
     filename: 'sw.ts',
     registerType: 'autoUpdate',
     manifest: {
-      name: 'آرایشگاه',
-      short_name: 'آرایشگاه',
+      name: 'قیچی',
+      short_name: 'قیچی',
       description: 'رزرو آنلاین نوبت سالن‌های زیبایی',
       lang: 'fa',
       dir: 'rtl',

@@ -1,5 +1,5 @@
 ---
-name: Arayeshgah
+name: Gheychi
 description: A trust-first Persian/RTL salon-booking marketplace — precise, verified, quietly official.
 colors:
   surface: "#F4FBFA"
@@ -102,13 +102,13 @@ components:
     padding: "16px"
 ---
 
-# Design System: Arayeshgah
+# Design System: Gheychi
 
 ## Overview
 
 **Creative North Star: "The Verified Ledger"**
 
-Arayeshgah's job is to make trust legible at a glance — a review only exists because a booking actually happened, a deposit is real money already moving, a salon only appears because a human already checked it. The visual system should read the same way: precise, confident, and quietly official, like a stamped receipt rather than a marketing flyer. Color is used deliberately and sparingly — the accent appears as a seal of approval on the one thing that matters on a given screen (the primary action, the verified badge, the price that's about to be charged), not as ambient decoration. Edges are clean and deliberate; nothing about the interface should feel soft, vague, or negotiable, because the product itself isn't.
+Gheychi's job is to make trust legible at a glance — a review only exists because a booking actually happened, a deposit is real money already moving, a salon only appears because a human already checked it. The visual system should read the same way: precise, confident, and quietly official, like a stamped receipt rather than a marketing flyer. Color is used deliberately and sparingly — the accent appears as a seal of approval on the one thing that matters on a given screen (the primary action, the verified badge, the price that's about to be charged), not as ambient decoration. Edges are clean and deliberate; nothing about the interface should feel soft, vague, or negotiable, because the product itself isn't.
 
 This is a mobile-first system, built for budget Android hardware and unreliable networks, not a demo device. It avoids the generic AI-SaaS tells on sight: no Inter, no purple-to-blue gradients, no cards nested in cards, no rounded-square icon tile floating above every heading. Vazirmatn — a real, Persian-native variable typeface — carries the whole system; there is no secondary display or mono face standing in for character. RTL is the only reading direction this system knows; logical properties (`start-`/`end-`/`ps-`/`pe-`) are load-bearing, not optional polish.
 

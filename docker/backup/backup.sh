@@ -11,7 +11,7 @@ set -eu
 : "${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY is required}"
 
 TIMESTAMP=$(date -u +%Y-%m-%dT%H%M%SZ)
-FILENAME="arayeshgah-${TIMESTAMP}.dump"
+FILENAME="gheychi-${TIMESTAMP}.dump"
 DUMP_PATH="/tmp/${FILENAME}"
 
 # Ensure the (possibly large, possibly partial) dump file never survives this script,

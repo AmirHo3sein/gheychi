@@ -12,13 +12,13 @@ jobs:
       postgres:
         image: postgis/postgis:16-3.4
         env:
-          POSTGRES_USER: arayeshgah
-          POSTGRES_PASSWORD: arayeshgah
-          POSTGRES_DB: arayeshgah
+          POSTGRES_USER: gheychi
+          POSTGRES_PASSWORD: gheychi
+          POSTGRES_DB: gheychi
         ports:
           - "5544:5432"
         options: >-
-          --health-cmd "pg_isready -U arayeshgah"
+          --health-cmd "pg_isready -U gheychi"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -48,11 +48,11 @@ jobs:
 
       - name: Prepare Postgres databases
         env:
-          PGPASSWORD: arayeshgah
+          PGPASSWORD: gheychi
         run: |
-          psql -h localhost -p 5544 -U arayeshgah -d arayeshgah -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-          psql -h localhost -p 5544 -U arayeshgah -d postgres -c "CREATE DATABASE arayeshgah_test;"
-          psql -h localhost -p 5544 -U arayeshgah -d arayeshgah_test -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          psql -h localhost -p 5544 -U gheychi -d gheychi -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          psql -h localhost -p 5544 -U gheychi -d postgres -c "CREATE DATABASE gheychi_test;"
+          psql -h localhost -p 5544 -U gheychi -d gheychi_test -c "CREATE EXTENSION IF NOT EXISTS postgis;"
 
       - name: Create apps/api/.env for dev-mode servers (used by Playwright e2e)
         run: cp .env.example apps/api/.env
@@ -63,31 +63,31 @@ jobs:
       # and its failures are usually the root cause of the test failures that follow.
       - name: Typecheck
         run: |
-          pnpm --filter @arayeshgah/api typecheck
-          pnpm --filter @arayeshgah/user-app typecheck
-          pnpm --filter @arayeshgah/provider-panel typecheck
-          pnpm --filter @arayeshgah/admin-panel typecheck
+          pnpm --filter @gheychi/api typecheck
+          pnpm --filter @gheychi/user-app typecheck
+          pnpm --filter @gheychi/provider-panel typecheck
+          pnpm --filter @gheychi/admin-panel typecheck
 
       - name: Backend unit tests
-        run: pnpm --filter @arayeshgah/api test
+        run: pnpm --filter @gheychi/api test
 
       - name: Backend e2e tests
-        run: pnpm --filter @arayeshgah/api test:e2e
+        run: pnpm --filter @gheychi/api test:e2e
 
       - name: Frontend unit/component tests
         run: |
-          pnpm --filter @arayeshgah/user-app test
-          pnpm --filter @arayeshgah/provider-panel test
-          pnpm --filter @arayeshgah/admin-panel test
+          pnpm --filter @gheychi/user-app test
+          pnpm --filter @gheychi/provider-panel test
+          pnpm --filter @gheychi/admin-panel test
 
       - name: Install Playwright browsers
         # `playwright` isn't a root dependency (only a devDependency of the three frontend
         # workspaces), so `pnpm exec` needs a --filter to find the binary. The downloaded
         # browser cache is shared across all three apps regardless of which filter installs it.
-        run: pnpm --filter @arayeshgah/user-app exec playwright install --with-deps chromium
+        run: pnpm --filter @gheychi/user-app exec playwright install --with-deps chromium
 
       - name: user-app Playwright e2e
-        run: pnpm --filter @arayeshgah/user-app exec playwright test --retries=1
+        run: pnpm --filter @gheychi/user-app exec playwright test --retries=1
 
       - name: Upload user-app Playwright trace/video on failure
         if: always()
@@ -107,14 +107,14 @@ jobs:
         run: pkill -f "nest start" || true
 
       - name: provider-panel Playwright e2e
-        run: pnpm --filter @arayeshgah/provider-panel exec playwright test --retries=1
+        run: pnpm --filter @gheychi/provider-panel exec playwright test --retries=1
 
       - name: Kill any lingering api dev server
         if: always()
         run: pkill -f "nest start" || true
 
       - name: admin-panel Playwright e2e
-        run: pnpm --filter @arayeshgah/admin-panel exec playwright test --retries=1
+        run: pnpm --filter @gheychi/admin-panel exec playwright test --retries=1
 
       - name: Build all apps
         run: pnpm build
@@ -147,8 +147,8 @@ jobs:
           file: apps/api/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ env.OWNER_LC }}/arayeshgah-api:${{ github.sha }}
-            ghcr.io/${{ env.OWNER_LC }}/arayeshgah-api:latest
+            ghcr.io/${{ env.OWNER_LC }}/gheychi-api:${{ github.sha }}
+            ghcr.io/${{ env.OWNER_LC }}/gheychi-api:latest
 
       - name: Build and push user-app
         uses: docker/build-push-action@v7
@@ -157,8 +157,8 @@ jobs:
           file: apps/user-app/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ env.OWNER_LC }}/arayeshgah-user-app:${{ github.sha }}
-            ghcr.io/${{ env.OWNER_LC }}/arayeshgah-user-app:latest
+            ghcr.io/${{ env.OWNER_LC }}/gheychi-user-app:${{ github.sha }}
+            ghcr.io/${{ env.OWNER_LC }}/gheychi-user-app:latest
 
       - name: Build and push provider-panel
         uses: docker/build-push-action@v7
@@ -169,8 +169,8 @@ jobs:
           build-args: |
             VITE_API_BASE=${{ vars.VITE_API_BASE_PROD }}
           tags: |
-            ghcr.io/${{ env.OWNER_LC }}/arayeshgah-provider-panel:${{ github.sha }}
-            ghcr.io/${{ env.OWNER_LC }}/arayeshgah-provider-panel:latest
+            ghcr.io/${{ env.OWNER_LC }}/gheychi-provider-panel:${{ github.sha }}
+            ghcr.io/${{ env.OWNER_LC }}/gheychi-provider-panel:latest
 
       - name: Build and push admin-panel
         uses: docker/build-push-action@v7
@@ -181,5 +181,5 @@ jobs:
           build-args: |
             VITE_API_BASE=${{ vars.VITE_API_BASE_PROD }}
           tags: |
-            ghcr.io/${{ env.OWNER_LC }}/arayeshgah-admin-panel:${{ github.sha }}
-            ghcr.io/${{ env.OWNER_LC }}/arayeshgah-admin-panel:latest
+            ghcr.io/${{ env.OWNER_LC }}/gheychi-admin-panel:${{ github.sha }}
+            ghcr.io/${{ env.OWNER_LC }}/gheychi-admin-panel:latest

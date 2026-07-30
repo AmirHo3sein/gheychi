@@ -8,7 +8,7 @@ describe('LocalDiskStorageProvider', () => {
   let provider: LocalDiskStorageProvider;
 
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), 'arayeshgah-storage-test-'));
+    root = mkdtempSync(join(tmpdir(), 'gheychi-storage-test-'));
     provider = new LocalDiskStorageProvider('http://localhost:3002', root);
   });
 

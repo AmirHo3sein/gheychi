@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-16-money-critical-alerting-design.md`
 
-**Repo/branch note:** The real repo is at WSL path `~/projects/Arayeshgah` (NOT the stale Windows-side clone at `C:\Users\amirh\Desktop\Projects\Arayeshgah`). Work on branch `feature/money-critical-alerting`. Verify first: `cd ~/projects/Arayeshgah && git branch --show-current` → `feature/money-critical-alerting`, `git log -1 --oneline` → `bac131c docs(spec): ...`. All commands run from `~/projects/Arayeshgah` inside WSL; e2e needs docker services (`docker compose up -d`).
+**Repo/branch note:** The real repo is at WSL path `~/projects/Gheychi` (NOT the stale Windows-side clone at `C:\Users\amirh\Desktop\Projects\Gheychi`). Work on branch `feature/money-critical-alerting`. Verify first: `cd ~/projects/Gheychi && git branch --show-current` → `feature/money-critical-alerting`, `git log -1 --oneline` → `bac131c docs(spec): ...`. All commands run from `~/projects/Gheychi` inside WSL; e2e needs docker services (`docker compose up -d`).
 
 **Key existing facts (verified):** `RedisModule` is `@Global()` and exports the `REDIS` token (`src/redis/redis.module.ts`) — no module import needed to inject it. `AdminNotificationsModule` exports `AdminNotificationsService` whose signature is `emit(type, title, body, link, manager?)`. `SmsModule` exports the `SMS_PROVIDER` token (`SmsProvider` interface: `send(phone, body)`). The admin panel's `NotificationBell.vue` renders `title`/`body` directly with no type→label mapping, so there is **zero frontend work**. `loginAsAdmin(app, phone)` exists in `apps/api/test/utils/auth-helper.ts`.
 
@@ -124,7 +124,7 @@ describe('AlertsService.raise', () => {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `pnpm --filter @arayeshgah/api test -- alerts.service`
+Run: `pnpm --filter @gheychi/api test -- alerts.service`
 Expected: FAIL — module `./alerts.service` not found.
 
 - [ ] **Step 3: Implement the service and module**
@@ -232,7 +232,7 @@ import { AlertsModule } from './alerts/alerts.module';
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `pnpm --filter @arayeshgah/api test -- alerts.service`
+Run: `pnpm --filter @gheychi/api test -- alerts.service`
 Expected: PASS (8 tests).
 
 - [ ] **Step 5: Commit**
@@ -351,7 +351,7 @@ describe('BookingsService.retryPayment authority persist failure', () => {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `pnpm --filter @arayeshgah/api test -- "booking/(refund-retry.job|payments.service|bookings.service)"`
+Run: `pnpm --filter @gheychi/api test -- "booking/(refund-retry.job|payments.service|bookings.service)"`
 Expected: FAIL — `AlertsService` is not yet a dependency (Nest can't resolve provider assertions / `raise` never called).
 
 - [ ] **Step 3: Implement the three critical sites**
@@ -423,7 +423,7 @@ In `createPaymentSession`, inside the existing `catch` block (after `this.logger
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `pnpm --filter @arayeshgah/api test -- "booking/(refund-retry.job|payments.service|bookings.service)"`
+Run: `pnpm --filter @gheychi/api test -- "booking/(refund-retry.job|payments.service|bookings.service)"`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -492,7 +492,7 @@ And extend the happy-path test (`'confirms the booking and marks the payment pai
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `pnpm --filter @arayeshgah/api test -- "booking/(payments.service|payment-reconciliation.job)"`
+Run: `pnpm --filter @gheychi/api test -- "booking/(payments.service|payment-reconciliation.job)"`
 Expected: FAIL — `raise` not called at the new sites.
 
 - [ ] **Step 3: Implement the warning sites**
@@ -570,8 +570,8 @@ The `raise` call goes INSIDE the transaction callback only for the late-capture 
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `pnpm --filter @arayeshgah/api test -- "booking/(payments.service|payment-reconciliation.job)"`
-Expected: PASS. Then run the full unit suite: `pnpm --filter @arayeshgah/api test` — Expected: PASS (no other spec should break; any spec that instantiates `PaymentsService`/`BookingsService`/jobs directly already got the mock in Task 2).
+Run: `pnpm --filter @gheychi/api test -- "booking/(payments.service|payment-reconciliation.job)"`
+Expected: PASS. Then run the full unit suite: `pnpm --filter @gheychi/api test` — Expected: PASS (no other spec should break; any spec that instantiates `PaymentsService`/`BookingsService`/jobs directly already got the mock in Task 2).
 
 - [ ] **Step 5: Commit**
 
@@ -719,12 +719,12 @@ describe('Money-critical alerting (e2e)', () => {
 
 - [ ] **Step 2: Run the e2e spec**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- alerts`
+Run: `pnpm --filter @gheychi/api test:e2e -- alerts`
 Expected: PASS (2 tests). Requires docker services.
 
 - [ ] **Step 3: Run the full e2e suite (regression)**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test:e2e`
 Expected: PASS (existing suites unaffected — `AlertsModule` resolves in the test app because `createTestApp` boots the real `AppModule`).
 
 - [ ] **Step 4: Commit**
@@ -779,8 +779,8 @@ As of Plan 9, those operator signals page for real: every money-critical conditi
 - [ ] **Step 4: Full verification**
 
 ```bash
-pnpm --filter @arayeshgah/api test
-pnpm --filter @arayeshgah/api test:e2e
+pnpm --filter @gheychi/api test
+pnpm --filter @gheychi/api test:e2e
 pnpm build
 ```
 

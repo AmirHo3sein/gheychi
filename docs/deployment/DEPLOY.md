@@ -1,4 +1,4 @@
-# Deploying Arayeshgah to Production
+# Deploying Gheychi to Production
 
 One Linux VPS running the four app images (built by CI, pulled from GHCR — never built on the server) plus Postgres, Redis, and a Caddy reverse proxy, all via `docker-compose.prod.yml`. See `docs/superpowers/specs/2026-07-11-plan-9-production-deployment-design.md` for the full rationale behind every decision below.
 
@@ -36,7 +36,7 @@ Download a specific dated backup from S3 (list what's available with `docker com
 
 ```bash
 docker compose -f docker-compose.prod.yml exec backup mc cp \
-  s3backup/$S3_BUCKET/backups/arayeshgah-2026-07-14T030000Z.dump /tmp/restore.dump
+  s3backup/$S3_BUCKET/backups/gheychi-2026-07-14T030000Z.dump /tmp/restore.dump
 ```
 
 **Verify a backup restores cleanly, without touching the live database:**

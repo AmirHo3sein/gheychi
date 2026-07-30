@@ -6,7 +6,7 @@
 
 ## Problem
 
-Arayeshgah has no referral program and no per-worker rating — only the existing salon-level `Review`. The product wants: (1) a referral system covering three referrer kinds (ordinary customer, salon owner, salon worker), each earning a configurable reward (wallet credit, percent/fixed discount, cashback, or loyalty points) for both referrer and referee once a qualifying booking event fires; (2) a `Worker` concept (none exists today — confirmed by research, zero hits for staff/employee anywhere in the codebase) so a specific stylist can be assigned to a booking, rated, and hold their own referral code; (3) worker-level ratings alongside the existing salon rating. This sits at the same trust tier as Payment/refund/coupon code — it moves real toman — so the design is judged first on race-safety and reversal handling, then on fit and simplicity.
+Gheychi has no referral program and no per-worker rating — only the existing salon-level `Review`. The product wants: (1) a referral system covering three referrer kinds (ordinary customer, salon owner, salon worker), each earning a configurable reward (wallet credit, percent/fixed discount, cashback, or loyalty points) for both referrer and referee once a qualifying booking event fires; (2) a `Worker` concept (none exists today — confirmed by research, zero hits for staff/employee anywhere in the codebase) so a specific stylist can be assigned to a booking, rated, and hold their own referral code; (3) worker-level ratings alongside the existing salon rating. This sits at the same trust tier as Payment/refund/coupon code — it moves real toman — so the design is judged first on race-safety and reversal handling, then on fit and simplicity.
 
 ## Where the judges disagreed, and the call made here
 

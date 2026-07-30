@@ -5,7 +5,7 @@
 
 ## 1. Product Summary
 
-The salon-owner-facing app for Arayeshgah: onboarding, day-to-day booking management, service/price/hours CRUD, reviews, and earnings. Built as a Vue 3 + Vite SPA, mobile-friendly (owners will use phones), per the original marketplace design (`2026-07-04-arayeshgah-marketplace-design.md` §6).
+The salon-owner-facing app for Gheychi: onboarding, day-to-day booking management, service/price/hours CRUD, reviews, and earnings. Built as a Vue 3 + Vite SPA, mobile-friendly (owners will use phones), per the original marketplace design (`2026-07-04-gheychi-marketplace-design.md` §6).
 
 Nearly all provider CRUD capability already exists in the API (`/salons/mine/*` for services, hours, exceptions, bookings status, review replies). This plan is primarily a **frontend build**, plus two bounded backend additions: salon photo upload (new endpoints + swappable storage abstraction) and provider-visible salon-status display (no new admin approve/reject workflow yet).
 
@@ -20,7 +20,7 @@ Nearly all provider CRUD capability already exists in the API (`/salons/mine/*` 
 | Earnings | Computed from existing `bookings` + `payments` data (deposit amount, `commission_percent` from `platform_config`) — no new payment infra, Zarinpal integration already exists from Plan 2 |
 | Real-time | Manual refresh / refetch-on-load — no shared runtime infra with `user-app` (no sockets) |
 | Onboarding | Multi-step wizard: salon info → gender target → address/map pin → hours → first service → (optional) photos → submit as `pending` |
-| Isolation | No references to or reuse of the unrelated DiGRC project's `tprm-panel`/`user-panel`/`admin-panel`, and no runtime coupling to Arayeshgah's own `user-app` |
+| Isolation | No references to or reuse of the unrelated DiGRC project's `tprm-panel`/`user-panel`/`admin-panel`, and no runtime coupling to Gheychi's own `user-app` |
 
 ## 2. Architecture
 
@@ -31,7 +31,7 @@ Nearly all provider CRUD capability already exists in the API (`/salons/mine/*` 
 | Framework | Vue 3.5 (Composition API, `<script setup>`) + Vite | Matches locked decision; no SSR needed |
 | Routing | `vue-router` 4, manual route definitions | No file-based routing available outside Nuxt; small enough route count that this is simple |
 | State | Pinia — single `session` store, same shape as user-app (`{ id, phone, name, gender, role }`) | Consistency with the one existing frontend, not because we're reusing its code |
-| Data fetching | New `useApi()` composable, same contract as user-app's (`{ data, error }`, `silent`/`redirectOn401` options) but simpler — no SSR cookie-forwarding logic needed since this is a pure client-side SPA; `credentials: 'include'` on `fetch` is enough | Matches Arayeshgah's own established pattern; no TanStack Query — user-app doesn't use it either |
+| Data fetching | New `useApi()` composable, same contract as user-app's (`{ data, error }`, `silent`/`redirectOn401` options) but simpler — no SSR cookie-forwarding logic needed since this is a pure client-side SPA; `credentials: 'include'` on `fetch` is enough | Matches Gheychi's own established pattern; no TanStack Query — user-app doesn't use it either |
 | Forms | Plain `ref()`s + manual validation + local error message, no form library | Matches user-app's actual pattern (no vee-validate/yup anywhere in this codebase) |
 | Styling | Tailwind CSS v4 via `@tailwindcss/vite`, reusing the same "Teal Trust" CSS-custom-property tokens as user-app's light theme | Brand consistency; single theme only (no dark mode) — internal tool, not a stated requirement |
 | Photos | New `multer`-based upload endpoints on the API + new `StorageProvider` abstraction (mirrors the existing `SmsProvider`/`PaymentGateway`/`PushProvider` pattern) | Fits the codebase's established swappable-provider convention exactly |

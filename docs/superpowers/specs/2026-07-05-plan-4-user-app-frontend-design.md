@@ -7,7 +7,7 @@
 
 ## 1. Product Summary
 
-The customer-facing app for Arayeshgah: discovery, salon profiles, booking, and account management, built as the Nuxt SSR PWA described in the original marketplace design (`2026-07-04-arayeshgah-marketplace-design.md` §5). This plan also introduces two things not in the original MVP scope: an **admin-controlled "featured salon" ad placement**, and **push notifications** (closing Plan 2's undelivered SMS-reminder gap along the way).
+The customer-facing app for Gheychi: discovery, salon profiles, booking, and account management, built as the Nuxt SSR PWA described in the original marketplace design (`2026-07-04-gheychi-marketplace-design.md` §5). This plan also introduces two things not in the original MVP scope: an **admin-controlled "featured salon" ad placement**, and **push notifications** (closing Plan 2's undelivered SMS-reminder gap along the way).
 
 Nothing in the API has a consumer yet — Plans 1–3 are backend-only. This plan ships the first real UI.
 

@@ -17,7 +17,7 @@ jest.mock('@smithy/node-http-handler', () => ({
 
 describe('S3StorageProvider', () => {
   const provider = new S3StorageProvider(
-    'arayeshgah-photos',
+    'gheychi-photos',
     'https://cdn.example.com',
     'https://s3.example.com',
     'us-east-1',
@@ -32,7 +32,7 @@ describe('S3StorageProvider', () => {
     const clientInstance = (S3Client as unknown as jest.Mock).mock.results[0].value;
     expect(clientInstance.send).toHaveBeenCalledWith(
       expect.objectContaining({
-        input: expect.objectContaining({ Bucket: 'arayeshgah-photos', Key: 'salons/abc/photo.jpg' }),
+        input: expect.objectContaining({ Bucket: 'gheychi-photos', Key: 'salons/abc/photo.jpg' }),
       }),
     );
   });
@@ -42,7 +42,7 @@ describe('S3StorageProvider', () => {
     const clientInstance = (S3Client as unknown as jest.Mock).mock.results[0].value;
     expect(clientInstance.send).toHaveBeenCalledWith(
       expect.objectContaining({
-        input: expect.objectContaining({ Bucket: 'arayeshgah-photos', Key: 'salons/abc/photo.jpg' }),
+        input: expect.objectContaining({ Bucket: 'gheychi-photos', Key: 'salons/abc/photo.jpg' }),
       }),
     );
   });

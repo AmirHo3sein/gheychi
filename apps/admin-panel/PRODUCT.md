@@ -12,7 +12,7 @@ A small internal team of trusted platform staff (not salon owners, not customers
 
 ## Product Purpose
 
-The operator console for running the Arayeshgah marketplace: approve/reject/suspend salons, moderate reviews and worker ratings, resolve abuse reports, manage the platform-wide service-category taxonomy, configure platform-wide settings (deposit percent, cancellation window, commission), manage users and salons (search/suspend), issue and configure platform-wide coupons and the referral-reward program, adjust wallet balances, and review an audit log of every admin action taken. Success is a small team being able to run day-to-day trust-and-safety and money-adjacent operations confidently and without ambiguity.
+The operator console for running the Gheychi marketplace: approve/reject/suspend salons, moderate reviews and worker ratings, resolve abuse reports, manage the platform-wide service-category taxonomy, configure platform-wide settings (deposit percent, cancellation window, commission), manage users and salons (search/suspend), issue and configure platform-wide coupons and the referral-reward program, adjust wallet balances, and review an audit log of every admin action taken. Success is a small team being able to run day-to-day trust-and-safety and money-adjacent operations confidently and without ambiguity.
 
 ## Positioning
 

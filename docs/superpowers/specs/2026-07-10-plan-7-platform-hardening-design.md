@@ -83,7 +83,7 @@ New `AuditModule` (global-friendly: exports `AuditService`, imported by every mo
 
 ### 3.2 First-admin bootstrap (`scripts/create-admin.ts` in apps/api)
 
-- package.json script: `"create-admin": "ts-node scripts/create-admin.ts"` → `pnpm --filter @arayeshgah/api create-admin -- 09121234567`.
+- package.json script: `"create-admin": "ts-node scripts/create-admin.ts"` → `pnpm --filter @gheychi/api create-admin -- 09121234567`.
 - Imports `AppDataSource` from `src/data-source.ts` (same env/dotenv path the migration CLI uses — works outside Nest DI).
 - Validates the phone against the existing `IRAN_MOBILE` regex (`/^09\d{9}$/`); exits non-zero with a usage message on bad/missing input.
 - Idempotent upsert by phone: creates the user if missing, sets `role='admin'`, `status='active'` either way. Prints what it did. Never demotes anyone (an existing admin stays admin; the `promoteToProvider` conditional-update invariant is untouched).

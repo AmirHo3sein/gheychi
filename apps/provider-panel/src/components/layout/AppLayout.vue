@@ -29,7 +29,7 @@ async function logout() {
   <div class="min-h-screen bg-(--color-surface) pb-20">
     <header class="sticky top-0 z-30 flex items-center gap-3 border-b border-(--color-border) bg-(--color-surface-card)/90 px-4 py-3 backdrop-blur">
       <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-(--color-accent) font-black text-white shadow-(--shadow-sm)">
-        آ
+        ق
       </div>
       <p class="min-w-0 truncate text-sm font-bold text-(--color-text)">{{ salon?.name ?? 'پنل مدیریت آرایشگاه' }}</p>
 

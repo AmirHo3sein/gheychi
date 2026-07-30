@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Stand up the Arayeshgah monorepo and a working NestJS API with phone-OTP auth, salon/catalog management, and PostGIS geo-search — everything the booking engine (Plan 2) builds on.
+**Goal:** Stand up the Gheychi monorepo and a working NestJS API with phone-OTP auth, salon/catalog management, and PostGIS geo-search — everything the booking engine (Plan 2) builds on.
 
 **Architecture:** pnpm + Turborepo monorepo; single NestJS modular-monolith API (`apps/api`); PostgreSQL 16 + PostGIS via TypeORM (raw-SQL migrations, no `synchronize`); Redis for OTP + rate limiting; auth via JWT in an HttpOnly `session` cookie. External providers (SMS) sit behind interfaces with a console implementation for dev/test.
 
 **Tech Stack:** Node 22, pnpm 9, Turborepo 2, NestJS 11, TypeORM 0.3, pg, ioredis, @nestjs/jwt, class-validator, Jest + ts-jest + supertest, Docker Compose (postgis/postgis:16-3.4, redis:7-alpine).
 
-**Spec:** `docs/superpowers/specs/2026-07-04-arayeshgah-marketplace-design.md`
+**Spec:** `docs/superpowers/specs/2026-07-04-gheychi-marketplace-design.md`
 
 **Scope notes (deliberate, from the spec):**
 - Bookings, payments, reviews tables/modules → Plan 2. Admin endpoints (approval) → Plan 5; tests here set salon status via direct DB update.
@@ -17,7 +17,7 @@
 - `/api/search` requires a `gender` query param in this plan; the user-app will pass the profile's gender (optional-auth resolution can be added later without breaking this contract).
 - Service "delete" archives (`is_active = false`) — Plan 2's bookings will reference services, so hard deletes are never introduced.
 
-**Working directory:** all paths relative to repo root `C:\Users\amirh\Desktop\Projects\Arayeshgah`.
+**Working directory:** all paths relative to repo root `C:\Users\amirh\Desktop\Projects\Gheychi`.
 
 ---
 
@@ -32,11 +32,11 @@
 
 ```json
 {
-  "name": "arayeshgah",
+  "name": "gheychi",
   "private": true,
   "packageManager": "pnpm@9.15.0",
   "scripts": {
-    "dev:api": "turbo run dev --filter=@arayeshgah/api",
+    "dev:api": "turbo run dev --filter=@gheychi/api",
     "build": "turbo run build",
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e"
@@ -108,9 +108,9 @@ services:
   postgres:
     image: postgis/postgis:16-3.4
     environment:
-      POSTGRES_USER: arayeshgah
-      POSTGRES_PASSWORD: arayeshgah
-      POSTGRES_DB: arayeshgah
+      POSTGRES_USER: gheychi
+      POSTGRES_PASSWORD: gheychi
+      POSTGRES_DB: gheychi
     ports:
       - "5544:5432"
     volumes:
@@ -139,7 +139,7 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 `docker/postgres-init/01-test-db.sql`:
 
 ```sql
-CREATE DATABASE arayeshgah_test;
+CREATE DATABASE gheychi_test;
 ```
 
 - [ ] **Step 3: Create `.env.example`**
@@ -148,20 +148,20 @@ CREATE DATABASE arayeshgah_test;
 PORT=3002
 DB_HOST=localhost
 DB_PORT=5544
-DB_USER=arayeshgah
-DB_PASS=arayeshgah
-DB_NAME=arayeshgah
+DB_USER=gheychi
+DB_PASS=gheychi
+DB_NAME=gheychi
 REDIS_HOST=localhost
 REDIS_PORT=6381
 JWT_SECRET=dev-secret-change-me
 SMS_PROVIDER=console
 KAVENEGAR_API_KEY=
-KAVENEGAR_OTP_TEMPLATE=arayeshgah-otp
+KAVENEGAR_OTP_TEMPLATE=gheychi-otp
 ```
 
-**Port note:** this machine already runs other local projects on the usual 5432/6379/3000/3001, so Arayeshgah's dev stack uses 5544 (postgres), 6381 (redis), and 3002 (api) instead. Container-internal ports are unchanged (postgres still speaks 5432 inside its container, redis 6379) — only the host-side mapping in `docker-compose.yml` moved.
+**Port note:** this machine already runs other local projects on the usual 5432/6379/3000/3001, so Gheychi's dev stack uses 5544 (postgres), 6381 (redis), and 3002 (api) instead. Container-internal ports are unchanged (postgres still speaks 5432 inside its container, redis 6379) — only the host-side mapping in `docker-compose.yml` moved.
 
-**Note on the test database and postgis:** `00-postgis.sql` only creates the extension on the dev database (`arayeshgah`) — `arayeshgah_test` does not get it from the init scripts. This is intentional, not an oversight: Task 4's initial migration runs `CREATE EXTENSION IF NOT EXISTS postgis` itself, so the test database picks it up the first time migrations run against it.
+**Note on the test database and postgis:** `00-postgis.sql` only creates the extension on the dev database (`gheychi`) — `gheychi_test` does not get it from the init scripts. This is intentional, not an oversight: Task 4's initial migration runs `CREATE EXTENSION IF NOT EXISTS postgis` itself, so the test database picks it up the first time migrations run against it.
 
 **Troubleshooting note:** repeatedly tearing down and recreating the same `docker compose` project (same project name) can leave Docker Desktop's WSL2 port-forwarding in a stuck state for one specific host port — `docker inspect` shows the binding as requested, a new container fails with "port is already allocated," yet the port is unreachable from the host. This is what forced the move off the originally-picked 5434 to 5544. If a host port you're using stops being reachable despite `docker compose ps` showing the container healthy, first try a different, never-before-used host port before assuming the compose file is misconfigured; a full Docker Desktop restart also clears it.
 
@@ -170,8 +170,8 @@ KAVENEGAR_OTP_TEMPLATE=arayeshgah-otp
 Run: `docker compose up -d && docker compose ps`
 Expected: `postgres` and `redis` both `running`. Then verify PostGIS and the test DB:
 
-Run: `docker compose exec postgres psql -U arayeshgah -c "SELECT postgis_version();" && docker compose exec postgres psql -U arayeshgah -lqt`
-Expected: a PostGIS version row; database list includes `arayeshgah` and `arayeshgah_test`.
+Run: `docker compose exec postgres psql -U gheychi -c "SELECT postgis_version();" && docker compose exec postgres psql -U gheychi -lqt`
+Expected: a PostGIS version row; database list includes `gheychi` and `gheychi_test`.
 
 - [ ] **Step 5: Commit**
 
@@ -201,7 +201,7 @@ git commit -m "chore: add docker compose for postgis + redis with test database"
 
 ```json
 {
-  "name": "@arayeshgah/api",
+  "name": "@gheychi/api",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -302,15 +302,15 @@ git commit -m "chore: add docker compose for postgis + redis with test database"
 PORT=3003
 DB_HOST=localhost
 DB_PORT=5544
-DB_USER=arayeshgah
-DB_PASS=arayeshgah
-DB_NAME=arayeshgah_test
+DB_USER=gheychi
+DB_PASS=gheychi
+DB_NAME=gheychi_test
 REDIS_HOST=localhost
 REDIS_PORT=6381
 JWT_SECRET=test-secret
 SMS_PROVIDER=console
 KAVENEGAR_API_KEY=
-KAVENEGAR_OTP_TEMPLATE=arayeshgah-otp
+KAVENEGAR_OTP_TEMPLATE=gheychi-otp
 ```
 
 (Ports match the dev-stack remap noted in Task 2 — same postgres/redis containers, just a distinct `PORT` and `DB_NAME` for test isolation.)
@@ -435,12 +435,12 @@ describe('Health (e2e)', () => {
 - [ ] **Step 11: Install and run the test**
 
 Run: `pnpm install` (from repo root)
-Run: `pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test:e2e`
 Expected: PASS (1 test). If it fails on module resolution, fix before proceeding — this helper is the foundation of every later test.
 
 - [ ] **Step 12: Verify dev server boots**
 
-Run: `pnpm --filter @arayeshgah/api dev` (then Ctrl+C after it prints the Nest startup log)
+Run: `pnpm --filter @gheychi/api dev` (then Ctrl+C after it prints the Nest startup log)
 Expected: `Nest application successfully started`.
 
 - [ ] **Step 13: Commit**
@@ -469,9 +469,9 @@ export const AppDataSource = new DataSource({
   type: 'postgres',
   host: process.env.DB_HOST ?? 'localhost',
   port: +(process.env.DB_PORT ?? 5432),
-  username: process.env.DB_USER ?? 'arayeshgah',
-  password: process.env.DB_PASS ?? 'arayeshgah',
-  database: process.env.DB_NAME ?? 'arayeshgah',
+  username: process.env.DB_USER ?? 'gheychi',
+  password: process.env.DB_PASS ?? 'gheychi',
+  database: process.env.DB_NAME ?? 'gheychi',
   entities: ['src/**/*.entity.ts'],
   migrations: ['src/migrations/*.ts'],
 });
@@ -645,7 +645,7 @@ export class InitialSchema1751600000000 implements MigrationInterface {
 Run (from `apps/api/`): `pnpm migration:run`
 Expected: `InitialSchema1751600000000 has been executed successfully.`
 
-Verify: `docker compose exec postgres psql -U arayeshgah -c "\dt"`
+Verify: `docker compose exec postgres psql -U gheychi -c "\dt"`
 Expected: all 8 tables plus `migrations` and PostGIS's `spatial_ref_sys`.
 
 - [ ] **Step 5: Create the test-reset helper** — `apps/api/test/utils/db.ts`
@@ -676,7 +676,7 @@ export async function resetDatabase(): Promise<void> {
 }
 ```
 
-- [ ] **Step 6: Prove the reset works** — temporarily add to `health.e2e-spec.ts`'s `beforeAll`: `await resetDatabase();` (import from `./utils/db`), run `pnpm --filter @arayeshgah/api test:e2e`, expect PASS. Keep the line — a DB-backed app module now needs a schema to boot against.
+- [ ] **Step 6: Prove the reset works** — temporarily add to `health.e2e-spec.ts`'s `beforeAll`: `await resetDatabase();` (import from `./utils/db`), run `pnpm --filter @gheychi/api test:e2e`, expect PASS. Keep the line — a DB-backed app module now needs a schema to boot against.
 
 - [ ] **Step 7: Commit**
 
@@ -739,7 +739,7 @@ import { RedisModule } from './redis/redis.module';
 
 - [ ] **Step 3: Verify nothing broke**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test:e2e`
 Expected: PASS (health test still green — proves Redis connects and shuts down cleanly, no Jest hang).
 
 - [ ] **Step 4: Commit**
@@ -815,7 +815,7 @@ describe('OtpService', () => {
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `pnpm --filter @arayeshgah/api test -- otp.service`
+Run: `pnpm --filter @gheychi/api test -- otp.service`
 Expected: FAIL — `Cannot find module './otp.service'`.
 
 - [ ] **Step 3: Implement** — `apps/api/src/auth/otp.service.ts`
@@ -872,7 +872,7 @@ Note the off-by-one: the 5th failed attempt increments to 5 (allowed), so the 6t
 
 - [ ] **Step 4: Run tests to verify pass**
 
-Run: `pnpm --filter @arayeshgah/api test -- otp.service`
+Run: `pnpm --filter @gheychi/api test -- otp.service`
 Expected: PASS (5 tests).
 
 - [ ] **Step 5: Commit**
@@ -966,7 +966,7 @@ describe('KavenegarSmsProvider', () => {
 
 - [ ] **Step 4: Run to verify failure**
 
-Run: `pnpm --filter @arayeshgah/api test -- kavenegar`
+Run: `pnpm --filter @gheychi/api test -- kavenegar`
 Expected: FAIL — `Cannot find module './kavenegar-sms.provider'`.
 
 - [ ] **Step 5: Implement** — `apps/api/src/sms/kavenegar-sms.provider.ts`
@@ -1018,7 +1018,7 @@ export class KavenegarSmsProvider implements SmsProvider {
 
 - [ ] **Step 6: Run tests to verify pass**
 
-Run: `pnpm --filter @arayeshgah/api test -- kavenegar`
+Run: `pnpm --filter @gheychi/api test -- kavenegar`
 Expected: PASS (3 tests — the third, network-failure-normalization test, was added after code review flagged unhandled `fetch` rejections).
 
 - [ ] **Step 7: Wire the module** — `apps/api/src/sms/sms.module.ts` (config-driven selection)
@@ -1039,7 +1039,7 @@ import { SMS_PROVIDER } from './sms.provider';
         config.get('SMS_PROVIDER') === 'kavenegar'
           ? new KavenegarSmsProvider(
               config.getOrThrow('KAVENEGAR_API_KEY'),
-              config.get('KAVENEGAR_OTP_TEMPLATE', 'arayeshgah-otp'),
+              config.get('KAVENEGAR_OTP_TEMPLATE', 'gheychi-otp'),
             )
           : new ConsoleSmsProvider(),
     },
@@ -1503,7 +1503,7 @@ describe('Auth (e2e)', () => {
 
 - [ ] **Step 11: Run to verify failure, then wire everything, then verify pass**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test:e2e`
 Expected first: FAIL (404s — module not registered). After registering `AuthModule` in `app.module.ts`: PASS (7 auth tests + health).
 
 - [ ] **Step 12: Commit**
@@ -1552,7 +1552,7 @@ describe('Catalog (e2e)', () => {
 });
 ```
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- catalog`
+Run: `pnpm --filter @gheychi/api test:e2e -- catalog`
 Expected: FAIL (404).
 
 - [ ] **Step 2: Entity** — `apps/api/src/catalog/service-category.entity.ts`
@@ -1616,7 +1616,7 @@ Register `CatalogModule` in `app.module.ts` imports.
 
 - [ ] **Step 4: Run tests to verify pass**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- catalog`
+Run: `pnpm --filter @gheychi/api test:e2e -- catalog`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1662,7 +1662,7 @@ describe('makeSlug', () => {
 });
 ```
 
-Run: `pnpm --filter @arayeshgah/api test -- slug`
+Run: `pnpm --filter @gheychi/api test -- slug`
 Expected: FAIL — module not found.
 
 - [ ] **Step 2: Implement** — `apps/api/src/salons/slug.util.ts`
@@ -1680,7 +1680,7 @@ export function makeSlug(name: string): string {
 }
 ```
 
-Run: `pnpm --filter @arayeshgah/api test -- slug` → PASS (3 tests).
+Run: `pnpm --filter @gheychi/api test -- slug` → PASS (3 tests).
 
 - [ ] **Step 3: Entity** — `apps/api/src/salons/salon.entity.ts`
 
@@ -1998,7 +1998,7 @@ describe('Salons (e2e)', () => {
 
 - [ ] **Step 9: Run, fix, pass**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- salons`
+Run: `pnpm --filter @gheychi/api test:e2e -- salons`
 Expected: PASS (5 tests).
 
 - [ ] **Step 10: Commit**
@@ -2248,7 +2248,7 @@ describe('Salon services (e2e)', () => {
 
 - [ ] **Step 6: Run, verify pass**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- salon-services`
+Run: `pnpm --filter @gheychi/api test:e2e -- salon-services`
 Expected: PASS (5 tests).
 
 - [ ] **Step 7: Commit**
@@ -2524,7 +2524,7 @@ describe('Schedule (e2e)', () => {
 
 - [ ] **Step 6: Run, verify pass**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- schedule`
+Run: `pnpm --filter @gheychi/api test:e2e -- schedule`
 Expected: PASS (3 tests).
 
 - [ ] **Step 7: Commit**
@@ -2676,7 +2676,7 @@ describe('Search (e2e)', () => {
 });
 ```
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- search`
+Run: `pnpm --filter @gheychi/api test:e2e -- search`
 Expected: FAIL (404).
 
 - [ ] **Step 2: DTO** — `apps/api/src/search/dto/search.dto.ts`
@@ -2825,7 +2825,7 @@ Register `SearchModule` in `app.module.ts` imports.
 
 - [ ] **Step 5: Run tests to verify pass**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- search`
+Run: `pnpm --filter @gheychi/api test:e2e -- search`
 Expected: PASS (8 tests — the default-sort-ordering and empty-category-match tests were added after code review flagged the coverage gap).
 
 - [ ] **Step 6: Commit**
@@ -2844,15 +2844,15 @@ git commit -m "feat(api): postgis geo search with gender, radius, category, and 
 
 - [ ] **Step 1: Run everything**
 
-Run: `pnpm --filter @arayeshgah/api test && pnpm --filter @arayeshgah/api test:e2e && pnpm build`
+Run: `pnpm --filter @gheychi/api test && pnpm --filter @gheychi/api test:e2e && pnpm build`
 Expected: all unit tests PASS, all e2e suites PASS, build succeeds.
 
 - [ ] **Step 2: Create `README.md`**
 
 ```markdown
-# Arayeshgah
+# Gheychi
 
-Salon discovery & booking marketplace (Iran). Spec: `docs/superpowers/specs/2026-07-04-arayeshgah-marketplace-design.md`.
+Salon discovery & booking marketplace (Iran). Spec: `docs/superpowers/specs/2026-07-04-gheychi-marketplace-design.md`.
 
 ## Structure
 
@@ -2867,7 +2867,7 @@ Salon discovery & booking marketplace (Iran). Spec: `docs/superpowers/specs/2026
 docker compose up -d          # postgres (postgis) + redis
 cp .env.example apps/api/.env
 pnpm install
-pnpm --filter @arayeshgah/api migration:run
+pnpm --filter @gheychi/api migration:run
 pnpm dev:api                  # http://localhost:3002/api/health
 ```
 
@@ -2876,8 +2876,8 @@ pnpm dev:api                  # http://localhost:3002/api/health
 ## Tests
 
 ```bash
-pnpm --filter @arayeshgah/api test        # unit
-pnpm --filter @arayeshgah/api test:e2e    # e2e (needs docker services)
+pnpm --filter @gheychi/api test        # unit
+pnpm --filter @gheychi/api test:e2e    # e2e (needs docker services)
 ```
 ```
 

@@ -46,7 +46,7 @@ This mirrors `apps/provider-panel`'s scaffold exactly, with two differences: por
 
 ```json
 {
-  "name": "@arayeshgah/admin-panel",
+  "name": "@gheychi/admin-panel",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -270,8 +270,8 @@ tsconfig.node.tsbuildinfo
 Modify `package.json` (root) — add a line to `scripts` right after `dev:provider-panel`:
 
 ```json
-    "dev:provider-panel": "turbo run dev --filter=@arayeshgah/provider-panel",
-    "dev:admin-panel": "turbo run dev --filter=@arayeshgah/admin-panel",
+    "dev:provider-panel": "turbo run dev --filter=@gheychi/provider-panel",
+    "dev:admin-panel": "turbo run dev --filter=@gheychi/admin-panel",
 ```
 
 - [ ] **Step 9: Install dependencies and verify the scaffold builds**
@@ -279,7 +279,7 @@ Modify `package.json` (root) — add a line to `scripts` right after `dev:provid
 Run: `pnpm install`
 Expected: installs cleanly, `apps/admin-panel` appears in the workspace (pnpm-workspace.yaml already globs `apps/*`, no change needed there).
 
-Since `App.vue` references a `ToastContainer` that doesn't exist yet, typecheck will fail until Task 2 — that's fine, don't run `pnpm --filter @arayeshgah/admin-panel typecheck` yet.
+Since `App.vue` references a `ToastContainer` that doesn't exist yet, typecheck will fail until Task 2 — that's fine, don't run `pnpm --filter @gheychi/admin-panel typecheck` yet.
 
 - [ ] **Step 10: Commit**
 
@@ -377,7 +377,7 @@ describe('useToast', () => {
 
 - [ ] **Step 3: Run it to see it pass (nothing to fail against yet -- this file has no prior implementation gap, so write+verify together)**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run useToast`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run useToast`
 Expected: 2 passed
 
 - [ ] **Step 4: Create useApi.ts**
@@ -541,7 +541,7 @@ describe('useApi', () => {
 
 - [ ] **Step 6: Run it**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run useApi`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run useApi`
 Expected: 7 passed
 
 - [ ] **Step 7: Create ToastContainer.vue**
@@ -603,10 +603,10 @@ describe('ToastContainer', () => {
 
 - [ ] **Step 9: Run the full suite and typecheck**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run`
 Expected: 3 files, 11 tests passed
 
-Run: `pnpm --filter @arayeshgah/admin-panel typecheck`
+Run: `pnpm --filter @gheychi/admin-panel typecheck`
 Expected: no errors (App.vue's `ToastContainer` import now resolves)
 
 - [ ] **Step 10: Commit**
@@ -757,7 +757,7 @@ describe('LoginView', () => {
 
 - [ ] **Step 3: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run LoginView`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run LoginView`
 Expected: FAIL with "Cannot find module './LoginView.vue'" (or similar — the component doesn't exist yet)
 
 - [ ] **Step 4: Create LoginView.vue**
@@ -844,7 +844,7 @@ async function verifyOtp() {
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run LoginView`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run LoginView`
 Expected: PASS (3 tests)
 
 - [ ] **Step 6: Write the failing test for the router guard**
@@ -915,7 +915,7 @@ describe('admin-panel router guard', () => {
 
 - [ ] **Step 7: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run router`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run router`
 Expected: FAIL with "Cannot find module './index'" (router doesn't exist yet)
 
 - [ ] **Step 8: Create the router**
@@ -1000,10 +1000,10 @@ export function createAppRouter(history: RouterHistory): Router {
 
 - [ ] **Step 10: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run`
 Expected: 5 files, 18 tests passed
 
-Run: `pnpm --filter @arayeshgah/admin-panel typecheck`
+Run: `pnpm --filter @gheychi/admin-panel typecheck`
 Expected: no errors
 
 - [ ] **Step 11: Commit**
@@ -1139,10 +1139,10 @@ export function createAppRouter(history: RouterHistory): Router {
 
 - [ ] **Step 4: Run the full suite and typecheck**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run`
 Expected: 5 files, 18 tests passed (unchanged from Task 3 — this task added no new test file, since `SidebarNav`/`AppLayout` are pure layout with no logic to unit test, matching Provider Panel's `BottomNav`/`AppLayout` precedent)
 
-Run: `pnpm --filter @arayeshgah/admin-panel typecheck`
+Run: `pnpm --filter @gheychi/admin-panel typecheck`
 Expected: no errors
 
 - [ ] **Step 5: Commit**
@@ -1204,7 +1204,7 @@ Add this column after `status` (line 32 in the current file):
 
 - [ ] **Step 3: Run the migration against the dev database and verify**
 
-Run: `pnpm --filter @arayeshgah/api migration:run`
+Run: `pnpm --filter @gheychi/api migration:run`
 Expected: `SalonRejectionReason1752200000000 has been executed successfully.`
 
 - [ ] **Step 4: Add the admin-role test helper**
@@ -1250,7 +1250,7 @@ export async function loginAsAdmin(app: INestApplication, phone: string): Promis
 
 - [ ] **Step 5: Run the existing e2e suite to confirm nothing broke**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test:e2e`
 Expected: all existing suites still pass (this task added no new spec file yet, `loginAsAdmin` is unused until Task 7)
 
 - [ ] **Step 6: Commit**
@@ -1375,7 +1375,7 @@ describe('Admin salon list filters (e2e)', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- admin-salons-list`
+Run: `pnpm --filter @gheychi/api test:e2e -- admin-salons-list`
 Expected: FAIL (the `city`/`genderTarget`/`name` filters aren't implemented, `list()` still hardcodes `approved`)
 
 - [ ] **Step 3: Create the query DTO**
@@ -1454,12 +1454,12 @@ export class AdminSalonsController {
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- admin-salons-list`
+Run: `pnpm --filter @gheychi/api test:e2e -- admin-salons-list`
 Expected: PASS (6 tests)
 
 - [ ] **Step 6: Run the full backend suite to confirm no regressions**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test:e2e`
 Expected: all suites pass, including the pre-existing `admin-salons` featured-toggle coverage (unaffected — `setFeatured` wasn't touched)
 
 - [ ] **Step 7: Commit**
@@ -1597,7 +1597,7 @@ describe('Admin salon status transitions (e2e)', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- admin-salon-status`
+Run: `pnpm --filter @gheychi/api test:e2e -- admin-salon-status`
 Expected: FAIL with 404 (route doesn't exist yet)
 
 - [ ] **Step 3: Create the status DTO with a conditional-reason validator**
@@ -1702,12 +1702,12 @@ export class AdminSalonsController {
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- admin-salon-status`
+Run: `pnpm --filter @gheychi/api test:e2e -- admin-salon-status`
 Expected: PASS (7 tests)
 
 - [ ] **Step 6: Run the full backend suite to confirm no regressions**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test:e2e`
 Expected: all suites pass
 
 - [ ] **Step 7: Commit**
@@ -1809,7 +1809,7 @@ describe('Salon resubmit after rejection (e2e)', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- salon-resubmit`
+Run: `pnpm --filter @gheychi/api test:e2e -- salon-resubmit`
 Expected: FAIL with 404 (route doesn't exist yet)
 
 - [ ] **Step 3: Add SalonsService.resubmitMine()**
@@ -1881,12 +1881,12 @@ export class SalonsController {
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- salon-resubmit`
+Run: `pnpm --filter @gheychi/api test:e2e -- salon-resubmit`
 Expected: PASS (3 tests)
 
 - [ ] **Step 6: Run the full backend suite to confirm no regressions**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test:e2e`
 Expected: all suites pass
 
 - [ ] **Step 7: Commit**
@@ -1982,7 +1982,7 @@ describe('Admin salon detail (e2e)', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- admin-salon-detail`
+Run: `pnpm --filter @gheychi/api test:e2e -- admin-salon-detail`
 Expected: FAIL with 404 (no route yet -- NestJS's `:id/status` and `:id/featured` are more specific paths, but a bare `:id` GET doesn't exist)
 
 - [ ] **Step 3: Add the detail route**
@@ -2002,12 +2002,12 @@ Modify `apps/api/src/salons/admin-salons.controller.ts` — add a `@Get(':id')` 
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- admin-salon-detail`
+Run: `pnpm --filter @gheychi/api test:e2e -- admin-salon-detail`
 Expected: PASS (3 tests)
 
 - [ ] **Step 5: Run the full backend suite to confirm no regressions**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test:e2e`
 Expected: all suites pass (in particular, confirm `admin-salons-list` and `admin-salon-status` still pass -- `GET :id` must not shadow or be shadowed by the `GET` list route or the `PATCH :id/status`/`PATCH :id/featured` routes; NestJS matches by method+path together so a `GET :id` and `PATCH :id/status` never collide, and `GET` with no param already has its own empty-path route registered first)
 
 - [ ] **Step 6: Commit**
@@ -2133,10 +2133,10 @@ Modify `apps/admin-panel/src/router/index.ts` — add a child route under the `A
 
 - [ ] **Step 3: Run the suite and typecheck**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run`
 Expected: 5 files, 18 tests passed (unchanged -- this task adds no test file, matching the plain-list-views-stay-untested rule)
 
-Run: `pnpm --filter @arayeshgah/admin-panel typecheck`
+Run: `pnpm --filter @gheychi/admin-panel typecheck`
 Expected: no errors
 
 - [ ] **Step 4: Commit**
@@ -2244,7 +2244,7 @@ describe('SalonStatusActions', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run SalonStatusActions`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run SalonStatusActions`
 Expected: FAIL with "Cannot find module './SalonStatusActions.vue'"
 
 - [ ] **Step 3: Create SalonStatusActions.vue**
@@ -2358,7 +2358,7 @@ async function submitReason() {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run SalonStatusActions`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run SalonStatusActions`
 Expected: PASS (5 tests)
 
 - [ ] **Step 5: Create SalonDetailView.vue**
@@ -2437,10 +2437,10 @@ Modify `apps/admin-panel/src/router/index.ts` — add another child route:
 
 - [ ] **Step 7: Run the full suite and typecheck**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run`
 Expected: 6 files, 23 tests passed
 
-Run: `pnpm --filter @arayeshgah/admin-panel typecheck`
+Run: `pnpm --filter @gheychi/admin-panel typecheck`
 Expected: no errors
 
 - [ ] **Step 8: Commit**
@@ -2504,7 +2504,7 @@ describe('SalonsService.updateMine', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- salons.service`
+Run: `pnpm --filter @gheychi/api test -- salons.service`
 Expected: FAIL -- TypeScript error, `genderTarget` isn't a valid property of `UpdateSalonDto`'s type (or, if TS is lenient enough to let the object literal through, the assertion fails because the field is silently dropped)
 
 - [ ] **Step 3: Add genderTarget to UpdateSalonDto**
@@ -2528,12 +2528,12 @@ export class UpdateSalonDto {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- salons.service`
+Run: `pnpm --filter @gheychi/api test -- salons.service`
 Expected: PASS (1 test)
 
 - [ ] **Step 5: Run the full backend suite to confirm no regressions**
 
-Run: `pnpm --filter @arayeshgah/api test && pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test && pnpm --filter @gheychi/api test:e2e`
 Expected: all suites pass
 
 - [ ] **Step 6: Commit the backend change**
@@ -2602,7 +2602,7 @@ describe('SalonSettingsView', () => {
 
 - [ ] **Step 8: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test -- --run SalonSettingsView`
+Run: `pnpm --filter @gheychi/provider-panel test -- --run SalonSettingsView`
 Expected: FAIL with "Cannot find module './SalonSettingsView.vue'"
 
 - [ ] **Step 9: Create SalonSettingsView.vue**
@@ -2675,7 +2675,7 @@ onMounted(load)
 
 - [ ] **Step 10: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test -- --run SalonSettingsView`
+Run: `pnpm --filter @gheychi/provider-panel test -- --run SalonSettingsView`
 Expected: PASS (1 test)
 
 - [ ] **Step 11: Register the route and link it from the dashboard**
@@ -2700,10 +2700,10 @@ Modify `apps/provider-panel/src/pages/DashboardView.vue` — add a link next to 
 
 - [ ] **Step 12: Run the full provider-panel suite and typecheck**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test -- --run`
+Run: `pnpm --filter @gheychi/provider-panel test -- --run`
 Expected: 12 files, 36 tests passed
 
-Run: `pnpm --filter @arayeshgah/provider-panel typecheck`
+Run: `pnpm --filter @gheychi/provider-panel typecheck`
 Expected: no errors
 
 - [ ] **Step 13: Commit**
@@ -2755,7 +2755,7 @@ Adds a `rejected` branch to the existing `pending`/`suspended` conditional, show
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test -- --run PendingApprovalView`
+Run: `pnpm --filter @gheychi/provider-panel test -- --run PendingApprovalView`
 Expected: FAIL -- no rejection reason or resubmit button rendered yet
 
 - [ ] **Step 3: Update PendingApprovalView.vue**
@@ -2823,15 +2823,15 @@ export interface Salon {
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test -- --run PendingApprovalView`
+Run: `pnpm --filter @gheychi/provider-panel test -- --run PendingApprovalView`
 Expected: PASS
 
 - [ ] **Step 6: Run the full provider-panel suite and typecheck**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test -- --run`
+Run: `pnpm --filter @gheychi/provider-panel test -- --run`
 Expected: 12 files, 37 tests passed
 
-Run: `pnpm --filter @arayeshgah/provider-panel typecheck`
+Run: `pnpm --filter @gheychi/provider-panel typecheck`
 Expected: no errors
 
 - [ ] **Step 7: Commit**
@@ -2957,7 +2957,7 @@ describe('Admin reviews list (e2e)', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- admin-reviews-list`
+Run: `pnpm --filter @gheychi/api test:e2e -- admin-reviews-list`
 Expected: FAIL with 404 (no route yet)
 
 - [ ] **Step 3: Create the query DTO**
@@ -3032,12 +3032,12 @@ export class AdminReviewsController {
 
 - [ ] **Step 6: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- admin-reviews-list`
+Run: `pnpm --filter @gheychi/api test:e2e -- admin-reviews-list`
 Expected: PASS (4 tests)
 
 - [ ] **Step 7: Run the full backend suite to confirm no regressions**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test:e2e`
 Expected: all suites pass
 
 - [ ] **Step 8: Commit**
@@ -3111,7 +3111,7 @@ describe('ModerateReviewButton', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run ModerateReviewButton`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run ModerateReviewButton`
 Expected: FAIL with "Cannot find module './ModerateReviewButton.vue'"
 
 - [ ] **Step 3: Create ModerateReviewButton.vue**
@@ -3160,7 +3160,7 @@ async function toggle() {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run ModerateReviewButton`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run ModerateReviewButton`
 Expected: PASS (2 tests)
 
 - [ ] **Step 5: Create ReviewsView.vue**
@@ -3253,10 +3253,10 @@ Modify `apps/admin-panel/src/router/index.ts`:
 
 - [ ] **Step 7: Run the full suite and typecheck**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run`
 Expected: 7 files, 25 tests passed
 
-Run: `pnpm --filter @arayeshgah/admin-panel typecheck`
+Run: `pnpm --filter @gheychi/admin-panel typecheck`
 Expected: no errors
 
 - [ ] **Step 8: Commit**
@@ -3361,7 +3361,7 @@ describe('Admin categories (e2e)', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- admin-categories`
+Run: `pnpm --filter @gheychi/api test:e2e -- admin-categories`
 Expected: FAIL with 404 (routes don't exist yet)
 
 - [ ] **Step 3: Create the DTOs**
@@ -3449,12 +3449,12 @@ export class CatalogModule {}
 
 - [ ] **Step 6: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- admin-categories`
+Run: `pnpm --filter @gheychi/api test:e2e -- admin-categories`
 Expected: PASS (6 tests)
 
 - [ ] **Step 7: Run the full backend suite to confirm no regressions**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test:e2e`
 Expected: all suites pass
 
 - [ ] **Step 8: Commit**
@@ -3574,10 +3574,10 @@ Modify `apps/admin-panel/src/router/index.ts`:
 
 - [ ] **Step 3: Run the suite and typecheck**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run`
 Expected: 7 files, 25 tests passed (unchanged -- no test file added)
 
-Run: `pnpm --filter @arayeshgah/admin-panel typecheck`
+Run: `pnpm --filter @gheychi/admin-panel typecheck`
 Expected: no errors
 
 - [ ] **Step 4: Commit**
@@ -3659,7 +3659,7 @@ export class User {
 
 - [ ] **Step 3: Run the migration against the dev database**
 
-Run: `pnpm --filter @arayeshgah/api migration:run`
+Run: `pnpm --filter @gheychi/api migration:run`
 Expected: `UserStatus1752300000000 has been executed successfully.`
 
 - [ ] **Step 4: Write the failing e2e test**
@@ -3720,7 +3720,7 @@ describe('Suspended users are blocked at login and mid-session (e2e)', () => {
 
 - [ ] **Step 5: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- user-suspend-login`
+Run: `pnpm --filter @gheychi/api test:e2e -- user-suspend-login`
 Expected: FAIL -- both requests currently return 200/201 instead of 403 (no suspend check exists yet)
 
 - [ ] **Step 6: Add the check to verify-otp**
@@ -3843,7 +3843,7 @@ export class AuthGuard implements CanActivate {
 
 - [ ] **Step 8: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- user-suspend-login`
+Run: `pnpm --filter @gheychi/api test:e2e -- user-suspend-login`
 Expected: PASS (2 tests)
 
 - [ ] **Step 9: Write a unit test for the AuthGuard's error-type distinction**
@@ -3886,12 +3886,12 @@ describe('AuthGuard', () => {
 
 - [ ] **Step 10: Run it**
 
-Run: `pnpm --filter @arayeshgah/api test -- auth.guard`
+Run: `pnpm --filter @gheychi/api test -- auth.guard`
 Expected: PASS (2 tests)
 
 - [ ] **Step 11: Run the full backend suite to confirm no regressions**
 
-Run: `pnpm --filter @arayeshgah/api test && pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test && pnpm --filter @gheychi/api test:e2e`
 Expected: all suites pass
 
 - [ ] **Step 12: Commit**
@@ -4007,7 +4007,7 @@ describe('Admin users list and suspend (e2e)', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- admin-users`
+Run: `pnpm --filter @gheychi/api test:e2e -- admin-users`
 Expected: FAIL with 404 (no route yet)
 
 - [ ] **Step 3: Create the DTOs**
@@ -4168,12 +4168,12 @@ export class AuthModule {}
 
 - [ ] **Step 6: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- admin-users`
+Run: `pnpm --filter @gheychi/api test:e2e -- admin-users`
 Expected: PASS (6 tests)
 
 - [ ] **Step 7: Run the full backend suite to confirm no regressions and no circular-dependency boot error**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test:e2e`
 Expected: all suites pass, app boots cleanly (a circular DI error would surface here as every single e2e suite failing at `createTestApp()`, not just this new one — if that happens, re-check the imports/exports above rather than assuming a code typo)
 
 - [ ] **Step 8: Commit**
@@ -4250,7 +4250,7 @@ describe('SuspendUserButton', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run SuspendUserButton`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run SuspendUserButton`
 Expected: FAIL with "Cannot find module './SuspendUserButton.vue'"
 
 - [ ] **Step 3: Create SuspendUserButton.vue**
@@ -4299,7 +4299,7 @@ async function toggle() {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run SuspendUserButton`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run SuspendUserButton`
 Expected: PASS (2 tests)
 
 - [ ] **Step 5: Create UsersView.vue**
@@ -4408,10 +4408,10 @@ Modify `apps/admin-panel/src/router/index.ts`:
 
 - [ ] **Step 7: Run the full suite and typecheck**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run`
 Expected: 8 files, 27 tests passed
 
-Run: `pnpm --filter @arayeshgah/admin-panel typecheck`
+Run: `pnpm --filter @gheychi/admin-panel typecheck`
 Expected: no errors
 
 - [ ] **Step 8: Commit**
@@ -4504,7 +4504,7 @@ Modify `apps/api/test/admin-salons-list.e2e-spec.ts` — add one more test case:
 
 - [ ] **Step 4: Run the backend test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- admin-salons-list`
+Run: `pnpm --filter @gheychi/api test:e2e -- admin-salons-list`
 Expected: PASS (7 tests)
 
 - [ ] **Step 5: Add a "show all statuses" checkbox to the frontend**
@@ -4604,10 +4604,10 @@ watch([statusFilter, showAllStatuses, cityFilter, nameFilter, genderFilter], loa
 
 - [ ] **Step 6: Run the full backend and frontend suites, and typecheck both**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test:e2e`
 Expected: all suites pass
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run && pnpm --filter @arayeshgah/admin-panel typecheck`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run && pnpm --filter @gheychi/admin-panel typecheck`
 Expected: 8 files, 27 tests passed; no typecheck errors (this task adds no new admin-panel test file -- `SalonsView.vue` stays a plain untested list view)
 
 - [ ] **Step 7: Commit**
@@ -4670,7 +4670,7 @@ describe('PlatformConfigService.set', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- platform-config.service`
+Run: `pnpm --filter @gheychi/api test -- platform-config.service`
 Expected: FAIL -- `service.set` is not a function
 
 - [ ] **Step 3: Add PlatformConfigService.set() and a listAll() getter**
@@ -4691,7 +4691,7 @@ Modify `apps/api/src/platform-config/platform-config.service.ts` — read the ex
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- platform-config.service`
+Run: `pnpm --filter @gheychi/api test -- platform-config.service`
 Expected: PASS (1 test)
 
 - [ ] **Step 5: Write the failing e2e test for the admin config endpoints**
@@ -4761,7 +4761,7 @@ describe('Admin platform config (e2e)', () => {
 
 - [ ] **Step 6: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- admin-config`
+Run: `pnpm --filter @gheychi/api test:e2e -- admin-config`
 Expected: FAIL with 404 (no routes yet)
 
 - [ ] **Step 7: Create the update DTO**
@@ -4846,12 +4846,12 @@ export class PlatformConfigModule {}
 
 - [ ] **Step 10: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- admin-config`
+Run: `pnpm --filter @gheychi/api test:e2e -- admin-config`
 Expected: PASS (4 tests)
 
 - [ ] **Step 11: Run the full backend suite to confirm no regressions**
 
-Run: `pnpm --filter @arayeshgah/api test && pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test && pnpm --filter @gheychi/api test:e2e`
 Expected: all suites pass
 
 - [ ] **Step 12: Commit**
@@ -4942,10 +4942,10 @@ Modify `apps/admin-panel/src/router/index.ts`:
 
 - [ ] **Step 3: Run the suite and typecheck**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run`
 Expected: 8 files, 27 tests passed (unchanged -- no test file added)
 
-Run: `pnpm --filter @arayeshgah/admin-panel typecheck`
+Run: `pnpm --filter @gheychi/admin-panel typecheck`
 Expected: no errors
 
 - [ ] **Step 4: Commit**
@@ -5005,13 +5005,13 @@ export default defineConfig({
   use: { baseURL: 'http://localhost:3005' },
   webServer: [
     {
-      command: 'pnpm --filter @arayeshgah/api dev',
+      command: 'pnpm --filter @gheychi/api dev',
       url: 'http://localhost:3002/api/health',
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },
     {
-      command: 'pnpm --filter @arayeshgah/admin-panel dev',
+      command: 'pnpm --filter @gheychi/admin-panel dev',
       url: 'http://localhost:3005',
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
@@ -5043,9 +5043,9 @@ function makeClient() {
   return new Client({
     host: process.env.DB_HOST ?? 'localhost',
     port: Number(process.env.DB_PORT ?? 5544),
-    user: process.env.DB_USER ?? 'arayeshgah',
-    password: process.env.DB_PASS ?? 'arayeshgah',
-    database: process.env.DB_NAME ?? 'arayeshgah',
+    user: process.env.DB_USER ?? 'gheychi',
+    password: process.env.DB_PASS ?? 'gheychi',
+    database: process.env.DB_NAME ?? 'gheychi',
   })
 }
 
@@ -5061,7 +5061,7 @@ export default async function globalSetup() {
   await redis.flushdb()
   await redis.quit()
 
-  execSync('pnpm --filter @arayeshgah/api migration:run', {
+  execSync('pnpm --filter @gheychi/api migration:run', {
     cwd: path.resolve(__dirname, '../../..'),
     stdio: 'inherit',
   })
@@ -5135,12 +5135,12 @@ test('log in as admin, approve a pending salon', async ({ page, request }) => {
 
 - [ ] **Step 6: Run it**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test:e2e`
+Run: `pnpm --filter @gheychi/admin-panel test:e2e`
 Expected: PASS (1 test) -- if the OS-level Chromium dependencies (`libnspr4`, etc.) aren't already installed in this environment, install them first (`sudo npx playwright install-deps` or the `wsl -u root -- npx playwright install-deps` workaround used for Provider Panel's Task 25, if a sudo password prompt hangs); the browser binary itself may already be shared from Provider Panel's earlier setup (`~/.cache/ms-playwright/`) and not need reinstalling
 
 - [ ] **Step 7: Run the full admin-panel suite one more time**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run && pnpm --filter @arayeshgah/admin-panel typecheck`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run && pnpm --filter @gheychi/admin-panel typecheck`
 Expected: 8 files, 27 tests passed; no typecheck errors
 
 - [ ] **Step 8: Commit**
@@ -5229,19 +5229,19 @@ Carried forward across every plan shipped so far — check these are still accur
 
 - [ ] **Step 5: Run the entire repo's test suite one final time**
 
-Run: `pnpm --filter @arayeshgah/api test && pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test && pnpm --filter @gheychi/api test:e2e`
 Expected: all suites pass
 
-Run: `pnpm --filter @arayeshgah/provider-panel test -- --run && pnpm --filter @arayeshgah/provider-panel typecheck`
+Run: `pnpm --filter @gheychi/provider-panel test -- --run && pnpm --filter @gheychi/provider-panel typecheck`
 Expected: 12 files, 37 tests passed; no typecheck errors
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- --run && pnpm --filter @arayeshgah/admin-panel typecheck`
+Run: `pnpm --filter @gheychi/admin-panel test -- --run && pnpm --filter @gheychi/admin-panel typecheck`
 Expected: 8 files, 27 tests passed; no typecheck errors
 
-Run: `pnpm --filter @arayeshgah/admin-panel test:e2e`
+Run: `pnpm --filter @gheychi/admin-panel test:e2e`
 Expected: PASS (1 test)
 
-Run: `pnpm --filter @arayeshgah/user-app test -- --run`
+Run: `pnpm --filter @gheychi/user-app test -- --run`
 Expected: unaffected, still passing (sanity check that nothing in this plan touched shared infrastructure user-app also depends on)
 
 Run: `pnpm build`

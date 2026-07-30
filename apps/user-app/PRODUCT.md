@@ -33,7 +33,7 @@ Entirely mobile web / installable PWA (Nuxt 4 SSR, `@vite-pwa/nuxt`, Web Push). 
 
 ## Brand Commitments
 
-None yet — "آرایشگاه" (Arayeshgah) is a working name for this practice/dev project, not a committed brand identity. The current teal-accent light theme / purple-accent dark theme (`app/assets/css/main.css`, "Teal Trust" / "Bold Editorial") is an existing implementation, not a binding brand commitment — open to being treated as evidence/anti-reference for a future redesign rather than preserved as-is, per the user's explicit choice during this init.
+None yet — "آرایشگاه" (Gheychi) is a working name for this practice/dev project, not a committed brand identity. The current teal-accent light theme / purple-accent dark theme (`app/assets/css/main.css`, "Teal Trust" / "Bold Editorial") is an existing implementation, not a binding brand commitment — open to being treated as evidence/anti-reference for a future redesign rather than preserved as-is, per the user's explicit choice during this init.
 
 ## Evidence on Hand
 

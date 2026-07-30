@@ -6,7 +6,7 @@
 
 **Architecture:** Backend-first vertical slices over the existing NestJS modular monolith — one migration for all schema (audit_log, reports, admin_notifications, salons.suspended_cause), a decorator+interceptor audit seam on the nine admin mutation handlers, a persisted admin-notification queue polled by the admin panel, and thin new modules (audit, reports, admin-notifications) following the repo's controller-per-actor + repo-direct conventions. Frontend work lands after its backend: admin-panel pages (audit log, reports queue, bell) cloned from the existing list-page recipes, and an eligibility-gated report form in the user-app.
 
-**Tech Stack:** NestJS 11 + TypeORM 0.3 (raw-SQL migrations) + PostgreSQL/PostGIS, Jest + supertest e2e; Vue 3 + Vite admin-panel (Vitest + happy-dom); Nuxt 4 user-app (Vitest nuxt env). All commands run from the repo root (`~/projects/Arayeshgah`, WSL).
+**Tech Stack:** NestJS 11 + TypeORM 0.3 (raw-SQL migrations) + PostgreSQL/PostGIS, Jest + supertest e2e; Vue 3 + Vite admin-panel (Vitest + happy-dom); Nuxt 4 user-app (Vitest nuxt env). All commands run from the repo root (`~/projects/Gheychi`, WSL).
 
 **Approved spec:** `docs/superpowers/specs/2026-07-10-plan-7-platform-hardening-design.md`
 
@@ -97,27 +97,27 @@ export class PlatformHardening1752500000000 implements MigrationInterface {
 
 - [ ] **Step 2: Run the migration against the dev DB**
 
-Run (repo root, docker services up): `pnpm --filter @arayeshgah/api migration:run`
+Run (repo root, docker services up): `pnpm --filter @gheychi/api migration:run`
 Expected: `Migration PlatformHardening1752500000000 has been executed successfully.`
 
 - [ ] **Step 3: Verify the schema landed**
 
 ```bash
-docker compose exec postgres psql -U arayeshgah -d arayeshgah -c '\d audit_log' -c '\d reports' -c '\d admin_notifications'
-docker compose exec postgres psql -U arayeshgah -d arayeshgah -c "SELECT column_name FROM information_schema.columns WHERE table_name='salons' AND column_name='suspended_cause'"
+docker compose exec postgres psql -U gheychi -d gheychi -c '\d audit_log' -c '\d reports' -c '\d admin_notifications'
+docker compose exec postgres psql -U gheychi -d gheychi -c "SELECT column_name FROM information_schema.columns WHERE table_name='salons' AND column_name='suspended_cause'"
 ```
 
 Expected: three table definitions (with `audit_log_created_idx`/`audit_log_actor_idx`, `reports_status_created_idx`, the partial unique `reports_open_target_uidx`, and the partial `admin_notifications_unread_idx`), and one `suspended_cause` row.
 
 - [ ] **Step 4: Revert-test the down migration, then re-apply**
 
-Run: `pnpm --filter @arayeshgah/api migration:revert`
+Run: `pnpm --filter @gheychi/api migration:revert`
 Expected: `Migration PlatformHardening1752500000000 has been reverted successfully.`
 
-Run: `docker compose exec postgres psql -U arayeshgah -d arayeshgah -c '\d audit_log'`
+Run: `docker compose exec postgres psql -U gheychi -d gheychi -c '\d audit_log'`
 Expected: `Did not find any relation named "audit_log".`
 
-Run: `pnpm --filter @arayeshgah/api migration:run`
+Run: `pnpm --filter @gheychi/api migration:run`
 Expected: executed successfully again (leave the dev DB migrated).
 
 The e2e test DB needs nothing manual — `test/utils/db.ts` `resetDatabase()` drops the schema and runs all migrations before each e2e suite.
@@ -136,10 +136,10 @@ In `apps/api/src/salons/salon.entity.ts`, directly below the `rejectionReason` c
 
 - [ ] **Step 6: Type-check everything compiles**
 
-Run: `pnpm --filter @arayeshgah/api build`
+Run: `pnpm --filter @gheychi/api build`
 Expected: clean `nest build`, no TS errors.
 
-Run: `pnpm --filter @arayeshgah/api test`
+Run: `pnpm --filter @gheychi/api test`
 Expected: all existing unit suites still PASS (the column is additive; nothing consumes it yet).
 
 - [ ] **Step 7: Commit**
@@ -207,7 +207,7 @@ describe('postgres-error-codes', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- postgres-error-codes`
+Run: `pnpm --filter @gheychi/api test -- postgres-error-codes`
 Expected: FAIL — TS compile error, `Module '"./postgres-error-codes"' has no exported member 'FOREIGN_KEY_VIOLATION'` (and `isForeignKeyViolation`).
 
 - [ ] **Step 3: Write the minimal implementation**
@@ -233,7 +233,7 @@ export function isForeignKeyViolation(err: unknown): boolean {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- postgres-error-codes`
+Run: `pnpm --filter @gheychi/api test -- postgres-error-codes`
 Expected: PASS (5 tests).
 
 - [ ] **Step 5: Commit**
@@ -253,7 +253,7 @@ git commit -m "feat(api): add isForeignKeyViolation (23503) helper alongside isU
 - Modify: `apps/api/src/auth/dto/auth.dto.ts:3` (export `IRAN_MOBILE`)
 - Modify: `apps/api/package.json:5-12` (add `create-admin` script) and `:52-58` (jest `roots`)
 
-Replaces the manual-DB-update admin bootstrap with `pnpm --filter @arayeshgah/api create-admin -- 09121234567`. The core logic is an exported `createAdmin(dataSource, phone)` returning `'created' | 'promoted' | 'already-admin'`; the script file is a thin argv wrapper guarded by `require.main === module` so importing it from the spec doesn't execute anything. Idempotent, never demotes an existing admin.
+Replaces the manual-DB-update admin bootstrap with `pnpm --filter @gheychi/api create-admin -- 09121234567`. The core logic is an exported `createAdmin(dataSource, phone)` returning `'created' | 'promoted' | 'already-admin'`; the script file is a thin argv wrapper guarded by `require.main === module` so importing it from the spec doesn't execute anything. Idempotent, never demotes an existing admin.
 
 - [ ] **Step 1: Export the existing `IRAN_MOBILE` regex**
 
@@ -333,7 +333,7 @@ describe('createAdmin', () => {
 
 - [ ] **Step 4: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- create-admin`
+Run: `pnpm --filter @gheychi/api test -- create-admin`
 Expected: FAIL — `Cannot find module './create-admin'`.
 
 - [ ] **Step 5: Write the implementation**
@@ -373,7 +373,7 @@ export async function createAdmin(dataSource: DataSource, phone: string): Promis
 async function main(): Promise<void> {
   const phone = process.argv[2];
   if (!phone) {
-    console.error('Usage: pnpm --filter @arayeshgah/api create-admin -- 09xxxxxxxxx');
+    console.error('Usage: pnpm --filter @gheychi/api create-admin -- 09xxxxxxxxx');
     process.exit(1);
   }
   // Imported lazily so the unit spec never touches dotenv/DataSource construction.
@@ -395,7 +395,7 @@ async function main(): Promise<void> {
 if (require.main === module) {
   main().catch((err: unknown) => {
     console.error(err instanceof Error ? err.message : err);
-    console.error('Usage: pnpm --filter @arayeshgah/api create-admin -- 09xxxxxxxxx');
+    console.error('Usage: pnpm --filter @gheychi/api create-admin -- 09xxxxxxxxx');
     process.exit(1);
   });
 }
@@ -403,7 +403,7 @@ if (require.main === module) {
 
 - [ ] **Step 6: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- create-admin`
+Run: `pnpm --filter @gheychi/api test -- create-admin`
 Expected: PASS (5 tests).
 
 - [ ] **Step 7: Add the package.json script**
@@ -417,13 +417,13 @@ In `apps/api/package.json` `scripts`, after `"migration:revert"`:
 
 - [ ] **Step 8: Verify against the real dev DB and run the full suite**
 
-Run (docker services up, dev DB migrated): `pnpm --filter @arayeshgah/api create-admin -- 09121234567`
+Run (docker services up, dev DB migrated): `pnpm --filter @gheychi/api create-admin -- 09121234567`
 Expected: `created new admin user 09121234567` (or `promoted…`/`already an active admin…` if the phone already exists locally). Re-running the same command prints `09121234567 is already an active admin — nothing to do` and exits 0.
 
-Run: `pnpm --filter @arayeshgah/api create-admin -- 12345`
+Run: `pnpm --filter @gheychi/api create-admin -- 12345`
 Expected: prints the invalid-phone error + usage line, exits non-zero.
 
-Run: `pnpm --filter @arayeshgah/api test`
+Run: `pnpm --filter @gheychi/api test`
 Expected: all unit suites PASS — confirms the jest `roots` change still discovers every existing `src/**/*.spec.ts`.
 
 - [ ] **Step 9: Commit**
@@ -629,7 +629,7 @@ describe('AuditService.record', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- audit.interceptor`
+Run: `pnpm --filter @gheychi/api test -- audit.interceptor`
 Expected: FAIL with "Cannot find module './audit-log.entity'" (none of the audit files exist yet)
 
 - [ ] **Step 3: Write the entity, decorator, service, interceptor, and module**
@@ -806,7 +806,7 @@ export class AuditModule {}
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- audit.interceptor`
+Run: `pnpm --filter @gheychi/api test -- audit.interceptor`
 Expected: PASS (7 tests)
 
 - [ ] **Step 5: Commit**
@@ -915,7 +915,7 @@ describe('admin mutation audit wiring', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- audit-wiring`
+Run: `pnpm --filter @gheychi/api test -- audit-wiring`
 Expected: FAIL — all 14 tests, with `Expected: {"action": ..., "targetType": ...}` / `Received: undefined` (no controller carries the metadata yet)
 
 - [ ] **Step 3: Annotate the five controllers**
@@ -1328,14 +1328,14 @@ export class PlatformConfigModule {}
 
 - [ ] **Step 5: Run the unit tests to verify they pass**
 
-Run: `pnpm --filter @arayeshgah/api test -- audit`
+Run: `pnpm --filter @gheychi/api test -- audit`
 Expected: PASS — `audit-wiring.spec.ts` (14 tests) and `audit.interceptor.spec.ts` (7 tests) both green
 
 - [ ] **Step 6: Smoke the existing admin e2e suites against the wired interceptor**
 
 Requires docker services up (`docker compose up -d`); `resetDatabase()` re-runs all migrations including Task 1's, so the `audit_log` table exists.
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- admin-salon-status admin-users admin-categories admin-config admin-reviews-list reviews`
+Run: `pnpm --filter @gheychi/api test:e2e -- admin-salon-status admin-users admin-categories admin-config admin-reviews-list reviews`
 Expected: PASS — proves `AuditInterceptor` resolves via DI in all five hosting modules, the app boots, and audit inserts change no existing response or status code (including the 404/400/409 failure paths, which now also write `success: false` rows)
 
 - [ ] **Step 7: Commit**
@@ -1371,7 +1371,7 @@ In `apps/api/src/audit/audit-wiring.spec.ts`, add to the `cases` array after the
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- audit-wiring`
+Run: `pnpm --filter @gheychi/api test -- audit-wiring`
 Expected: FAIL — the two new tests error (`AdminCategoriesController.prototype.remove` is `undefined`); the original 14 still pass.
 
 - [ ] **Step 3: Write the failing e2e spec**
@@ -1502,7 +1502,7 @@ describe('Admin category delete (e2e)', () => {
 
 - [ ] **Step 4: Run the e2e to verify it fails**
 
-Run (docker services up): `pnpm --filter @arayeshgah/api test:e2e -- category-delete`
+Run (docker services up): `pnpm --filter @gheychi/api test:e2e -- category-delete`
 Expected: FAIL — every admin `DELETE` returns 404 (`Cannot DELETE /api/admin/categories/...`): the route doesn't exist yet. (The non-admin test also sees 404 instead of 403 for the same reason.)
 
 - [ ] **Step 5: Add the delete handler**
@@ -1578,10 +1578,10 @@ export class AdminCategoriesController {
 
 - [ ] **Step 6: Run both suites to verify they pass**
 
-Run: `pnpm --filter @arayeshgah/api test -- audit-wiring`
+Run: `pnpm --filter @gheychi/api test -- audit-wiring`
 Expected: PASS (16 tests)
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- category-delete`
+Run: `pnpm --filter @gheychi/api test:e2e -- category-delete`
 Expected: PASS (6 tests)
 
 - [ ] **Step 7: Commit**
@@ -1723,7 +1723,7 @@ describe('AuditService.listForAdmin', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- audit.service`
+Run: `pnpm --filter @gheychi/api test -- audit.service`
 Expected: FAIL — TypeScript compile errors: `Expected 1 arguments, but got 2` (constructor) and `Property 'listForAdmin' does not exist on type 'AuditService'`
 
 - [ ] **Step 3: Extend `AuditService`**
@@ -1850,7 +1850,7 @@ with:
 
 - [ ] **Step 5: Run the unit tests to verify they pass**
 
-Run: `pnpm --filter @arayeshgah/api test -- audit`
+Run: `pnpm --filter @gheychi/api test -- audit`
 Expected: PASS — `audit.service.spec.ts` (4 tests), `audit.interceptor.spec.ts` (7 tests), `audit-wiring.spec.ts` (16 tests — includes Task 5b's `category.delete` case)
 
 - [ ] **Step 6: Add the DTO, controller, and module wiring**
@@ -1943,7 +1943,7 @@ export class AuditModule {}
 
 - [ ] **Step 7: Verify the workspace still compiles**
 
-Run: `pnpm --filter @arayeshgah/api build`
+Run: `pnpm --filter @gheychi/api build`
 Expected: PASS (nest build exits 0). Full endpoint behavior is verified end-to-end in Task 7.
 
 - [ ] **Step 8: Commit**
@@ -2170,12 +2170,12 @@ describe('Admin audit log (e2e)', () => {
 
 - [ ] **Step 2: Run the e2e spec**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- audit-log`
+Run: `pnpm --filter @gheychi/api test:e2e -- audit-log`
 Expected: PASS (9 tests). This is a verification task over Tasks 4–6 (no new implementation), so it should pass first run. If anything fails, it points at a wiring gap: a DI error at boot means a hosting module is missing its `AuditModule` import (Task 5) or `AuditModule` accidentally imports `AuthModule` (cycle, Task 6); a missing-row failure means an interceptor/decorator didn't get applied to that handler; a `relation "audit_log" does not exist` error means Task 1's migration isn't in `src/migrations/`.
 
 - [ ] **Step 3: Run the full backend unit suite to confirm nothing regressed**
 
-Run: `pnpm --filter @arayeshgah/api test`
+Run: `pnpm --filter @gheychi/api test`
 Expected: PASS — all suites, including the pre-existing ones untouched by this plan
 
 - [ ] **Step 4: Commit**
@@ -2342,7 +2342,7 @@ describe('AdminNotificationsService', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- admin-notifications.service`
+Run: `pnpm --filter @gheychi/api test -- admin-notifications.service`
 Expected: FAIL with "Cannot find module './admin-notification.entity'" (nothing under `src/admin-notifications/` exists yet).
 
 - [ ] **Step 3: Write the entity, query DTO, and service**
@@ -2472,7 +2472,7 @@ export class AdminNotificationsService {
 
 - [ ] **Step 4: Run the unit spec to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- admin-notifications.service`
+Run: `pnpm --filter @gheychi/api test -- admin-notifications.service`
 Expected: PASS (10 tests).
 
 - [ ] **Step 5: Write the failing endpoint e2e**
@@ -2607,7 +2607,7 @@ describe('Admin notifications endpoints (e2e)', () => {
 
 - [ ] **Step 6: Run the e2e to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- admin-notifications`
+Run: `pnpm --filter @gheychi/api test:e2e -- admin-notifications`
 Expected: FAIL — first test gets 404 instead of 401 (`/api/admin/notifications` route does not exist yet; the guards never run).
 
 - [ ] **Step 7: Write the controller and module, and register the module in AppModule**
@@ -2688,10 +2688,10 @@ and register it in the `imports` array (currently ends `FavoritesModule, PushMod
 
 - [ ] **Step 8: Run both suites to verify they pass**
 
-Run: `pnpm --filter @arayeshgah/api test -- admin-notifications.service`
+Run: `pnpm --filter @gheychi/api test -- admin-notifications.service`
 Expected: PASS (10 tests).
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- admin-notifications`
+Run: `pnpm --filter @gheychi/api test:e2e -- admin-notifications`
 Expected: PASS (3 tests).
 
 - [ ] **Step 9: Commit**
@@ -2804,7 +2804,7 @@ describe('SalonsService', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- salons.service`
+Run: `pnpm --filter @gheychi/api test -- salons.service`
 Expected: FAIL — "emits salon_resubmitted after a successful resubmit" fails with `expect(notifications.emit).toHaveBeenCalledTimes(1)` receiving 0 calls (the extra `AdminNotificationsService` provider is simply unused by the current constructor, so the other tests still pass).
 
 - [ ] **Step 3: Write the failing e2e assertion**
@@ -2843,7 +2843,7 @@ Append this test to `apps/api/test/salon-resubmit.e2e-spec.ts`, after the closin
 
 - [ ] **Step 4: Run the e2e to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- salon-resubmit`
+Run: `pnpm --filter @gheychi/api test:e2e -- salon-resubmit`
 Expected: FAIL — the new test's first assertion gets `{ count: 0 }` instead of `{ count: 1 }` (nothing emits yet). The four pre-existing tests still pass.
 
 - [ ] **Step 5: Write the implementation**
@@ -2985,12 +2985,12 @@ and extend the `imports` array. **Careful:** by this point Task 5 has already ad
 
 - [ ] **Step 6: Run the unit spec to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- salons.service`
+Run: `pnpm --filter @gheychi/api test -- salons.service`
 Expected: PASS (4 tests).
 
 - [ ] **Step 7: Run the e2e to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- salon-resubmit`
+Run: `pnpm --filter @gheychi/api test:e2e -- salon-resubmit`
 Expected: PASS (5 tests) — including the pre-existing 400/409/401 tests, which confirm those paths still don't emit (the new test's `count: 1` assertion would fail otherwise).
 
 - [ ] **Step 8: Commit**
@@ -3228,7 +3228,7 @@ describe('CreateReportDto', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run (from repo root): `pnpm --filter @arayeshgah/api test -- reports.service`
+Run (from repo root): `pnpm --filter @gheychi/api test -- reports.service`
 Expected: FAIL with `Cannot find module './reports.service'` (and `./report.entity` / `./dto/report.dto`).
 
 - [ ] **Step 3: Write the entity, DTOs, and service**
@@ -3376,7 +3376,7 @@ export class ReportsService {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- reports.service`
+Run: `pnpm --filter @gheychi/api test -- reports.service`
 Expected: PASS (14 tests).
 
 - [ ] **Step 5: Wire the controller, module, and app registration**
@@ -3446,7 +3446,7 @@ and register it in the `imports` array right after `ReviewsModule`:
 
 - [ ] **Step 6: Run the full unit suite to verify nothing regressed**
 
-Run: `pnpm --filter @arayeshgah/api test`
+Run: `pnpm --filter @gheychi/api test`
 Expected: PASS (all suites, including the new `reports.service.spec.ts`).
 
 - [ ] **Step 7: Commit**
@@ -3637,7 +3637,7 @@ describe('ReportsService.resolve', () => {
 
 - [ ] **Step 2: Run test to verify the new describes fail**
 
-Run: `pnpm --filter @arayeshgah/api test -- reports.service`
+Run: `pnpm --filter @gheychi/api test -- reports.service`
 Expected: FAIL — the Task 10 tests still pass, the six new tests fail with `service.listForAdmin is not a function` / `service.resolve is not a function`.
 
 - [ ] **Step 3: Implement the DTOs and service methods**
@@ -3787,7 +3787,7 @@ and append these two methods to `ReportsService`, after `canReport()`:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- reports.service`
+Run: `pnpm --filter @gheychi/api test -- reports.service`
 Expected: PASS (20 tests).
 
 - [ ] **Step 5: Add the admin controller and wire the module**
@@ -3849,7 +3849,7 @@ export class ReportsModule {}
 
 - [ ] **Step 6: Run the full unit suite**
 
-Run: `pnpm --filter @arayeshgah/api test`
+Run: `pnpm --filter @gheychi/api test`
 Expected: PASS (all suites).
 
 - [ ] **Step 7: Commit**
@@ -3935,7 +3935,7 @@ describe('ReportsService.create — report_created notification', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- reports.service`
+Run: `pnpm --filter @gheychi/api test -- reports.service`
 Expected: FAIL — `emits report_created through the same transaction manager as the insert` fails with `Expected number of calls: >= 1, Received: 0` (the ineligible test passes trivially; the propagation test fails because `create` resolves). Note: the DI provider addition is backward-compatible, so all Task 10/11 tests still pass — until Step 3 adds the constructor dependency, at which point they would fail without this provider; that is why the spec edit lands first.
 
 - [ ] **Step 3: Implement the transactional emit**
@@ -4006,12 +4006,12 @@ and extend the module imports array:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- reports.service`
+Run: `pnpm --filter @gheychi/api test -- reports.service`
 Expected: PASS (23 tests).
 
 - [ ] **Step 5: Run the full unit suite**
 
-Run: `pnpm --filter @arayeshgah/api test`
+Run: `pnpm --filter @gheychi/api test`
 Expected: PASS (all suites).
 
 - [ ] **Step 6: Commit**
@@ -4265,12 +4265,12 @@ describe('Reports — lifecycle (e2e)', () => {
 
 - [ ] **Step 2: Run the e2e (docker services must be up: `docker compose up -d`)**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- reports.e2e-spec`
+Run: `pnpm --filter @gheychi/api test:e2e -- reports.e2e-spec`
 Expected: PASS (15 tests). If Tasks 1–12 landed correctly nothing new is being implemented here — this test only fails if a prior task's wiring is broken (e.g. the interceptor not writing the audit row, or the emit not sharing the report's transaction).
 
 - [ ] **Step 3: Run the full e2e suite to verify nothing regressed**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test:e2e`
 Expected: PASS (all e2e suites — serialized via `--runInBand` in the script, so no extra flags needed).
 
 - [ ] **Step 4: Commit**
@@ -4374,7 +4374,7 @@ describe('AdminUsersService.setStatus', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run (repo root, WSL): `pnpm --filter @arayeshgah/api test -- admin-users.service`
+Run (repo root, WSL): `pnpm --filter @gheychi/api test -- admin-users.service`
 Expected: FAIL — `Cannot find module './admin-users.service'`
 
 - [ ] **Step 3: Implement the service**
@@ -4431,7 +4431,7 @@ export class AdminUsersService {
 
 - [ ] **Step 4: Run it to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- admin-users.service`
+Run: `pnpm --filter @gheychi/api test -- admin-users.service`
 Expected: PASS (5 tests)
 
 - [ ] **Step 5: Register the service in `AuthModule`**
@@ -4504,10 +4504,10 @@ import { AdminUsersService } from './admin-users.service';
 
 - [ ] **Step 7: Verify nothing regressed**
 
-Run: `pnpm --filter @arayeshgah/api test`
+Run: `pnpm --filter @gheychi/api test`
 Expected: PASS (full unit suite — a DI failure here means the `forFeature`/provider registration in Step 5 is wrong)
 
-Run (docker services up): `pnpm --filter @arayeshgah/api test:e2e -- admin-users`
+Run (docker services up): `pnpm --filter @gheychi/api test:e2e -- admin-users`
 Expected: PASS — the pre-existing `admin-users.e2e-spec.ts` (self-target 400, 404, suspend/reactivate 200) proves the delegation preserved the old behavior.
 
 - [ ] **Step 8: Commit**
@@ -4591,7 +4591,7 @@ describe('AdminSalonsController.setStatus suspended_cause handling', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- admin-salons.controller`
+Run: `pnpm --filter @gheychi/api test -- admin-salons.controller`
 Expected: FAIL — the first two tests fail with `expect(jest.fn()).toHaveBeenCalledWith(...)` mismatches: the actual update payload has no `suspendedCause` key.
 
 - [ ] **Step 3: Implement (a)**
@@ -4619,7 +4619,7 @@ In `apps/api/src/salons/admin-salons.controller.ts`, replace the `setStatus` han
 
 - [ ] **Step 4: Run it to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- admin-salons.controller`
+Run: `pnpm --filter @gheychi/api test -- admin-salons.controller`
 Expected: PASS (4 tests)
 
 - [ ] **Step 5: Commit (a)**
@@ -4689,7 +4689,7 @@ describe('ReviewsService.findForSalon', () => {
 
 - [ ] **Step 7: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- reviews.service`
+Run: `pnpm --filter @gheychi/api test -- reviews.service`
 Expected: FAIL — the two 404 tests fail with "Received promise resolved instead of rejected" (current `findForSalon` never checks the salon).
 
 - [ ] **Step 8: Implement (b)**
@@ -4729,10 +4729,10 @@ import { Salon } from '../salons/salon.entity';
 
 - [ ] **Step 9: Run it to verify it passes, and check the existing e2e still holds**
 
-Run: `pnpm --filter @arayeshgah/api test -- reviews.service`
+Run: `pnpm --filter @gheychi/api test -- reviews.service`
 Expected: PASS (3 tests)
 
-Run (docker services up): `pnpm --filter @arayeshgah/api test:e2e -- reviews`
+Run (docker services up): `pnpm --filter @gheychi/api test:e2e -- reviews`
 Expected: PASS — every listing in `reviews.e2e-spec.ts` goes through salons it explicitly sets to `approved` first, so the new check changes nothing there.
 
 - [ ] **Step 10: Commit (b)**
@@ -4878,12 +4878,12 @@ describe('Cascade suspend/reactivate (e2e)', () => {
 
 - [ ] **Step 2: Run it**
 
-Run (docker services up): `pnpm --filter @arayeshgah/api test:e2e -- cascade-suspend`
+Run (docker services up): `pnpm --filter @gheychi/api test:e2e -- cascade-suspend`
 Expected: PASS (5 tests). If it fails, localize before touching anything: a failing salon-visibility assertion points at Task 14's transaction, a wrong `suspended_cause` at Task 14/15a's WHERE clauses, and a missing audit row at the audit slice's interceptor wiring on `AdminUsersController` — this spec is downstream verification, not the place to fix it.
 
 - [ ] **Step 3: Run the full backend e2e suite to confirm no cross-suite fallout**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test:e2e`
 Expected: PASS — in particular `admin-users.e2e-spec.ts`, `admin-salon-status.e2e-spec.ts`, `search.e2e-spec.ts`, and `reviews.e2e-spec.ts` (the suites closest to the code Tasks 14–15 touched).
 
 - [ ] **Step 4: Commit**
@@ -4954,7 +4954,7 @@ describe('reportStatusLabel', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run (from repo root): `pnpm --filter @arayeshgah/admin-panel test -- src/utils/labels.spec.ts`
+Run (from repo root): `pnpm --filter @gheychi/admin-panel test -- src/utils/labels.spec.ts`
 Expected: FAIL — `labels.ts` does not export `auditActionLabel`/`reportStatusLabel` (SyntaxError: no export named `auditActionLabel`).
 
 - [ ] **Step 3: Add the maps to `labels.ts`**
@@ -4992,7 +4992,7 @@ export function reportStatusLabel(status: string): LabelEntry {
 
 - [ ] **Step 4: Run the label test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/utils/labels.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/utils/labels.spec.ts`
 Expected: PASS (4 tests).
 
 - [ ] **Step 5: Add the three new icons to `AppIcon.vue`**
@@ -5168,7 +5168,7 @@ describe('NotificationBell', () => {
 
 - [ ] **Step 7: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/components/layout/NotificationBell.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/components/layout/NotificationBell.spec.ts`
 Expected: FAIL — `Failed to resolve import "./NotificationBell.vue"`.
 
 - [ ] **Step 8: Implement `NotificationBell.vue`**
@@ -5344,7 +5344,7 @@ onUnmounted(() => {
 
 - [ ] **Step 9: Run the bell test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/components/layout/NotificationBell.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/components/layout/NotificationBell.spec.ts`
 Expected: PASS (6 tests).
 
 - [ ] **Step 10: Mount the bell in `AppLayout.vue`'s header icon row**
@@ -5376,8 +5376,8 @@ And in the template, insert `<NotificationBell />` between the theme-toggle butt
 
 - [ ] **Step 11: Full check and commit**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test` — expected: all suites pass.
-Run: `pnpm --filter @arayeshgah/admin-panel typecheck` — expected: clean.
+Run: `pnpm --filter @gheychi/admin-panel test` — expected: all suites pass.
+Run: `pnpm --filter @gheychi/admin-panel typecheck` — expected: clean.
 
 ```bash
 git add apps/admin-panel/src/utils/labels.ts apps/admin-panel/src/utils/labels.spec.ts apps/admin-panel/src/components/ui/AppIcon.vue apps/admin-panel/src/components/layout/NotificationBell.vue apps/admin-panel/src/components/layout/NotificationBell.spec.ts apps/admin-panel/src/components/layout/AppLayout.vue
@@ -5480,7 +5480,7 @@ describe('AuditLogView', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/pages/AuditLogView.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/pages/AuditLogView.spec.ts`
 Expected: FAIL — `Failed to resolve import "./AuditLogView.vue"`.
 
 - [ ] **Step 3: Implement `AuditLogView.vue`**
@@ -5711,7 +5711,7 @@ watch(page, load)
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/pages/AuditLogView.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/pages/AuditLogView.spec.ts`
 Expected: PASS (4 tests).
 
 - [ ] **Step 5: Register the route**
@@ -5742,8 +5742,8 @@ const LINKS: { to: string; label: string; icon: IconName }[] = [
 
 - [ ] **Step 7: Full check and commit**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test` — expected: all suites pass (the router spec asserts on existing routes only and is unaffected by an added child).
-Run: `pnpm --filter @arayeshgah/admin-panel typecheck` — expected: clean.
+Run: `pnpm --filter @gheychi/admin-panel test` — expected: all suites pass (the router spec asserts on existing routes only and is unaffected by an added child).
+Run: `pnpm --filter @gheychi/admin-panel typecheck` — expected: clean.
 
 ```bash
 git add apps/admin-panel/src/pages/AuditLogView.vue apps/admin-panel/src/pages/AuditLogView.spec.ts apps/admin-panel/src/router/index.ts apps/admin-panel/src/components/layout/SidebarNav.vue
@@ -5856,7 +5856,7 @@ describe('ResolveReportActions', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/components/reports/ResolveReportActions.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/components/reports/ResolveReportActions.spec.ts`
 Expected: FAIL — `Failed to resolve import "./ResolveReportActions.vue"`.
 
 - [ ] **Step 3: Implement `ResolveReportActions.vue`**
@@ -5964,7 +5964,7 @@ async function submit() {
 
 - [ ] **Step 4: Run the action test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/components/reports/ResolveReportActions.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/components/reports/ResolveReportActions.spec.ts`
 Expected: PASS (4 tests).
 
 - [ ] **Step 5: Write the failing page test**
@@ -6068,7 +6068,7 @@ describe('ReportsView', () => {
 
 - [ ] **Step 6: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/pages/ReportsView.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/pages/ReportsView.spec.ts`
 Expected: FAIL — `Failed to resolve import "./ReportsView.vue"`.
 
 - [ ] **Step 7: Implement `ReportsView.vue`**
@@ -6215,7 +6215,7 @@ watch(page, load)
 
 - [ ] **Step 8: Run the page test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/pages/ReportsView.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/pages/ReportsView.spec.ts`
 Expected: PASS (5 tests).
 
 - [ ] **Step 9: Register the route and sidebar entry**
@@ -6310,8 +6310,8 @@ onMounted(async () => {
 
 - [ ] **Step 11: Full check and commit**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test` — expected: all suites pass.
-Run: `pnpm --filter @arayeshgah/admin-panel typecheck` — expected: clean.
+Run: `pnpm --filter @gheychi/admin-panel test` — expected: all suites pass.
+Run: `pnpm --filter @gheychi/admin-panel typecheck` — expected: clean.
 
 ```bash
 git add apps/admin-panel/src/components/reports apps/admin-panel/src/pages/ReportsView.vue apps/admin-panel/src/pages/ReportsView.spec.ts apps/admin-panel/src/router/index.ts apps/admin-panel/src/components/layout/SidebarNav.vue apps/admin-panel/src/pages/DashboardView.vue
@@ -6407,7 +6407,7 @@ describe('CategoriesView delete', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/pages/CategoriesView.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/pages/CategoriesView.spec.ts`
 Expected: FAIL — `Cannot call trigger on an empty DOMWrapper` (no `[data-testid="delete-category"]` exists yet).
 
 - [ ] **Step 3: Add delete state and handler to the script**
@@ -6531,13 +6531,13 @@ Replace the per-category `AppCard` body (currently lines 106-141) with the confi
 
 - [ ] **Step 5: Run the test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/pages/CategoriesView.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/pages/CategoriesView.spec.ts`
 Expected: PASS (3 tests).
 
 - [ ] **Step 6: Full check and commit**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test` — expected: all suites pass.
-Run: `pnpm --filter @arayeshgah/admin-panel typecheck` — expected: clean.
+Run: `pnpm --filter @gheychi/admin-panel test` — expected: all suites pass.
+Run: `pnpm --filter @gheychi/admin-panel typecheck` — expected: clean.
 
 ```bash
 git add apps/admin-panel/src/pages/CategoriesView.vue apps/admin-panel/src/pages/CategoriesView.spec.ts
@@ -6588,7 +6588,7 @@ In `apps/admin-panel/src/components/salons/SalonStatusActions.spec.ts`, append i
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/components/salons/SalonStatusActions.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/components/salons/SalonStatusActions.spec.ts`
 Expected: FAIL — `Unable to get [data-testid="reapprove-button"]` (1 new test fails; the rejected-flow test passes already, which is fine — it pins existing behavior against regression).
 
 - [ ] **Step 3: Add the re-approve action to `SalonStatusActions.vue`**
@@ -6627,7 +6627,7 @@ In the template's action-buttons block, after the suspend button (lines 81-90) a
 
 - [ ] **Step 4: Run the spec to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/components/salons/SalonStatusActions.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/components/salons/SalonStatusActions.spec.ts`
 Expected: PASS (8 tests).
 
 - [ ] **Step 5: Extend the SalonDetailView spec with failing tests**
@@ -6678,7 +6678,7 @@ And append inside the `describe` block, after the existing 404 test (line 63-69)
 
 - [ ] **Step 6: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/pages/SalonDetailView.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/pages/SalonDetailView.spec.ts`
 Expected: FAIL — the cascade-cause test: `expected false to be true` (no `[data-testid="suspended-cause"]` element yet).
 
 - [ ] **Step 7: Show the cause line in `SalonDetailView.vue`**
@@ -6722,7 +6722,7 @@ And in the template, directly after the `rejectionReason` block (lines 85-88), a
 
 - [ ] **Step 8: Run the spec to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/pages/SalonDetailView.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/pages/SalonDetailView.spec.ts`
 Expected: PASS (4 tests).
 
 - [ ] **Step 9: Rewrite the SuspendUserButton spec for the role prop and cascade toasts**
@@ -6848,7 +6848,7 @@ describe('SuspendUserButton', () => {
 
 - [ ] **Step 10: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/components/users/SuspendUserButton.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/components/users/SuspendUserButton.spec.ts`
 Expected: FAIL — the three toast tests: `expected "spy" to be called with arguments: [...]` / `Number of calls: 0` (the component does not toast yet).
 
 - [ ] **Step 11: Add the role prop and cascade toasts to `SuspendUserButton.vue`**
@@ -6913,13 +6913,13 @@ In `apps/admin-panel/src/pages/UsersView.vue`, the `SuspendUserButton` usage (li
 
 - [ ] **Step 13: Run the spec to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/components/users/SuspendUserButton.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/components/users/SuspendUserButton.spec.ts`
 Expected: PASS (7 tests).
 
 - [ ] **Step 14: Full check and commit**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test` — expected: every admin-panel suite passes.
-Run: `pnpm --filter @arayeshgah/admin-panel typecheck` — expected: clean (this also catches any `UsersView`/`SuspendUserButton` prop mismatch).
+Run: `pnpm --filter @gheychi/admin-panel test` — expected: every admin-panel suite passes.
+Run: `pnpm --filter @gheychi/admin-panel typecheck` — expected: clean (this also catches any `UsersView`/`SuspendUserButton` prop mismatch).
 
 ```bash
 git add apps/admin-panel/src/components/salons/SalonStatusActions.vue apps/admin-panel/src/components/salons/SalonStatusActions.spec.ts apps/admin-panel/src/pages/SalonDetailView.vue apps/admin-panel/src/pages/SalonDetailView.spec.ts apps/admin-panel/src/components/users/SuspendUserButton.vue apps/admin-panel/src/components/users/SuspendUserButton.spec.ts apps/admin-panel/src/pages/UsersView.vue
@@ -7056,7 +7056,7 @@ describe('ReportForm', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/user-app test -- test/nuxt/ReportForm.spec.ts`
+Run: `pnpm --filter @gheychi/user-app test -- test/nuxt/ReportForm.spec.ts`
 Expected: FAIL — cannot resolve `../../app/components/salon/ReportForm.vue` (file does not exist yet).
 
 - [ ] **Step 3: Write the component**
@@ -7144,7 +7144,7 @@ function close() {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/user-app test -- test/nuxt/ReportForm.spec.ts`
+Run: `pnpm --filter @gheychi/user-app test -- test/nuxt/ReportForm.spec.ts`
 Expected: PASS (6 tests)
 
 - [ ] **Step 5: Wire the eligibility probe + affordance into the salon profile page**
@@ -7230,7 +7230,7 @@ with:
 
 - [ ] **Step 6: Run the full user-app unit/component suite**
 
-Run: `pnpm --filter @arayeshgah/user-app test`
+Run: `pnpm --filter @gheychi/user-app test`
 Expected: PASS — all pre-existing specs plus the 6 new ReportForm tests; the page change is additive and touches no existing spec's surface.
 
 - [ ] **Step 7: Commit**
@@ -7299,7 +7299,7 @@ describe('SalonReviews', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/user-app test -- test/nuxt/SalonReviews.spec.ts`
+Run: `pnpm --filter @gheychi/user-app test -- test/nuxt/SalonReviews.spec.ts`
 Expected: FAIL — cannot resolve `../../app/components/salon/SalonReviews.vue` (file does not exist yet).
 
 - [ ] **Step 3: Write the component**
@@ -7349,7 +7349,7 @@ function flagReview(reviewId: string) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/user-app test -- test/nuxt/SalonReviews.spec.ts`
+Run: `pnpm --filter @gheychi/user-app test -- test/nuxt/SalonReviews.spec.ts`
 Expected: PASS (5 tests)
 
 - [ ] **Step 5: Swap the page's inline reviews section for the component and wire the review target**
@@ -7441,7 +7441,7 @@ with:
 
 - [ ] **Step 6: Run the full user-app unit/component suite**
 
-Run: `pnpm --filter @arayeshgah/user-app test`
+Run: `pnpm --filter @gheychi/user-app test`
 Expected: PASS — including the Task 22 `ReportForm.spec.ts` review-target test, which already covers the `{ reviewId, reason }` body this wiring now exercises.
 
 - [ ] **Step 7: Commit**
@@ -7485,7 +7485,7 @@ Carried forward across every plan shipped so far — check these are still accur
 - **Provider Panel (Plan 5) and Admin Panel (Plan 6) are both built.** `apps/provider-panel` (port 3004) covers onboarding, bookings, services, hours, photos, reviews, earnings, and a Salon Settings/resubmit flow. `apps/admin-panel` (port 3005) covers salon approvals, review moderation, categories, users/salons search+suspend, and platform config editing.
 - **Salon approval no longer requires a manual DB update.** `PATCH /api/admin/salons/:id/status` (approve/reject/suspend, reason required for reject/suspend) plus `POST /api/salons/mine/resubmit` (provider side, flips `rejected` back to `pending`) close this gap — see the README's "Admin panel (Plan 6)" section for the full endpoint list.
 - **No salon photo upload path** was the old gap here — it's closed: `POST /api/salons/mine/photos` (Plan 5) lets a provider upload/manage photos via a swappable `StorageProvider` (`local`/`s3`).
-- **Plan 7 (platform hardening) closed the six trust-and-safety gaps** previously listed here: an admin audit log (declarative `@AuditAction` decorator + interceptor on every admin mutation, browsable via `GET /api/admin/audit-log` and the admin-panel's Audit Log page), a first-admin bootstrap script (`pnpm --filter @arayeshgah/api create-admin -- <phone>`, idempotent), a verified-customer report flow end-to-end (user-app salon/review report form → `POST /api/reports` → admin-panel queue at `/reports`), category delete with restrict semantics (`DELETE /api/admin/categories/:id`, 409 when any salon service references it), user-suspend → salon cascade (`salons.suspended_cause` distinguishes `admin` suspensions from `owner_suspended` cascades so reactivation only restores the latter), and a polled admin notification queue (`salon_resubmitted` / `report_created`, bell badge in the admin-panel header). See `docs/superpowers/plans/2026-07-10-plan-7-platform-hardening.md`.
+- **Plan 7 (platform hardening) closed the six trust-and-safety gaps** previously listed here: an admin audit log (declarative `@AuditAction` decorator + interceptor on every admin mutation, browsable via `GET /api/admin/audit-log` and the admin-panel's Audit Log page), a first-admin bootstrap script (`pnpm --filter @gheychi/api create-admin -- <phone>`, idempotent), a verified-customer report flow end-to-end (user-app salon/review report form → `POST /api/reports` → admin-panel queue at `/reports`), category delete with restrict semantics (`DELETE /api/admin/categories/:id`, 409 when any salon service references it), user-suspend → salon cascade (`salons.suspended_cause` distinguishes `admin` suspensions from `owner_suspended` cascades so reactivation only restores the latter), and a polled admin notification queue (`salon_resubmitted` / `report_created`, bell badge in the admin-panel header). See `docs/superpowers/plans/2026-07-10-plan-7-platform-hardening.md`.
 - **Blog/content-marketing CMS** is a separate, not-yet-started future plan (backend module + admin editor + public pages) — out of scope for every plan so far.
 - **No real payment refunds**, and no real alerting/paging on the `logger.error(...)` calls that flag payments needing manual review — both are explicit MVP scope cuts, not bugs.
 ```
@@ -7538,7 +7538,7 @@ Third, append a new section at the end of `README.md` (after the Plan 6 section)
 Closes the six trust-and-safety gaps carried since Plans 5/6 — no new product surface beyond these. Spec: `docs/superpowers/specs/2026-07-10-plan-7-platform-hardening-design.md`.
 
 - **Admin audit log** — every admin mutation (salon status/featured, user status, review moderation, category create/update/delete, config update, report resolve) writes an `audit_log` row via a declarative `@AuditAction` decorator + interceptor; audit-insert failures are logged and swallowed, never failing the admin's request. Browse via `GET /api/admin/audit-log` (filterable by actor/action/target-type/date, paginated) or the admin-panel's Audit Log page. No before/after value snapshots in v1 — the log answers "who did what, to what, with what input, when."
-- **First-admin bootstrap** — `pnpm --filter @arayeshgah/api create-admin -- 09121234567` idempotently creates the user if missing and sets `role='admin'`, `status='active'`; the first admin is no longer a manual DB update.
+- **First-admin bootstrap** — `pnpm --filter @gheychi/api create-admin -- 09121234567` idempotently creates the user if missing and sets `role='admin'`, `status='active'`; the first admin is no longer a manual DB update.
 - **Reports** — a verified customer (at least one `completed` booking at the salon) can report a salon or one of its reviews from the salon profile page: `POST /api/reports` (one *open* report per reporter per target, enforced by a partial unique index → 409), `GET /api/reports/eligibility?salonId=` gates the UI. Admins work the queue via `GET/PATCH /api/admin/reports` and the admin-panel Reports page. Resolving a report doesn't itself moderate anything — the queue links to the existing, already-audited moderation actions.
 - **Category delete** — `DELETE /api/admin/categories/:id` with restrict semantics: a category referenced by any salon service (active or not) 409s, mirroring the DB's FK. Reassign-or-cascade is deferred until someone actually needs it.
 - **Cascade suspend** — suspending a user now also suspends their `approved` salon in the same transaction, recording `suspended_cause='owner_suspended'`; reactivating the user restores only cascade-suspended salons — a salon an admin suspended directly stays suspended. Public review listing (`GET /api/salons/:salonId/reviews`) now also requires the salon to be `approved`.
@@ -7552,9 +7552,9 @@ Expected: PASS — turbo runs every package's `test` script (api Jest units incl
 
 - [ ] **Step 5: Full verification — API e2e**
 
-Requires docker services (`docker compose up -d`) and migrations applied (`pnpm --filter @arayeshgah/api migration:run`).
+Requires docker services (`docker compose up -d`) and migrations applied (`pnpm --filter @gheychi/api migration:run`).
 
-Run: `pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test:e2e`
 Expected: PASS — including Plan 7's report-lifecycle, cascade-suspend, category-delete, resubmit-notification, and audit-row e2e specs.
 
 - [ ] **Step 6: Full verification — build**
@@ -7562,7 +7562,7 @@ Expected: PASS — including Plan 7's report-lifecycle, cascade-suspend, categor
 Run: `pnpm build`
 Expected: PASS — all four apps build cleanly (this also runs `vue-tsc`/`nuxt typecheck`-equivalent compilation for the frontends' build paths, catching any type drift from the new components).
 
-> **⚠️ Standing warning — frontend e2e wipes the shared dev DB.** The Playwright suites (`pnpm --filter @arayeshgah/user-app test:e2e`, `pnpm --filter @arayeshgah/admin-panel test:e2e`) have global-setups that **wipe and reseed the shared dev database**. They are not part of this task's required verification (per the design doc §6, Playwright additions only happen if an existing spec breaks) — but if you do run them, **reseed your demo data afterwards** before doing any manual testing against the dev DB.
+> **⚠️ Standing warning — frontend e2e wipes the shared dev DB.** The Playwright suites (`pnpm --filter @gheychi/user-app test:e2e`, `pnpm --filter @gheychi/admin-panel test:e2e`) have global-setups that **wipe and reseed the shared dev database**. They are not part of this task's required verification (per the design doc §6, Playwright additions only happen if an existing spec breaks) — but if you do run them, **reseed your demo data afterwards** before doing any manual testing against the dev DB.
 
 - [ ] **Step 7: Final commit**
 

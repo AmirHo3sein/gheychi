@@ -13,7 +13,7 @@ import { SMS_PROVIDER } from './sms.provider';
         config.get('SMS_PROVIDER') === 'kavenegar'
           ? new KavenegarSmsProvider(
               config.getOrThrow('KAVENEGAR_API_KEY'),
-              config.get('KAVENEGAR_OTP_TEMPLATE', 'arayeshgah-otp'),
+              config.get('KAVENEGAR_OTP_TEMPLATE', 'gheychi-otp'),
             )
           : new ConsoleSmsProvider(),
     },

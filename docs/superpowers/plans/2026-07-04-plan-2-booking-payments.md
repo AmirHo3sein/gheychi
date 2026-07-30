@@ -96,7 +96,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 
 - [ ] **Step 4: Verify nothing broke**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test:e2e`
 Expected: all 30 existing e2e tests still pass — this proves `ScheduleModule.forRoot()` boots cleanly alongside everything else and doesn't hang the process (it registers a cron scheduler that must shut down cleanly with the app, same concern as Task 5's Redis module in Plan 1).
 
 - [ ] **Step 5: Commit**
@@ -328,7 +328,7 @@ export class SalonsModule {}
 
 - [ ] **Step 7: Verify nothing broke**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test:e2e`
 Expected: all 30 existing e2e tests still pass unchanged — `salon-services.e2e-spec.ts` and `schedule.e2e-spec.ts` exercise these exact controllers and don't know or care that the internals were refactored.
 
 - [ ] **Step 8: Commit**
@@ -468,7 +468,7 @@ describe('PlatformConfigService (e2e)', () => {
 
 - [ ] **Step 6: Run, verify pass**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- platform-config`
+Run: `pnpm --filter @gheychi/api test:e2e -- platform-config`
 Expected: PASS (1 test).
 
 - [ ] **Step 7: Commit**
@@ -551,7 +551,7 @@ export class ConsoleSmsProvider implements SmsProvider {
 
 - [ ] **Step 4: Run to verify failure**
 
-Run: `pnpm --filter @arayeshgah/api test -- kavenegar`
+Run: `pnpm --filter @gheychi/api test -- kavenegar`
 Expected: FAIL — `provider.send is not a function` (2 new failures, the original 3 `sendOtp` tests still pass).
 
 - [ ] **Step 5: Implement `send()` in `KavenegarSmsProvider`** — `apps/api/src/sms/kavenegar-sms.provider.ts`
@@ -577,10 +577,10 @@ Add this method to the existing class, after `sendOtp` (the `KavenegarResponse` 
 
 - [ ] **Step 6: Run tests to verify pass**
 
-Run: `pnpm --filter @arayeshgah/api test -- kavenegar`
+Run: `pnpm --filter @gheychi/api test -- kavenegar`
 Expected: PASS (5 tests — the original 3 plus these 2).
 
-Run: `pnpm --filter @arayeshgah/api test`
+Run: `pnpm --filter @gheychi/api test`
 Expected: PASS (13 tests total across 3 unit suites — confirms `ConsoleSmsProvider`'s new method didn't break anything, since nothing directly unit-tests `ConsoleSmsProvider` but the interface change must still compile).
 
 - [ ] **Step 7: Commit**
@@ -657,7 +657,7 @@ Note on `payments_status_idx`: mirrors `bookings_status_idx`'s purpose — Task 
 Run (from `apps/api/`): `pnpm migration:run`
 Expected: `BookingPaymentsSchema1751700000000 has been executed successfully.`
 
-Verify: `docker compose exec postgres psql -U arayeshgah -c "\dt"` (from repo root)
+Verify: `docker compose exec postgres psql -U gheychi -c "\dt"` (from repo root)
 Expected: 12 tables now (the original 10 plus `bookings` and `payments`).
 
 - [ ] **Step 3: `Booking` entity** — `apps/api/src/booking/booking.entity.ts`
@@ -755,7 +755,7 @@ export class Payment {
 
 - [ ] **Step 5: Verify entities load without error**
 
-Run: `pnpm --filter @arayeshgah/api build`
+Run: `pnpm --filter @gheychi/api build`
 Expected: compiles cleanly (this doesn't wire the entities into any module yet — that's Task 11 — but proves the TypeScript is valid and `autoLoadEntities: true` won't choke on them once registered).
 
 - [ ] **Step 6: Commit**
@@ -799,7 +799,7 @@ describe('calculateDeposit', () => {
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `pnpm --filter @arayeshgah/api test -- deposit.util`
+Run: `pnpm --filter @gheychi/api test -- deposit.util`
 Expected: FAIL — `Cannot find module './deposit.util'`.
 
 - [ ] **Step 3: Implement** — `apps/api/src/booking/deposit.util.ts`
@@ -813,7 +813,7 @@ export function calculateDeposit(priceToman: number, depositPercent: number, dep
 
 - [ ] **Step 4: Run tests to verify pass**
 
-Run: `pnpm --filter @arayeshgah/api test -- deposit.util`
+Run: `pnpm --filter @gheychi/api test -- deposit.util`
 Expected: PASS (4 tests).
 
 - [ ] **Step 5: Commit**
@@ -1049,7 +1049,7 @@ describe('computeAvailableSlots', () => {
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `pnpm --filter @arayeshgah/api test -- availability.util`
+Run: `pnpm --filter @gheychi/api test -- availability.util`
 Expected: FAIL — `Cannot find module './availability.util'`.
 
 - [ ] **Step 3: Implement** — `apps/api/src/booking/availability.util.ts`
@@ -1156,7 +1156,7 @@ export function computeAvailableSlots(params: ComputeAvailabilityParams): DayAva
 
 - [ ] **Step 4: Run tests to verify pass**
 
-Run: `pnpm --filter @arayeshgah/api test -- availability.util`
+Run: `pnpm --filter @gheychi/api test -- availability.util`
 Expected: PASS (12 tests — the zero/negative-duration and out-of-order-ranges cases were added after code review flagged an infinite-loop risk and an unguaranteed ordering gap).
 
 - [ ] **Step 5: Commit**
@@ -1446,7 +1446,7 @@ describe('Availability (e2e)', () => {
 
 - [ ] **Step 5: Run, verify pass**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- availability`
+Run: `pnpm --filter @gheychi/api test:e2e -- availability`
 Expected: PASS (5 tests — the pending_payment-exclusion test was added after code review flagged that this load-bearing double-booking-prevention detail was unverified above the pure-function layer).
 
 - [ ] **Step 6: Commit**
@@ -1614,7 +1614,7 @@ describe('ZarinpalGateway', () => {
 
 - [ ] **Step 4: Run to verify failure**
 
-Run: `pnpm --filter @arayeshgah/api test -- zarinpal-payment`
+Run: `pnpm --filter @gheychi/api test -- zarinpal-payment`
 Expected: FAIL — `Cannot find module './zarinpal-payment.gateway'`.
 
 - [ ] **Step 5: Implement** — `apps/api/src/booking/zarinpal-payment.gateway.ts`
@@ -1723,7 +1723,7 @@ export class ZarinpalGateway implements PaymentGateway {
 
 - [ ] **Step 6: Run tests to verify pass**
 
-Run: `pnpm --filter @arayeshgah/api test -- zarinpal-payment`
+Run: `pnpm --filter @gheychi/api test -- zarinpal-payment`
 Expected: PASS (8 tests — 2 new cases were added after code review found that `verifyPayment` never checked `res.ok`, which would have collapsed "Zarinpal's API is down" and "payment declined" into the same {success: false} result, and that res.json() sat outside the try/catch, letting a malformed response leak a raw SyntaxError instead of a wrapped error).
 
 - [ ] **Step 7: Add new env vars** — append to `.env.example`:
@@ -2152,7 +2152,7 @@ describe('Bookings — create hold (e2e)', () => {
 
 - [ ] **Step 6: Run, verify pass**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- bookings`
+Run: `pnpm --filter @gheychi/api test:e2e -- bookings`
 Expected: PASS (6 tests).
 
 - [ ] **Step 7: Commit**
@@ -2511,7 +2511,7 @@ describe('Payments — callback (e2e)', () => {
 
 - [ ] **Step 5: Run, verify pass**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- payments`
+Run: `pnpm --filter @gheychi/api test:e2e -- payments`
 Expected: PASS (4 tests).
 
 - [ ] **Step 6: Commit**
@@ -2741,7 +2741,7 @@ describe('Salon-side booking management (e2e)', () => {
 
 - [ ] **Step 6: Run, verify pass**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- salon-bookings`
+Run: `pnpm --filter @gheychi/api test:e2e -- salon-bookings`
 Expected: PASS (5 tests).
 
 - [ ] **Step 7: Commit**
@@ -3011,7 +3011,7 @@ describe('Booking cancellation policy (e2e)', () => {
 
 - [ ] **Step 5: Run, verify pass**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- booking-cancellation`
+Run: `pnpm --filter @gheychi/api test:e2e -- booking-cancellation`
 Expected: PASS (6 tests).
 
 - [ ] **Step 6: Commit**
@@ -3201,7 +3201,7 @@ describe('Booking expiry job (e2e)', () => {
 
 - [ ] **Step 4: Run, verify pass**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- booking-expiry`
+Run: `pnpm --filter @gheychi/api test:e2e -- booking-expiry`
 Expected: PASS (2 tests).
 
 - [ ] **Step 5: Commit**
@@ -3491,7 +3491,7 @@ describe('Payment reconciliation job (e2e)', () => {
 
 - [ ] **Step 4: Run, verify pass**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- payment-reconciliation`
+Run: `pnpm --filter @gheychi/api test:e2e -- payment-reconciliation`
 Expected: PASS (4 tests — a case was added after code review found that the TTL relationship between this job's 20-minute stale threshold and BookingExpiryJob's 15-minute hold TTL means a genuinely-late payment will commonly find its booking already expired, and the original unconditional Booking update would have silently resurrected it).
 
 - [ ] **Step 5: Commit**
@@ -3510,7 +3510,7 @@ git commit -m "feat(api): cron job to reconcile stale initiated payments against
 
 - [ ] **Step 1: Run everything**
 
-Run: `pnpm --filter @arayeshgah/api test && pnpm --filter @arayeshgah/api test:e2e && pnpm build`
+Run: `pnpm --filter @gheychi/api test && pnpm --filter @gheychi/api test:e2e && pnpm build`
 Expected: all unit tests PASS, all e2e suites PASS, build succeeds. Expected final shape: unit suites include the original 3 from Plan 1 plus `deposit.util.spec.ts`, `availability.util.spec.ts`, `zarinpal-payment.gateway.spec.ts` (6 suites total); e2e suites include the original 7 from Plan 1 plus `platform-config`, `availability`, `bookings`, `payments`, `salon-bookings`, `booking-cancellation`, `booking-expiry`, `payment-reconciliation` (15 suites total).
 
 - [ ] **Step 2: Update `README.md`**

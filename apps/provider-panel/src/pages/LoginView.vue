@@ -85,7 +85,7 @@ async function verifyOtp() {
     <div class="relative w-full max-w-sm">
       <div class="login-stagger flex flex-col items-center text-center" style="animation-delay: 0s">
         <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-(--color-accent) text-xl font-black text-white shadow-(--shadow-sm)">
-          آ
+          ق
         </div>
         <h1 class="text-xl font-bold text-(--color-text)">ورود به پنل مدیریت</h1>
         <p class="mt-1 text-sm text-(--color-text-muted)">مدیریت نوبت‌ها، خدمات و درآمد آرایشگاه شما</p>

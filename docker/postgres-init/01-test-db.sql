@@ -1,1 +1,1 @@
-CREATE DATABASE arayeshgah_test;
+CREATE DATABASE gheychi_test;

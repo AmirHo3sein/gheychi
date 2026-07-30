@@ -6,7 +6,7 @@
 
 **Architecture:** A custom NestJS content module on existing conventions — one migration (blog_categories + blog_posts), a ContentService with conditional-update publish transitions, admin controllers fully audited through Plan 7's decorator seam, cover images via the swappable StorageProvider, and a public surface (paginated published lists, by-slug, categories, sitemap source). Posts store raw Markdown; both frontends render with `markdown-it` configured `html: false`, making the pipeline XSS-safe by construction (each app's renderer ships an invariant test). The admin panel gets a list page + a Markdown editor with live preview; the user-app gets SSR `/blog` and `/blog/[slug]` pages with `useSeoMeta` + JSON-LD Article + sitemap inclusion.
 
-**Tech Stack:** NestJS 11 + TypeORM raw-SQL migration + PostgreSQL; markdown-it (html:false) in both frontends; Vue 3 admin-panel (Vitest + happy-dom); Nuxt 4 user-app (Vitest unit + nuxt env). All commands run from the repo root (`~/projects/Arayeshgah`, WSL).
+**Tech Stack:** NestJS 11 + TypeORM raw-SQL migration + PostgreSQL; markdown-it (html:false) in both frontends; Vue 3 admin-panel (Vitest + happy-dom); Nuxt 4 user-app (Vitest unit + nuxt env). All commands run from the repo root (`~/projects/Gheychi`, WSL).
 
 **Approved spec:** `docs/superpowers/specs/2026-07-10-plan-8-blog-cms-design.md`
 
@@ -74,7 +74,7 @@ export class BlogCms1752600000000 implements MigrationInterface {
 
 - [ ] **Step 2: Run the migration against the dev DB**
 
-Run (repo root, docker services already up): `pnpm --filter @arayeshgah/api migration:run`
+Run (repo root, docker services already up): `pnpm --filter @gheychi/api migration:run`
 Expected: exit 0 with `Migration BlogCms1752600000000 has been executed successfully.`
 
 - [ ] **Step 3: Verify the schema landed**
@@ -83,38 +83,38 @@ Run each command bare and check its exit code — no pipes. `typeorm-ts-node-com
 
 Run:
 ```bash
-pnpm --filter @arayeshgah/api exec -- typeorm-ts-node-commonjs query "SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_name = 'blog_posts' ORDER BY ordinal_position" -d src/data-source.ts
+pnpm --filter @gheychi/api exec -- typeorm-ts-node-commonjs query "SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_name = 'blog_posts' ORDER BY ordinal_position" -d src/data-source.ts
 ```
 Expected: exit 0 and 14 rows — `id` (uuid, default `gen_random_uuid()`), `title`, `slug`, `excerpt`, `body_markdown` (text, NOT NULL), `cover_image_key`, `category_id` (integer, nullable), `author_name`, `meta_description`, `og_title`, `status` (NOT NULL, default `'draft'::character varying`), `published_at` (timestamptz, nullable), `created_at`, `updated_at` (both timestamptz NOT NULL, default `now()`).
 
 Run:
 ```bash
-pnpm --filter @arayeshgah/api exec -- typeorm-ts-node-commonjs query "SELECT indexname FROM pg_indexes WHERE tablename IN ('blog_categories','blog_posts') ORDER BY indexname" -d src/data-source.ts
+pnpm --filter @gheychi/api exec -- typeorm-ts-node-commonjs query "SELECT indexname FROM pg_indexes WHERE tablename IN ('blog_categories','blog_posts') ORDER BY indexname" -d src/data-source.ts
 ```
 Expected: exit 0 and exactly these seven indexes: `blog_categories_name_key`, `blog_categories_pkey`, `blog_categories_slug_key`, `blog_posts_category_idx`, `blog_posts_pkey`, `blog_posts_public_idx`, `blog_posts_slug_key`.
 
 - [ ] **Step 4: Revert-test the down migration, then re-apply**
 
-Run: `pnpm --filter @arayeshgah/api migration:revert`
+Run: `pnpm --filter @gheychi/api migration:revert`
 Expected: exit 0 with `Migration BlogCms1752600000000 has been reverted successfully.`
 
 Run:
 ```bash
-pnpm --filter @arayeshgah/api exec -- typeorm-ts-node-commonjs query "SELECT to_regclass('public.blog_posts') AS blog_posts, to_regclass('public.blog_categories') AS blog_categories" -d src/data-source.ts
+pnpm --filter @gheychi/api exec -- typeorm-ts-node-commonjs query "SELECT to_regclass('public.blog_posts') AS blog_posts, to_regclass('public.blog_categories') AS blog_categories" -d src/data-source.ts
 ```
 Expected: exit 0 and one row with both columns `null` — both tables gone.
 
-Run: `pnpm --filter @arayeshgah/api migration:run`
+Run: `pnpm --filter @gheychi/api migration:run`
 Expected: executed successfully again (leave the dev DB migrated).
 
 The e2e test DB needs nothing manual — `test/utils/db.ts` `resetDatabase()` runs all migrations (`ds.runMigrations()`) before each e2e suite, so it picks this one up automatically.
 
 - [ ] **Step 5: Confirm the build and existing suites are untouched**
 
-Run: `pnpm --filter @arayeshgah/api build`
+Run: `pnpm --filter @gheychi/api build`
 Expected: exit 0, clean `nest build` (the migration file lives under `src/` and must type-check).
 
-Run: `pnpm --filter @arayeshgah/api test`
+Run: `pnpm --filter @gheychi/api test`
 Expected: exit 0, all existing unit suites PASS (the migration is purely additive; nothing consumes the tables yet).
 
 - [ ] **Step 6: Commit**
@@ -175,7 +175,7 @@ describe('makeSlug', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- slug.util`
+Run: `pnpm --filter @gheychi/api test -- slug.util`
 Expected: FAIL — `src/common/slug.util.spec.ts` errors with `Cannot find module './slug.util'` (the legacy `src/salons/slug.util.spec.ts` still passes in the same run; it is removed in Step 4).
 
 - [ ] **Step 3: Write the moved implementation**
@@ -196,7 +196,7 @@ export function makeSlug(name: string, fallbackPrefix = 'salon'): string {
 }
 ```
 
-Run: `pnpm --filter @arayeshgah/api test -- slug.util`
+Run: `pnpm --filter @gheychi/api test -- slug.util`
 Expected: PASS — both `src/common/slug.util.spec.ts` (5 tests) and the not-yet-deleted `src/salons/slug.util.spec.ts` (3 tests) green.
 
 - [ ] **Step 4: Repoint the salons import and delete the old files**
@@ -223,10 +223,10 @@ git rm apps/api/src/salons/slug.util.ts apps/api/src/salons/slug.util.spec.ts
 
 - [ ] **Step 5: Full unit suite + build green**
 
-Run: `pnpm --filter @arayeshgah/api test`
+Run: `pnpm --filter @gheychi/api test`
 Expected: exit 0 — the full unit suite PASSES, with `slug.util.spec.ts` now reported only under `src/common/`.
 
-Run: `pnpm --filter @arayeshgah/api build`
+Run: `pnpm --filter @gheychi/api build`
 Expected: exit 0, clean `nest build` (proves no stale `./slug.util` import survived anywhere).
 
 - [ ] **Step 6: Commit**
@@ -617,7 +617,7 @@ describe('blog post DTOs', () => {
 
 - [ ] **Step 3: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- content.service`
+Run: `pnpm --filter @gheychi/api test -- content.service`
 Expected: FAIL — TS compile errors, `Cannot find module './blog-category.entity'` / `'./blog-post.entity'` / `'./content.service'` / `'./dto/blog.dto'` (none exist yet).
 
 - [ ] **Step 4: Write the entities**
@@ -1044,12 +1044,12 @@ becomes:
 
 - [ ] **Step 9: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- content.service`
+Run: `pnpm --filter @gheychi/api test -- content.service`
 Expected: PASS (20 tests).
 
 - [ ] **Step 10: Run the full unit suite**
 
-Run: `pnpm --filter @arayeshgah/api test`
+Run: `pnpm --filter @gheychi/api test`
 Expected: exit 0, no other suite disturbed.
 
 - [ ] **Step 11: Commit**
@@ -1192,7 +1192,7 @@ describe('ContentService.deletePost', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- content.service`
+Run: `pnpm --filter @gheychi/api test -- content.service`
 Expected: FAIL — TS compile errors, `Property 'publishPost' does not exist on type 'ContentService'` (likewise `unpublishPost`, `deletePost`).
 
 - [ ] **Step 3: Implement the transitions**
@@ -1241,12 +1241,12 @@ In `apps/api/src/content/content.service.ts` (imports and constructor stay exact
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- content.service`
+Run: `pnpm --filter @gheychi/api test -- content.service`
 Expected: PASS (29 tests).
 
 - [ ] **Step 5: Run the full unit suite**
 
-Run: `pnpm --filter @arayeshgah/api test`
+Run: `pnpm --filter @gheychi/api test`
 Expected: exit 0.
 
 - [ ] **Step 6: Commit**
@@ -1427,7 +1427,7 @@ describe('blog category DTOs', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- content.service`
+Run: `pnpm --filter @gheychi/api test -- content.service`
 Expected: FAIL — TS compile errors: `Module '"./dto/blog.dto"' has no exported member 'CreateBlogCategoryDto'`, and `Property 'createCategory' does not exist on type 'ContentService'` (likewise `updateCategory`, `deleteCategory`, `listCategories`).
 
 - [ ] **Step 3: Add the category DTOs**
@@ -1569,7 +1569,7 @@ Then append the new methods to the class, after `deletePost`:
 
 - [ ] **Step 5: Run the service test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- content.service`
+Run: `pnpm --filter @gheychi/api test -- content.service`
 Expected: PASS (43 tests).
 
 - [ ] **Step 6: Extend the audit-wiring spec (failing)**
@@ -1663,7 +1663,7 @@ becomes:
   ];
 ```
 
-Run: `pnpm --filter @arayeshgah/api test -- audit-wiring`
+Run: `pnpm --filter @gheychi/api test -- audit-wiring`
 Expected: FAIL — TS compile error, `Cannot find module '../content/admin-blog.controller'`.
 
 - [ ] **Step 7: Write the controller**
@@ -1801,15 +1801,15 @@ export class ContentModule {}
 
 - [ ] **Step 9: Run the audit-wiring test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- audit-wiring`
+Run: `pnpm --filter @gheychi/api test -- audit-wiring`
 Expected: PASS (34 tests — eight new cases × 2 assertions on top of the existing 18).
 
 - [ ] **Step 10: Full unit suite + build**
 
-Run: `pnpm --filter @arayeshgah/api test`
+Run: `pnpm --filter @gheychi/api test`
 Expected: exit 0.
 
-Run: `pnpm --filter @arayeshgah/api build`
+Run: `pnpm --filter @gheychi/api build`
 Expected: exit 0 (catches any controller/module typing issue Jest's per-file compilation might miss).
 
 - [ ] **Step 11: Commit**
@@ -1862,7 +1862,7 @@ In `apps/api/src/storage/s3-storage.provider.spec.ts`, add after the `'deletes v
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `pnpm --filter @arayeshgah/api test -- storage`
+Run: `pnpm --filter @gheychi/api test -- storage`
 Expected: FAIL — both suites error at compile time (`Property 'publicUrl' does not exist on type 'LocalDiskStorageProvider'` / `'S3StorageProvider'`).
 
 - [ ] **Step 3: Add `publicUrl` to the interface and both providers**
@@ -1914,7 +1914,7 @@ In `apps/api/src/storage/s3-storage.provider.ts`, same treatment — `upload` en
 
 - [ ] **Step 4: Run the storage suites to verify they pass**
 
-Run: `pnpm --filter @arayeshgah/api test -- storage`
+Run: `pnpm --filter @gheychi/api test -- storage`
 Expected: PASS — 5 tests in the local-disk suite, 3 in the S3 suite (the pre-existing upload-URL assertions double as regression proof that the refactor changed nothing).
 
 - [ ] **Step 5: Write the failing cover-lifecycle unit spec**
@@ -2146,10 +2146,10 @@ Task 5 brought `apps/api/src/audit/audit-wiring.spec.ts` to 34 tests with its ei
 
 - [ ] **Step 7: Run both new suites to verify they fail**
 
-Run: `pnpm --filter @arayeshgah/api test -- content.service.cover`
+Run: `pnpm --filter @gheychi/api test -- content.service.cover`
 Expected: FAIL — compile error: `ContentService` has no `setCover`/`clearCover`, and its constructor takes two arguments, not three.
 
-Run: `pnpm --filter @arayeshgah/api test -- audit-wiring`
+Run: `pnpm --filter @gheychi/api test -- audit-wiring`
 Expected: FAIL — the two new tests error (`AdminBlogController.prototype.uploadCover` is `undefined` / TS: property `uploadCover` does not exist); the 34 existing tests still pass.
 
 - [ ] **Step 8: Inject storage into `ContentService` and add the cover methods**
@@ -2311,16 +2311,16 @@ Add after the `remove` (post delete) handler, keeping Task 5's receiver name for
 
 - [ ] **Step 11: Run the suites to verify they pass**
 
-Run: `pnpm --filter @arayeshgah/api test -- content.service.cover`
+Run: `pnpm --filter @gheychi/api test -- content.service.cover`
 Expected: PASS (13 tests)
 
-Run: `pnpm --filter @arayeshgah/api test -- audit-wiring`
+Run: `pnpm --filter @gheychi/api test -- audit-wiring`
 Expected: PASS (36 tests — the contract's 18 original + 18 Plan 8 additions)
 
-Run: `pnpm --filter @arayeshgah/api test`
+Run: `pnpm --filter @gheychi/api test`
 Expected: PASS — full suite, including Task 4/5's content specs against the widened constructor.
 
-Run: `pnpm --filter @arayeshgah/api build`
+Run: `pnpm --filter @gheychi/api build`
 Expected: exit 0 (catches cross-file type breaks ts-jest's per-file transform can miss).
 
 - [ ] **Step 12: Commit**
@@ -2537,10 +2537,10 @@ describe('SitemapBlogController', () => {
 
 - [ ] **Step 3: Run both to verify they fail**
 
-Run: `pnpm --filter @arayeshgah/api test -- content.service.public`
+Run: `pnpm --filter @gheychi/api test -- content.service.public`
 Expected: FAIL — compile error: `ContentService` has no `listPublishedPosts`/`getPublishedBySlug`.
 
-Run: `pnpm --filter @arayeshgah/api test -- sitemap-blog`
+Run: `pnpm --filter @gheychi/api test -- sitemap-blog`
 Expected: FAIL — cannot resolve `./sitemap-blog.controller` (file doesn't exist).
 
 - [ ] **Step 4: Add the public query DTO**
@@ -2730,16 +2730,16 @@ and extend the `controllers` array, so it reads:
 
 - [ ] **Step 8: Run the suites to verify they pass**
 
-Run: `pnpm --filter @arayeshgah/api test -- content.service.public`
+Run: `pnpm --filter @gheychi/api test -- content.service.public`
 Expected: PASS (7 tests)
 
-Run: `pnpm --filter @arayeshgah/api test -- sitemap-blog`
+Run: `pnpm --filter @gheychi/api test -- sitemap-blog`
 Expected: PASS (1 test)
 
-Run: `pnpm --filter @arayeshgah/api test`
+Run: `pnpm --filter @gheychi/api test`
 Expected: PASS — full suite.
 
-Run: `pnpm --filter @arayeshgah/api build`
+Run: `pnpm --filter @gheychi/api build`
 Expected: exit 0.
 
 - [ ] **Step 9: Commit**
@@ -3146,7 +3146,7 @@ describe('Blog CMS — lifecycle (e2e)', () => {
 
 - [ ] **Step 2: Run the blog e2e spec**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- blog`
+Run: `pnpm --filter @gheychi/api test:e2e -- blog`
 Expected: PASS (15 tests). This is a verification task over Tasks 1–7 (no new implementation), so it should pass first run. If anything fails, it points at a wiring gap in an earlier task:
 - `relation "blog_posts" does not exist` → Task 1's migration isn't in `src/migrations/` (or its filename timestamp is wrong, so `resetDatabase()` never ran it).
 - A DI error at boot → `ContentModule` is missing its `AuditModule` import, or a repository token wasn't registered via `TypeOrmModule.forFeature`.
@@ -3156,7 +3156,7 @@ Expected: PASS (15 tests). This is a verification task over Tasks 1–7 (no new 
 
 - [ ] **Step 3: Run the full backend e2e suite**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test:e2e`
 Expected: PASS — every suite, including all pre-existing ones. The `test:e2e` script already passes `--runInBand`, and each spec file calls `resetDatabase()` in its own `beforeAll`, so the fresh-schema sole-writer invariant holds file by file; a failure in a *pre-existing* suite here means this plan's earlier tasks changed shared behavior (slug util move, module wiring) rather than anything in this task.
 
 - [ ] **Step 4: Commit**
@@ -3215,7 +3215,7 @@ describe('renderMarkdown', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run (from repo root): `pnpm --filter @arayeshgah/admin-panel test -- src/utils/markdown.spec.ts`
+Run (from repo root): `pnpm --filter @gheychi/admin-panel test -- src/utils/markdown.spec.ts`
 Expected: FAIL — `Failed to resolve import "./markdown"` (the utility does not exist yet).
 
 - [ ] **Step 3: Add the markdown-it dependency and implement the renderer**
@@ -3263,7 +3263,7 @@ export function renderMarkdown(src: string): string {
 
 - [ ] **Step 4: Run the markdown test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/utils/markdown.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/utils/markdown.spec.ts`
 Expected: PASS (4 tests).
 
 - [ ] **Step 5: Update the labels test — guard to 18 and the new status getter**
@@ -3319,7 +3319,7 @@ describe('reportStatusLabel', () => {
 
 - [ ] **Step 6: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/utils/labels.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/utils/labels.spec.ts`
 Expected: FAIL — `labels.ts` has no export named `blogPostStatusLabel` (and `AUDIT_ACTION_KEYS` is still length 9).
 
 - [ ] **Step 7: Add the blog maps to `labels.ts`**
@@ -3362,7 +3362,7 @@ Third, inside the `AUDIT_TARGET_TYPE` map, after the existing `report: 'گزار
 
 - [ ] **Step 8: Run the labels test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/utils/labels.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/utils/labels.spec.ts`
 Expected: PASS (6 tests).
 
 - [ ] **Step 9: Add the `newspaper` icon to `AppIcon.vue`**
@@ -3393,7 +3393,7 @@ And extend the `ICONS` map — after the existing `bell: Bell,` entry (line 58),
 
 - [ ] **Step 10: Run the full admin-panel suite**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test`
+Run: `pnpm --filter @gheychi/admin-panel test`
 Expected: exit code 0, all suites green (no other spec asserts on icon or label counts — `AuditLogView.spec.ts` was checked and does not).
 
 - [ ] **Step 11: Commit**
@@ -3655,7 +3655,7 @@ describe('BlogPostsView categories card', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run (from repo root): `pnpm --filter @arayeshgah/admin-panel test -- src/pages/BlogPostsView.spec.ts`
+Run (from repo root): `pnpm --filter @gheychi/admin-panel test -- src/pages/BlogPostsView.spec.ts`
 Expected: FAIL — `Failed to resolve import "./BlogPostsView.vue"` (the page does not exist yet).
 
 - [ ] **Step 3: Implement `BlogPostsView.vue`**
@@ -4012,7 +4012,7 @@ watch(page, load)
 
 - [ ] **Step 4: Run the page spec to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/pages/BlogPostsView.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/pages/BlogPostsView.spec.ts`
 Expected: PASS (11 tests).
 
 - [ ] **Step 5: Register the route and the nav entry**
@@ -4051,12 +4051,12 @@ const LINKS: { to: string; label: string; icon: IconName }[] = [
 
 - [ ] **Step 6: Run the full admin-panel suite**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test`
+Run: `pnpm --filter @gheychi/admin-panel test`
 Expected: exit code 0, all suites green.
 
 - [ ] **Step 7: Run the admin-panel build gate**
 
-Run: `pnpm --filter @arayeshgah/admin-panel build`
+Run: `pnpm --filter @gheychi/admin-panel build`
 Expected: exit code 0 — `vue-tsc -b` type-checks the new page and templates, and `vite build` proves the lazy `import('@/pages/BlogPostsView.vue')` resolves.
 
 - [ ] **Step 8: Commit**
@@ -4116,7 +4116,7 @@ describe('previewSlug', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/utils/slug-preview.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/utils/slug-preview.spec.ts`
 Expected: FAIL — `Failed to resolve import "./slug-preview"` (the file doesn't exist yet).
 
 - [ ] **Step 3: Implement the slug-preview utility**
@@ -4139,7 +4139,7 @@ export function previewSlug(title: string): string {
 
 - [ ] **Step 4: Run the utility test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/utils/slug-preview.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/utils/slug-preview.spec.ts`
 Expected: PASS (4 tests).
 
 - [ ] **Step 5: Write the failing editor spec**
@@ -4345,7 +4345,7 @@ describe('BlogEditorView', () => {
 
 - [ ] **Step 6: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/pages/BlogEditorView.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/pages/BlogEditorView.spec.ts`
 Expected: FAIL — `Failed to resolve import "./BlogEditorView.vue"` (the component doesn't exist yet).
 
 - [ ] **Step 7: Implement `BlogEditorView.vue`**
@@ -4821,7 +4821,7 @@ async function removeCover() {
 
 - [ ] **Step 8: Run the editor spec to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test -- src/pages/BlogEditorView.spec.ts`
+Run: `pnpm --filter @gheychi/admin-panel test -- src/pages/BlogEditorView.spec.ts`
 Expected: PASS (7 tests).
 
 - [ ] **Step 9: Register the editor routes**
@@ -4844,8 +4844,8 @@ For reference, the surrounding children today (before this plan's list-view task
 
 - [ ] **Step 10: Full check and commit**
 
-Run: `pnpm --filter @arayeshgah/admin-panel test` — expected: all suites pass (router guard suite included).
-Run: `pnpm --filter @arayeshgah/admin-panel typecheck` — expected: clean.
+Run: `pnpm --filter @gheychi/admin-panel test` — expected: all suites pass (router guard suite included).
+Run: `pnpm --filter @gheychi/admin-panel typecheck` — expected: clean.
 
 ```bash
 git add apps/admin-panel/src/utils/slug-preview.ts apps/admin-panel/src/utils/slug-preview.spec.ts apps/admin-panel/src/pages/BlogEditorView.vue apps/admin-panel/src/pages/BlogEditorView.spec.ts apps/admin-panel/src/router/index.ts
@@ -4866,7 +4866,7 @@ git commit -m "feat(admin-panel): blog editor with live markdown preview, cover 
 
 The user-app gets its own copy of the three-line `renderMarkdown` utility (identical config to the admin panel's; the two are pinned by separate invariant tests per the cross-app isolation convention) and the SSR blog index. List/filter state lives in the **route query** (`?category=<slug>&page=N`), so category chips and page turns are each a single `router.push` — the `useAsyncData` watcher sees one flush and refetches exactly once (no page-reset-then-load double fetch). The list load is silent with an inline empty state, matching the app's existing list pattern (`app/pages/index.vue` — the user-app has no `EmptyState` component; its empty states are inline markup).
 
-Reminder: do **not** run `pnpm --filter @arayeshgah/user-app test:e2e` as part of this task's verification — the Playwright global-setup wipes the shared dev database.
+Reminder: do **not** run `pnpm --filter @gheychi/user-app test:e2e` as part of this task's verification — the Playwright global-setup wipes the shared dev database.
 
 - [ ] **Step 1: Write the failing invariant test (node env)**
 
@@ -4896,7 +4896,7 @@ describe('renderMarkdown (html:false invariant)', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/user-app test -- test/unit/markdown.spec.ts`
+Run: `pnpm --filter @gheychi/user-app test -- test/unit/markdown.spec.ts`
 Expected: FAIL — `Failed to resolve import "../../app/utils/markdown"` (file doesn't exist yet).
 
 - [ ] **Step 3: Add the dependency and implement the utility**
@@ -4904,8 +4904,8 @@ Expected: FAIL — `Failed to resolve import "../../app/utils/markdown"` (file d
 Run (bare commands; check each exit code):
 
 ```bash
-pnpm --filter @arayeshgah/user-app add markdown-it@^14.1.0
-pnpm --filter @arayeshgah/user-app add -D @types/markdown-it@^14.1.2
+pnpm --filter @gheychi/user-app add markdown-it@^14.1.0
+pnpm --filter @gheychi/user-app add -D @types/markdown-it@^14.1.2
 ```
 
 ```typescript
@@ -4926,7 +4926,7 @@ export function renderMarkdown(src: string): string {
 
 - [ ] **Step 4: Run the invariant test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/user-app test -- test/unit/markdown.spec.ts`
+Run: `pnpm --filter @gheychi/user-app test -- test/unit/markdown.spec.ts`
 Expected: PASS (3 tests).
 
 - [ ] **Step 5: Add the blog list types**
@@ -5032,7 +5032,7 @@ describe('blog index page', () => {
 
 - [ ] **Step 7: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/user-app test -- test/nuxt/blog-index.spec.ts`
+Run: `pnpm --filter @gheychi/user-app test -- test/nuxt/blog-index.spec.ts`
 Expected: FAIL — `Failed to resolve import "../../app/pages/blog/index.vue"` (page doesn't exist yet).
 
 - [ ] **Step 8: Implement the blog index page**
@@ -5191,13 +5191,13 @@ useSeoMeta({
 
 - [ ] **Step 9: Run the page spec to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/user-app test -- test/nuxt/blog-index.spec.ts`
+Run: `pnpm --filter @gheychi/user-app test -- test/nuxt/blog-index.spec.ts`
 Expected: PASS (2 tests).
 
 - [ ] **Step 10: Full check and commit**
 
-Run: `pnpm --filter @arayeshgah/user-app test` — expected: all unit + nuxt suites pass.
-Run: `pnpm --filter @arayeshgah/user-app build` — expected: exit 0. (Do **not** gate on `pnpm --filter @arayeshgah/user-app typecheck` — it has a known pre-existing vite 7/6 Plugin-type conflict failure unrelated to this plan.)
+Run: `pnpm --filter @gheychi/user-app test` — expected: all unit + nuxt suites pass.
+Run: `pnpm --filter @gheychi/user-app build` — expected: exit 0. (Do **not** gate on `pnpm --filter @gheychi/user-app typecheck` — it has a known pre-existing vite 7/6 Plugin-type conflict failure unrelated to this plan.)
 
 ```bash
 git add apps/user-app/package.json pnpm-lock.yaml apps/user-app/app/utils/markdown.ts apps/user-app/test/unit/markdown.spec.ts apps/user-app/app/utils/types.ts apps/user-app/app/pages/blog/index.vue apps/user-app/test/nuxt/blog-index.spec.ts
@@ -5239,7 +5239,7 @@ Same reminder as Task 12: do not run the Playwright e2e suite as verification �
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/user-app test -- test/unit/route-guard.spec.ts`
+Run: `pnpm --filter @gheychi/user-app test -- test/unit/route-guard.spec.ts`
 Expected: FAIL — `expected false to be true` (the `/blog` case; `isPublicRoute` doesn't know the prefix yet).
 
 - [ ] **Step 3: Add the `/blog` prefix to `isPublicRoute`**
@@ -5257,7 +5257,7 @@ export function isPublicRoute(path: string): boolean {
 
 - [ ] **Step 4: Run it to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/user-app test -- test/unit/route-guard.spec.ts`
+Run: `pnpm --filter @gheychi/user-app test -- test/unit/route-guard.spec.ts`
 Expected: PASS (6 tests).
 
 - [ ] **Step 5: Write the failing article-page spec (nuxt env)**
@@ -5336,7 +5336,7 @@ describe('blog article page', () => {
 
 - [ ] **Step 6: Run it to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/user-app test -- test/nuxt/blog-article.spec.ts`
+Run: `pnpm --filter @gheychi/user-app test -- test/nuxt/blog-article.spec.ts`
 Expected: FAIL — `Failed to resolve import "../../app/pages/blog/[slug].vue"` (page doesn't exist yet).
 
 - [ ] **Step 7: Implement the article page**
@@ -5530,7 +5530,7 @@ const publishedDate = new Date(post.value.publishedAt).toLocaleDateString('fa-IR
 
 - [ ] **Step 8: Run the article spec to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/user-app test -- test/nuxt/blog-article.spec.ts`
+Run: `pnpm --filter @gheychi/user-app test -- test/nuxt/blog-article.spec.ts`
 Expected: PASS (2 tests).
 
 - [ ] **Step 9: Add the blog sitemap source**
@@ -5577,8 +5577,8 @@ Change it to:
 
 - [ ] **Step 10: Full check and commit**
 
-Run: `pnpm --filter @arayeshgah/user-app test` — expected: all unit + nuxt suites pass.
-Run: `pnpm --filter @arayeshgah/user-app build` — expected: exit 0 (this also compiles the new Nitro sitemap route). As in Task 12, do **not** gate on the user-app `typecheck` script (known pre-existing vite 7/6 Plugin-type conflict).
+Run: `pnpm --filter @gheychi/user-app test` — expected: all unit + nuxt suites pass.
+Run: `pnpm --filter @gheychi/user-app build` — expected: exit 0 (this also compiles the new Nitro sitemap route). As in Task 12, do **not** gate on the user-app `typecheck` script (known pre-existing vite 7/6 Plugin-type conflict).
 
 ```bash
 git add apps/user-app/app/pages/blog/[slug].vue apps/user-app/test/nuxt/blog-article.spec.ts apps/user-app/app/utils/route-guard.ts apps/user-app/test/unit/route-guard.spec.ts apps/user-app/server/api/__sitemap__/blog.ts apps/user-app/nuxt.config.ts
@@ -5593,7 +5593,7 @@ git commit -m "feat(user-app): blog article page with SEO meta and JSON-LD, publ
 
 Both files explicitly instruct readers to trust the Known Gaps list, and both currently say the blog CMS doesn't exist — Plan 8 makes that actively misleading. `README.md:88` is extra stale: it still calls the blog "Plan 5" from before the plan numbers were reassigned to provider-panel. Fix both, record what shipped and which cuts were deliberate, then run the full per-package verification sweep.
 
-A note on the sweep before starting: every verification step below runs the **bare** command and gates on its exit code directly — do not pipe through `tee`/`tail`/`grep` (a pipe reports the *last* command's exit code, which would let a failing suite slip past the gate). No Playwright runs in this task (the frontend e2e global-setups **wipe and reseed the shared dev DB** — don't run them casually), and no `pnpm --filter @arayeshgah/user-app typecheck` — it has a known pre-existing failure (vite 7/6 `Plugin` type conflict) unrelated to this plan; the user-app gate is its Vitest suite plus `nuxt build`.
+A note on the sweep before starting: every verification step below runs the **bare** command and gates on its exit code directly — do not pipe through `tee`/`tail`/`grep` (a pipe reports the *last* command's exit code, which would let a failing suite slip past the gate). No Playwright runs in this task (the frontend e2e global-setups **wipe and reseed the shared dev DB** — don't run them casually), and no `pnpm --filter @gheychi/user-app typecheck` — it has a known pre-existing failure (vite 7/6 `Plugin` type conflict) unrelated to this plan; the user-app gate is its Vitest suite plus `nuxt build`.
 
 - [ ] **Step 1: Update `CLAUDE.md`'s plans list**
 
@@ -5672,10 +5672,10 @@ User-app pages: `/blog` (SSR list — cover cards, category chips, pagination) a
 
 - [ ] **Step 5: Verify — API unit suite**
 
-From the repo root (`~/projects/Arayeshgah`), run bare:
+From the repo root (`~/projects/Gheychi`), run bare:
 
 ```bash
-pnpm --filter @arayeshgah/api test
+pnpm --filter @gheychi/api test
 ```
 
 Expected: exit code 0 — all Jest units pass, including this plan's colocated `content.service.spec.ts`, `slug.util.spec.ts` (moved to `src/common/`), DTO specs, and the extended `audit-wiring.spec.ts` (36 tests / 18 wiring cases).
@@ -5685,7 +5685,7 @@ Expected: exit code 0 — all Jest units pass, including this plan's colocated `
 Needs the docker services already running and migrations applied — both have been true throughout this plan; if this is a fresh shell, nothing new is required.
 
 ```bash
-pnpm --filter @arayeshgah/api test:e2e
+pnpm --filter @gheychi/api test:e2e
 ```
 
 Expected: exit code 0 — including the blog lifecycle spec (draft → publish → public list/slug/sitemap → unpublish → 404 → delete), category restrict-delete, cover upload/replace/delete, and audit rows for each admin mutation.
@@ -5693,7 +5693,7 @@ Expected: exit code 0 — including the blog lifecycle spec (draft → publish �
 - [ ] **Step 7: Verify — admin-panel Vitest suite**
 
 ```bash
-pnpm --filter @arayeshgah/admin-panel test
+pnpm --filter @gheychi/admin-panel test
 ```
 
 Expected: exit code 0 — including the BlogPostsView/BlogEditorView specs, the markdown invariant test, and the updated `AUDIT_ACTION_KEYS` length guard (now 18).
@@ -5701,17 +5701,17 @@ Expected: exit code 0 — including the BlogPostsView/BlogEditorView specs, the 
 - [ ] **Step 8: Verify — user-app Vitest suite**
 
 ```bash
-pnpm --filter @arayeshgah/user-app test
+pnpm --filter @gheychi/user-app test
 ```
 
-Expected: exit code 0 — including the user-app markdown invariant test and the blog page/component specs. (Do **not** run `pnpm --filter @arayeshgah/user-app typecheck` — known pre-existing vite 7/6 `Plugin` type conflict, unrelated to this plan; tests + build are the gate.)
+Expected: exit code 0 — including the user-app markdown invariant test and the blog page/component specs. (Do **not** run `pnpm --filter @gheychi/user-app typecheck` — known pre-existing vite 7/6 `Plugin` type conflict, unrelated to this plan; tests + build are the gate.)
 
 - [ ] **Step 9: Verify — provider-panel Vitest suite**
 
 Provider-panel is untouched by Plan 8; this is the cheap cross-app regression check (shared repo, shared lockfile).
 
 ```bash
-pnpm --filter @arayeshgah/provider-panel test
+pnpm --filter @gheychi/provider-panel test
 ```
 
 Expected: exit code 0, unchanged pass count.
@@ -5719,7 +5719,7 @@ Expected: exit code 0, unchanged pass count.
 - [ ] **Step 10: Verify — API build**
 
 ```bash
-pnpm --filter @arayeshgah/api build
+pnpm --filter @gheychi/api build
 ```
 
 Expected: exit code 0 (`nest build` compiles the new content module cleanly).
@@ -5727,7 +5727,7 @@ Expected: exit code 0 (`nest build` compiles the new content module cleanly).
 - [ ] **Step 11: Verify — admin-panel build**
 
 ```bash
-pnpm --filter @arayeshgah/admin-panel build
+pnpm --filter @gheychi/admin-panel build
 ```
 
 Expected: exit code 0 — this runs `vue-tsc -b && vite build`, so it is also the admin-panel type gate for the new views, labels, and icon.
@@ -5735,7 +5735,7 @@ Expected: exit code 0 — this runs `vue-tsc -b && vite build`, so it is also th
 - [ ] **Step 12: Verify — user-app build**
 
 ```bash
-pnpm --filter @arayeshgah/user-app build
+pnpm --filter @gheychi/user-app build
 ```
 
 Expected: exit code 0 (`nuxt build` — this, not the broken `typecheck` script, is the user-app compilation gate).

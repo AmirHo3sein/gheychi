@@ -1,12 +1,12 @@
 {
-  "name": "arayeshgah",
+  "name": "gheychi",
   "private": true,
   "packageManager": "pnpm@9.15.0",
   "scripts": {
-    "dev:api": "turbo run dev --filter=@arayeshgah/api",
-    "dev:user-app": "turbo run dev --filter=@arayeshgah/user-app",
-    "dev:provider-panel": "turbo run dev --filter=@arayeshgah/provider-panel",
-    "dev:admin-panel": "turbo run dev --filter=@arayeshgah/admin-panel",
+    "dev:api": "turbo run dev --filter=@gheychi/api",
+    "dev:user-app": "turbo run dev --filter=@gheychi/user-app",
+    "dev:provider-panel": "turbo run dev --filter=@gheychi/provider-panel",
+    "dev:admin-panel": "turbo run dev --filter=@gheychi/admin-panel",
     "build": "turbo run build",
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e"

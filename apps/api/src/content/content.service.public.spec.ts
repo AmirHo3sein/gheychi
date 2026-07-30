@@ -13,7 +13,7 @@ const publishedPost = () => ({
   bodyMarkdown: '# متن کامل مقاله',
   coverImageKey: 'blog/post-1/cover.jpg' as string | null,
   categoryId: 7 as number | null,
-  authorName: 'تیم آرایشگاه',
+  authorName: 'تیم قیچی',
   metaDescription: 'توضیح متا',
   ogTitle: 'عنوان اشتراک‌گذاری',
   status: 'published' as const,
@@ -81,7 +81,7 @@ describe('ContentService.listPublishedPosts', () => {
       coverImageUrl: 'http://localhost:3002/uploads/blog/post-1/cover.jpg',
       categoryName: 'رنگ مو',
       categorySlug: 'rang-mo',
-      authorName: 'تیم آرایشگاه',
+      authorName: 'تیم قیچی',
       publishedAt: new Date('2026-07-09T10:00:00.000Z'),
     });
     expect(result.items[0]).not.toHaveProperty('bodyMarkdown');

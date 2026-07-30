@@ -1,10 +1,15 @@
+# Pinned so container/volume names never depend on what the checkout directory
+# happens to be called -- renaming the directory would otherwise start a fresh
+# project with empty volumes and strand the existing data under the old name.
+name: gheychi
+
 services:
   postgres:
     image: postgis/postgis:16-3.4
     environment:
-      POSTGRES_USER: arayeshgah
-      POSTGRES_PASSWORD: arayeshgah
-      POSTGRES_DB: arayeshgah
+      POSTGRES_USER: gheychi
+      POSTGRES_PASSWORD: gheychi
+      POSTGRES_DB: gheychi
     ports:
       - "5544:5432"
     volumes:

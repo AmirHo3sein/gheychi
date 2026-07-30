@@ -4,7 +4,7 @@ FROM node:20-alpine AS pruner
 WORKDIR /app
 RUN npm install -g turbo@2
 COPY . .
-RUN turbo prune @arayeshgah/api --docker
+RUN turbo prune @gheychi/api --docker
 
 FROM node:20-alpine AS installer
 WORKDIR /app
@@ -12,7 +12,7 @@ RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 COPY --from=pruner /app/out/json/ .
 RUN pnpm install --frozen-lockfile
 COPY --from=pruner /app/out/full/ .
-RUN pnpm turbo run build --filter=@arayeshgah/api
+RUN pnpm turbo run build --filter=@gheychi/api
 
 FROM node:20-alpine AS runner
 WORKDIR /app

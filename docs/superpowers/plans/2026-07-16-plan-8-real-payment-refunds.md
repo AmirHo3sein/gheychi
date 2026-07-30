@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-16-real-payment-refunds-design.md`
 
-**Repo/branch note:** The real repo is at WSL path `~/projects/Arayeshgah` (NOT the stale Windows-side clone at `C:\Users\amirh\Desktop\Projects\Arayeshgah`). Work on branch `feature/real-payment-refunds`. Before starting, verify: `cd ~/projects/Arayeshgah && git branch --show-current` → `feature/real-payment-refunds`, and `git log --oneline -1` shows a 2026-07 commit. All commands below run from `~/projects/Arayeshgah` inside WSL. Backend tests need the docker services up (`docker compose up -d`).
+**Repo/branch note:** The real repo is at WSL path `~/projects/Gheychi` (NOT the stale Windows-side clone at `C:\Users\amirh\Desktop\Projects\Gheychi`). Work on branch `feature/real-payment-refunds`. Before starting, verify: `cd ~/projects/Gheychi && git branch --show-current` → `feature/real-payment-refunds`, and `git log --oneline -1` shows a 2026-07 commit. All commands below run from `~/projects/Gheychi` inside WSL. Backend tests need the docker services up (`docker compose up -d`).
 
 ---
 
@@ -72,14 +72,14 @@ export class PaymentRefunds1752700000000 implements MigrationInterface {
 
 - [ ] **Step 3: Run the migration and verify**
 
-Run: `pnpm --filter @arayeshgah/api migration:run`
+Run: `pnpm --filter @gheychi/api migration:run`
 Expected: `PaymentRefunds1752700000000` listed as executed, no errors.
 
-Verify columns exist: `docker compose exec postgres psql -U arayeshgah -d arayeshgah -c "\d payments"` — expect `refund_requested_at`, `refund_ref_id`, `refunded_at`.
+Verify columns exist: `docker compose exec postgres psql -U gheychi -d gheychi -c "\d payments"` — expect `refund_requested_at`, `refund_ref_id`, `refunded_at`.
 
 - [ ] **Step 4: Verify existing tests still pass**
 
-Run: `pnpm --filter @arayeshgah/api test`
+Run: `pnpm --filter @gheychi/api test`
 Expected: PASS (entity change is additive).
 
 - [ ] **Step 5: Commit**
@@ -174,7 +174,7 @@ Append to the existing `describe('ZarinpalGateway', ...)` in `apps/api/src/booki
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `pnpm --filter @arayeshgah/api test -- zarinpal-payment.gateway`
+Run: `pnpm --filter @gheychi/api test -- zarinpal-payment.gateway`
 Expected: FAIL — TS compile error (constructor arity / `refundPayment` does not exist).
 
 - [ ] **Step 3: Implement the interface, Zarinpal method, and mock**
@@ -287,7 +287,7 @@ In `apps/api/src/booking/booking.module.ts`, update the factory:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `pnpm --filter @arayeshgah/api test -- zarinpal-payment.gateway`
+Run: `pnpm --filter @gheychi/api test -- zarinpal-payment.gateway`
 Expected: PASS (all, including the pre-existing request/verify tests).
 
 - [ ] **Step 5: Commit**
@@ -434,7 +434,7 @@ describe('PaymentsService.attemptRefund', () => {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `pnpm --filter @arayeshgah/api test -- payments.service`
+Run: `pnpm --filter @gheychi/api test -- payments.service`
 Expected: FAIL — `attemptRefund` does not exist.
 
 - [ ] **Step 3: Implement `attemptRefund`**
@@ -509,7 +509,7 @@ Add after `handleCallback` (before `markFailed`):
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `pnpm --filter @arayeshgah/api test -- payments.service`
+Run: `pnpm --filter @gheychi/api test -- payments.service`
 Expected: PASS (7 tests).
 
 - [ ] **Step 5: Commit**
@@ -633,7 +633,7 @@ describe('BookingsService.cancel', () => {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `pnpm --filter @arayeshgah/api test -- bookings.service`
+Run: `pnpm --filter @gheychi/api test -- bookings.service`
 Expected: FAIL — `PaymentsService` not a constructor dependency yet / `refund_pending` not written.
 
 - [ ] **Step 3: Implement the cancel() changes**
@@ -686,7 +686,7 @@ Then, between the transaction and the final `return`, add the inline attempt:
 
 - [ ] **Step 4: Run unit tests to verify they pass**
 
-Run: `pnpm --filter @arayeshgah/api test -- bookings.service`
+Run: `pnpm --filter @gheychi/api test -- bookings.service`
 Expected: PASS (both describe blocks).
 
 - [ ] **Step 5: Extend the cancellation e2e spec**
@@ -725,7 +725,7 @@ Add a new test at the end of the describe block:
 
 - [ ] **Step 6: Run the e2e spec**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- booking-cancellation`
+Run: `pnpm --filter @gheychi/api test:e2e -- booking-cancellation`
 Expected: PASS (7 tests). Requires docker services up.
 
 - [ ] **Step 7: Commit**
@@ -757,7 +757,7 @@ Rename it to `'does not resurrect an already-expired booking; the captured payme
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- payment-reconciliation`
+Run: `pnpm --filter @gheychi/api test:e2e -- payment-reconciliation`
 Expected: FAIL — status is `paid`.
 
 - [ ] **Step 3: Implement the branch change**
@@ -805,7 +805,7 @@ Both `Payment` updates are conditioned on `status: 'initiated'` (matching the co
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- payment-reconciliation`
+Run: `pnpm --filter @gheychi/api test:e2e -- payment-reconciliation`
 Expected: PASS (4 tests).
 
 - [ ] **Step 5: Commit**
@@ -896,7 +896,7 @@ describe('RefundRetryJob', () => {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `pnpm --filter @arayeshgah/api test -- refund-retry`
+Run: `pnpm --filter @gheychi/api test -- refund-retry`
 Expected: FAIL — module `./refund-retry.job` not found.
 
 - [ ] **Step 3: Implement the job**
@@ -969,7 +969,7 @@ and add `RefundRetryJob,` to the `providers` array (after `PaymentReconciliation
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `pnpm --filter @arayeshgah/api test -- refund-retry`
+Run: `pnpm --filter @gheychi/api test -- refund-retry`
 Expected: PASS (3 tests).
 
 - [ ] **Step 5: Add the end-to-end retry case**
@@ -1005,7 +1005,7 @@ Append to the describe block in `apps/api/test/booking-cancellation.e2e-spec.ts`
 
 - [ ] **Step 6: Run the e2e spec**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- booking-cancellation`
+Run: `pnpm --filter @gheychi/api test:e2e -- booking-cancellation`
 Expected: PASS (8 tests).
 
 - [ ] **Step 7: Commit**
@@ -1059,7 +1059,7 @@ In `'forfeits the deposit when the user cancels inside the 24h window'`, add at 
 
 - [ ] **Step 2: Run to verify the new assertions fail**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- booking-cancellation`
+Run: `pnpm --filter @gheychi/api test:e2e -- booking-cancellation`
 Expected: FAIL — `refundStatus` is `undefined`.
 
 - [ ] **Step 3: Implement `findMine`'s refundStatus**
@@ -1088,8 +1088,8 @@ In `apps/api/src/booking/bookings.service.ts`, replace `findMine` with:
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- booking-cancellation`
-Expected: PASS. Also run `pnpm --filter @arayeshgah/api test:e2e -- payment-reconciliation` (it hits `GET /bookings/:id` too) — Expected: PASS.
+Run: `pnpm --filter @gheychi/api test:e2e -- booking-cancellation`
+Expected: PASS. Also run `pnpm --filter @gheychi/api test:e2e -- payment-reconciliation` (it hits `GET /bookings/:id` too) — Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -1174,7 +1174,7 @@ describe('booking detail page refund line', () => {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/user-app test -- booking-detail`
+Run: `pnpm --filter @gheychi/user-app test -- booking-detail`
 Expected: FAIL — the texts are not rendered.
 
 - [ ] **Step 3: Implement the page change**
@@ -1196,10 +1196,10 @@ Add to the template, after the deposit `<p>` line and before the `<NuxtLink>`:
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/user-app test -- booking-detail`
+Run: `pnpm --filter @gheychi/user-app test -- booking-detail`
 Expected: PASS (3 tests). Then run the full frontend suite + typecheck:
 
-Run: `pnpm --filter @arayeshgah/user-app test && pnpm --filter @arayeshgah/user-app typecheck`
+Run: `pnpm --filter @gheychi/user-app test && pnpm --filter @gheychi/user-app typecheck`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1260,10 +1260,10 @@ Three edits:
 Run each; all must pass:
 
 ```bash
-pnpm --filter @arayeshgah/api test
-pnpm --filter @arayeshgah/api test:e2e
-pnpm --filter @arayeshgah/user-app test
-pnpm --filter @arayeshgah/user-app typecheck
+pnpm --filter @gheychi/api test
+pnpm --filter @gheychi/api test:e2e
+pnpm --filter @gheychi/user-app test
+pnpm --filter @gheychi/user-app typecheck
 pnpm build
 ```
 

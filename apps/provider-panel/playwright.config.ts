@@ -9,13 +9,13 @@ export default defineConfig({
   use: { baseURL: 'http://localhost:3004' },
   webServer: [
     {
-      command: 'pnpm --filter @arayeshgah/api dev',
+      command: 'pnpm --filter @gheychi/api dev',
       url: 'http://localhost:3002/api/health',
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },
     {
-      command: 'pnpm --filter @arayeshgah/provider-panel dev',
+      command: 'pnpm --filter @gheychi/provider-panel dev',
       url: 'http://localhost:3004',
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,

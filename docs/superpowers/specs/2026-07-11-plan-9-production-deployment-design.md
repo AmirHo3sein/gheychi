@@ -6,7 +6,7 @@
 
 ## 1. Product Summary
 
-Arayeshgah currently only runs via local dev servers against a dev `docker-compose.yml` (Postgres + Redis only). This plan makes it deployable to a real server: Docker images for all four apps, a production compose file that adds a TLS-terminating reverse proxy, a CI pipeline that tests and builds on every push, and a documented cutover from the mock/console dev providers to the real ones (Kavenegar SMS, Zarinpal payments, S3-compatible object storage). No new product features — this is infrastructure only.
+Gheychi currently only runs via local dev servers against a dev `docker-compose.yml` (Postgres + Redis only). This plan makes it deployable to a real server: Docker images for all four apps, a production compose file that adds a TLS-terminating reverse proxy, a CI pipeline that tests and builds on every push, and a documented cutover from the mock/console dev providers to the real ones (Kavenegar SMS, Zarinpal payments, S3-compatible object storage). No new product features — this is infrastructure only.
 
 ### Decisions locked (from clarifying questions)
 
@@ -29,12 +29,12 @@ Four subdomains, one apex reservation for the customer app:
 
 | Domain | Routes to | Container:port |
 |---|---|---|
-| `arayeshgah.ir`, `www.arayeshgah.ir` | user-app | `user-app:3003` |
-| `api.arayeshgah.ir` | api | `api:3002` |
-| `panel.arayeshgah.ir` | provider-panel | `provider-panel:80` (nginx) |
-| `admin.arayeshgah.ir` | admin-panel | `admin-panel:80` (nginx) |
+| `gheychi.ir`, `www.gheychi.ir` | user-app | `user-app:3003` |
+| `api.gheychi.ir` | api | `api:3002` |
+| `panel.gheychi.ir` | provider-panel | `provider-panel:80` (nginx) |
+| `admin.gheychi.ir` | admin-panel | `admin-panel:80` (nginx) |
 
-Domain names are the placeholder `arayeshgah.ir` — the Caddyfile reads them from env vars (`$DOMAIN_APEX`, `$DOMAIN_API`, `$DOMAIN_PANEL`, `$DOMAIN_ADMIN`) so the real domain is a deploy-time config value, not hardcoded.
+Domain names are the placeholder `gheychi.ir` — the Caddyfile reads them from env vars (`$DOMAIN_APEX`, `$DOMAIN_API`, `$DOMAIN_PANEL`, `$DOMAIN_ADMIN`) so the real domain is a deploy-time config value, not hardcoded.
 
 ## 4. Docker Images
 
@@ -42,16 +42,16 @@ One `Dockerfile` per app, all following the same three-stage shape recommended b
 
 - **`apps/api/Dockerfile`** — runner stage is **not** minimized to just `dist/`: it keeps the full pruned source tree, `node_modules` (including devDependencies), and compiled `dist/`. `CMD` runs `node dist/main.js`. This is a deliberate simplicity tradeoff (§7): it lets the exact existing `pnpm migration:run`/`migration:revert` scripts run unchanged inside the production container via `docker compose exec`, instead of introducing a second, compiled-only TypeORM data-source config. The image is larger than a fully slimmed one; acceptable for a single-VPS MVP.
 - **`apps/user-app/Dockerfile`** — installer stage runs the Nuxt build, producing a self-contained Nitro `.output/` (server + its own bundled deps). Runner stage copies only `.output/` and runs `node .output/server/index.mjs`. Public runtime config arrives via env vars at container start (no `VITE_`-style build args needed).
-- **`apps/provider-panel/Dockerfile`** and **`apps/admin-panel/Dockerfile`** — installer stage runs `vite build` with `VITE_API_BASE` passed as a Docker build ARG (the real `https://api.arayeshgah.ir/api` value, supplied by CI as a repository **variable**, not a secret — it's a public URL). Runner stage is `nginx:alpine` serving the static `dist/`, with a minimal SPA-fallback `nginx.conf` (`try_files $uri /index.html`).
+- **`apps/provider-panel/Dockerfile`** and **`apps/admin-panel/Dockerfile`** — installer stage runs `vite build` with `VITE_API_BASE` passed as a Docker build ARG (the real `https://api.gheychi.ir/api` value, supplied by CI as a repository **variable**, not a secret — it's a public URL). Runner stage is `nginx:alpine` serving the static `dist/`, with a minimal SPA-fallback `nginx.conf` (`try_files $uri /index.html`).
 
-All four images are tagged `ghcr.io/<owner>/arayeshgah-<app>:<git-sha>` and `:latest`, built and pushed only from CI (§6), never built by hand on the VPS.
+All four images are tagged `ghcr.io/<owner>/gheychi-<app>:<git-sha>` and `:latest`, built and pushed only from CI (§6), never built by hand on the VPS.
 
 ## 5. Production Compose (`docker-compose.prod.yml`)
 
 A second compose file, separate from the dev-only root `docker-compose.yml` (which stays as-is for local dev). Services:
 
 - `postgres`, `redis` — same images as dev, but **no host port mapping** (only reachable on the internal Docker network) and real credentials from `.env`. Named volumes for persistence.
-- `api`, `user-app`, `provider-panel`, `admin-panel` — `image: ghcr.io/.../arayeshgah-<app>:latest` (no `build:` — these are pre-built by CI and pulled), `env_file: .env`, no published host ports (only Caddy is reachable from outside).
+- `api`, `user-app`, `provider-panel`, `admin-panel` — `image: ghcr.io/.../gheychi-<app>:latest` (no `build:` — these are pre-built by CI and pulled), `env_file: .env`, no published host ports (only Caddy is reachable from outside).
 - `caddy` — official `caddy:2-alpine` image, the only service publishing ports (`80:80`, `443:443`), volumes for the `Caddyfile` and a named volume for its certificate/state data, `depends_on` the four app services.
 - `healthcheck:` blocks on `postgres`, `redis`, and `api` (the API's existing `GET /api/health`), so `docker compose ps` gives an honest signal without adding a monitoring stack.
 
@@ -61,7 +61,7 @@ All app services and Caddy share one internal Docker network; only Caddy has a p
 
 Single workflow, two jobs:
 
-- **`test`** (every push and PR, all branches): matrix or sequential steps running `pnpm --filter @arayeshgah/api test`, `pnpm --filter @arayeshgah/api test:e2e` (with `postgres:16-3.4` (postgis) and `redis:7-alpine` as GitHub Actions service containers, mirroring the ports/creds `apps/api/.env.test` already expects), `pnpm --filter @arayeshgah/user-app test`, `pnpm --filter @arayeshgah/provider-panel test`, `pnpm --filter @arayeshgah/admin-panel test`, and `pnpm --filter @arayeshgah/user-app test:e2e` (Playwright, against a locally-started dev stack in the runner). `pnpm build` (turbo, all apps) also runs here as a build-correctness gate.
+- **`test`** (every push and PR, all branches): matrix or sequential steps running `pnpm --filter @gheychi/api test`, `pnpm --filter @gheychi/api test:e2e` (with `postgres:16-3.4` (postgis) and `redis:7-alpine` as GitHub Actions service containers, mirroring the ports/creds `apps/api/.env.test` already expects), `pnpm --filter @gheychi/user-app test`, `pnpm --filter @gheychi/provider-panel test`, `pnpm --filter @gheychi/admin-panel test`, and `pnpm --filter @gheychi/user-app test:e2e` (Playwright, against a locally-started dev stack in the runner). `pnpm build` (turbo, all apps) also runs here as a build-correctness gate.
 - **`build-and-push`** (push to `main` only, `needs: test`): logs into GHCR using the built-in `GITHUB_TOKEN` (no extra secret needed), builds the four Dockerfiles with `docker/build-push-action`, and pushes `:${{ github.sha }}` and `:latest` for each. `VITE_API_BASE` is passed as a build arg from a repo-level Actions **variable**, not a secret.
 
 No deploy job. No SSH key, no VPS credentials touch CI at any point.

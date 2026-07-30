@@ -1,5 +1,5 @@
 ---
-name: Arayeshgah Admin Panel
+name: Gheychi Admin Panel
 description: The operator console — the same Verified Ledger identity as the customer app, tuned for a desk-based, high-density, accountability-first Operate surface.
 colors:
   surface: "#F4FBFA"
@@ -118,7 +118,7 @@ components:
     padding: "4px 10px"
 ---
 
-# Design System: Arayeshgah Admin Panel
+# Design System: Gheychi Admin Panel
 
 ## Overview
 

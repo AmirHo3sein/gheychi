@@ -1,7 +1,7 @@
 <script setup lang="ts">
 useSeoMeta({
-  titleTemplate: (title) => (title ? `${title} | آرایشگاه` : 'آرایشگاه — رزرو آنلاین نوبت سالن زیبایی'),
-  ogSiteName: 'آرایشگاه',
+  titleTemplate: (title) => (title ? `${title} | قیچی` : 'قیچی — رزرو آنلاین نوبت سالن زیبایی'),
+  ogSiteName: 'قیچی',
 })
 </script>
 

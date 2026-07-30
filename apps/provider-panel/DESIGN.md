@@ -1,5 +1,5 @@
 ---
-name: Arayeshgah Provider Panel
+name: Gheychi Provider Panel
 description: The salon owner's operating console — the same Verified Ledger identity as the customer app, tuned for Operate mode.
 colors:
   surface: "#F4FBFA"
@@ -118,7 +118,7 @@ components:
     padding: "4px 10px"
 ---
 
-# Design System: Arayeshgah Provider Panel
+# Design System: Gheychi Provider Panel
 
 ## Overview
 

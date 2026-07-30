@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship the first real UI for Arayeshgah — a Nuxt 4 SSR PWA covering login, discovery (list + map), salon profiles, booking, my bookings, and profile — plus an admin-flagged "featured salon" ad placement and push/SMS appointment notifications.
+**Goal:** Ship the first real UI for Gheychi — a Nuxt 4 SSR PWA covering login, discovery (list + map), salon profiles, booking, my bookings, and profile — plus an admin-flagged "featured salon" ad placement and push/SMS appointment notifications.
 
 **Note on "Nuxt 4" vs the design docs' "Nuxt 3":** both specs were written using "Nuxt 3" as shorthand for "Nuxt." Nuxt 3 reaches end-of-life this month (July 2026); this plan uses Nuxt 4, the current stable release, confirmed with the user during plan-writing. Nuxt 4's default source layout nests Vue-side code under an `app/` directory (see File Structure below) — the only structural difference that matters for this plan.
 
@@ -198,7 +198,7 @@ Note: replace `createPendingBooking(app, cookie)` with whatever this file's actu
 
 - [ ] **Step 3: Run tests to verify they fail**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- payments.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- payments.e2e-spec.ts`
 Expected: FAIL — existing tests fail on status code (200 vs 302) since the controller hasn't changed yet.
 
 - [ ] **Step 4: Add `FRONTEND_BASE_URL` to env config**
@@ -261,12 +261,12 @@ export class PaymentsController {
 
 - [ ] **Step 7: Run tests to verify they pass**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- payments.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- payments.e2e-spec.ts`
 Expected: PASS — all tests in the file, including the two new ones and the adapted existing ones.
 
 - [ ] **Step 8: Run the full backend test suite to check for regressions**
 
-Run: `pnpm --filter @arayeshgah/api test && pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test && pnpm --filter @gheychi/api test:e2e`
 Expected: all suites PASS (this touches shared bootstrap code — confirm nothing else silently depended on the JSON response).
 
 - [ ] **Step 9: Commit**
@@ -421,7 +421,7 @@ describe('Search — featured salon boost (e2e)', () => {
 
 - [ ] **Step 4: Run the test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- search-featured.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- search-featured.e2e-spec.ts`
 Expected: FAIL — `isFeatured` is `undefined` in the response, ordering doesn't boost featured salons.
 
 - [ ] **Step 5: Implement the boost in `SearchService`**
@@ -548,7 +548,7 @@ export class SearchService {
 
 - [ ] **Step 6: Run the test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- search-featured.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- search-featured.e2e-spec.ts`
 Expected: PASS
 
 - [ ] **Step 7: Write the failing e2e test for the admin endpoints**
@@ -629,7 +629,7 @@ describe('Admin — featured salon toggle (e2e)', () => {
 
 - [ ] **Step 8: Run the test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- admin-salons.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- admin-salons.e2e-spec.ts`
 Expected: FAIL — `/api/admin/salons` doesn't exist (404).
 
 - [ ] **Step 9: Write the admin DTO and controller**
@@ -696,12 +696,12 @@ In `apps/api/src/salons/salons.module.ts`, add `AdminSalonsController` to the `c
 
 - [ ] **Step 11: Run the test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- admin-salons.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- admin-salons.e2e-spec.ts`
 Expected: PASS
 
 - [ ] **Step 12: Run the full backend suite**
 
-Run: `pnpm --filter @arayeshgah/api test && pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test && pnpm --filter @gheychi/api test:e2e`
 Expected: all PASS
 
 - [ ] **Step 13: Commit**
@@ -806,7 +806,7 @@ describe('Public salon content (e2e)', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- public-salon-content.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- public-salon-content.e2e-spec.ts`
 Expected: FAIL (404s on all real requests too, but for the wrong reason — the routes don't exist yet; this will become clear once you diff against the "unknown slug" 404 case after implementing).
 
 - [ ] **Step 3: Create the `SalonPhoto` entity**
@@ -888,12 +888,12 @@ In `apps/api/src/salons/salons.module.ts`: add `SalonPhoto` to the `TypeOrmModul
 
 - [ ] **Step 6: Run the test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- public-salon-content.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- public-salon-content.e2e-spec.ts`
 Expected: PASS
 
 - [ ] **Step 7: Run the full backend suite**
 
-Run: `pnpm --filter @arayeshgah/api test && pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test && pnpm --filter @gheychi/api test:e2e`
 Expected: all PASS
 
 - [ ] **Step 8: Commit**
@@ -996,7 +996,7 @@ describe('Favorites (e2e)', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- favorites.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- favorites.e2e-spec.ts`
 Expected: FAIL — 404s, nothing implemented yet.
 
 - [ ] **Step 3: Create the `Favorite` entity**
@@ -1105,12 +1105,12 @@ In `apps/api/src/app.module.ts`, import and register `FavoritesModule` in the `i
 
 - [ ] **Step 6: Run the test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- favorites.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- favorites.e2e-spec.ts`
 Expected: PASS
 
 - [ ] **Step 7: Run the full backend suite**
 
-Run: `pnpm --filter @arayeshgah/api test && pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test && pnpm --filter @gheychi/api test:e2e`
 Expected: all PASS
 
 - [ ] **Step 8: Commit**
@@ -1148,7 +1148,7 @@ This migration also adds `bookings.reminded_at` and seeds the `reminder_lead_hou
 
 - [ ] **Step 1: Install `web-push`**
 
-Run: `pnpm --filter @arayeshgah/api add web-push` and `pnpm --filter @arayeshgah/api add -D @types/web-push`
+Run: `pnpm --filter @gheychi/api add web-push` and `pnpm --filter @gheychi/api add -D @types/web-push`
 
 - [ ] **Step 2: Write the migration**
 
@@ -1266,7 +1266,7 @@ describe('Push subscriptions (e2e)', () => {
 
 - [ ] **Step 4: Run the test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- push.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- push.e2e-spec.ts`
 Expected: FAIL — `/api/push/subscribe` doesn't exist (404).
 
 - [ ] **Step 5: Create the entity, provider interface, and both provider implementations**
@@ -1532,17 +1532,17 @@ In `.env.example`, add:
 PUSH_PROVIDER=console
 VAPID_PUBLIC_KEY=
 VAPID_PRIVATE_KEY=
-VAPID_SUBJECT=mailto:admin@arayeshgah.ir
+VAPID_SUBJECT=mailto:admin@gheychi.ir
 ```
 
 - [ ] **Step 12: Run the test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- push.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- push.e2e-spec.ts`
 Expected: PASS
 
 - [ ] **Step 13: Run the full backend suite**
 
-Run: `pnpm --filter @arayeshgah/api test && pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test && pnpm --filter @gheychi/api test:e2e`
 Expected: all PASS
 
 - [ ] **Step 14: Commit**
@@ -1584,7 +1584,7 @@ Add `import { PushService } from '../src/push/push.service';` to the top of the 
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- payments.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- payments.e2e-spec.ts`
 Expected: FAIL — `sendToUserSpy` was never called (push isn't wired in yet).
 
 - [ ] **Step 3: Inject `PushService` into `PaymentsService` and call it in `notifyConfirmed`**
@@ -1658,12 +1658,12 @@ In `apps/api/src/booking/booking.module.ts`, add `import { PushModule } from '..
 
 - [ ] **Step 5: Run the test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- payments.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- payments.e2e-spec.ts`
 Expected: PASS
 
 - [ ] **Step 6: Run the full backend suite**
 
-Run: `pnpm --filter @arayeshgah/api test && pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test && pnpm --filter @gheychi/api test:e2e`
 Expected: all PASS
 
 - [ ] **Step 7: Commit**
@@ -1824,7 +1824,7 @@ describe('Booking reminder job (e2e)', () => {
 
 - [ ] **Step 4: Run the test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- booking-reminder.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- booking-reminder.e2e-spec.ts`
 Expected: FAIL — `BookingReminderJob` doesn't exist yet.
 
 - [ ] **Step 5: Implement the job**
@@ -1928,12 +1928,12 @@ In `apps/api/src/booking/booking.module.ts`, add `BookingReminderJob` to the `pr
 
 - [ ] **Step 7: Run the test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- booking-reminder.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- booking-reminder.e2e-spec.ts`
 Expected: PASS
 
 - [ ] **Step 8: Run the full backend suite**
 
-Run: `pnpm --filter @arayeshgah/api test && pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test && pnpm --filter @gheychi/api test:e2e`
 Expected: all PASS
 
 - [ ] **Step 9: Commit**
@@ -1970,7 +1970,7 @@ No TDD here — this is project scaffolding with no behavior to test yet. Verifi
 
 ```json
 {
-  "name": "@arayeshgah/user-app",
+  "name": "@gheychi/user-app",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -2095,8 +2095,8 @@ dist
 In the repo root `package.json`, add a `dev:user-app` script next to the existing `dev:api` one:
 
 ```json
-    "dev:api": "turbo run dev --filter=@arayeshgah/api",
-    "dev:user-app": "turbo run dev --filter=@arayeshgah/user-app",
+    "dev:api": "turbo run dev --filter=@gheychi/api",
+    "dev:user-app": "turbo run dev --filter=@gheychi/user-app",
 ```
 
 (`pnpm-workspace.yaml` already includes `apps/*`, so no change needed there. Turbo's generic `build`/`test` tasks in `turbo.json` apply automatically to any package defining matching script names — no per-package turbo config needed.)
@@ -2135,7 +2135,7 @@ Tailwind CSS v4 changed its setup from a `tailwind.config.js` + PostCSS plugin t
 
 - [ ] **Step 1: Install Tailwind v4 and the font**
 
-Run: `pnpm --filter @arayeshgah/user-app add tailwindcss @tailwindcss/vite @fontsource-variable/vazirmatn`
+Run: `pnpm --filter @gheychi/user-app add tailwindcss @tailwindcss/vite @fontsource-variable/vazirmatn`
 
 - [ ] **Step 2: Create the CSS entry point with theme tokens**
 
@@ -2321,7 +2321,7 @@ describe('useApi', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/user-app test`
+Run: `pnpm --filter @gheychi/user-app test`
 Expected: FAIL — `useApi` is not defined.
 
 - [ ] **Step 3: Implement `useToast`**
@@ -2458,7 +2458,7 @@ Save as `apps/user-app/app/app.vue`.
 
 - [ ] **Step 7: Run the test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/user-app test`
+Run: `pnpm --filter @gheychi/user-app test`
 Expected: PASS
 
 - [ ] **Step 8: Commit**
@@ -2523,7 +2523,7 @@ describe('isPublicRoute', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/user-app test`
+Run: `pnpm --filter @gheychi/user-app test`
 Expected: FAIL — `route-guard.ts` doesn't exist.
 
 - [ ] **Step 3: Implement the pure guard function**
@@ -2540,7 +2540,7 @@ Save as `apps/user-app/app/utils/route-guard.ts`.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/user-app test`
+Run: `pnpm --filter @gheychi/user-app test`
 Expected: PASS
 
 - [ ] **Step 5: Create the session store**
@@ -2959,7 +2959,7 @@ git commit -m "feat(user-app): app shell with header, layouts, and no-flash them
 
 - [ ] **Step 1: Install `@nuxt/image`**
 
-Run: `pnpm --filter @arayeshgah/user-app add @nuxt/image`
+Run: `pnpm --filter @gheychi/user-app add @nuxt/image`
 
 - [ ] **Step 2: Write the failing component test for the Ad badge rule**
 
@@ -2997,7 +2997,7 @@ describe('SalonCard', () => {
 
 - [ ] **Step 3: Run the test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/user-app test`
+Run: `pnpm --filter @gheychi/user-app test`
 Expected: FAIL — `SalonCard.vue` doesn't exist.
 
 - [ ] **Step 4: Create the ArvanCloud image provider**
@@ -3118,7 +3118,7 @@ Save as `apps/user-app/app/components/salon/SalonCard.vue`. `start-2` (a logical
 
 - [ ] **Step 8: Run the test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/user-app test`
+Run: `pnpm --filter @gheychi/user-app test`
 Expected: PASS
 
 - [ ] **Step 9: Create the gender-mapping utility, then implement the Home page**
@@ -3709,7 +3709,7 @@ describe('formatSlotTime', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/user-app test`
+Run: `pnpm --filter @gheychi/user-app test`
 Expected: FAIL — `slot-format.ts` doesn't exist.
 
 - [ ] **Step 3: Implement the pure functions**
@@ -3742,7 +3742,7 @@ Save as `apps/user-app/app/utils/slot-format.ts`. (`formatSlotTime` uses `en-GB`
 
 - [ ] **Step 4: Run the unit tests to verify they pass**
 
-Run: `pnpm --filter @arayeshgah/user-app test`
+Run: `pnpm --filter @gheychi/user-app test`
 Expected: PASS for `slot-format.spec.ts`
 
 - [ ] **Step 5: Write the failing component test**
@@ -3785,7 +3785,7 @@ describe('SlotPicker', () => {
 
 - [ ] **Step 6: Run the test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/user-app test`
+Run: `pnpm --filter @gheychi/user-app test`
 Expected: FAIL — `SlotPicker.vue` doesn't exist.
 
 - [ ] **Step 7: Implement `SlotPicker.vue`**
@@ -3861,7 +3861,7 @@ Save as `apps/user-app/app/components/booking/SlotPicker.vue`.
 
 - [ ] **Step 8: Run the test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/user-app test`
+Run: `pnpm --filter @gheychi/user-app test`
 Expected: PASS
 
 - [ ] **Step 9: Commit**
@@ -3918,7 +3918,7 @@ describe('Platform config — public booking terms (e2e)', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- platform-config.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- platform-config.e2e-spec.ts`
 Expected: FAIL — 404, route doesn't exist.
 
 - [ ] **Step 3: Implement the controller**
@@ -3949,12 +3949,12 @@ In `apps/api/src/platform-config/platform-config.module.ts`, add `PlatformConfig
 
 - [ ] **Step 5: Run the test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- platform-config.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- platform-config.e2e-spec.ts`
 Expected: PASS
 
 - [ ] **Step 6: Run the full backend suite**
 
-Run: `pnpm --filter @arayeshgah/api test && pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test && pnpm --filter @gheychi/api test:e2e`
 Expected: all PASS
 
 - [ ] **Step 7: Commit the backend addition**
@@ -4131,7 +4131,7 @@ describe('retry-payment', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- bookings.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- bookings.e2e-spec.ts`
 Expected: FAIL — route doesn't exist (404 on the happy-path test too, but for the wrong reason).
 
 - [ ] **Step 3: Implement `retryPayment` in `BookingsService`**
@@ -4176,12 +4176,12 @@ In `apps/api/src/booking/bookings.controller.ts`, add:
 
 - [ ] **Step 5: Run the test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- bookings.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- bookings.e2e-spec.ts`
 Expected: PASS
 
 - [ ] **Step 6: Run the full backend suite**
 
-Run: `pnpm --filter @arayeshgah/api test && pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test && pnpm --filter @gheychi/api test:e2e`
 Expected: all PASS
 
 - [ ] **Step 7: Commit the backend addition**
@@ -4264,7 +4264,7 @@ it('includes the salon and service names in the list response', async () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- bookings.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- bookings.e2e-spec.ts`
 Expected: FAIL — `salonName`/`serviceName` are `undefined`.
 
 - [ ] **Step 3: Implement the enrichment in `BookingsService`**
@@ -4308,12 +4308,12 @@ Replace `listMine` and `findMine`, and add the private helper (place it near the
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- bookings.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- bookings.e2e-spec.ts`
 Expected: PASS
 
 - [ ] **Step 5: Run the full backend suite**
 
-Run: `pnpm --filter @arayeshgah/api test && pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test && pnpm --filter @gheychi/api test:e2e`
 Expected: all PASS
 
 - [ ] **Step 6: Commit the backend addition**
@@ -4554,7 +4554,7 @@ No TDD — this is build/infrastructure configuration and a third-party service-
 
 - [ ] **Step 1: Install `@vite-pwa/nuxt` and workbox**
 
-Run: `pnpm --filter @arayeshgah/user-app add -D @vite-pwa/nuxt workbox-precaching`
+Run: `pnpm --filter @gheychi/user-app add -D @vite-pwa/nuxt workbox-precaching`
 
 - [ ] **Step 2: Register the module and configure `injectManifest`**
 
@@ -4644,7 +4644,7 @@ Until real brand icons exist, add minimal valid 192×192 and 512×512 PNGs (any 
 
 - [ ] **Step 5: Verify with a production build**
 
-Run: `pnpm --filter @arayeshgah/user-app build && pnpm --filter @arayeshgah/user-app preview`
+Run: `pnpm --filter @gheychi/user-app build && pnpm --filter @gheychi/user-app preview`
 Open the preview URL in Chrome DevTools → Application → Manifest: confirm the manifest loads with the right name/colors/icons, and Application → Service Workers shows the worker registered and activated.
 
 - [ ] **Step 6: Commit**
@@ -4895,7 +4895,7 @@ it('lists all approved salon slugs for the sitemap, unfiltered by location', asy
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- public-salon-content.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- public-salon-content.e2e-spec.ts`
 Expected: FAIL — route doesn't exist.
 
 - [ ] **Step 3: Implement the controller**
@@ -4922,10 +4922,10 @@ Register `SitemapSalonsController` in `apps/api/src/salons/salons.module.ts`'s `
 
 - [ ] **Step 4: Run the test to verify it passes, then the full backend suite**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- public-salon-content.e2e-spec.ts`
+Run: `pnpm --filter @gheychi/api test:e2e -- public-salon-content.e2e-spec.ts`
 Expected: PASS
 
-Run: `pnpm --filter @arayeshgah/api test && pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test && pnpm --filter @gheychi/api test:e2e`
 Expected: all PASS
 
 - [ ] **Step 5: Commit the backend addition**
@@ -4937,7 +4937,7 @@ git commit -m "feat(api): public endpoint listing all approved salon slugs, for 
 
 - [ ] **Step 6: Install `@nuxtjs/sitemap`**
 
-Run: `pnpm --filter @arayeshgah/user-app add @nuxtjs/sitemap`
+Run: `pnpm --filter @gheychi/user-app add @nuxtjs/sitemap`
 
 - [ ] **Step 7: Register the module and point it at the dynamic source**
 
@@ -5169,9 +5169,9 @@ The original marketplace design spec (§9) called for "Playwright happy path (se
 
 - [ ] **Step 1: Install Playwright**
 
-Run: `pnpm --filter @arayeshgah/user-app add -D @playwright/test pg ioredis` (`pg`/`ioredis` are needed for `global-setup.ts`'s direct DB seeding and the happy-path spec's OTP lookup — same drivers `apps/api` already uses)
+Run: `pnpm --filter @gheychi/user-app add -D @playwright/test pg ioredis` (`pg`/`ioredis` are needed for `global-setup.ts`'s direct DB seeding and the happy-path spec's OTP lookup — same drivers `apps/api` already uses)
 
-Run: `pnpm --filter @arayeshgah/user-app exec playwright install chromium`
+Run: `pnpm --filter @gheychi/user-app exec playwright install chromium`
 
 - [ ] **Step 2: Write the global setup — reset schema, run migrations, seed one bookable salon**
 
@@ -5185,9 +5185,9 @@ export default async function globalSetup() {
   const client = new Client({
     host: process.env.DB_HOST ?? 'localhost',
     port: Number(process.env.DB_PORT ?? 5544),
-    user: process.env.DB_USER ?? 'arayeshgah',
-    password: process.env.DB_PASS ?? 'arayeshgah',
-    database: process.env.DB_NAME ?? 'arayeshgah',
+    user: process.env.DB_USER ?? 'gheychi',
+    password: process.env.DB_PASS ?? 'gheychi',
+    database: process.env.DB_NAME ?? 'gheychi',
   })
   await client.connect()
   await client.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;')
@@ -5202,7 +5202,7 @@ export default async function globalSetup() {
   await redis.flushdb()
   await redis.quit()
 
-  execSync('pnpm --filter @arayeshgah/api migration:run', {
+  execSync('pnpm --filter @gheychi/api migration:run', {
     cwd: path.resolve(__dirname, '../../..'),
     stdio: 'inherit',
   })
@@ -5210,9 +5210,9 @@ export default async function globalSetup() {
   const seedClient = new Client({
     host: process.env.DB_HOST ?? 'localhost',
     port: Number(process.env.DB_PORT ?? 5544),
-    user: process.env.DB_USER ?? 'arayeshgah',
-    password: process.env.DB_PASS ?? 'arayeshgah',
-    database: process.env.DB_NAME ?? 'arayeshgah',
+    user: process.env.DB_USER ?? 'gheychi',
+    password: process.env.DB_PASS ?? 'gheychi',
+    database: process.env.DB_NAME ?? 'gheychi',
   })
   await seedClient.connect()
   const { rows: [{ id: ownerId }] } = await seedClient.query(
@@ -5261,7 +5261,7 @@ export default defineConfig({
   use: { baseURL: 'http://localhost:3003' },
   webServer: [
     {
-      command: 'pnpm --filter @arayeshgah/api dev',
+      command: 'pnpm --filter @gheychi/api dev',
       url: 'http://localhost:3002/api/health',
       reuseExistingServer: !process.env.CI,
       // Measured cold-start (nest start --watch, first ts-node compile) at ~78s on this
@@ -5270,7 +5270,7 @@ export default defineConfig({
       timeout: 120_000,
     },
     {
-      command: 'pnpm --filter @arayeshgah/user-app dev',
+      command: 'pnpm --filter @gheychi/user-app dev',
       url: 'http://localhost:3003',
       reuseExistingServer: !process.env.CI,
       // Same reasoning as the api entry above.
@@ -5357,8 +5357,8 @@ test('a salon flagged featured by an admin shows the Ad badge on Home', async ({
 
   const client = new Client({
     host: process.env.DB_HOST ?? 'localhost', port: Number(process.env.DB_PORT ?? 5544),
-    user: process.env.DB_USER ?? 'arayeshgah', password: process.env.DB_PASS ?? 'arayeshgah',
-    database: process.env.DB_NAME ?? 'arayeshgah',
+    user: process.env.DB_USER ?? 'gheychi', password: process.env.DB_PASS ?? 'gheychi',
+    database: process.env.DB_NAME ?? 'gheychi',
   })
   await client.connect()
   await client.query(`INSERT INTO users (phone, role) VALUES ('09120000201', 'admin') ON CONFLICT DO NOTHING`)
@@ -5403,10 +5403,10 @@ Run, in order, fixing anything that fails before moving to the next:
 
 ```bash
 docker compose up -d
-pnpm --filter @arayeshgah/api test
-pnpm --filter @arayeshgah/api test:e2e
-pnpm --filter @arayeshgah/user-app test
-pnpm --filter @arayeshgah/user-app test:e2e
+pnpm --filter @gheychi/api test
+pnpm --filter @gheychi/api test:e2e
+pnpm --filter @gheychi/user-app test
+pnpm --filter @gheychi/user-app test:e2e
 pnpm build
 ```
 

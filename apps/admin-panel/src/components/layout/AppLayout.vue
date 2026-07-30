@@ -36,7 +36,7 @@ async function logout() {
       <header class="flex shrink-0 items-center gap-4 border-b border-(--color-border) bg-(--color-surface-card) px-6 py-3.5">
         <!-- Temporary logo mark, until a real brand asset exists -->
         <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-(--color-accent) font-black text-white shadow-(--shadow-sm)">
-          آ
+          ق
         </div>
 
         <div class="h-6 w-px bg-(--color-border)" />

@@ -1,3 +1,8 @@
+# Pinned so container/volume names never depend on what the checkout directory
+# happens to be called -- renaming the directory would otherwise start a fresh
+# project with empty volumes and strand the existing data under the old name.
+name: gheychi
+
 services:
   postgres:
     image: postgis/postgis:16-3.4
@@ -21,7 +26,7 @@ services:
     networks: [internal]
 
   api:
-    image: ghcr.io/amirho3sein/arayeshgah-api:latest
+    image: ghcr.io/amirho3sein/gheychi-api:latest
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -39,20 +44,20 @@ services:
     networks: [internal]
 
   user-app:
-    image: ghcr.io/amirho3sein/arayeshgah-user-app:latest
+    image: ghcr.io/amirho3sein/gheychi-user-app:latest
     restart: unless-stopped
     env_file: .env
     depends_on: [api]
     networks: [internal]
 
   provider-panel:
-    image: ghcr.io/amirho3sein/arayeshgah-provider-panel:latest
+    image: ghcr.io/amirho3sein/gheychi-provider-panel:latest
     restart: unless-stopped
     depends_on: [api]
     networks: [internal]
 
   admin-panel:
-    image: ghcr.io/amirho3sein/arayeshgah-admin-panel:latest
+    image: ghcr.io/amirho3sein/gheychi-admin-panel:latest
     restart: unless-stopped
     depends_on: [api]
     networks: [internal]

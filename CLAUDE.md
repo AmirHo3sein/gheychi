@@ -20,14 +20,14 @@ Approach every task — feature, bug fix, improvement, or refactor — as a top-
 
 ## Project Overview
 
-Arayeshgah is a salon discovery & booking marketplace for Iran, built as a **pnpm + Turborepo monorepo**. Full product spec: `docs/superpowers/specs/2026-07-04-arayeshgah-marketplace-design.md`.
+Gheychi is a salon discovery & booking marketplace for Iran, built as a **pnpm + Turborepo monorepo**. Full product spec: `docs/superpowers/specs/2026-07-04-gheychi-marketplace-design.md`.
 
 | App | Package | Dev Port | Status | Purpose |
 |-----|---------|----------|--------|---------|
-| `apps/api` | `@arayeshgah/api` | 3002 | Built (Plans 1–3) | NestJS modular monolith — auth, salons, search, booking/payments, reviews |
-| `apps/user-app` | `@arayeshgah/user-app` | 3003 | Built (Plan 4) | Nuxt 4 SSR PWA — customer-facing discovery, booking, account |
-| `apps/provider-panel` | `@arayeshgah/provider-panel` | 3004 | Built (Plan 5) | Vue 3 + Vite SPA — salon-owner onboarding, bookings, services, hours, reviews, earnings |
-| `apps/admin-panel` | `@arayeshgah/admin-panel` | 3005 | Built (Plan 6) | Vue 3 + Vite SPA — salon approvals, moderation, categories, platform config |
+| `apps/api` | `@gheychi/api` | 3002 | Built (Plans 1–3) | NestJS modular monolith — auth, salons, search, booking/payments, reviews |
+| `apps/user-app` | `@gheychi/user-app` | 3003 | Built (Plan 4) | Nuxt 4 SSR PWA — customer-facing discovery, booking, account |
+| `apps/provider-panel` | `@gheychi/provider-panel` | 3004 | Built (Plan 5) | Vue 3 + Vite SPA — salon-owner onboarding, bookings, services, hours, reviews, earnings |
+| `apps/admin-panel` | `@gheychi/admin-panel` | 3005 | Built (Plan 6) | Vue 3 + Vite SPA — salon approvals, moderation, categories, platform config |
 
 Backend infra: PostgreSQL 16 + PostGIS (geography columns for location/radius search) and Redis (OTP codes, rate limiting). Both run via `docker-compose.yml` at the repo root.
 
@@ -40,7 +40,7 @@ Backend infra: PostgreSQL 16 + PostGIS (geography columns for location/radius se
 docker compose up -d                                  # postgres (postgis) + redis
 cp .env.example apps/api/.env
 pnpm install
-pnpm --filter @arayeshgah/api migration:run
+pnpm --filter @gheychi/api migration:run
 cp apps/user-app/.env.example apps/user-app/.env       # set NUXT_PUBLIC_VAPID_PUBLIC_KEY for push
 
 # Dev servers (from root)
@@ -54,15 +54,15 @@ pnpm build
 
 # Tests
 pnpm test                                              # turbo run test, all apps
-pnpm --filter @arayeshgah/api test                     # backend unit (Jest)
-pnpm --filter @arayeshgah/api test:e2e                 # backend e2e (Jest + supertest, needs docker services)
-pnpm --filter @arayeshgah/user-app test                # frontend unit/component (Vitest)
-pnpm --filter @arayeshgah/user-app test:e2e            # frontend e2e (Playwright)
-pnpm --filter @arayeshgah/user-app typecheck            # nuxt typecheck
+pnpm --filter @gheychi/api test                     # backend unit (Jest)
+pnpm --filter @gheychi/api test:e2e                 # backend e2e (Jest + supertest, needs docker services)
+pnpm --filter @gheychi/user-app test                # frontend unit/component (Vitest)
+pnpm --filter @gheychi/user-app test:e2e            # frontend e2e (Playwright)
+pnpm --filter @gheychi/user-app typecheck            # nuxt typecheck
 
 # Migrations (apps/api)
-pnpm --filter @arayeshgah/api migration:run
-pnpm --filter @arayeshgah/api migration:revert
+pnpm --filter @gheychi/api migration:run
+pnpm --filter @gheychi/api migration:revert
 ```
 
 `NUXT_PUBLIC_VAPID_PUBLIC_KEY` must be the public half of the same keypair as the API's `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` — generate one pair with `npx web-push generate-vapid-keys` and split the halves between the two `.env` files. Push degrades gracefully without real keys. Maps need no key at all — see the "Maps" section below.
@@ -135,7 +135,7 @@ Tokens are **never** exposed to JS — HttpOnly cookie only, matching the fronte
 ### Database & migrations
 
 - TypeORM config: `TypeOrmModule.forRootAsync()` in `app.module.ts` (`synchronize: false`, `autoLoadEntities: true`); CLI data source in `src/data-source.ts`.
-- Migrations: `src/migrations/<unix-timestamp>-<name>.ts`. Run via `pnpm --filter @arayeshgah/api migration:run` (wraps `typeorm-ts-node-commonjs migration:run -d src/data-source.ts`).
+- Migrations: `src/migrations/<unix-timestamp>-<name>.ts`. Run via `pnpm --filter @gheychi/api migration:run` (wraps `typeorm-ts-node-commonjs migration:run -d src/data-source.ts`).
 - Entities map to **snake_case columns explicitly**: `@Column({ name: 'user_id' })  userId: string`.
 - PostGIS: geography columns typed `{ type: 'geography', spatialFeatureType: 'Point', srid: 4326 }`, TS-side as a `GeoPoint` interface (`{ type: 'Point', coordinates: [lng, lat] }`).
 - `bigint` DB columns get an explicit transformer (`bigintToNumber`) so TypeORM returns a `number`, not a string, in application code.
@@ -188,7 +188,7 @@ app/
 └── sw.ts             service worker entry (Workbox + push), compiled via @vite-pwa/nuxt injectManifest
 ```
 
-There's a minimal `server/` directory (`server/api/__sitemap__/urls.ts`, `blog.ts`) — Nitro handlers feeding `@nuxtjs/sitemap`, wired via `nuxt.config.ts`'s `sitemap.sources`. Beyond that, the app has no SSR API routes of its own; all data comes from `@arayeshgah/api` at a separate origin.
+There's a minimal `server/` directory (`server/api/__sitemap__/urls.ts`, `blog.ts`) — Nitro handlers feeding `@nuxtjs/sitemap`, wired via `nuxt.config.ts`'s `sitemap.sources`. Beyond that, the app has no SSR API routes of its own; all data comes from `@gheychi/api` at a separate origin.
 
 ### Data fetching
 
@@ -250,7 +250,7 @@ Tailwind v4 (via `@tailwindcss/vite`, no `tailwind.config`) + CSS custom propert
 
 This repo is developed via the **superpowers skill pipeline** — brainstorming → writing-plans → subagent-driven-development. Before starting any non-trivial feature, check whether a design/plan already exists:
 
-- `docs/superpowers/specs/` — approved design docs (one per plan), e.g. `2026-07-04-arayeshgah-marketplace-design.md` (original full-product spec), `2026-07-05-plan-4-user-app-frontend-design.md`.
+- `docs/superpowers/specs/` — approved design docs (one per plan), e.g. `2026-07-04-gheychi-marketplace-design.md` (original full-product spec), `2026-07-05-plan-4-user-app-frontend-design.md`.
 - `docs/superpowers/plans/` — the executed implementation plans, one per numbered plan (`plan-1-foundation-backend-core.md` through `plan-8-blog-cms.md`, dated filenames like `2026-07-10-plan-8-blog-cms.md`). These record what was actually built, including task-by-task completion notes and any deviations from the design doc.
 
 New feature work should follow the same shape: brainstorm to a spec in `specs/`, get it approved, turn it into a task-by-task plan in `plans/`, then execute. Don't skip straight to implementation for anything beyond a small bug fix.
@@ -264,7 +264,7 @@ Carried forward across every plan shipped so far — check these are still accur
 - **Provider Panel (Plan 5) and Admin Panel (Plan 6) are both built.** `apps/provider-panel` (port 3004) covers onboarding, bookings, services, hours, photos, reviews, earnings, and a Salon Settings/resubmit flow. `apps/admin-panel` (port 3005) covers salon approvals, review moderation, categories, users/salons search+suspend, and platform config editing.
 - **Salon approval no longer requires a manual DB update.** `PATCH /api/admin/salons/:id/status` (approve/reject/suspend, reason required for reject/suspend) plus `POST /api/salons/mine/resubmit` (provider side, flips `rejected` back to `pending`) close this gap — see the README's "Admin panel (Plan 6)" section for the full endpoint list.
 - **No salon photo upload path** was the old gap here — it's closed: `POST /api/salons/mine/photos` (Plan 5) lets a provider upload/manage photos via a swappable `StorageProvider` (`local`/`s3`).
-- **Plan 7 (platform hardening) closed the six trust-and-safety gaps** previously listed here: an admin audit log (declarative `@AuditAction` decorator + interceptor on every admin mutation, browsable via `GET /api/admin/audit-log` and the admin-panel's Audit Log page), a first-admin bootstrap script (`pnpm --filter @arayeshgah/api create-admin 09xxxxxxxxx`, idempotent — pnpm 9 leaks a `--` separator into forwarded args on some invocations, so the script tolerates both `create-admin 09...` and `create-admin -- 09...`), a verified-customer report flow end-to-end (user-app salon/review report form → `POST /api/reports` → admin-panel queue at `/reports`), category delete with restrict semantics (`DELETE /api/admin/categories/:id`, 409 when any salon service references it), user-suspend → salon cascade (`salons.suspended_cause` distinguishes `admin` suspensions from `owner_suspended` cascades so reactivation only restores the latter), and a polled admin notification queue (`salon_resubmitted` / `report_created`, bell badge in the admin-panel header). See `docs/superpowers/plans/2026-07-10-plan-7-platform-hardening.md`.
+- **Plan 7 (platform hardening) closed the six trust-and-safety gaps** previously listed here: an admin audit log (declarative `@AuditAction` decorator + interceptor on every admin mutation, browsable via `GET /api/admin/audit-log` and the admin-panel's Audit Log page), a first-admin bootstrap script (`pnpm --filter @gheychi/api create-admin 09xxxxxxxxx`, idempotent — pnpm 9 leaks a `--` separator into forwarded args on some invocations, so the script tolerates both `create-admin 09...` and `create-admin -- 09...`), a verified-customer report flow end-to-end (user-app salon/review report form → `POST /api/reports` → admin-panel queue at `/reports`), category delete with restrict semantics (`DELETE /api/admin/categories/:id`, 409 when any salon service references it), user-suspend → salon cascade (`salons.suspended_cause` distinguishes `admin` suspensions from `owner_suspended` cascades so reactivation only restores the latter), and a polled admin notification queue (`salon_resubmitted` / `report_created`, bell badge in the admin-panel header). See `docs/superpowers/plans/2026-07-10-plan-7-platform-hardening.md`.
 - **Fixed: an admin could previously approve a pending salon whose owner is suspended.** `PATCH /api/admin/salons/:id/status` now looks up the salon's owner via `UsersService.findById()` before applying an `approved` status change and throws `ConflictException` (409) if the owner's `status` is `'suspended'` — the update is never applied, so the salon stays in its prior state. No frontend change was needed: `admin-panel`'s generic `useApi()` error handling already toasts the exception's message and correctly skips the `updated` emit when `data` is `null`. Covered by a unit test (`admin-salons.controller.spec.ts`) and an e2e test (`admin-salon-status.e2e-spec.ts`) that suspends a real owner account and asserts the 409.
 - **The salon-side effect of a user-suspension cascade is not separately audited.** Suspending/reactivating a user writes one `user.status.set` audit row; the cascaded salon suspension/restoration inside the same transaction has no corresponding audit row. Deliberate — reconstructing a salon's status timeline from audit rows alone has this gap.
 - **Admin notifications are one shared queue, not per-admin state.** `admin_notifications.read_at` is a single column on the row itself — one admin marking a notification read marks it read for every admin. Deliberate MVP cut.

@@ -32,7 +32,7 @@ docker/backup/
 One script, used both for the immediate on-start backup and every scheduled cron firing:
 
 1. Validate `DB_HOST`, `DB_USER`, `DB_PASS`, `DB_NAME`, `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` are all non-empty. If any are missing, log a clear, loud error and exit non-zero for that run — but the container itself keeps running (see §2.4), so this doesn't crash-loop.
-2. `pg_dump -Fc` (custom compressed format — smaller than plain SQL + separate gzip, and `pg_restore` supports selective/parallel restore later if ever needed) to a temp file: `arayeshgah-<UTC ISO8601 timestamp, filesystem-safe>.dump`.
+2. `pg_dump -Fc` (custom compressed format — smaller than plain SQL + separate gzip, and `pg_restore` supports selective/parallel restore later if ever needed) to a temp file: `gheychi-<UTC ISO8601 timestamp, filesystem-safe>.dump`.
 3. `mc alias set s3backup "$S3_ENDPOINT" "$S3_ACCESS_KEY_ID" "$S3_SECRET_ACCESS_KEY"` (the alias is always named `s3backup`, referenced the same way in the restore runbook below), then `mc cp` the dump to `s3backup/$S3_BUCKET/backups/<filename>`.
 4. On successful upload, delete the local temp file.
 5. `mc rm --older-than 14d` against the `backups/` prefix — MinIO Client's built-in age-based deletion, no hand-rolled date parsing.
@@ -77,7 +77,7 @@ Two documented paths, both starting from downloading a specific dated backup:
 
 ```bash
 docker compose -f docker-compose.prod.yml exec backup mc cp \
-  s3backup/$S3_BUCKET/backups/arayeshgah-2026-07-14T030000Z.dump /tmp/restore.dump
+  s3backup/$S3_BUCKET/backups/gheychi-2026-07-14T030000Z.dump /tmp/restore.dump
 ```
 
 **Verify a backup restores cleanly (no data changed):**

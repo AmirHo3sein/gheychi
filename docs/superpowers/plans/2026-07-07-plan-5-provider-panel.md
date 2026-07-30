@@ -39,12 +39,12 @@ describe('buildAllowedOrigins', () => {
 
   it('uses configured env vars when set', () => {
     const config = new ConfigService({
-      FRONTEND_BASE_URL: 'https://app.arayeshgah.ir',
-      PROVIDER_APP_BASE_URL: 'https://provider.arayeshgah.ir',
+      FRONTEND_BASE_URL: 'https://app.gheychi.ir',
+      PROVIDER_APP_BASE_URL: 'https://provider.gheychi.ir',
     });
     expect(buildAllowedOrigins(config)).toEqual([
-      'https://app.arayeshgah.ir',
-      'https://provider.arayeshgah.ir',
+      'https://app.gheychi.ir',
+      'https://provider.gheychi.ir',
     ]);
   });
 });
@@ -52,7 +52,7 @@ describe('buildAllowedOrigins', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- cors-origins.util`
+Run: `pnpm --filter @gheychi/api test -- cors-origins.util`
 Expected: FAIL with "Cannot find module './cors-origins.util'"
 
 - [ ] **Step 3: Write minimal implementation**
@@ -71,7 +71,7 @@ export function buildAllowedOrigins(config: ConfigService): string[] {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- cors-origins.util`
+Run: `pnpm --filter @gheychi/api test -- cors-origins.util`
 Expected: PASS (2 tests)
 
 - [ ] **Step 5: Wire it into `main.ts`**
@@ -142,7 +142,7 @@ describe('LocalDiskStorageProvider', () => {
   let provider: LocalDiskStorageProvider;
 
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), 'arayeshgah-storage-test-'));
+    root = mkdtempSync(join(tmpdir(), 'gheychi-storage-test-'));
     provider = new LocalDiskStorageProvider('http://localhost:3002', root);
   });
 
@@ -175,7 +175,7 @@ describe('LocalDiskStorageProvider', () => {
 
 - [ ] **Step 3: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- local-disk-storage.provider`
+Run: `pnpm --filter @gheychi/api test -- local-disk-storage.provider`
 Expected: FAIL with "Cannot find module './local-disk-storage.provider'"
 
 - [ ] **Step 4: Write minimal implementation**
@@ -209,7 +209,7 @@ export class LocalDiskStorageProvider implements StorageProvider {
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- local-disk-storage.provider`
+Run: `pnpm --filter @gheychi/api test -- local-disk-storage.provider`
 Expected: PASS (4 tests)
 
 - [ ] **Step 6: Wire the module (local-only for now; S3 branch added in Task 3)**
@@ -282,7 +282,7 @@ git commit -m "feat(api): add StorageProvider abstraction with a local-disk impl
 - [ ] **Step 1: Add the dependency**
 
 ```bash
-pnpm --filter @arayeshgah/api add @aws-sdk/client-s3
+pnpm --filter @gheychi/api add @aws-sdk/client-s3
 ```
 
 - [ ] **Step 2: Write the failing test (mocking the S3 client, same style as `zarinpal-payment.gateway.spec.ts` mocking `fetch`)**
@@ -303,7 +303,7 @@ jest.mock('@aws-sdk/client-s3', () => {
 
 describe('S3StorageProvider', () => {
   const provider = new S3StorageProvider(
-    'arayeshgah-photos',
+    'gheychi-photos',
     'https://cdn.example.com',
     'https://s3.example.com',
     'us-east-1',
@@ -318,7 +318,7 @@ describe('S3StorageProvider', () => {
     const clientInstance = (S3Client as unknown as jest.Mock).mock.results[0].value;
     expect(clientInstance.send).toHaveBeenCalledWith(
       expect.objectContaining({
-        input: expect.objectContaining({ Bucket: 'arayeshgah-photos', Key: 'salons/abc/photo.jpg' }),
+        input: expect.objectContaining({ Bucket: 'gheychi-photos', Key: 'salons/abc/photo.jpg' }),
       }),
     );
   });
@@ -328,7 +328,7 @@ describe('S3StorageProvider', () => {
     const clientInstance = (S3Client as unknown as jest.Mock).mock.results[0].value;
     expect(clientInstance.send).toHaveBeenCalledWith(
       expect.objectContaining({
-        input: expect.objectContaining({ Bucket: 'arayeshgah-photos', Key: 'salons/abc/photo.jpg' }),
+        input: expect.objectContaining({ Bucket: 'gheychi-photos', Key: 'salons/abc/photo.jpg' }),
       }),
     );
   });
@@ -337,7 +337,7 @@ describe('S3StorageProvider', () => {
 
 - [ ] **Step 3: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- s3-storage.provider`
+Run: `pnpm --filter @gheychi/api test -- s3-storage.provider`
 Expected: FAIL with "Cannot find module './s3-storage.provider'"
 
 - [ ] **Step 4: Write minimal implementation**
@@ -383,7 +383,7 @@ export class S3StorageProvider implements StorageProvider {
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- s3-storage.provider`
+Run: `pnpm --filter @gheychi/api test -- s3-storage.provider`
 Expected: PASS (2 tests)
 
 - [ ] **Step 6: Wire the S3 branch into the module**
@@ -460,8 +460,8 @@ The `SalonPhoto` entity/table and the public read endpoint (`GET /salons/:slug/p
 - [ ] **Step 1: Add multer dependencies**
 
 ```bash
-pnpm --filter @arayeshgah/api add multer
-pnpm --filter @arayeshgah/api add -D @types/multer
+pnpm --filter @gheychi/api add multer
+pnpm --filter @gheychi/api add -D @types/multer
 ```
 
 - [ ] **Step 2: Write the migration**
@@ -483,7 +483,7 @@ export class SalonPhotoStorageKey1752100000000 implements MigrationInterface {
 
 - [ ] **Step 3: Run the migration against the dev database**
 
-Run: `pnpm --filter @arayeshgah/api migration:run`
+Run: `pnpm --filter @gheychi/api migration:run`
 Expected: `Migration SalonPhotoStorageKey1752100000000 has been executed successfully.`
 
 - [ ] **Step 4: Add the field to the entity**
@@ -603,7 +603,7 @@ describe('Salon photos (e2e)', () => {
 
 - [ ] **Step 7: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- salon-photos`
+Run: `pnpm --filter @gheychi/api test:e2e -- salon-photos`
 Expected: FAIL — `Cannot GET/POST /api/salons/mine/photos` (404, controller doesn't exist yet)
 
 - [ ] **Step 8: Write the controller**
@@ -717,7 +717,7 @@ export class SalonsModule {}
 
 - [ ] **Step 10: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- salon-photos`
+Run: `pnpm --filter @gheychi/api test:e2e -- salon-photos`
 Expected: PASS (6 tests)
 
 - [ ] **Step 11: Commit**
@@ -810,7 +810,7 @@ describe('BookingsService.getEarnings', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- bookings.service.spec`
+Run: `pnpm --filter @gheychi/api test -- bookings.service.spec`
 Expected: FAIL with "service.getEarnings is not a function"
 
 - [ ] **Step 3: Add the method to `BookingsService`**
@@ -845,7 +845,7 @@ In `apps/api/src/booking/bookings.service.ts`, add this method (near `listForSal
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- bookings.service.spec`
+Run: `pnpm --filter @gheychi/api test -- bookings.service.spec`
 Expected: PASS (2 tests)
 
 - [ ] **Step 5: Write the failing e2e test for the endpoint**
@@ -897,7 +897,7 @@ describe('Salon earnings (e2e)', () => {
 
 - [ ] **Step 6: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- salon-earnings`
+Run: `pnpm --filter @gheychi/api test:e2e -- salon-earnings`
 Expected: FAIL — `Cannot GET /api/salons/mine/earnings` (404, route doesn't exist yet)
 
 - [ ] **Step 7: Add a new controller for the route (mirrors how `SalonBookingsController`/`SalonServicesController` are separate controllers within the same module for the same resource family)**
@@ -936,7 +936,7 @@ import { SalonEarningsController } from './salon-earnings.controller';
 
 - [ ] **Step 9: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test:e2e -- salon-earnings`
+Run: `pnpm --filter @gheychi/api test:e2e -- salon-earnings`
 Expected: PASS (2 tests)
 
 - [ ] **Step 10: Commit**
@@ -994,7 +994,7 @@ git commit -m "docs: document the Plan 5 provider-panel backend additions"
 
 ```json
 {
-  "name": "@arayeshgah/provider-panel",
+  "name": "@gheychi/provider-panel",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -1159,13 +1159,13 @@ VITE_NESHAN_API_KEY=
 In the root `package.json`, add to `scripts`:
 
 ```json
-    "dev:provider-panel": "turbo run dev --filter=@arayeshgah/provider-panel",
+    "dev:provider-panel": "turbo run dev --filter=@gheychi/provider-panel",
 ```
 
 - [ ] **Step 8: Install dependencies**
 
 Run: `pnpm install`
-Expected: resolves and links the new `@arayeshgah/provider-panel` workspace package
+Expected: resolves and links the new `@gheychi/provider-panel` workspace package
 
 - [ ] **Step 9: Commit**
 
@@ -1271,7 +1271,7 @@ describe('useToast', () => {
 
 - [ ] **Step 3: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test`
+Run: `pnpm --filter @gheychi/provider-panel test`
 Expected: FAIL with "Cannot find module './useToast'"
 
 - [ ] **Step 4: Write minimal implementation**
@@ -1303,7 +1303,7 @@ export function useToast() {
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test`
+Run: `pnpm --filter @gheychi/provider-panel test`
 Expected: PASS (1 test)
 
 - [ ] **Step 6: Write the failing tests for `useApi`**
@@ -1380,7 +1380,7 @@ describe('useApi', () => {
 
 - [ ] **Step 7: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test`
+Run: `pnpm --filter @gheychi/provider-panel test`
 Expected: FAIL with "Cannot find module './useApi'"
 
 - [ ] **Step 8: Write minimal implementation**
@@ -1459,7 +1459,7 @@ export function useApi() {
 
 - [ ] **Step 9: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test`
+Run: `pnpm --filter @gheychi/provider-panel test`
 Expected: PASS (5 tests total, this file + useToast)
 
 - [ ] **Step 10: Commit**
@@ -1552,7 +1552,7 @@ describe('useSalon', () => {
 
 - [ ] **Step 3: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test`
+Run: `pnpm --filter @gheychi/provider-panel test`
 Expected: FAIL with "Cannot find module './useSalon'"
 
 - [ ] **Step 4: Write minimal implementation**
@@ -1591,7 +1591,7 @@ export function useSalon() {
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test`
+Run: `pnpm --filter @gheychi/provider-panel test`
 Expected: PASS (7 tests total)
 
 - [ ] **Step 6: Commit**
@@ -1685,7 +1685,7 @@ describe('router guard', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test`
+Run: `pnpm --filter @gheychi/provider-panel test`
 Expected: FAIL with "Cannot find module './index'"
 
 - [ ] **Step 3: Write minimal implementation**
@@ -1755,7 +1755,7 @@ export function createAppRouter(history: RouterHistory): Router {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test`
+Run: `pnpm --filter @gheychi/provider-panel test`
 Expected: PASS (4 tests in this file; 11 total)
 
 - [ ] **Step 5: Commit**
@@ -1855,7 +1855,7 @@ describe('LoginView', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test`
+Run: `pnpm --filter @gheychi/provider-panel test`
 Expected: FAIL with "Cannot find module './LoginView.vue'"
 
 - [ ] **Step 3: Write minimal implementation**
@@ -1948,7 +1948,7 @@ async function verifyOtp() {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test`
+Run: `pnpm --filter @gheychi/provider-panel test`
 Expected: PASS (2 tests in this file; 13 total)
 
 - [ ] **Step 5: Commit**
@@ -2250,7 +2250,7 @@ describe('OnboardingView', () => {
 
 - [ ] **Step 4: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test`
+Run: `pnpm --filter @gheychi/provider-panel test`
 Expected: FAIL with "Cannot find module './OnboardingView.vue'"
 
 - [ ] **Step 5: Write the wizard shell (steps 1-2 only; Task 15 adds step 3 and submit)**
@@ -2327,7 +2327,7 @@ function back() {
 
 - [ ] **Step 6: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test`
+Run: `pnpm --filter @gheychi/provider-panel test`
 Expected: PASS (1 test in this file; 14 total)
 
 - [ ] **Step 7: Commit**
@@ -2443,7 +2443,7 @@ Append to `apps/provider-panel/src/pages/OnboardingView.spec.ts`:
 
 - [ ] **Step 3: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test`
+Run: `pnpm --filter @gheychi/provider-panel test`
 Expected: FAIL — no step 3 / no submit button yet
 
 - [ ] **Step 4: Add step 3 and the submit handler to `OnboardingView.vue`**
@@ -2596,7 +2596,7 @@ Replace the `<template>` block:
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test`
+Run: `pnpm --filter @gheychi/provider-panel test`
 Expected: PASS (2 tests in this file; 15 total)
 
 - [ ] **Step 6: Commit**
@@ -2653,7 +2653,7 @@ describe('PendingApprovalView', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test`
+Run: `pnpm --filter @gheychi/provider-panel test`
 Expected: FAIL with "Cannot find module './PendingApprovalView.vue'"
 
 - [ ] **Step 3: Write minimal implementation**
@@ -2687,7 +2687,7 @@ const { salon, refetch } = useSalon()
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test`
+Run: `pnpm --filter @gheychi/provider-panel test`
 Expected: PASS (2 tests in this file; 17 total)
 
 - [ ] **Step 5: Commit**
@@ -2787,7 +2787,7 @@ const routes = [
 
 - [ ] **Step 4: Re-run the full test suite to confirm the router restructure didn't break the Task 11 guard tests**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test`
+Run: `pnpm --filter @gheychi/provider-panel test`
 Expected: PASS (all 17 tests still passing — the guard logic itself didn't change, only how routes are nested)
 
 - [ ] **Step 5: Commit**
@@ -2972,7 +2972,7 @@ describe('BookingsView', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test`
+Run: `pnpm --filter @gheychi/provider-panel test`
 Expected: FAIL with "Cannot find module './BookingsView.vue'"
 
 - [ ] **Step 3: Write minimal implementation**
@@ -3040,7 +3040,7 @@ async function cancelBooking(id: string) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test`
+Run: `pnpm --filter @gheychi/provider-panel test`
 Expected: PASS (2 tests in this file)
 
 - [ ] **Step 5: Commit**
@@ -3328,7 +3328,7 @@ describe('PhotoUploader', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test`
+Run: `pnpm --filter @gheychi/provider-panel test`
 Expected: FAIL with "Cannot find module './PhotoUploader.vue'"
 
 - [ ] **Step 3: Write minimal implementation**
@@ -3381,7 +3381,7 @@ async function onFileChange(event: Event) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test`
+Run: `pnpm --filter @gheychi/provider-panel test`
 Expected: PASS (2 tests in this file)
 
 - [ ] **Step 5: Write `PhotosView.vue`**
@@ -3614,13 +3614,13 @@ export default defineConfig({
   use: { baseURL: 'http://localhost:3004' },
   webServer: [
     {
-      command: 'pnpm --filter @arayeshgah/api dev',
+      command: 'pnpm --filter @gheychi/api dev',
       url: 'http://localhost:3002/api/health',
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },
     {
-      command: 'pnpm --filter @arayeshgah/provider-panel dev',
+      command: 'pnpm --filter @gheychi/provider-panel dev',
       url: 'http://localhost:3004',
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
@@ -3642,9 +3642,9 @@ function makeClient() {
   return new Client({
     host: process.env.DB_HOST ?? 'localhost',
     port: Number(process.env.DB_PORT ?? 5544),
-    user: process.env.DB_USER ?? 'arayeshgah',
-    password: process.env.DB_PASS ?? 'arayeshgah',
-    database: process.env.DB_NAME ?? 'arayeshgah',
+    user: process.env.DB_USER ?? 'gheychi',
+    password: process.env.DB_PASS ?? 'gheychi',
+    database: process.env.DB_NAME ?? 'gheychi',
   })
 }
 
@@ -3658,7 +3658,7 @@ export default async function globalSetup() {
   await redis.flushdb()
   await redis.quit()
 
-  execSync('pnpm --filter @arayeshgah/api migration:run', {
+  execSync('pnpm --filter @gheychi/api migration:run', {
     cwd: path.resolve(__dirname, '../../..'),
     stdio: 'inherit',
   })
@@ -3700,7 +3700,7 @@ export default async function globalSetup() {
 
 - [ ] **Step 3: Add the `pg` dependency (already present transitively via user-app, but this app needs its own)**
 
-Run: `pnpm --filter @arayeshgah/provider-panel add -D pg @types/pg`
+Run: `pnpm --filter @gheychi/provider-panel add -D pg @types/pg`
 
 - [ ] **Step 4: Commit**
 
@@ -3769,7 +3769,7 @@ test('login, complete onboarding wizard, land on pending-approval', async ({ pag
 
 - [ ] **Step 2: Run it**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test:e2e`
+Run: `pnpm --filter @gheychi/provider-panel test:e2e`
 Expected: PASS (1 test)
 
 - [ ] **Step 3: Commit**
@@ -3823,17 +3823,17 @@ test('log in as an approved provider and mark a confirmed booking completed', as
 
 - [ ] **Step 2: Run it**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test:e2e`
+Run: `pnpm --filter @gheychi/provider-panel test:e2e`
 Expected: PASS (2 tests total)
 
 - [ ] **Step 3: Run the full test suite one more time (unit + component + e2e) before wrapping up**
 
-Run: `pnpm --filter @arayeshgah/provider-panel test && pnpm --filter @arayeshgah/provider-panel test:e2e`
+Run: `pnpm --filter @gheychi/provider-panel test && pnpm --filter @gheychi/provider-panel test:e2e`
 Expected: all green
 
 - [ ] **Step 4: Run the backend's full suite too, to confirm none of Tasks 1-6 broke existing behavior**
 
-Run: `pnpm --filter @arayeshgah/api test && pnpm --filter @arayeshgah/api test:e2e`
+Run: `pnpm --filter @gheychi/api test && pnpm --filter @gheychi/api test:e2e`
 Expected: all green (pre-existing suites plus the new ones from Tasks 1-6)
 
 - [ ] **Step 5: Commit**

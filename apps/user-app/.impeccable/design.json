@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generatedAt": "2026-07-23T00:00:00.000Z",
-  "title": "Design System: Arayeshgah",
+  "title": "Design System: Gheychi",
   "extensions": {
     "colorMeta": {
       "accent-teal": {
@@ -106,7 +106,7 @@
   ],
   "narrative": {
     "northStar": "The Verified Ledger",
-    "overview": "Arayeshgah's job is to make trust legible at a glance -- a review only exists because a booking actually happened, a deposit is real money already moving, a salon only appears because a human already checked it. The visual system should read the same way: precise, confident, and quietly official, like a stamped receipt rather than a marketing flyer. Color is used deliberately and sparingly -- the accent appears as a seal of approval on the one thing that matters on a given screen (the primary action, the verified badge, the price that's about to be charged), not as ambient decoration. Edges are clean and deliberate; nothing about the interface should feel soft, vague, or negotiable, because the product itself isn't. This is a mobile-first system, built for budget Android hardware and unreliable networks, not a demo device. It avoids the generic AI-SaaS tells on sight: no Inter, no purple-to-blue gradients, no cards nested in cards, no rounded-square icon tile floating above every heading. Vazirmatn carries the whole system; RTL is the only reading direction this system knows.",
+    "overview": "Gheychi's job is to make trust legible at a glance -- a review only exists because a booking actually happened, a deposit is real money already moving, a salon only appears because a human already checked it. The visual system should read the same way: precise, confident, and quietly official, like a stamped receipt rather than a marketing flyer. Color is used deliberately and sparingly -- the accent appears as a seal of approval on the one thing that matters on a given screen (the primary action, the verified badge, the price that's about to be charged), not as ambient decoration. Edges are clean and deliberate; nothing about the interface should feel soft, vague, or negotiable, because the product itself isn't. This is a mobile-first system, built for budget Android hardware and unreliable networks, not a demo device. It avoids the generic AI-SaaS tells on sight: no Inter, no purple-to-blue gradients, no cards nested in cards, no rounded-square icon tile floating above every heading. Vazirmatn carries the whole system; RTL is the only reading direction this system knows.",
     "keyCharacteristics": [
       "A two-mode identity that fully re-themes, not just inverts: light is teal-accented (\"Certified Teal\"), dark is violet-accented (\"Notarized Violet\").",
       "Restrained, purposeful shadow use -- elevation is a deliberate signal, never ambient texture.",

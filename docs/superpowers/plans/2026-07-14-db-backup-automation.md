@@ -12,7 +12,7 @@
 
 ## Before You Start
 
-All commands below assume the repo root (`~/projects/Arayeshgah`) as the working directory. Testing this plan requires a local MinIO container as a stand-in for real S3 (no real cloud credentials needed) and the existing dev Postgres from the root `docker-compose.yml` (`docker compose up -d` if not already running).
+All commands below assume the repo root (`~/projects/Gheychi`) as the working directory. Testing this plan requires a local MinIO container as a stand-in for real S3 (no real cloud credentials needed) and the existing dev Postgres from the root `docker-compose.yml` (`docker compose up -d` if not already running).
 
 ---
 
@@ -42,7 +42,7 @@ set -eu
 : "${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY is required}"
 
 TIMESTAMP=$(date -u +%Y-%m-%dT%H%M%SZ)
-FILENAME="arayeshgah-${TIMESTAMP}.dump"
+FILENAME="gheychi-${TIMESTAMP}.dump"
 DUMP_PATH="/tmp/${FILENAME}"
 
 echo "[backup] starting dump to ${DUMP_PATH}"
@@ -116,41 +116,41 @@ The `COPY` paths are relative to the build context (repo root — see Task 2's `
 
 - [ ] **Step 5: Build the image**
 
-Run: `docker build -f docker/backup/Dockerfile -t arayeshgah-backup:test .`
-Expected: builds cleanly through the single stage; `docker run --rm arayeshgah-backup:test pg_dump --version` prints a `pg_dump (PostgreSQL) 16.x` line, and `docker run --rm arayeshgah-backup:test mc --version` prints a MinIO client version line.
+Run: `docker build -f docker/backup/Dockerfile -t gheychi-backup:test .`
+Expected: builds cleanly through the single stage; `docker run --rm gheychi-backup:test pg_dump --version` prints a `pg_dump (PostgreSQL) 16.x` line, and `docker run --rm gheychi-backup:test mc --version` prints a MinIO client version line.
 
 - [ ] **Step 6: Stand up a local MinIO container as a stand-in for real S3**
 
 ```bash
-docker run -d --name arayeshgah-minio-test -p 9000:9000 -p 9001:9001 \
+docker run -d --name gheychi-minio-test -p 9000:9000 -p 9001:9001 \
   -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin123 \
   minio/minio server /data --console-address ":9001"
 sleep 3
 docker run --rm --network host -e MC_HOST_local=http://minioadmin:minioadmin123@localhost:9000 \
-  minio/mc mb local/arayeshgah-backups-test
+  minio/mc mb local/gheychi-backups-test
 ```
 
 Expected: the second command prints `Bucket created successfully`. This MinIO instance and bucket are purely local test infrastructure, not committed anywhere.
 
 - [ ] **Step 7: Run a real backup cycle against local dev Postgres + the test bucket**
 
-Ensure the dev stack is up first: `docker compose up -d` (from repo root, starts the pre-existing dev Postgres/Redis) and migrations have been run at least once (`pnpm --filter @arayeshgah/api migration:run`).
+Ensure the dev stack is up first: `docker compose up -d` (from repo root, starts the pre-existing dev Postgres/Redis) and migrations have been run at least once (`pnpm --filter @gheychi/api migration:run`).
 
 ```bash
 docker run --rm --network host \
-  -e DB_HOST=localhost -e DB_USER=arayeshgah -e DB_PASS=arayeshgah -e DB_NAME=arayeshgah \
-  -e S3_ENDPOINT=http://localhost:9000 -e S3_BUCKET=arayeshgah-backups-test \
+  -e DB_HOST=localhost -e DB_USER=gheychi -e DB_PASS=gheychi -e DB_NAME=gheychi \
+  -e S3_ENDPOINT=http://localhost:9000 -e S3_BUCKET=gheychi-backups-test \
   -e S3_ACCESS_KEY_ID=minioadmin -e S3_SECRET_ACCESS_KEY=minioadmin123 \
-  arayeshgah-backup:test /backup.sh
+  gheychi-backup:test /backup.sh
 ```
 
-Expected: prints `[backup] starting dump...`, `[backup] dump complete (<size>)`, `[backup] uploading to s3backup/arayeshgah-backups-test/backups/arayeshgah-<timestamp>.dump`, `[backup] pruning backups older than 14 days`, `[backup] done: <filename>`. Note `--network host` is used only for this local test so the container can reach the dev Postgres/MinIO bound to `localhost` — the real deployment uses the compose-internal `internal` network instead (Task 2), no `--network host` there.
+Expected: prints `[backup] starting dump...`, `[backup] dump complete (<size>)`, `[backup] uploading to s3backup/gheychi-backups-test/backups/gheychi-<timestamp>.dump`, `[backup] pruning backups older than 14 days`, `[backup] done: <filename>`. Note `--network host` is used only for this local test so the container can reach the dev Postgres/MinIO bound to `localhost` — the real deployment uses the compose-internal `internal` network instead (Task 2), no `--network host` there.
 
 - [ ] **Step 8: Verify the dump actually landed in the bucket, and that pruning didn't delete it**
 
 ```bash
 docker run --rm --network host -e MC_HOST_local=http://minioadmin:minioadmin123@localhost:9000 \
-  minio/mc ls local/arayeshgah-backups-test/backups/
+  minio/mc ls local/gheychi-backups-test/backups/
 ```
 
 Expected: lists exactly one `.dump` file (the one just uploaded) with a non-trivial size (at least a few KB, confirming it's a real dump, not an empty/failed file) — proving the upload succeeded and the immediately-following prune step correctly left a fresh (well under 14 days old) object alone.
@@ -158,7 +158,7 @@ Expected: lists exactly one `.dump` file (the one just uploaded) with a non-triv
 - [ ] **Step 9: Tear down the local test MinIO container**
 
 ```bash
-docker rm -f arayeshgah-minio-test
+docker rm -f gheychi-minio-test
 ```
 
 - [ ] **Step 10: Commit**
@@ -273,7 +273,7 @@ Download a specific dated backup from S3 (list what's available with `docker com
 
 ```bash
 docker compose -f docker-compose.prod.yml exec backup mc cp \
-  s3backup/$S3_BUCKET/backups/arayeshgah-2026-07-14T030000Z.dump /tmp/restore.dump
+  s3backup/$S3_BUCKET/backups/gheychi-2026-07-14T030000Z.dump /tmp/restore.dump
 ```
 
 **Verify a backup restores cleanly, without touching the live database:**
@@ -307,34 +307,34 @@ git commit -m "docs: add backup restore runbook to DEPLOY.md"
 
 This step proves the restore procedure genuinely works, not just that the commands run without erroring — per the design's locked decision, a backup nobody has ever restored from is not a real safety net.
 
-Ensure dev Postgres is up and migrated (`docker compose up -d`, `pnpm --filter @arayeshgah/api migration:run` if not already run). If the `arayeshgah-backup:test` image from Task 1 is no longer in your local Docker image cache (e.g. resuming in a fresh environment), rebuild it first: `docker build -f docker/backup/Dockerfile -t arayeshgah-backup:test .`
+Ensure dev Postgres is up and migrated (`docker compose up -d`, `pnpm --filter @gheychi/api migration:run` if not already run). If the `gheychi-backup:test` image from Task 1 is no longer in your local Docker image cache (e.g. resuming in a fresh environment), rebuild it first: `docker build -f docker/backup/Dockerfile -t gheychi-backup:test .`
 
 Dump the dev database for real, using the same tool the backup service uses, with the host's current directory volume-mounted so the dump file lands on disk (not trapped inside an ephemeral container):
 
 ```bash
-docker run --rm --network host -e PGPASSWORD=arayeshgah -v "$(pwd)":/out \
-  arayeshgah-backup:test pg_dump -h localhost -U arayeshgah -d arayeshgah -Fc -f /out/local-test.dump
+docker run --rm --network host -e PGPASSWORD=gheychi -v "$(pwd)":/out \
+  gheychi-backup:test pg_dump -h localhost -U gheychi -d gheychi -Fc -f /out/local-test.dump
 ```
 
 Record the source row counts for a couple of seeded tables (migrations seed `service_categories`, among others):
 
 ```bash
-docker compose exec postgres psql -U arayeshgah -d arayeshgah -c "SELECT count(*) FROM service_categories;"
+docker compose exec postgres psql -U gheychi -d gheychi -c "SELECT count(*) FROM service_categories;"
 ```
 
 Restore into a scratch database and compare:
 
 ```bash
-docker compose exec postgres createdb -U arayeshgah restore_verify_test
-docker run --rm --network host -e PGPASSWORD=arayeshgah -v "$(pwd)":/out \
-  arayeshgah-backup:test pg_restore -h localhost -U arayeshgah -d restore_verify_test /out/local-test.dump
-docker compose exec postgres psql -U arayeshgah -d restore_verify_test -c "SELECT count(*) FROM service_categories;"
+docker compose exec postgres createdb -U gheychi restore_verify_test
+docker run --rm --network host -e PGPASSWORD=gheychi -v "$(pwd)":/out \
+  gheychi-backup:test pg_restore -h localhost -U gheychi -d restore_verify_test /out/local-test.dump
+docker compose exec postgres psql -U gheychi -d restore_verify_test -c "SELECT count(*) FROM service_categories;"
 ```
 
-Expected: the `service_categories` count (and any other table you spot-check) matches exactly between the source `arayeshgah` database and the restored `restore_verify_test` database. Clean up afterward:
+Expected: the `service_categories` count (and any other table you spot-check) matches exactly between the source `gheychi` database and the restored `restore_verify_test` database. Clean up afterward:
 
 ```bash
-docker compose exec postgres dropdb -U arayeshgah restore_verify_test
+docker compose exec postgres dropdb -U gheychi restore_verify_test
 rm -f local-test.dump
 ```
 
@@ -374,7 +374,7 @@ git commit -m "docs: record DB backup automation in CLAUDE.md Known Gaps"
 
 ## Final Verification
 
-- [ ] `docker build -f docker/backup/Dockerfile -t arayeshgah-backup:test .` succeeds
+- [ ] `docker build -f docker/backup/Dockerfile -t gheychi-backup:test .` succeeds
 - [ ] A real backup cycle (Task 1, Step 7) uploads a valid, non-trivial-sized `.dump` to a test bucket
 - [ ] `docker compose -f docker-compose.prod.yml config --quiet` succeeds with the new `backup` service present
 - [ ] The restore path (Task 4, Step 4) was actually run once, with matching row counts confirmed — not just documented

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make Arayeshgah deployable to a real single-VPS `docker compose` stack — Docker images for all four apps, a production compose file with a Caddy TLS reverse proxy, a GitHub Actions CI pipeline (test everything, build+push images to GHCR on `main`), and the real Kavenegar/Zarinpal/S3/WebPush providers hardened and documented for cutover.
+**Goal:** Make Gheychi deployable to a real single-VPS `docker compose` stack — Docker images for all four apps, a production compose file with a Caddy TLS reverse proxy, a GitHub Actions CI pipeline (test everything, build+push images to GHCR on `main`), and the real Kavenegar/Zarinpal/S3/WebPush providers hardened and documented for cutover.
 
 **Architecture:** One multi-stage `Dockerfile` per app using Turborepo's `turbo prune --docker` pattern (pruner → installer → runner). `docker-compose.prod.yml` adds the four app images plus a Caddy reverse-proxy container to the existing Postgres/Redis services, all pre-built by CI and pulled — never built on the VPS. A single GitHub Actions workflow runs the full test suite on every push/PR and, on `main` only, builds and pushes the four images to GHCR. Deploy to the VPS stays a manual documented `git pull`-free `docker compose pull && up -d` step.
 
@@ -16,7 +16,7 @@ This plan touches real external service credentials only in documentation (§9 o
 
 Read `docs/superpowers/specs/2026-07-11-plan-9-production-deployment-design.md` first for the full rationale behind every decision below (domains, why the API image keeps devDependencies, why migrations are a manual step, etc.).
 
-All commands below assume the repo root (`~/projects/Arayeshgah`) as the working directory unless a task says otherwise.
+All commands below assume the repo root (`~/projects/Gheychi`) as the working directory unless a task says otherwise.
 
 ---
 
@@ -49,7 +49,7 @@ Add this test to the end of the existing `describe('KavenegarSmsProvider', ...)`
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- kavenegar-sms.provider.spec.ts`
+Run: `pnpm --filter @gheychi/api test -- kavenegar-sms.provider.spec.ts`
 Expected: FAIL — `fetchMock.mock.calls[0][1]` is `undefined` because `fetch(url)` is currently called with no second argument.
 
 - [ ] **Step 3: Write the minimal implementation**
@@ -116,7 +116,7 @@ export class KavenegarSmsProvider implements SmsProvider {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- kavenegar-sms.provider.spec.ts`
+Run: `pnpm --filter @gheychi/api test -- kavenegar-sms.provider.spec.ts`
 Expected: PASS (6 tests: the 5 pre-existing plus the new timeout test)
 
 - [ ] **Step 5: Commit**
@@ -161,7 +161,7 @@ Add this test to the end of the existing `describe('ZarinpalGateway', ...)` bloc
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- zarinpal-payment.gateway.spec.ts`
+Run: `pnpm --filter @gheychi/api test -- zarinpal-payment.gateway.spec.ts`
 Expected: FAIL — neither fetch call currently sets `signal`.
 
 - [ ] **Step 3: Write the minimal implementation**
@@ -206,7 +206,7 @@ And the `verifyPayment` fetch call:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- zarinpal-payment.gateway.spec.ts`
+Run: `pnpm --filter @gheychi/api test -- zarinpal-payment.gateway.spec.ts`
 Expected: PASS (9 tests: the 8 pre-existing plus the new timeout test)
 
 - [ ] **Step 5: Commit**
@@ -231,7 +231,7 @@ AWS SDK v3's `NodeHttpHandler` defaults both `connectionTimeout` and `requestTim
 
 `@smithy/node-http-handler` is already resolved transitively (via `@aws-sdk/client-s3`), but importing it directly requires declaring it as a direct dependency — otherwise it's a "phantom dependency" that pnpm's strict `node_modules` layout won't expose to `apps/api`.
 
-Run: `pnpm --filter @arayeshgah/api add @smithy/node-http-handler`
+Run: `pnpm --filter @gheychi/api add @smithy/node-http-handler`
 Expected: `apps/api/package.json`'s `dependencies` gains a `"@smithy/node-http-handler"` entry (pnpm resolves it to the same `4.9.3` already in the lockfile); `pnpm-lock.yaml` updates accordingly.
 
 - [ ] **Step 2: Write the failing test**
@@ -264,7 +264,7 @@ Add this test to the end of the existing `describe('S3StorageProvider', ...)` bl
 
 - [ ] **Step 3: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- s3-storage.provider.spec.ts`
+Run: `pnpm --filter @gheychi/api test -- s3-storage.provider.spec.ts`
 Expected: FAIL — `NodeHttpHandler` mock has zero calls because the provider doesn't construct one yet.
 
 - [ ] **Step 4: Write the minimal implementation**
@@ -323,7 +323,7 @@ export class S3StorageProvider implements StorageProvider {
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- s3-storage.provider.spec.ts`
+Run: `pnpm --filter @gheychi/api test -- s3-storage.provider.spec.ts`
 Expected: PASS (4 tests: the 3 pre-existing plus the new timeout test)
 
 - [ ] **Step 6: Commit**
@@ -398,7 +398,7 @@ describe('WebPushProvider', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @arayeshgah/api test -- web-push.provider.spec.ts`
+Run: `pnpm --filter @gheychi/api test -- web-push.provider.spec.ts`
 Expected: FAIL on the second test — `sendNotification` is currently called with only 2 arguments (no `options` object), so the assertion on the third call argument fails.
 
 - [ ] **Step 3: Write the minimal implementation**
@@ -437,7 +437,7 @@ export class WebPushProvider implements PushProvider {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @arayeshgah/api test -- web-push.provider.spec.ts`
+Run: `pnpm --filter @gheychi/api test -- web-push.provider.spec.ts`
 Expected: PASS (3 tests)
 
 - [ ] **Step 5: Commit**
@@ -476,7 +476,7 @@ Create `.dockerignore` at the repo root:
 
 - [ ] **Step 2: Verify it's picked up**
 
-Run: `docker build -f apps/api/Dockerfile -t arayeshgah-api:context-check --target pruner .`
+Run: `docker build -f apps/api/Dockerfile -t gheychi-api:context-check --target pruner .`
 
 This will fail at this point in the plan (`apps/api/Dockerfile` doesn't exist until Task 6) — that's expected. This step just confirms the command syntax; skip actually running it until Task 6 exists, and re-verify context size then with `docker build --progress=plain ... 2>&1 | grep "transferring context"` to confirm `node_modules` isn't in the transferred bytes.
 
@@ -491,7 +491,7 @@ git commit -m "chore: add root .dockerignore for Docker build contexts"
 
 ## Task 6: `apps/api/Dockerfile`
 
-Multi-stage build using `turbo prune @arayeshgah/api --docker`. The runner stage deliberately keeps the full pruned source tree and all dependencies (including devDependencies) rather than shipping only `dist/` — this lets the existing `pnpm migration:run` script (which uses `typeorm-ts-node-commonjs` against `src/data-source.ts`) run unchanged inside the production container via `docker compose exec`, per the design doc's §4/§7 tradeoff.
+Multi-stage build using `turbo prune @gheychi/api --docker`. The runner stage deliberately keeps the full pruned source tree and all dependencies (including devDependencies) rather than shipping only `dist/` — this lets the existing `pnpm migration:run` script (which uses `typeorm-ts-node-commonjs` against `src/data-source.ts`) run unchanged inside the production container via `docker compose exec`, per the design doc's §4/§7 tradeoff.
 
 **Files:**
 - Create: `apps/api/Dockerfile`
@@ -507,7 +507,7 @@ FROM node:20-alpine AS pruner
 WORKDIR /app
 RUN npm install -g turbo@2
 COPY . .
-RUN turbo prune @arayeshgah/api --docker
+RUN turbo prune @gheychi/api --docker
 
 FROM node:20-alpine AS installer
 WORKDIR /app
@@ -515,7 +515,7 @@ RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 COPY --from=pruner /app/out/json/ .
 RUN pnpm install --frozen-lockfile
 COPY --from=pruner /app/out/full/ .
-RUN pnpm turbo run build --filter=@arayeshgah/api
+RUN pnpm turbo run build --filter=@gheychi/api
 
 FROM node:20-alpine AS runner
 WORKDIR /app
@@ -526,11 +526,11 @@ EXPOSE 3002
 CMD ["node", "apps/api/dist/src/main.js"]
 ```
 
-The `dist/src/main.js` path (not `dist/main.js`) is deliberate: `apps/api/tsconfig.json` has no `rootDir` set, and TypeScript infers it as the longest common path across `src/`, `scripts/`, and `test/` (all siblings under `apps/api/`) — so `nest build` mirrors that under `dist/`, landing the compiled entrypoint at `dist/src/main.js`. Verified by running `pnpm --filter @arayeshgah/api build && find apps/api/dist -iname main.js` locally before writing this task.
+The `dist/src/main.js` path (not `dist/main.js`) is deliberate: `apps/api/tsconfig.json` has no `rootDir` set, and TypeScript infers it as the longest common path across `src/`, `scripts/`, and `test/` (all siblings under `apps/api/`) — so `nest build` mirrors that under `dist/`, landing the compiled entrypoint at `dist/src/main.js`. Verified by running `pnpm --filter @gheychi/api build && find apps/api/dist -iname main.js` locally before writing this task.
 
 - [ ] **Step 2: Build the image**
 
-Run: `docker build -f apps/api/Dockerfile -t arayeshgah-api:test .`
+Run: `docker build -f apps/api/Dockerfile -t gheychi-api:test .`
 Expected: build completes through all three stages with no errors.
 
 - [ ] **Step 3: Smoke-test the container**
@@ -539,13 +539,13 @@ The dev Postgres/Redis from the root `docker-compose.yml` must already be runnin
 
 Run:
 ```bash
-docker run --rm -d --name arayeshgah-api-smoke -p 3002:3002 \
+docker run --rm -d --name gheychi-api-smoke -p 3002:3002 \
   --env-file apps/api/.env.test \
   -e DB_HOST=host.docker.internal -e REDIS_HOST=host.docker.internal \
-  arayeshgah-api:test
+  gheychi-api:test
 sleep 3
 curl -f http://localhost:3002/api/health
-docker stop arayeshgah-api-smoke
+docker stop gheychi-api-smoke
 ```
 Expected: the `curl` returns a 2xx response (the existing `HealthController`'s response body). `host.docker.internal` resolves to the host machine's Docker Desktop gateway, letting the container reach the dev Postgres/Redis already bound to `localhost:5544`/`localhost:6381` on the host.
 
@@ -576,7 +576,7 @@ FROM node:20-alpine AS pruner
 WORKDIR /app
 RUN npm install -g turbo@2
 COPY . .
-RUN turbo prune @arayeshgah/user-app --docker
+RUN turbo prune @gheychi/user-app --docker
 
 FROM node:20-alpine AS installer
 WORKDIR /app
@@ -584,7 +584,7 @@ RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 COPY --from=pruner /app/out/json/ .
 RUN pnpm install --frozen-lockfile
 COPY --from=pruner /app/out/full/ .
-RUN pnpm turbo run build --filter=@arayeshgah/user-app
+RUN pnpm turbo run build --filter=@gheychi/user-app
 
 FROM node:20-alpine AS runner
 WORKDIR /app
@@ -599,19 +599,19 @@ CMD ["node", ".output/server/index.mjs"]
 
 - [ ] **Step 2: Build the image**
 
-Run: `docker build -f apps/user-app/Dockerfile -t arayeshgah-user-app:test .`
-Expected: build completes; the Nitro build step (`pnpm turbo run build --filter=@arayeshgah/user-app`) is the slowest part (cold Nuxt/Vite compile, similar to the Playwright config's measured ~78s note for `nuxt dev` — a production `nuxt build` is comparably heavy).
+Run: `docker build -f apps/user-app/Dockerfile -t gheychi-user-app:test .`
+Expected: build completes; the Nitro build step (`pnpm turbo run build --filter=@gheychi/user-app`) is the slowest part (cold Nuxt/Vite compile, similar to the Playwright config's measured ~78s note for `nuxt dev` — a production `nuxt build` is comparably heavy).
 
 - [ ] **Step 3: Smoke-test the container**
 
 Run:
 ```bash
-docker run --rm -d --name arayeshgah-user-app-smoke -p 3003:3003 \
+docker run --rm -d --name gheychi-user-app-smoke -p 3003:3003 \
   -e NUXT_PUBLIC_API_BASE=http://localhost:3002/api \
-  arayeshgah-user-app:test
+  gheychi-user-app:test
 sleep 3
 curl -f http://localhost:3003 | grep -q "<!DOCTYPE html>"
-docker stop arayeshgah-user-app-smoke
+docker stop gheychi-user-app-smoke
 ```
 Expected: the response contains server-rendered HTML (confirms SSR is working, not just a static shell). The app doesn't need a reachable API for this smoke test — pages that fail their `apiFetch` calls degrade to empty/error states per `useApi()`'s `silent` handling, they don't crash the server.
 
@@ -667,7 +667,7 @@ FROM node:20-alpine AS pruner
 WORKDIR /app
 RUN npm install -g turbo@2
 COPY . .
-RUN turbo prune @arayeshgah/provider-panel --docker
+RUN turbo prune @gheychi/provider-panel --docker
 
 FROM node:20-alpine AS installer
 WORKDIR /app
@@ -677,7 +677,7 @@ RUN pnpm install --frozen-lockfile
 COPY --from=pruner /app/out/full/ .
 ARG VITE_API_BASE=http://localhost:3002/api
 ENV VITE_API_BASE=$VITE_API_BASE
-RUN pnpm turbo run build --filter=@arayeshgah/provider-panel
+RUN pnpm turbo run build --filter=@gheychi/provider-panel
 
 FROM nginx:1.27-alpine AS runner
 COPY docker/nginx-spa.conf /etc/nginx/conf.d/default.conf
@@ -689,12 +689,12 @@ EXPOSE 80
 
 Run:
 ```bash
-docker build -f apps/provider-panel/Dockerfile -t arayeshgah-provider-panel:test .
-docker run --rm -d --name arayeshgah-provider-panel-smoke -p 8081:80 arayeshgah-provider-panel:test
+docker build -f apps/provider-panel/Dockerfile -t gheychi-provider-panel:test .
+docker run --rm -d --name gheychi-provider-panel-smoke -p 8081:80 gheychi-provider-panel:test
 sleep 1
 curl -f http://localhost:8081 | grep -q "<div id=\"app\">"
 curl -f http://localhost:8081/some/deep/client/route | grep -q "<div id=\"app\">"
-docker stop arayeshgah-provider-panel-smoke
+docker stop gheychi-provider-panel-smoke
 ```
 Expected: both requests return the same `index.html` shell (200, not 404) — the second confirms nginx's SPA fallback (`try_files ... /index.html`) is working for a client-side route.
 
@@ -725,7 +725,7 @@ FROM node:20-alpine AS pruner
 WORKDIR /app
 RUN npm install -g turbo@2
 COPY . .
-RUN turbo prune @arayeshgah/admin-panel --docker
+RUN turbo prune @gheychi/admin-panel --docker
 
 FROM node:20-alpine AS installer
 WORKDIR /app
@@ -735,7 +735,7 @@ RUN pnpm install --frozen-lockfile
 COPY --from=pruner /app/out/full/ .
 ARG VITE_API_BASE=http://localhost:3002/api
 ENV VITE_API_BASE=$VITE_API_BASE
-RUN pnpm turbo run build --filter=@arayeshgah/admin-panel
+RUN pnpm turbo run build --filter=@gheychi/admin-panel
 
 FROM nginx:1.27-alpine AS runner
 COPY docker/nginx-spa.conf /etc/nginx/conf.d/default.conf
@@ -747,11 +747,11 @@ EXPOSE 80
 
 Run:
 ```bash
-docker build -f apps/admin-panel/Dockerfile -t arayeshgah-admin-panel:test .
-docker run --rm -d --name arayeshgah-admin-panel-smoke -p 8082:80 arayeshgah-admin-panel:test
+docker build -f apps/admin-panel/Dockerfile -t gheychi-admin-panel:test .
+docker run --rm -d --name gheychi-admin-panel-smoke -p 8082:80 gheychi-admin-panel:test
 sleep 1
 curl -f http://localhost:8082 | grep -q "<div id=\"app\">"
-docker stop arayeshgah-admin-panel-smoke
+docker stop gheychi-admin-panel-smoke
 ```
 Expected: 200 with the app shell.
 
@@ -799,7 +799,7 @@ services:
     networks: [internal]
 
   api:
-    image: ghcr.io/amirho3sein/arayeshgah-api:latest
+    image: ghcr.io/amirho3sein/gheychi-api:latest
     restart: unless-stopped
     env_file: .env
     depends_on:
@@ -815,20 +815,20 @@ services:
     networks: [internal]
 
   user-app:
-    image: ghcr.io/amirho3sein/arayeshgah-user-app:latest
+    image: ghcr.io/amirho3sein/gheychi-user-app:latest
     restart: unless-stopped
     env_file: .env
     depends_on: [api]
     networks: [internal]
 
   provider-panel:
-    image: ghcr.io/amirho3sein/arayeshgah-provider-panel:latest
+    image: ghcr.io/amirho3sein/gheychi-provider-panel:latest
     restart: unless-stopped
     depends_on: [api]
     networks: [internal]
 
   admin-panel:
-    image: ghcr.io/amirho3sein/arayeshgah-admin-panel:latest
+    image: ghcr.io/amirho3sein/gheychi-admin-panel:latest
     restart: unless-stopped
     depends_on: [api]
     networks: [internal]
@@ -907,11 +907,11 @@ Create `Caddyfile` at the repo root:
 Append to the end of `.env.example` (after the existing `S3_PUBLIC_BASE_URL=` line):
 
 ```
-DOMAIN_APEX=arayeshgah.ir
-DOMAIN_API=api.arayeshgah.ir
-DOMAIN_PANEL=panel.arayeshgah.ir
-DOMAIN_ADMIN=admin.arayeshgah.ir
-ACME_EMAIL=admin@arayeshgah.ir
+DOMAIN_APEX=gheychi.ir
+DOMAIN_API=api.gheychi.ir
+DOMAIN_PANEL=panel.gheychi.ir
+DOMAIN_ADMIN=admin.gheychi.ir
+ACME_EMAIL=admin@gheychi.ir
 ```
 
 - [ ] **Step 3: Validate the Caddyfile's syntax**
@@ -964,13 +964,13 @@ jobs:
       postgres:
         image: postgis/postgis:16-3.4
         env:
-          POSTGRES_USER: arayeshgah
-          POSTGRES_PASSWORD: arayeshgah
-          POSTGRES_DB: arayeshgah
+          POSTGRES_USER: gheychi
+          POSTGRES_PASSWORD: gheychi
+          POSTGRES_DB: gheychi
         ports:
           - "5544:5432"
         options: >-
-          --health-cmd "pg_isready -U arayeshgah"
+          --health-cmd "pg_isready -U gheychi"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -1000,47 +1000,47 @@ jobs:
 
       - name: Prepare Postgres databases
         env:
-          PGPASSWORD: arayeshgah
+          PGPASSWORD: gheychi
         run: |
-          psql -h localhost -p 5544 -U arayeshgah -d arayeshgah -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-          psql -h localhost -p 5544 -U arayeshgah -d postgres -c "CREATE DATABASE arayeshgah_test;"
-          psql -h localhost -p 5544 -U arayeshgah -d arayeshgah_test -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          psql -h localhost -p 5544 -U gheychi -d gheychi -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          psql -h localhost -p 5544 -U gheychi -d postgres -c "CREATE DATABASE gheychi_test;"
+          psql -h localhost -p 5544 -U gheychi -d gheychi_test -c "CREATE EXTENSION IF NOT EXISTS postgis;"
 
       - name: Create apps/api/.env for dev-mode servers (used by Playwright e2e)
         run: cp .env.example apps/api/.env
 
       - name: Backend unit tests
-        run: pnpm --filter @arayeshgah/api test
+        run: pnpm --filter @gheychi/api test
 
       - name: Backend e2e tests
-        run: pnpm --filter @arayeshgah/api test:e2e
+        run: pnpm --filter @gheychi/api test:e2e
 
       - name: Frontend unit/component tests
         run: |
-          pnpm --filter @arayeshgah/user-app test
-          pnpm --filter @arayeshgah/provider-panel test
-          pnpm --filter @arayeshgah/admin-panel test
+          pnpm --filter @gheychi/user-app test
+          pnpm --filter @gheychi/provider-panel test
+          pnpm --filter @gheychi/admin-panel test
 
       - name: Install Playwright browsers
         # `playwright` isn't a root dependency (only a devDependency of the three frontend
         # workspaces), so `pnpm exec` needs a --filter to find the binary. The downloaded
         # browser cache is shared across all three apps regardless of which filter installs it.
-        run: pnpm --filter @arayeshgah/user-app exec playwright install --with-deps chromium
+        run: pnpm --filter @gheychi/user-app exec playwright install --with-deps chromium
 
       - name: user-app Playwright e2e
-        run: pnpm --filter @arayeshgah/user-app test:e2e
+        run: pnpm --filter @gheychi/user-app test:e2e
 
       - name: provider-panel Playwright e2e
-        run: pnpm --filter @arayeshgah/provider-panel test:e2e
+        run: pnpm --filter @gheychi/provider-panel test:e2e
 
       - name: admin-panel Playwright e2e
-        run: pnpm --filter @arayeshgah/admin-panel test:e2e
+        run: pnpm --filter @gheychi/admin-panel test:e2e
 
       - name: Build all apps
         run: pnpm build
 ```
 
-`DB_PORT=5544`/`REDIS_PORT=6381` are already `apps/api/.env.test`'s defaults (committed to the repo) and `.env.example`'s defaults — mapping the service containers to those exact host ports means neither file needs any CI-specific override. The three Playwright `webServer` configs each set `reuseExistingServer: !process.env.CI` and spawn their own `pnpm --filter @arayeshgah/api dev` — GitHub Actions sets `CI=true` automatically, so `reuseExistingServer` evaluates to `false` and each suite gets a fresh API dev server. Their `global-setup.ts` files reset the `arayeshgah` database (not `arayeshgah_test`) and run migrations against it themselves — the "Prepare Postgres databases" step above only needs to create the two empty databases with the PostGIS extension; schema and seed data are handled per-suite.
+`DB_PORT=5544`/`REDIS_PORT=6381` are already `apps/api/.env.test`'s defaults (committed to the repo) and `.env.example`'s defaults — mapping the service containers to those exact host ports means neither file needs any CI-specific override. The three Playwright `webServer` configs each set `reuseExistingServer: !process.env.CI` and spawn their own `pnpm --filter @gheychi/api dev` — GitHub Actions sets `CI=true` automatically, so `reuseExistingServer` evaluates to `false` and each suite gets a fresh API dev server. Their `global-setup.ts` files reset the `gheychi` database (not `gheychi_test`) and run migrations against it themselves — the "Prepare Postgres databases" step above only needs to create the two empty databases with the PostGIS extension; schema and seed data are handled per-suite.
 
 - [ ] **Step 2: Open a PR to verify the workflow runs**
 
@@ -1101,8 +1101,8 @@ Append to the end of `.github/workflows/ci.yml` (same indentation level as the e
           file: apps/api/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ env.OWNER_LC }}/arayeshgah-api:${{ github.sha }}
-            ghcr.io/${{ env.OWNER_LC }}/arayeshgah-api:latest
+            ghcr.io/${{ env.OWNER_LC }}/gheychi-api:${{ github.sha }}
+            ghcr.io/${{ env.OWNER_LC }}/gheychi-api:latest
 
       - name: Build and push user-app
         uses: docker/build-push-action@v7
@@ -1111,8 +1111,8 @@ Append to the end of `.github/workflows/ci.yml` (same indentation level as the e
           file: apps/user-app/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ env.OWNER_LC }}/arayeshgah-user-app:${{ github.sha }}
-            ghcr.io/${{ env.OWNER_LC }}/arayeshgah-user-app:latest
+            ghcr.io/${{ env.OWNER_LC }}/gheychi-user-app:${{ github.sha }}
+            ghcr.io/${{ env.OWNER_LC }}/gheychi-user-app:latest
 
       - name: Build and push provider-panel
         uses: docker/build-push-action@v7
@@ -1123,8 +1123,8 @@ Append to the end of `.github/workflows/ci.yml` (same indentation level as the e
           build-args: |
             VITE_API_BASE=${{ vars.VITE_API_BASE_PROD }}
           tags: |
-            ghcr.io/${{ env.OWNER_LC }}/arayeshgah-provider-panel:${{ github.sha }}
-            ghcr.io/${{ env.OWNER_LC }}/arayeshgah-provider-panel:latest
+            ghcr.io/${{ env.OWNER_LC }}/gheychi-provider-panel:${{ github.sha }}
+            ghcr.io/${{ env.OWNER_LC }}/gheychi-provider-panel:latest
 
       - name: Build and push admin-panel
         uses: docker/build-push-action@v7
@@ -1135,15 +1135,15 @@ Append to the end of `.github/workflows/ci.yml` (same indentation level as the e
           build-args: |
             VITE_API_BASE=${{ vars.VITE_API_BASE_PROD }}
           tags: |
-            ghcr.io/${{ env.OWNER_LC }}/arayeshgah-admin-panel:${{ github.sha }}
-            ghcr.io/${{ env.OWNER_LC }}/arayeshgah-admin-panel:latest
+            ghcr.io/${{ env.OWNER_LC }}/gheychi-admin-panel:${{ github.sha }}
+            ghcr.io/${{ env.OWNER_LC }}/gheychi-admin-panel:latest
 ```
 
 No SSH key, no VPS credentials, no Zarinpal/Kavenegar/S3 secrets anywhere in this job — it only ever touches `secrets.GITHUB_TOKEN` (built-in, scoped to this repo's GHCR packages) and the one non-secret `vars.VITE_API_BASE_PROD` repository variable.
 
 - [ ] **Step 2: Define the `VITE_API_BASE_PROD` repository variable**
 
-In the GitHub repo settings: **Settings → Secrets and variables → Actions → Variables tab → New repository variable**, name `VITE_API_BASE_PROD`, value `https://api.arayeshgah.ir/api` (or whatever `DOMAIN_API` is actually set to in Task 11's deployed `.env`). This is a manual one-time setup step — it isn't something a commit can create.
+In the GitHub repo settings: **Settings → Secrets and variables → Actions → Variables tab → New repository variable**, name `VITE_API_BASE_PROD`, value `https://api.gheychi.ir/api` (or whatever `DOMAIN_API` is actually set to in Task 11's deployed `.env`). This is a manual one-time setup step — it isn't something a commit can create.
 
 - [ ] **Step 3: Commit and push directly to `main`**
 
@@ -1157,7 +1157,7 @@ git push
 
 - [ ] **Step 4: Verify the job runs and produces images**
 
-Watch the Actions tab for the push-to-`main` run. Expected: `test` passes, then `build-and-push` runs and completes. Confirm all four images exist: repo → **Packages** (right sidebar) should list `arayeshgah-api`, `arayeshgah-user-app`, `arayeshgah-provider-panel`, `arayeshgah-admin-panel`, each with a `:latest` and a `:<sha>` tag.
+Watch the Actions tab for the push-to-`main` run. Expected: `test` passes, then `build-and-push` runs and completes. Confirm all four images exist: repo → **Packages** (right sidebar) should list `gheychi-api`, `gheychi-user-app`, `gheychi-provider-panel`, `gheychi-admin-panel`, each with a `:latest` and a `:<sha>` tag.
 
 ---
 
@@ -1171,7 +1171,7 @@ Watch the Actions tab for the push-to-`main` run. Expected: `test` passes, then 
 Create `docs/deployment/DEPLOY.md`:
 
 ```markdown
-# Deploying Arayeshgah to Production
+# Deploying Gheychi to Production
 
 One Linux VPS running the four app images (built by CI, pulled from GHCR — never built on the server) plus Postgres, Redis, and a Caddy reverse proxy, all via `docker-compose.prod.yml`. See `docs/superpowers/specs/2026-07-11-plan-9-production-deployment-design.md` for the full rationale behind every decision below.
 

@@ -12,7 +12,7 @@ The salon owner, as an owner-operator — the account holder and the person actu
 
 ## Product Purpose
 
-The salon owner's operating console for their Arayeshgah listing: onboard and configure the salon (profile, hours, photos, stories, portfolio), manage services and pricing (including per-service discounts and coupon codes), handle incoming bookings (confirm/complete/cancel, assign which staff member performed a service), manage a staff roster (workers) and respond to reviews, and see earnings. Success is a salon owner who trusts this panel enough to run their real booking calendar and pricing through it, not a side dashboard they don't actually rely on.
+The salon owner's operating console for their Gheychi listing: onboard and configure the salon (profile, hours, photos, stories, portfolio), manage services and pricing (including per-service discounts and coupon codes), handle incoming bookings (confirm/complete/cancel, assign which staff member performed a service), manage a staff roster (workers) and respond to reviews, and see earnings. Success is a salon owner who trusts this panel enough to run their real booking calendar and pricing through it, not a side dashboard they don't actually rely on.
 
 ## Positioning
 

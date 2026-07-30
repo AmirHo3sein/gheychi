@@ -213,7 +213,7 @@ const STEP_HINT: Record<typeof step.value, string> = {
         <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-white/15 backdrop-blur">
           <BaseIcon name="sparkles" :size="20" />
         </span>
-        <span class="text-lg font-bold">آرایشگاه</span>
+        <span class="text-lg font-bold">قیچی</span>
       </NuxtLink>
 
       <div class="relative z-10 space-y-4 text-white">
@@ -225,7 +225,7 @@ const STEP_HINT: Record<typeof step.value, string> = {
         </p>
       </div>
 
-      <p class="relative z-10 text-sm text-white/60">© {{ new Date().getFullYear() }} آرایشگاه</p>
+      <p class="relative z-10 text-sm text-white/60">© {{ new Date().getFullYear() }} قیچی</p>
     </div>
 
     <!-- Form panel -->
@@ -236,7 +236,7 @@ const STEP_HINT: Record<typeof step.value, string> = {
           <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-(--color-accent) text-white">
             <BaseIcon name="sparkles" :size="20" />
           </span>
-          <span class="text-lg font-bold">آرایشگاه</span>
+          <span class="text-lg font-bold">قیچی</span>
         </div>
 
         <BaseCard padding="lg">

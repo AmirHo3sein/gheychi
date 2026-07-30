@@ -5,7 +5,7 @@
 
 ## 1. Product Summary
 
-Admin Panel: a Vue 3 + Vite SPA (identical minimal stack to Provider Panel — plain refs, no form library, same brand tokens, Persian/RTL only) covering all 5 areas from the original marketplace design (`2026-07-04-arayeshgah-marketplace-design.md` §7): salon approvals, review moderation, categories, users/salons search+suspend, and platform_config editing. Built as **vertical slices in priority order** — each slice ships backend + frontend together, so the most urgent gap (salon approval currently requires a manual SQL update) becomes usable early rather than only at the end of a large plan.
+Admin Panel: a Vue 3 + Vite SPA (identical minimal stack to Provider Panel — plain refs, no form library, same brand tokens, Persian/RTL only) covering all 5 areas from the original marketplace design (`2026-07-04-gheychi-marketplace-design.md` §7): salon approvals, review moderation, categories, users/salons search+suspend, and platform_config editing. Built as **vertical slices in priority order** — each slice ships backend + frontend together, so the most urgent gap (salon approval currently requires a manual SQL update) becomes usable early rather than only at the end of a large plan.
 
 ### Decisions locked during brainstorming
 

@@ -7,9 +7,9 @@ export default async function globalSetup() {
   const client = new Client({
     host: process.env.DB_HOST ?? 'localhost',
     port: Number(process.env.DB_PORT ?? 5544),
-    user: process.env.DB_USER ?? 'arayeshgah',
-    password: process.env.DB_PASS ?? 'arayeshgah',
-    database: process.env.DB_NAME ?? 'arayeshgah',
+    user: process.env.DB_USER ?? 'gheychi',
+    password: process.env.DB_PASS ?? 'gheychi',
+    database: process.env.DB_NAME ?? 'gheychi',
   })
   await client.connect()
   await client.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;')
@@ -24,7 +24,7 @@ export default async function globalSetup() {
   await redis.flushdb()
   await redis.quit()
 
-  execSync('pnpm --filter @arayeshgah/api migration:run', {
+  execSync('pnpm --filter @gheychi/api migration:run', {
     cwd: path.resolve(__dirname, '../../..'),
     stdio: 'inherit',
   })
@@ -32,9 +32,9 @@ export default async function globalSetup() {
   const seedClient = new Client({
     host: process.env.DB_HOST ?? 'localhost',
     port: Number(process.env.DB_PORT ?? 5544),
-    user: process.env.DB_USER ?? 'arayeshgah',
-    password: process.env.DB_PASS ?? 'arayeshgah',
-    database: process.env.DB_NAME ?? 'arayeshgah',
+    user: process.env.DB_USER ?? 'gheychi',
+    password: process.env.DB_PASS ?? 'gheychi',
+    database: process.env.DB_NAME ?? 'gheychi',
   })
   await seedClient.connect()
   const { rows: [{ id: ownerId }] } = await seedClient.query(

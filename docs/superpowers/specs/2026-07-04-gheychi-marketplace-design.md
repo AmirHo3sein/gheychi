@@ -1,4 +1,4 @@
-# Arayeshgah — Salon Discovery & Booking Marketplace
+# Gheychi — Salon Discovery & Booking Marketplace
 
 **Date:** 2026-07-04
 **Status:** Approved design (brainstorming complete)
@@ -36,7 +36,7 @@ The comparison point is Snapp: a mobile-first experience where the user opens th
 Modular monolith in a pnpm + Turborepo monorepo:
 
 ```
-arayeshgah/
+gheychi/
 ├── apps/
 │   ├── user-app/          # Nuxt 3, mobile-first PWA, SSR (SEO-indexable salon pages)
 │   ├── provider-panel/    # Vue 3 SPA (Vite), mobile-friendly

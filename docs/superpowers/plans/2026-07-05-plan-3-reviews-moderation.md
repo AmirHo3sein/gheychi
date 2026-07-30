@@ -1092,7 +1092,7 @@ git commit -m "feat(api): admin review moderation with reactive publish/reject"
 
 - [ ] **Step 1: Run everything**
 
-Run: `pnpm --filter @arayeshgah/api test && pnpm --filter @arayeshgah/api test:e2e && pnpm build`
+Run: `pnpm --filter @gheychi/api test && pnpm --filter @gheychi/api test:e2e && pnpm build`
 Expected: all unit tests PASS (unchanged from Plan 2 — this plan adds no new unit-tested pure functions), all e2e suites PASS, build succeeds. Expected final e2e shape: the 15 suites from Plan 2 plus `reviews.e2e-spec.ts` (16 suites total, 63 + 18 = 81 tests).
 
 - [ ] **Step 2: Update `README.md`**

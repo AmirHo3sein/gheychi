@@ -8,7 +8,7 @@ const session = useSessionStore()
       <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-(--color-accent) text-white">
         <BaseIcon name="sparkles" :size="16" />
       </span>
-      <span class="font-bold">آرایشگاه</span>
+      <span class="font-bold">قیچی</span>
     </NuxtLink>
     <nav class="flex items-center gap-1 text-sm" aria-label="ناوبری اصلی">
       <NuxtLink

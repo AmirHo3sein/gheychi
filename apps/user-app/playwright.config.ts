@@ -31,7 +31,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: 'pnpm --filter @arayeshgah/api dev',
+      command: 'pnpm --filter @gheychi/api dev',
       url: 'http://localhost:3002/api/health',
       reuseExistingServer: !process.env.CI,
       // Measured cold-start (nest start --watch, first ts-node compile) at ~78s on this
@@ -40,7 +40,7 @@ export default defineConfig({
       timeout: 120_000,
     },
     {
-      command: 'pnpm --filter @arayeshgah/user-app dev',
+      command: 'pnpm --filter @gheychi/user-app dev',
       url: 'http://localhost:3003',
       reuseExistingServer: !process.env.CI,
       // Same reasoning as the api entry above -- a cold Nuxt/Vite dev server compiling

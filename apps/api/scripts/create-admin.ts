@@ -36,7 +36,7 @@ export function resolvePhoneArg(args: string[]): string | undefined {
   return args[0] === '--' ? args[1] : args[0];
 }
 
-const USAGE = 'Usage: pnpm --filter @arayeshgah/api create-admin 09xxxxxxxxx';
+const USAGE = 'Usage: pnpm --filter @gheychi/api create-admin 09xxxxxxxxx';
 
 async function main(): Promise<void> {
   const phone = resolvePhoneArg(process.argv.slice(2));
