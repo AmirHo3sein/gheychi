@@ -125,7 +125,14 @@ async function createCoupon() {
     code: newCoupon.code.trim(),
     discountPercent: Number(newCoupon.discountPercent),
   }
-  if (newCoupon.expiresAt) body.expiresAt = new Date(newCoupon.expiresAt).toISOString()
+  // The date input hands over a bare YYYY-MM-DD, which `new Date()` parses as UTC midnight --
+  // i.e. 03:30 local on the chosen day here (Iran is UTC+3:30). Redemption rejects as soon as
+  // expiresAt is in the past, so a coupon "valid through 10 Mordad" would have died at 03:30
+  // that morning while this list still displayed 10 Mordad as its expiry. Building the instant
+  // from local end-of-day keeps the coupon alive for the whole day the provider picked; the
+  // stored value stays a real UTC instant, matching the codebase's convention (see
+  // apps/api/src/booking/availability.util.ts) and the admin panel's coupon form.
+  if (newCoupon.expiresAt) body.expiresAt = new Date(`${newCoupon.expiresAt}T23:59:59.999`).toISOString()
   if (newCoupon.maxRedemptions) body.maxRedemptions = Number(newCoupon.maxRedemptions)
 
   creating.value = true

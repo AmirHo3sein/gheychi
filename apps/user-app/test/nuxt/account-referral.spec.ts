@@ -70,6 +70,31 @@ const REWARD_WALLET_CREDIT = {
   couponId: null,
   currency: 'toman' as const,
   couponCode: null,
+  couponSalonId: null,
+  couponSalonName: null,
+  couponSalonSlug: null,
+  couponExpiresAt: null,
+}
+
+// A platform-wide (salon_id IS NULL) referral coupon -- redeemable at any salon.
+const REWARD_COUPON_PLATFORM_WIDE = {
+  ...REWARD_WALLET_CREDIT,
+  rewardKind: 'percent_discount' as const,
+  walletTransactionId: null,
+  currency: null,
+  couponId: 'c1',
+  couponCode: 'REF-AB12',
+  couponExpiresAt: '2099-01-01T00:00:00.000Z',
+}
+
+// A salon_owner/worker-type referral's coupon: the API accepts it at exactly one salon
+// and rejects it everywhere else, so the card has to say so.
+const REWARD_COUPON_SALON_SCOPED = {
+  ...REWARD_COUPON_PLATFORM_WIDE,
+  id: 'rw2',
+  couponSalonId: 's1',
+  couponSalonName: 'سالن رز',
+  couponSalonSlug: 'salon-roz',
 }
 
 // Dispatch by URL -- the page fetches my-code, the referrals list, and the rewards
@@ -199,8 +224,7 @@ describe('account referral page', () => {
   })
 
   it('does not render a wallet link for a reward with no wallet_transaction_id', async () => {
-    const couponReward = { ...REWARD_WALLET_CREDIT, walletTransactionId: null, currency: null, couponCode: 'REF-AB12' }
-    stub(MY_CODE, [], 0, 20, [couponReward], 1)
+    stub(MY_CODE, [], 0, 20, [REWARD_COUPON_PLATFORM_WIDE], 1)
     const wrapper = await mountSuspended(ReferralPage)
 
     const row = wrapper.find('[data-testid="reward-item"]')
@@ -208,10 +232,11 @@ describe('account referral page', () => {
     expect(row.text()).toContain('REF-AB12')
   })
 
-  it('lets the user copy a coupon-kind reward\'s code and jump to the salon list to redeem it', async () => {
-    const couponReward = { ...REWARD_WALLET_CREDIT, walletTransactionId: null, currency: null, couponCode: 'REF-AB12' }
-    stub(MY_CODE, [], 0, 20, [couponReward], 1)
+  it('lets the user copy a platform-wide coupon reward and jump to the salon list to redeem it', async () => {
+    stub(MY_CODE, [], 0, 20, [REWARD_COUPON_PLATFORM_WIDE], 1)
     const wrapper = await mountSuspended(ReferralPage)
+
+    expect(wrapper.find('[data-testid="coupon-terms"]').text()).toContain('همهٔ سالن‌ها')
 
     const useCouponButton = wrapper.find('[data-testid="use-coupon-button"]')
     expect(useCouponButton.exists()).toBe(true)
@@ -220,6 +245,42 @@ describe('account referral page', () => {
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('REF-AB12')
     expect(navigateToMock).toHaveBeenCalledWith('/')
+  })
+
+  // Regression: this code is only valid at one salon, but the card used to present it
+  // like any other and send the user to the unrestricted salon list, where redeeming it
+  // fails with 'کد تخفیف نامعتبر است' -- indistinguishable from a fake code.
+  it('names the one salon a salon-restricted coupon reward works at, and deep-links there instead of the salon list', async () => {
+    stub(MY_CODE, [], 0, 20, [REWARD_COUPON_SALON_SCOPED], 1)
+    const wrapper = await mountSuspended(ReferralPage)
+
+    const terms = wrapper.find('[data-testid="coupon-terms"]')
+    expect(terms.text()).toContain('فقط برای سالن سالن رز')
+    expect(terms.text()).not.toContain('همهٔ سالن‌ها')
+
+    await wrapper.find('[data-testid="use-coupon-button"]').trigger('click')
+    await flushPromises()
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('REF-AB12')
+    expect(navigateToMock).toHaveBeenCalledWith('/salons/salon-roz')
+  })
+
+  it('shows a coupon reward\'s expiry date, so a still-valid code reads as time-limited', async () => {
+    stub(MY_CODE, [], 0, 20, [REWARD_COUPON_SALON_SCOPED], 1)
+    const wrapper = await mountSuspended(ReferralPage)
+
+    expect(wrapper.find('[data-testid="coupon-terms"]').text()).toContain('معتبر تا')
+  })
+
+  // A lapsed reward used to read exactly like a live one; redeeming it returned
+  // 'کد تخفیف منقضی شده است' with nothing on the card to explain why.
+  it('marks a lapsed coupon reward as expired and withdraws the use affordance', async () => {
+    const expired = { ...REWARD_COUPON_SALON_SCOPED, couponExpiresAt: '2020-01-01T00:00:00.000Z' }
+    stub(MY_CODE, [], 0, 20, [expired], 1)
+    const wrapper = await mountSuspended(ReferralPage)
+
+    expect(wrapper.find('[data-testid="coupon-terms"]').text()).toContain('مهلت استفاده از این کد گذشته است')
+    expect(wrapper.find('[data-testid="use-coupon-button"]').exists()).toBe(false)
   })
 
   it('does not render the use-coupon affordance for a wallet-kind reward', async () => {

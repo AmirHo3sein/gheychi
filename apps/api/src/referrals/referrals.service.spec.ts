@@ -1138,6 +1138,19 @@ describe('ReferralsService', () => {
   });
 
   describe('getMyRewards', () => {
+    // getMyRewards builds one raw-select chain; every link just returns itself, so the
+    // only interesting parts are the join wiring and getRawMany's rows.
+    const makeRewardsQb = (getRawMany: jest.Mock) => ({
+      leftJoin: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      offset: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      getRawMany,
+    });
+
     it('paginates the caller\'s own referral_rewards rows, newest first', async () => {
       const getRawMany = jest.fn().mockResolvedValue([
         {
@@ -1152,18 +1165,13 @@ describe('ReferralsService', () => {
           couponId: null,
           currency: 'toman',
           couponCode: null,
+          couponSalonId: null,
+          couponSalonName: null,
+          couponSalonSlug: null,
+          couponExpiresAt: null,
         },
       ]);
-      const qb = {
-        leftJoin: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        offset: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockReturnThis(),
-        getRawMany,
-      };
+      const qb = makeRewardsQb(getRawMany);
       referralRewardsRepo.createQueryBuilder.mockReturnValue(qb);
       referralRewardsRepo.count.mockResolvedValue(1);
 
@@ -1183,6 +1191,50 @@ describe('ReferralsService', () => {
         couponId: null,
         currency: 'toman',
         couponCode: null,
+        couponSalonId: null,
+        couponSalonName: null,
+        couponSalonSlug: null,
+        couponExpiresAt: null,
+      });
+    });
+
+    // The reward screen has no other way to learn that a salon_owner/worker-type
+    // referral's coupon is redeemable at exactly one salon (issueReferralCoupon copies
+    // referrals.salon_id onto it) -- without these fields it advertised the code as
+    // generally usable and the user found out via 'کد تخفیف نامعتبر است'.
+    it('projects the coupon\'s owning salon and expiry so a salon-restricted reward can be shown as restricted', async () => {
+      const getRawMany = jest.fn().mockResolvedValue([
+        {
+          id: 'reward-2',
+          referralId: 'referral-2',
+          beneficiaryRole: 'referred',
+          rewardKind: 'percent_discount',
+          rewardValue: '15',
+          status: 'granted',
+          grantedAt: new Date('2026-02-01'),
+          walletTransactionId: null,
+          couponId: 'coupon-1',
+          currency: null,
+          couponCode: 'REF-AB12',
+          couponSalonId: 'salon-1',
+          couponSalonName: 'سالن رز',
+          couponSalonSlug: 'salon-roz',
+          couponExpiresAt: new Date('2026-05-01'),
+        },
+      ]);
+      const qb = makeRewardsQb(getRawMany);
+      referralRewardsRepo.createQueryBuilder.mockReturnValue(qb);
+      referralRewardsRepo.count.mockResolvedValue(1);
+
+      const result = await service.getMyRewards('user-1', 1, 20);
+
+      expect(qb.leftJoin).toHaveBeenCalledWith('salons', 'cs', 'cs.id = c.salon_id');
+      expect(result.items[0]).toMatchObject({
+        couponCode: 'REF-AB12',
+        couponSalonId: 'salon-1',
+        couponSalonName: 'سالن رز',
+        couponSalonSlug: 'salon-roz',
+        couponExpiresAt: new Date('2026-05-01'),
       });
     });
   });

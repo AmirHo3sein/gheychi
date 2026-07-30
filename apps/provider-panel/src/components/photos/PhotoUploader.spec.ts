@@ -97,6 +97,47 @@ describe('PhotoUploader', () => {
     expect(wrapper.emitted('uploaded')?.[0]?.[0]).toMatchObject({ id: 'st1' })
   })
 
+  // Straight-from-the-phone photos routinely exceed the API's 5 MB multer limit, which Nest
+  // turns into a bare 413 -- previously collapsing into the generic failure text with no hint
+  // that resizing would fix it.
+  it('rejects an oversized image client-side without calling the API', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(PhotoUploader)
+    const file = new File(['bytes'], 'big.jpg', { type: 'image/jpeg' })
+    Object.defineProperty(file, 'size', { value: 6 * 1024 * 1024 })
+    const input = wrapper.find('input[type=file]')
+    Object.defineProperty(input.element, 'files', { value: [file] })
+    await input.trigger('change')
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('حجم تصویر باید کمتر از ۵ مگابایت باشد.')
+  })
+
+  it('states the size limit alongside the accepted formats', () => {
+    expect(mount(PhotoUploader).text()).toContain('حداکثر ۵ مگابایت')
+  })
+
+  it('maps a 413 from the API to the same size message rather than the generic failure text', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 413,
+      json: async () => ({ message: 'File too large' }),
+    }))
+
+    const wrapper = mount(PhotoUploader)
+    const file = new File(['bytes'], 'a.jpg', { type: 'image/jpeg' })
+    const input = wrapper.find('input[type=file]')
+    Object.defineProperty(input.element, 'files', { value: [file] })
+    await input.trigger('change')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(wrapper.text()).toContain('حجم تصویر باید کمتر از ۵ مگابایت باشد.')
+    expect(wrapper.text()).not.toContain('File too large')
+    expect(wrapper.emitted('uploaded')).toBeUndefined()
+  })
+
   it('surfaces the API 409 cap message inline instead of the generic failure text', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,

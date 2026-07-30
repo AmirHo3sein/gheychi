@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { resetSalon, useSalon } from '@/composables/useSalon'
 import { resetToast, useToast } from '@/composables/useToast'
 import SalonSettingsView from './SalonSettingsView.vue'
 
@@ -29,6 +30,9 @@ describe('SalonSettingsView', () => {
   beforeEach(() => {
     fetchMock.mockReset()
     resetToast()
+    // useSalon's state is a module-level singleton -- save() now refreshes it, so it has to
+    // start clean in every test or one test's refetch leaks into the next.
+    resetSalon()
   })
 
   it('loads the current salon info and saves an edit', async () => {
@@ -44,7 +48,8 @@ describe('SalonSettingsView', () => {
     // lat/lng, so isFormValid's null check should already be satisfied here.
     expect((wrapper.get('[data-testid="save-button"]').element as HTMLButtonElement).disabled).toBe(false)
 
-    fetchMock.mockResolvedValueOnce({ data: { id: 's1' }, error: null })
+    fetchMock.mockResolvedValueOnce({ data: { id: 's1' }, error: null }) // PATCH
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null }) // useSalon refetch
     await wrapper.get('[data-testid="salon-name"]').setValue('سالن جدید')
     await wrapper.get('[data-testid="save-button"]').trigger('click')
 
@@ -62,7 +67,8 @@ describe('SalonSettingsView', () => {
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
 
-    fetchMock.mockResolvedValueOnce({ data: { id: 's1' }, error: null })
+    fetchMock.mockResolvedValueOnce({ data: { id: 's1' }, error: null }) // PATCH
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null }) // useSalon refetch
     await wrapper.get('[data-testid="save-button"]').trigger('click')
     await wrapper.vm.$nextTick()
 
@@ -123,7 +129,8 @@ describe('SalonSettingsView', () => {
     await wrapper.get('[data-testid="about"]').setValue('متن تازه\nخط دوم')
     await wrapper.get('[data-testid="instagram-handle"]').setValue('new.salon')
 
-    fetchMock.mockResolvedValueOnce({ data: { id: 's1' }, error: null })
+    fetchMock.mockResolvedValueOnce({ data: { id: 's1' }, error: null }) // PATCH
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null }) // useSalon refetch
     await wrapper.get('[data-testid="save-button"]').trigger('click')
 
     expect(fetchMock).toHaveBeenCalledWith('/salons/mine', {
@@ -159,6 +166,65 @@ describe('SalonSettingsView', () => {
 
     await wrapper.get('[data-testid="capacity"]').setValue(5)
     expect((wrapper.get('[data-testid="save-button"]').element as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  // AppLayout's header reads the salon name off useSalon()'s singleton, which the router
+  // guard fills exactly once per SPA session -- a rename used to toast "ذخیره شد" while the
+  // header kept the old name until a hard reload.
+  it('refreshes the useSalon singleton after a successful save so the header stops showing the old name', async () => {
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null })
+    const wrapper = mount(SalonSettingsView)
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const { salon } = useSalon()
+    fetchMock.mockResolvedValueOnce({ data: { id: 's1' }, error: null }) // PATCH
+    fetchMock.mockResolvedValueOnce({ data: { ...validSalon, name: 'سالن جدید' }, error: null }) // useSalon refetch
+
+    await wrapper.get('[data-testid="salon-name"]').setValue('سالن جدید')
+    await wrapper.get('[data-testid="save-button"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(fetchMock).toHaveBeenCalledWith('/salons/mine', { silent: true, redirectOn401: false })
+    expect(salon.value?.name).toBe('سالن جدید')
+  })
+
+  it('does not refresh the salon singleton when the save fails', async () => {
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null })
+    const wrapper = mount(SalonSettingsView)
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    fetchMock.mockResolvedValueOnce({ data: null, error: { status: 500, message: 'خطا' } }) // PATCH fails
+    await wrapper.get('[data-testid="salon-name"]').setValue('سالن جدید')
+    await wrapper.get('[data-testid="save-button"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(fetchMock).not.toHaveBeenCalledWith('/salons/mine', { silent: true, redirectOn401: false })
+    expect(useToast().toasts.value.some((t) => t.message === 'تغییرات ذخیره شد')).toBe(false)
+  })
+
+  // UpdateSalonDto is @Length(5, 500) on address and @Length(2, 80) on city; a merely
+  // non-empty gate let a short value reach a green save button, and the API's English
+  // validator array was the provider's only feedback.
+  it.each([
+    ['address', 'خیا', 'آدرس باید حداقل ۵ حرف باشد.'],
+    ['city', 'ت', 'نام شهر باید حداقل ۲ حرف باشد.'],
+  ])('blocks the save and shows a Persian inline error for a too-short %s', async (field, value, message) => {
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null })
+    const wrapper = mount(SalonSettingsView)
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    await wrapper.get(`[data-testid="${field}"]`).setValue(value)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain(message)
+    expect((wrapper.get('[data-testid="save-button"]').element as HTMLButtonElement).disabled).toBe(true)
+
+    fetchMock.mockClear()
+    await wrapper.get('[data-testid="save-button"]').trigger('click')
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('shows a loading state, then a retry option instead of a blank form when the initial load fails', async () => {
@@ -200,7 +266,8 @@ describe('SalonSettingsView', () => {
     await wrapper.get('[data-testid="pin-lat"]').setValue(36.1)
     await wrapper.get('[data-testid="pin-lat"]').trigger('change')
 
-    fetchMock.mockResolvedValueOnce({ data: { id: 's1' }, error: null })
+    fetchMock.mockResolvedValueOnce({ data: { id: 's1' }, error: null }) // PATCH
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null }) // useSalon refetch
     await wrapper.get('[data-testid="save-button"]').trigger('click')
 
     expect(fetchMock).toHaveBeenCalledWith('/salons/mine', {

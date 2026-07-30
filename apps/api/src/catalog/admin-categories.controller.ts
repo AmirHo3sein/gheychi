@@ -23,7 +23,9 @@ export class AdminCategoriesController {
     try {
       return await this.categories.save(this.categories.create(dto));
     } catch (err) {
-      if (isUniqueViolation(err)) throw new ConflictException('A category with this name already exists');
+      // Persian: this message is surfaced verbatim by the admin panel's toast, same as the
+      // in-use message on delete below.
+      if (isUniqueViolation(err)) throw new ConflictException('دسته‌بندی‌ای با این نام از قبل وجود دارد');
       throw err;
     }
   }
@@ -36,7 +38,9 @@ export class AdminCategoriesController {
     try {
       result = await this.categories.update({ id }, dto);
     } catch (err) {
-      if (isUniqueViolation(err)) throw new ConflictException('A category with this name already exists');
+      // Persian: this message is surfaced verbatim by the admin panel's toast, same as the
+      // in-use message on delete below.
+      if (isUniqueViolation(err)) throw new ConflictException('دسته‌بندی‌ای با این نام از قبل وجود دارد');
       throw err;
     }
     if (!result.affected) throw new NotFoundException();

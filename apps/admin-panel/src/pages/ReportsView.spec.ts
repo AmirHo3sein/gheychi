@@ -123,10 +123,13 @@ describe('ReportsView', () => {
     const quoted = wrapper.get('[data-testid="quoted-story"]')
     expect(quoted.get('img').attributes('src')).toBe('http://cdn.example/story1.jpg')
     expect(quoted.text()).toContain('کوتاهی مو')
-    expect(quoted.text()).not.toContain('منقضی شده')
+    expect(quoted.find('[data-testid="story-gone-note"]').exists()).toBe(false)
   })
 
-  it('falls back to an expired placeholder when the reported story content is gone', async () => {
+  // Updated (was: asserted the «منقضی شده» copy). A nulled story FK means deleted OR
+  // expired and the row can't tell them apart, so labelling it purely "expired" told a
+  // moderator the benign story about content that may well have been pulled deliberately.
+  it('says a gone story is unavailable -- covering both provider deletion and the 24h GC', async () => {
     // The real post-deletion shape: ON DELETE SET NULL nulled the storyId FK (provider
     // self-delete or expiry GC) and only targetType still says this targeted a story.
     fetchMock.mockResolvedValue({
@@ -143,7 +146,9 @@ describe('ReportsView', () => {
 
     const quoted = wrapper.get('[data-testid="quoted-story"]')
     expect(quoted.find('img').exists()).toBe(false)
-    expect(quoted.text()).toContain('منقضی شده')
+    const note = quoted.get('[data-testid="story-gone-note"]')
+    expect(note.text()).toContain('دیگر در دسترس نیست')
+    expect(note.text()).toContain('حذف')
   })
 
   it('shows the reported portfolio item thumbnail and caption when the row carries them', async () => {
@@ -172,7 +177,9 @@ describe('ReportsView', () => {
     expect(quoted.text()).toContain('رنگ و مش')
   })
 
-  it('falls back to an expired placeholder when the reported portfolio item is gone', async () => {
+  // Updated (was: asserted the «منقضی شده» copy). Portfolio items have no expiry at all,
+  // so "expired" was not merely soft -- it was categorically impossible.
+  it('says a gone portfolio item was deleted by the provider -- portfolio items never expire', async () => {
     // Same post-deletion shape as the story case: FK nulled, targetType survives.
     fetchMock.mockResolvedValue({
       data: {
@@ -188,7 +195,9 @@ describe('ReportsView', () => {
 
     const quoted = wrapper.get('[data-testid="quoted-portfolio-item"]')
     expect(quoted.find('img').exists()).toBe(false)
-    expect(quoted.text()).toContain('منقضی شده')
+    const note = quoted.get('[data-testid="portfolio-gone-note"]')
+    expect(note.text()).toContain('حذف شده')
+    expect(note.text()).not.toContain('منقضی')
   })
 
   it('reloads the list after a successful resolve, so the card leaves the open queue', async () => {

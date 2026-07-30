@@ -29,6 +29,14 @@ describe('AdminUsersService.setStatus', () => {
     expect(transaction).not.toHaveBeenCalled();
   });
 
+  // The admin panel toasts this message verbatim into a fully Persian RTL screen. The UI
+  // also hides the control on the acting admin's own row, but this stays the backstop.
+  it('rejects it with a Persian message', async () => {
+    await expect(service.setStatus('admin-1', 'admin-1', 'suspended')).rejects.toThrow(
+      'تغییر وضعیت حساب خودتان امکان‌پذیر نیست',
+    );
+  });
+
   it('404s when the target user does not exist', async () => {
     em.update.mockResolvedValueOnce({ affected: 0 });
     await expect(service.setStatus('admin-1', 'missing-1', 'suspended')).rejects.toBeInstanceOf(NotFoundException);

@@ -34,7 +34,7 @@ const COPY: Record<Outcome, {
   bookingLinkLabel: string
 }> = {
   success: {
-    seoTitle: 'پرداخت موفق — آرایشگاه',
+    seoTitle: 'پرداخت موفق — قیچی',
     title: 'پرداخت با موفقیت انجام شد',
     body: 'نوبت شما با دریافت پیش‌پرداخت ثبت شد.',
     icon: 'check-circle',
@@ -45,7 +45,7 @@ const COPY: Record<Outcome, {
   // is an in-progress fact rather than an error the customer has to act on -- same
   // muted/clock treatment as the refund-pending card on the booking detail page.
   refunding: {
-    seoTitle: 'بازگشت وجه در حال انجام — آرایشگاه',
+    seoTitle: 'بازگشت وجه در حال انجام — قیچی',
     title: 'پرداخت شما دریافت شد، اما نوبت ثبت نشد',
     body: 'پیش‌پرداخت شما دریافت شد، ولی این نوبت پیش از تکمیل پرداخت آزاد شده بود و قابل ثبت نیست. بازگشت وجه به‌صورت خودکار در حال انجام است و نیازی به اقدام شما نیست.',
     icon: 'clock',
@@ -53,7 +53,7 @@ const COPY: Record<Outcome, {
     bookingLinkLabel: 'پیگیری بازگشت وجه',
   },
   failed: {
-    seoTitle: 'پرداخت ناموفق — آرایشگاه',
+    seoTitle: 'پرداخت ناموفق — قیچی',
     title: 'پرداخت ناموفق بود',
     body: 'پرداخت انجام نشد یا لغو شد؛ نوبتی برای شما رزرو نشده است.',
     icon: 'alert-circle',

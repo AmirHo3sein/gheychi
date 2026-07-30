@@ -111,6 +111,10 @@ describe('SalonDetailView', () => {
 
     expect(wrapper.find('[data-testid="suspended-cause"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('به دلیل تعلیق حساب مالک')
+    // ...and the cause reaches the actions, which must stop offering a reapprove the
+    // backend would 409 anyway.
+    expect((wrapper.get('[data-testid="reapprove-button"]').element as HTMLButtonElement).disabled).toBe(true)
+    expect(wrapper.find('[data-testid="reapprove-blocked-hint"]').exists()).toBe(true)
   })
 
   it('shows no cause line for a direct admin suspension', async () => {
@@ -122,6 +126,8 @@ describe('SalonDetailView', () => {
     const wrapper = await mountWithRouter()
 
     expect(wrapper.find('[data-testid="suspended-cause"]').exists()).toBe(false)
+    // A direct admin suspension is undone from right here, so the control stays live.
+    expect((wrapper.get('[data-testid="reapprove-button"]').element as HTMLButtonElement).disabled).toBe(false)
   })
 
   it('loads stories lazily on first tab activation, flagging removed and expired rows', async () => {

@@ -151,6 +151,68 @@ describe('ReviewPromptModal', () => {
     expect(wrapper.find('[data-testid="edit-review-button"]').exists()).toBe(true)
   })
 
+  // The 72h edit/delete window was unreachable until the screens could hand an existing
+  // review in: the component only ever learned a reviewId from its own POST response.
+  it('opens straight into the existing review, pre-filled, when one is passed in', async () => {
+    const wrapper = await mountSuspended(ReviewPromptModal, {
+      props: {
+        bookingId: 'b1',
+        workerName: 'سارا محمدی',
+        review: { id: 'rev-1', rating: 3, comment: 'خوب بود', workerRating: 2, canEdit: true },
+      },
+    })
+
+    expect(wrapper.find('[data-testid="submit-review-button"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('خوب بود')
+
+    const filled = wrapper
+      .find('[data-testid="view-salon-rating-stars"]')
+      .findAll('svg')
+      .filter((icon) => icon.classes().some((c) => c.includes('accent-strong')))
+    expect(filled).toHaveLength(3)
+
+    await wrapper.find('[data-testid="edit-review-button"]').trigger('click')
+    const editStars = wrapper.findAll('[data-testid="edit-salon-rating-stars"] button')
+    await editStars[4]!.trigger('click') // rating -> 5
+
+    fetchMock.mockResolvedValue({ id: 'rev-1', rating: 5, comment: 'خوب بود' })
+    await wrapper.find('[data-testid="save-edit-review-button"]').trigger('click')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/reviews/rev-1',
+      expect.objectContaining({ method: 'PATCH', body: expect.objectContaining({ rating: 5, workerRating: 2 }) }),
+    )
+    expect(wrapper.emitted('changed')).toHaveLength(1)
+  })
+
+  it('deletes a pre-filled review without ever creating one first', async () => {
+    vi.stubGlobal('confirm', () => true)
+    fetchMock.mockResolvedValue(null)
+    const wrapper = await mountSuspended(ReviewPromptModal, {
+      props: { bookingId: 'b1', review: { id: 'rev-1', rating: 3, comment: null, workerRating: null, canEdit: true } },
+    })
+
+    await wrapper.find('[data-testid="delete-review-button"]').trigger('click')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith('/reviews/rev-1', expect.objectContaining({ method: 'DELETE' }))
+    expect(wrapper.text()).toContain('نظر شما حذف شد')
+    expect(wrapper.emitted('changed')).toHaveLength(1)
+  })
+
+  // canEdit is the server's own verdict (platform_config's review_edit_window_hours),
+  // so the controls disappear exactly when PATCH/DELETE would 403.
+  it('hides the edit/delete controls, with a reason, for a review past its edit window', async () => {
+    const wrapper = await mountSuspended(ReviewPromptModal, {
+      props: { bookingId: 'b1', review: { id: 'rev-1', rating: 3, comment: null, workerRating: null, canEdit: false } },
+    })
+
+    expect(wrapper.find('[data-testid="edit-review-button"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="delete-review-button"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="edit-window-closed"]').text()).toContain('مهلت ویرایش این نظر به پایان رسیده است')
+  })
+
   it('exposes dialog semantics: role=dialog, aria-modal, and aria-labelledby pointing at the active phase heading', async () => {
     const wrapper = await mountSuspended(ReviewPromptModal, { props: { bookingId: 'b1' } })
 

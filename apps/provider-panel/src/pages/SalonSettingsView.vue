@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, useId } from 'vue'
 import { useApi } from '@/composables/useApi'
+import { useSalon } from '@/composables/useSalon'
 import { useToast } from '@/composables/useToast'
 import SalonInfoStep from '@/components/onboarding/SalonInfoStep.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -9,6 +10,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 
 const { apiFetch } = useApi()
+const { refetch } = useSalon()
 const { push: pushToast } = useToast()
 const loading = ref(true)
 const loadError = ref(false)
@@ -38,12 +40,14 @@ const instagramHandleValid = computed(() => form.instagramHandle === '' || INSTA
 // Mirrors OnboardingView's isSalonInfoValid -- same fields, same bounds, since this page
 // edits an existing salon through the same SalonInfoStep.vue component. The showcase
 // profile fields are optional, so only their format/length constraints gate the save.
+// City/address minimums match UpdateSalonDto's @Length(2, 80)/@Length(5, 500): a merely
+// non-empty check let a short value reach a green save button and fail server-side.
 const isFormValid = computed(
   () =>
     form.name.trim().length >= 2 &&
     form.genderTarget !== '' &&
-    form.city.trim().length > 0 &&
-    form.address.trim().length > 0 &&
+    form.city.trim().length >= 2 &&
+    form.address.trim().length >= 5 &&
     form.capacity >= 1 &&
     form.capacity <= 50 &&
     form.lat !== null &&
@@ -116,7 +120,15 @@ async function save() {
       instagramHandle: form.instagramHandle.trim(),
     },
   })
-  if (!error) pushToast('تغییرات ذخیره شد')
+  if (!error) {
+    // The header (AppLayout) renders the salon name from useSalon()'s module-level
+    // singleton, which the router guard fills exactly once per SPA session -- without
+    // this refetch a rename would toast "ذخیره شد" while the header kept showing the old
+    // name until a hard reload, reading as if the save hadn't worked. Same idiom
+    // OnboardingView uses after creating the salon.
+    await refetch()
+    pushToast('تغییرات ذخیره شد')
+  }
   saving.value = false
 }
 

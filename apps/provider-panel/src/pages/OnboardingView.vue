@@ -63,12 +63,15 @@ const form = reactive({
   },
 })
 
+// City/address minimums match CreateSalonDto's @Length(2, 80)/@Length(5, 500) -- a merely
+// non-empty check let a short value through to a POST that could only fail server-side,
+// with an English validator message as the sole feedback.
 const isSalonInfoValid = computed(
   () =>
     form.salonInfo.name.trim().length >= 2 &&
     form.salonInfo.genderTarget !== '' &&
-    form.salonInfo.city.trim().length > 0 &&
-    form.salonInfo.address.trim().length > 0 &&
+    form.salonInfo.city.trim().length >= 2 &&
+    form.salonInfo.address.trim().length >= 5 &&
     form.salonInfo.capacity >= 1 &&
     form.salonInfo.capacity <= 50 &&
     form.salonInfo.lat !== null &&
@@ -105,7 +108,7 @@ const canGoNext = computed(() => {
 // dead end.
 const disabledHint = computed(() => {
   if (step.value === 1 && !isSalonInfoValid.value) {
-    return 'برای ادامه، نام، مخاطب، شهر، آدرس، ظرفیت (۱ تا ۵۰) و موقعیت روی نقشه را کامل کنید.'
+    return 'برای ادامه، نام (حداقل ۲ حرف)، مخاطب، شهر (حداقل ۲ حرف)، آدرس (حداقل ۵ حرف)، ظرفیت (۱ تا ۵۰) و موقعیت روی نقشه را کامل کنید.'
   }
   if (step.value === 2 && !isHoursValid.value) {
     return hoursValidation.value.message || 'حداقل یک روز کاری را فعال کنید تا آرایشگاه قابل رزرو باشد.'

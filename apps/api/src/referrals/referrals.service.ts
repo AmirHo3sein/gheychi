@@ -90,6 +90,18 @@ export interface MyRewardListItem {
   // returning bare ids only.
   currency: WalletCurrency | null;
   couponCode: string | null;
+  // The coupon's own redemption constraints, denormalized for the same reason as
+  // couponCode above -- and load-bearing, not decorative: issueReferralCoupon copies
+  // the referral's salon_id onto the coupon, so a salon_owner/worker-type referral
+  // pays out a code that CouponsService.resolveAndValidate accepts at exactly one
+  // salon and rejects everywhere else as 'کد تخفیف نامعتبر است' (and past expiresAt as
+  // 'کد تخفیف منقضی شده است'). Without these fields the rewards screen could only
+  // present such a code as generally usable, so the user learned the restriction by
+  // being told their own reward was invalid. NULL couponSalonId = platform-wide.
+  couponSalonId: string | null;
+  couponSalonName: string | null;
+  couponSalonSlug: string | null;
+  couponExpiresAt: Date | null;
 }
 
 export interface MyReferralListItem {
@@ -1014,13 +1026,20 @@ export class ReferralsService {
    * directly into each row instead of returning bare ids -- chosen over making the
    * frontend resolve those separately per row, since both joins are cheap (indexed PK
    * lookups) and a rewards list is exactly the kind of view where "what did I actually
-   * get" matters more than a normalized shape.
+   * get" matters more than a normalized shape. The coupon join reaches one hop further
+   * (coupons -> salons) so a salon-restricted reward can be presented AS restricted --
+   * see MyRewardListItem.couponSalonId for why that's a correctness matter, not polish.
    */
   async getMyRewards(userId: string, page = 1, pageSize = 20): Promise<Page<MyRewardListItem>> {
     const qb = this.referralRewards
       .createQueryBuilder('reward')
       .leftJoin('wallet_transactions', 'wt', 'wt.id = reward.walletTransactionId')
       .leftJoin('coupons', 'c', 'c.id = reward.couponId')
+      // One hop past the coupon: a referral coupon inherits referrals.salon_id, and the
+      // holder needs the salon's NAME (not a bare uuid) to know where it works.
+      // Raw-table joins, so their columns are addressed by snake_case DB name below --
+      // there's no entity metadata here to map property names through.
+      .leftJoin('salons', 'cs', 'cs.id = c.salon_id')
       .select('reward.id', 'id')
       .addSelect('reward.referralId', 'referralId')
       .addSelect('reward.beneficiaryRole', 'beneficiaryRole')
@@ -1032,6 +1051,10 @@ export class ReferralsService {
       .addSelect('reward.couponId', 'couponId')
       .addSelect('wt.currency', 'currency')
       .addSelect('c.code', 'couponCode')
+      .addSelect('c.salon_id', 'couponSalonId')
+      .addSelect('c.expires_at', 'couponExpiresAt')
+      .addSelect('cs.name', 'couponSalonName')
+      .addSelect('cs.slug', 'couponSalonSlug')
       .where('reward.beneficiaryUserId = :userId', { userId })
       .orderBy('reward.grantedAt', 'DESC')
       .offset((page - 1) * pageSize)
@@ -1050,6 +1073,10 @@ export class ReferralsService {
         couponId: string | null;
         currency: WalletCurrency | null;
         couponCode: string | null;
+        couponSalonId: string | null;
+        couponSalonName: string | null;
+        couponSalonSlug: string | null;
+        couponExpiresAt: Date | null;
       }>(),
       this.referralRewards.count({ where: { beneficiaryUserId: userId } }),
     ]);
@@ -1067,6 +1094,12 @@ export class ReferralsService {
         couponId: r.couponId,
         currency: r.currency,
         couponCode: r.couponCode,
+        couponSalonId: r.couponSalonId,
+        couponSalonName: r.couponSalonName,
+        couponSalonSlug: r.couponSalonSlug,
+        // Raw `timestamptz` off a joined table comes back as a Date from pg; normalized
+        // anyway so a driver that hands back a string can't leak an inconsistent type.
+        couponExpiresAt: r.couponExpiresAt ? new Date(r.couponExpiresAt) : null,
       })),
       total,
       page,

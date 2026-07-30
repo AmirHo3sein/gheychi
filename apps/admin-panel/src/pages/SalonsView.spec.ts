@@ -19,6 +19,7 @@ const salon = {
   status: 'approved' as const,
   genderTarget: 'women' as const,
   isFeatured: false,
+  featuredUntil: null as string | null,
   createdAt: '2026-07-10T08:00:00.000Z',
 }
 
@@ -55,6 +56,65 @@ describe('SalonsView', () => {
 
     const badges = wrapper.findAll('[data-testid="featured-badge"]')
     expect(badges).toHaveLength(1)
+  })
+
+  // The badge must mirror SearchService's boost predicate -- is_featured alone is not the
+  // public truth once featured_until has elapsed.
+  it('keeps the featured badge for an open-ended window and for one still in the future', async () => {
+    fetchMock.mockResolvedValue({
+      data: {
+        items: [
+          { ...salon, id: 's1', isFeatured: true, featuredUntil: null },
+          { ...salon, id: 's2', name: 'سالن دوم', isFeatured: true, featuredUntil: '2099-01-01T00:00:00.000Z' },
+        ],
+        total: 2,
+        page: 1,
+        pageSize: 20,
+      },
+      error: null,
+    })
+    const wrapper = mount(SalonsView, mountOptions)
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-testid="featured-badge"]')).toHaveLength(2)
+    expect(wrapper.findAll('[data-testid="featured-expired-badge"]')).toHaveLength(0)
+  })
+
+  it('marks an elapsed featured window as expired instead of still calling it ویژه', async () => {
+    fetchMock.mockResolvedValue({
+      data: {
+        items: [{ ...salon, id: 's1', isFeatured: true, featuredUntil: '2020-01-01T00:00:00.000Z' }],
+        total: 1,
+        page: 1,
+        pageSize: 20,
+      },
+      error: null,
+    })
+    const wrapper = mount(SalonsView, mountOptions)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="featured-badge"]').exists()).toBe(false)
+    const expired = wrapper.get('[data-testid="featured-expired-badge"]')
+    expect(expired.text()).toContain('منقضی')
+    // The expiry date itself is surfaced, so the operator can answer "since when?".
+    expect(expired.attributes('title')).toContain('نشان ویژه تا')
+  })
+
+  it('shows no featured badge at all for a salon that was never featured, even with a stale featuredUntil', async () => {
+    fetchMock.mockResolvedValue({
+      data: {
+        items: [{ ...salon, id: 's1', isFeatured: false, featuredUntil: '2099-01-01T00:00:00.000Z' }],
+        total: 1,
+        page: 1,
+        pageSize: 20,
+      },
+      error: null,
+    })
+    const wrapper = mount(SalonsView, mountOptions)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="featured-badge"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="featured-expired-badge"]').exists()).toBe(false)
   })
 
   // Finding 1: a fetch failure must not be silently repainted as "no results" -- it needs

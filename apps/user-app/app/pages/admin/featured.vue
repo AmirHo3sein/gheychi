@@ -55,14 +55,21 @@ async function toggle(salon: AdminSalon, featuredUntilInput: string) {
     method: 'PATCH',
     body: {
       isFeatured: !salon.isFeatured,
-      featuredUntil: featuredUntilInput ? new Date(featuredUntilInput).toISOString() : undefined,
+      // End of the chosen day, not its midnight. `new Date('2026-08-01')` parses as
+      // 2026-08-01T00:00:00Z, and the boost is gated on `featured_until > now()`, so a
+      // window granted "until 10 Mordad" would lapse at 03:30 that morning (Iran is
+      // UTC+3:30) -- on the very date this field displays. Same idiom the coupon-expiry
+      // fields in both panels use.
+      featuredUntil: featuredUntilInput
+        ? new Date(`${featuredUntilInput}T23:59:59.999`).toISOString()
+        : undefined,
     },
   })
   savingId.value = null
   await load()
 }
 
-useSeoMeta({ title: 'مدیریت سالن‌های ویژه — آرایشگاه' })
+useSeoMeta({ title: 'مدیریت سالن‌های ویژه — قیچی' })
 </script>
 
 <template>

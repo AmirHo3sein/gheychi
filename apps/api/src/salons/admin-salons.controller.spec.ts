@@ -86,4 +86,14 @@ describe('AdminSalonsController.setStatus suspended_cause handling', () => {
     await expect(controller.setStatus('s1', { status: 'approved' })).rejects.toBeInstanceOf(ConflictException);
     expect(repo.update).not.toHaveBeenCalled();
   });
+
+  // The admin panel toasts this message verbatim into a fully Persian RTL screen.
+  it('rejects that approval with a Persian message', async () => {
+    repo.findOneBy.mockResolvedValueOnce({ id: 's1', ownerId: 'owner-1', status: 'pending' });
+    users.findById.mockResolvedValueOnce({ id: 'owner-1', status: 'suspended' });
+
+    await expect(controller.setStatus('s1', { status: 'approved' })).rejects.toThrow(
+      'تایید این آرایشگاه ممکن نیست؛ حساب مالک آن معلق است',
+    );
+  });
 });

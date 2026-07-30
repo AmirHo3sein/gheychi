@@ -17,6 +17,24 @@ import { WorkerRating } from './worker-rating.entity';
 // itself; no consumer renders it yet, but it's the natural companion to salonReply.
 export type PublicReview = Pick<Review, 'id' | 'rating' | 'comment' | 'salonReply' | 'salonReplyAt' | 'createdAt'>;
 
+// A review as shown back to the person who wrote it (GET /api/reviews/mine). Carries
+// the linked worker rating's score and the edit-window verdict, so a client can pick
+// between "ثبت نظر" / "ویرایش نظر" / read-only without re-deriving the window rule (or
+// hardcoding 72h) itself -- `canEdit` and assertWithinEditWindow() read the very same
+// platform_config value, so the affordance a user sees always matches what PATCH and
+// DELETE will actually allow.
+export interface MyReviewListItem {
+  id: string;
+  bookingId: string;
+  rating: number;
+  comment: string | null;
+  workerRating: number | null;
+  status: ReviewStatus;
+  createdAt: Date;
+  editableUntil: Date;
+  canEdit: boolean;
+}
+
 @Injectable()
 export class ReviewsService {
   constructor(
@@ -159,6 +177,50 @@ export class ReviewsService {
     });
   }
 
+  /**
+   * The caller's OWN reviews, newest first -- the read path the booking screens need to
+   * tell an already-reviewed completed booking apart from an un-reviewed one (without
+   * it, the only way to find out was to POST and eat the 409). Always filtered by
+   * `userId`, so it can never surface anyone else's review; `bookingId` narrows it to
+   * the single booking a detail page cares about.
+   *
+   * Withdrawn reviews are included deliberately: reviews_booking_uidx is keyed on
+   * booking_id regardless of status, so a booking whose review was deleted is
+   * permanently un-reviewable -- a client that only saw "no review" for it would offer
+   * a "ثبت نظر" button that can only ever 409.
+   */
+  async listMine(userId: string, bookingId?: string): Promise<MyReviewListItem[]> {
+    const rows = await this.reviews.find({
+      where: bookingId ? { userId, bookingId } : { userId },
+      order: { createdAt: 'DESC' },
+    });
+    if (rows.length === 0) return [];
+
+    // One batched lookup for the whole page rather than a per-row round trip, same
+    // shape as listForAdmin's worker-rating join above.
+    const ratings = await this.workerRatings.find({ where: { reviewId: In(rows.map((r) => r.id)) } });
+    const ratingByReviewId = new Map(ratings.map((r) => [r.reviewId, r]));
+
+    const windowHours = await this.platformConfig.getReviewEditWindowHours();
+    const now = Date.now();
+    return rows.map((review) => {
+      const editableUntil = this.editWindowDeadline(review.createdAt, windowHours);
+      return {
+        id: review.id,
+        bookingId: review.bookingId,
+        rating: review.rating,
+        comment: review.comment,
+        workerRating: ratingByReviewId.get(review.id)?.rating ?? null,
+        status: review.status,
+        createdAt: review.createdAt,
+        editableUntil,
+        // Mirrors update()/remove() exactly: a withdrawn review is already gone, and
+        // the boundary instant itself still counts as inside the window.
+        canEdit: review.status !== 'withdrawn' && now <= editableUntil.getTime(),
+      };
+    });
+  }
+
   async moderateWorkerRating(id: string, status: 'published' | 'rejected'): Promise<WorkerRating> {
     const rating = await this.workerRatings.findOneBy({ id });
     if (!rating) throw new NotFoundException('Worker rating not found');
@@ -189,10 +251,15 @@ export class ReviewsService {
   // still editable, only strictly-after is rejected.
   private async assertWithinEditWindow(createdAt: Date): Promise<void> {
     const windowHours = await this.platformConfig.getReviewEditWindowHours();
-    const deadline = createdAt.getTime() + windowHours * 60 * 60_000;
-    if (Date.now() > deadline) {
+    if (Date.now() > this.editWindowDeadline(createdAt, windowHours).getTime()) {
       throw new ForbiddenException('مهلت ویرایش این نظر به پایان رسیده است');
     }
+  }
+
+  // Shared by the enforcement path above and the `editableUntil`/`canEdit` projection
+  // in listMine(), so a client can never be shown a deadline the server disagrees with.
+  private editWindowDeadline(createdAt: Date, windowHours: number): Date {
+    return new Date(createdAt.getTime() + windowHours * 60 * 60_000);
   }
 
   async findForSalon(salonId: string): Promise<PublicReview[]> {

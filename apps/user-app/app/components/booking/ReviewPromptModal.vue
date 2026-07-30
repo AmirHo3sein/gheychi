@@ -5,26 +5,49 @@ interface ReviewResponse {
   comment: string | null
 }
 
-const props = defineProps<{ bookingId: string; workerName?: string | null }>()
-const emit = defineEmits<{ close: []; submitted: [] }>()
+// The caller's own existing review for this booking, as returned by GET /reviews/mine
+// (ReviewsService.MyReviewListItem, narrowed to what this dialog renders). `canEdit` is
+// the server's own edit-window verdict -- computed from platform_config's
+// review_edit_window_hours, never re-derived here -- so the edit/delete controls are
+// shown exactly when PATCH/DELETE would actually be accepted.
+interface ExistingReview {
+  id: string
+  rating: number
+  comment: string | null
+  workerRating: number | null
+  canEdit: boolean
+}
+
+const props = defineProps<{ bookingId: string; workerName?: string | null; review?: ExistingReview | null }>()
+// `changed` fires after any successful create/edit/delete so the opening screen can
+// refresh its review snapshot; `submitted` stays the create-only signal it always was.
+const emit = defineEmits<{ close: []; submitted: []; changed: [] }>()
 
 const { apiFetch } = useApi()
 
-// 'form' -- initial create form
-// 'view' -- already submitted (this session), read display with edit/delete actions
+// 'form' -- initial create form (no review exists yet)
+// 'view' -- a review exists: read display, with edit/delete actions while still editable
 // 'edit' -- pre-filled edit form
 // 'deleted' -- confirmation after a successful delete
-// 'already-reviewed' -- 409 on create: a review exists from a previous session. There is
-// no GET-by-booking endpoint to fetch that review's id/rating/comment, so it can't be
-// pre-filled for editing here -- see the report for this known limitation.
-const phase = ref<'form' | 'view' | 'edit' | 'deleted' | 'already-reviewed'>('form')
+// 'already-reviewed' -- 409 on create. Now only reachable when the caller's snapshot is
+// stale (reviewed in another tab/device since this screen loaded), since a known review
+// is passed in as `review` and opens straight into 'view'.
+const phase = ref<'form' | 'view' | 'edit' | 'deleted' | 'already-reviewed'>(props.review ? 'view' : 'form')
 
 const hasWorker = computed(() => !!props.workerName)
 
-const reviewId = ref<string | null>(null)
-const rating = ref(5)
-const workerRating = ref(5)
-const comment = ref('')
+const reviewId = ref<string | null>(props.review?.id ?? null)
+const rating = ref(props.review?.rating ?? 5)
+// Falls back to 5 (the create form's default) when the booking has a worker but the
+// existing review carries no worker score -- an older review from before worker ratings,
+// which the API rejects a workerRating patch for anyway (400, no linked WorkerRating).
+const workerRating = ref(props.review?.workerRating ?? 5)
+const comment = ref(props.review?.comment ?? '')
+// A review created in this session is by definition inside the edit window.
+const canEdit = ref(props.review ? props.review.canEdit : true)
+// Distinguishes "you just left this review" from "here is the review you left earlier",
+// which are the same 'view' phase but not the same message.
+const justSubmitted = ref(false)
 
 const editRating = ref(5)
 const editWorkerRating = ref(5)
@@ -53,8 +76,10 @@ async function submit() {
   }
   if (!error && data) {
     reviewId.value = data.id
+    justSubmitted.value = true
     phase.value = 'view'
     emit('submitted')
+    emit('changed')
   }
 }
 
@@ -84,6 +109,7 @@ async function saveEdit() {
     workerRating.value = editWorkerRating.value
     comment.value = editComment.value
     phase.value = 'view'
+    emit('changed')
   }
   // On error (e.g. 403 past the edit window) apiFetch already surfaced a toast --
   // stay on the edit form so the user can see their unsaved input.
@@ -97,7 +123,10 @@ async function deleteReview() {
   deleting.value = true
   const { error } = await apiFetch(`/reviews/${reviewId.value}`, { method: 'DELETE' })
   deleting.value = false
-  if (!error) phase.value = 'deleted'
+  if (!error) {
+    phase.value = 'deleted'
+    emit('changed')
+  }
 }
 
 function close() {
@@ -120,6 +149,9 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
     >
       <template v-if="phase === 'already-reviewed'">
         <h2 :id="titleId" class="text-sm font-bold">شما قبلا برای این نوبت نظر ثبت کرده‌اید</h2>
+        <p class="text-sm text-(--color-text-muted)">
+          برای مشاهده یا ویرایش آن، صفحه را تازه‌سازی کنید.
+        </p>
       </template>
 
       <template v-else-if="phase === 'deleted'">
@@ -127,7 +159,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
       </template>
 
       <template v-else-if="phase === 'view'">
-        <h2 :id="titleId" class="font-bold">نظر شما ثبت شد</h2>
+        <h2 :id="titleId" class="font-bold">{{ justSubmitted ? 'نظر شما ثبت شد' : 'نظر شما برای این نوبت' }}</h2>
         <div class="flex gap-1" data-testid="view-salon-rating-stars" aria-hidden="true">
           <BaseIcon
             v-for="n in 5"
@@ -151,7 +183,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
         </template>
         <p v-if="comment" class="text-sm text-(--color-text-muted)">{{ comment }}</p>
 
-        <div class="flex gap-2">
+        <div v-if="canEdit" class="flex gap-2">
           <BaseButton variant="secondary" block data-testid="edit-review-button" @click="startEdit">
             ویرایش
           </BaseButton>
@@ -159,6 +191,11 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
             حذف
           </BaseButton>
         </div>
+        <!-- Same wording the API answers a late PATCH/DELETE with, so the reason a
+             control is missing is stated rather than left to be guessed at. -->
+        <p v-else data-testid="edit-window-closed" class="text-sm text-(--color-text-muted)">
+          مهلت ویرایش این نظر به پایان رسیده است
+        </p>
       </template>
 
       <template v-else-if="phase === 'edit'">

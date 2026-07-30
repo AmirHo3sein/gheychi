@@ -59,10 +59,23 @@ const CANCELLED_BOOKING = {
   status: 'cancelled_by_user' as const,
 }
 
-function stub(bookings: unknown[], terms: unknown = TERMS) {
+// The caller's own review of COMPLETED_BOOKING, still inside the edit window.
+const MY_REVIEW = {
+  id: 'rev-1',
+  bookingId: 'b-completed',
+  rating: 4,
+  comment: 'خیلی خوب بود',
+  workerRating: null,
+  status: 'published' as const,
+  editableUntil: '2099-01-01T00:00:00.000Z',
+  canEdit: true,
+}
+
+function stub(bookings: unknown[], terms: unknown = TERMS, reviews: unknown[] = []) {
   fetchMock.mockImplementation(async (path: string) => {
     if (path === '/bookings/mine') return bookings
     if (path === '/platform-config/booking-terms') return terms
+    if (path === '/reviews/mine') return reviews
     throw new Error(`unexpected fetch path in test: ${path}`)
   })
 }
@@ -189,6 +202,87 @@ describe('bookings list page', () => {
 
     expect(wrapper.find('[data-testid="cancel-confirm-dialog"]').exists()).toBe(false)
     expect(fetchMock).not.toHaveBeenCalledWith('/bookings/b-confirmed-far/cancel', expect.anything())
+  })
+
+  it('offers ثبت نظر for a completed booking the caller has not reviewed yet', async () => {
+    stub([COMPLETED_BOOKING], TERMS, [])
+    wrapper = await mountSuspended(BookingsListPage)
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="review-booking-button"]').text()).toBe('ثبت نظر')
+  })
+
+  // Regression: the button used to read "ثبت نظر" no matter what, so a returning user
+  // re-submitted, hit the 409, and landed in a dead-end panel with no way to reach the
+  // edit/delete window the API actually still allowed.
+  it('offers ویرایش نظر for an already-reviewed booking and opens the modal pre-filled', async () => {
+    stub([COMPLETED_BOOKING], TERMS, [MY_REVIEW])
+    wrapper = await mountSuspended(BookingsListPage)
+    await flushPromises()
+
+    const button = wrapper.get('[data-testid="review-booking-button"]')
+    expect(button.text()).toBe('ویرایش نظر')
+
+    await button.trigger('click')
+    await flushPromises()
+
+    // Opens straight into the read/edit view of the existing review, not a blank form.
+    expect(wrapper.text()).not.toContain('این نوبت چطور بود؟')
+    expect(wrapper.text()).toContain('خیلی خوب بود')
+    expect(wrapper.find('[data-testid="edit-review-button"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="delete-review-button"]').exists()).toBe(true)
+  })
+
+  it('drops to مشاهده نظر, with no edit/delete controls, once the edit window has closed', async () => {
+    stub([COMPLETED_BOOKING], TERMS, [{ ...MY_REVIEW, canEdit: false, editableUntil: '2020-01-01T00:00:00.000Z' }])
+    wrapper = await mountSuspended(BookingsListPage)
+    await flushPromises()
+
+    const button = wrapper.get('[data-testid="review-booking-button"]')
+    expect(button.text()).toBe('مشاهده نظر')
+
+    await button.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="edit-review-button"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="delete-review-button"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="edit-window-closed"]').text()).toContain('مهلت ویرایش')
+  })
+
+  // A booking whose review was deleted stays permanently un-reviewable (the DB unique
+  // index is on booking_id regardless of status), so offering any action would only 409.
+  it('shows a note instead of a review action once the review has been withdrawn', async () => {
+    stub([COMPLETED_BOOKING], TERMS, [{ ...MY_REVIEW, status: 'withdrawn', canEdit: false }])
+    wrapper = await mountSuspended(BookingsListPage)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="review-booking-button"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="review-withdrawn-note"]').text()).toContain('حذف شده')
+  })
+
+  it('refreshes the review snapshot after one is submitted from the modal', async () => {
+    stub([COMPLETED_BOOKING], TERMS, [])
+    wrapper = await mountSuspended(BookingsListPage)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="review-booking-button"]').trigger('click')
+    await flushPromises()
+
+    let reviews: unknown[] = []
+    fetchMock.mockImplementation(async (path: string, opts?: { method?: string }) => {
+      if (path === '/reviews' && opts?.method === 'POST') {
+        reviews = [MY_REVIEW]
+        return { id: 'rev-1', rating: 5, comment: null }
+      }
+      if (path === '/reviews/mine') return reviews
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+
+    await wrapper.get('[data-testid="submit-review-button"]').trigger('click')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith('/reviews/mine', expect.anything())
+    expect(wrapper.get('[data-testid="review-booking-button"]').text()).toBe('ویرایش نظر')
   })
 
   it('shows an empty state when there are no bookings', async () => {

@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
+import { applyDiscount } from '../src/booking/discount.util';
 import { resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
 
@@ -156,5 +157,77 @@ describe('Search (e2e)', () => {
     const bySlug = Object.fromEntries(res.body.map((s: { slug: string; hasActiveStory: boolean }) => [s.slug, s.hasActiveStory]));
     expect(bySlug['near-salon']).toBe(true);
     expect(bySlug['far-salon']).toBe(false);
+  });
+
+  // --- discounted minPrice ---------------------------------------------------------
+  // These run last and each adds services to the existing fixture salons, so the exact
+  // slug/minPrice assertions above stay untouched.
+
+  const minPriceBySlug = async (query: Record<string, unknown>): Promise<Record<string, number | null>> => {
+    const res = await request(app.getHttpServer())
+      .get('/api/search')
+      .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', ...query })
+      .expect(200);
+    return Object.fromEntries(res.body.map((s: { slug: string; minPrice: number | null }) => [s.slug, s.minPrice]));
+  };
+
+  it('quotes the cheapest discounted price, not the discount applied to the cheapest raw price', async () => {
+    const ds = app.get(DataSource);
+    // Near now offers Cut 500,000 (no discount) and Color 400,000 at 50% off. The cheapest
+    // service BEFORE the discount is Color at 400,000; the cheapest one AFTER it is Color at
+    // 200,000 -- quoting 400,000 (the raw MIN) would advertise more than checkout charges.
+    await ds.query(
+      `INSERT INTO salon_services (salon_id, category_id, name, price, duration_min, discount_percent) VALUES
+        ('10000000-0000-4000-8000-000000000001', $1, 'Color', 400000, 90, 50)`,
+      [firstCategoryId],
+    );
+
+    const bySlug = await minPriceBySlug({});
+    expect(bySlug['near-salon']).toBe(200000);
+    // A NULL discount_percent is "no discount", never a free/100%-off one.
+    expect(bySlug['far-salon']).toBe(300000);
+  });
+
+  it('rounds the discounted minimum exactly like applyDiscount', async () => {
+    const ds = app.get(DataSource);
+    // 249,997 at 50% off is 124,998.5 -- a half-toman tie whose floor is even, so it is the
+    // one case where SQL banker's rounding (124,998) and JS Math.round (124,999) disagree.
+    // The card must land on whatever checkout would charge.
+    await ds.query(
+      `INSERT INTO salon_services (salon_id, category_id, name, price, duration_min, discount_percent) VALUES
+        ('10000000-0000-4000-8000-000000000002', $1, 'Pedicure', 249997, 60, 50)`,
+      [secondCategoryId],
+    );
+
+    const bySlug = await minPriceBySlug({});
+    expect(bySlug['far-salon']).toBe(applyDiscount(249997, 50));
+    expect(bySlug['far-salon']).toBe(124999);
+  });
+
+  it('scopes the discounted minimum to the filtered category', async () => {
+    const ds = app.get(DataSource);
+    // Near's 200,000 bargain sits in the FIRST category; when the customer filters by the
+    // second one, the quote has to come from the services they can actually see there.
+    await ds.query(
+      `INSERT INTO salon_services (salon_id, category_id, name, price, duration_min) VALUES
+        ('10000000-0000-4000-8000-000000000001', $1, 'Nails', 350000, 60)`,
+      [secondCategoryId],
+    );
+
+    const bySlug = await minPriceBySlug({ categoryId: secondCategoryId });
+    expect(bySlug['near-salon']).toBe(350000);
+    expect(bySlug['far-salon']).toBe(124999);
+  });
+
+  it('ignores inactive services however deeply discounted', async () => {
+    const ds = app.get(DataSource);
+    await ds.query(
+      `INSERT INTO salon_services (salon_id, category_id, name, price, duration_min, discount_percent, is_active) VALUES
+        ('10000000-0000-4000-8000-000000000001', $1, 'Retired Offer', 100000, 30, 90, false)`,
+      [firstCategoryId],
+    );
+
+    const bySlug = await minPriceBySlug({});
+    expect(bySlug['near-salon']).toBe(200000);
   });
 });

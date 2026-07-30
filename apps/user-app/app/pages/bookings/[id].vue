@@ -11,8 +11,19 @@ interface BookingDetail {
   refundStatus: 'pending' | 'done' | null
 }
 
-// Mirrors bookings/index.vue's own const of the same name -- this codebase's
+// Mirrors bookings/index.vue's own interface/const of the same names -- this codebase's
 // per-file DTO/const convention rather than a shared module.
+interface MyReview {
+  id: string
+  bookingId: string
+  rating: number
+  comment: string | null
+  workerRating: number | null
+  status: 'published' | 'rejected' | 'withdrawn'
+  editableUntil: string
+  canEdit: boolean
+}
+
 const CANCELLABLE_STATUSES: BookingDetail['status'][] = ['pending_payment', 'confirmed']
 
 const route = useRoute()
@@ -26,6 +37,22 @@ const { data: booking, refresh } = await useAsyncData(`booking-detail-${route.pa
 if (!booking.value) {
   throw createError({ statusCode: 404, statusMessage: 'Booking not found' })
 }
+
+// The caller's own review for THIS booking (a review only ever exists for a completed
+// one), so the action below can offer editing an existing review rather than a second
+// submission the API can only answer with a 409. Scoped server-side to req.user; the
+// bookingId filter keeps it to one row instead of the caller's whole review history.
+const { data: myReview, refresh: refreshReview } = await useAsyncData(
+  `booking-review-${route.params.id}`,
+  async () => {
+    if (booking.value?.status !== 'completed') return null
+    const { data } = await apiFetch<MyReview[]>('/reviews/mine', {
+      query: { bookingId: route.params.id },
+      silent: true,
+    })
+    return data?.[0] ?? null
+  },
+)
 
 const retrying = ref(false)
 
@@ -54,6 +81,13 @@ async function cancelBooking() {
 }
 
 const reviewOpen = ref(false)
+
+// A withdrawn review has no label -- reviews_booking_uidx keeps that booking
+// permanently un-reviewable, so the template shows a note instead of a button.
+const reviewButtonLabel = computed(() => {
+  if (!myReview.value) return 'ثبت نظر'
+  return myReview.value.canEdit ? 'ویرایش نظر' : 'مشاهده نظر'
+})
 </script>
 
 <template>
@@ -116,14 +150,19 @@ const reviewOpen = ref(false)
         لغو نوبت
       </BaseButton>
 
-      <BaseButton
-        v-if="booking.status === 'completed'"
-        variant="secondary"
-        data-testid="review-booking-button"
-        @click="reviewOpen = true"
-      >
-        ثبت نظر
-      </BaseButton>
+      <template v-if="booking.status === 'completed'">
+        <BaseButton
+          v-if="myReview?.status !== 'withdrawn'"
+          variant="secondary"
+          data-testid="review-booking-button"
+          @click="reviewOpen = true"
+        >
+          {{ reviewButtonLabel }}
+        </BaseButton>
+        <p v-else data-testid="review-withdrawn-note" class="text-sm text-(--color-text-muted)">
+          نظر شما برای این نوبت حذف شده است
+        </p>
+      </template>
     </div>
 
     <NuxtLink to="/bookings" class="block text-sm text-(--color-text) hover:underline">بازگشت به نوبت‌های من</NuxtLink>
@@ -132,6 +171,8 @@ const reviewOpen = ref(false)
       v-if="reviewOpen"
       :booking-id="booking.id"
       :worker-name="booking.workerName"
+      :review="myReview"
+      @changed="refreshReview"
       @close="reviewOpen = false"
     />
   </div>

@@ -379,6 +379,124 @@ describe('ReviewsService.update / remove -- ownership and edit-window enforcemen
   });
 });
 
+describe('ReviewsService.listMine -- the customer-side read path for one\'s own reviews', () => {
+  let service: ReviewsService;
+  let reviewsFind: jest.Mock;
+  let workerRatingsFind: jest.Mock;
+  let getReviewEditWindowHours: jest.Mock;
+
+  const FIXED_NOW = 1_700_000_000_000;
+  const WINDOW_HOURS = 72;
+  const WINDOW_MS = WINDOW_HOURS * 60 * 60_000;
+
+  beforeEach(async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(FIXED_NOW);
+    reviewsFind = jest.fn().mockResolvedValue([]);
+    workerRatingsFind = jest.fn().mockResolvedValue([]);
+    getReviewEditWindowHours = jest.fn().mockResolvedValue(WINDOW_HOURS);
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ReviewsService,
+        { provide: getRepositoryToken(Review), useValue: { find: reviewsFind } },
+        { provide: getRepositoryToken(Booking), useValue: {} },
+        { provide: getRepositoryToken(Salon), useValue: {} },
+        { provide: getRepositoryToken(Worker), useValue: {} },
+        { provide: getRepositoryToken(WorkerRating), useValue: { find: workerRatingsFind } },
+        { provide: DataSource, useValue: {} },
+        { provide: PlatformConfigService, useValue: { getReviewEditWindowHours } },
+      ],
+    }).compile();
+    service = moduleRef.get(ReviewsService);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  const review = (over: Partial<Review> = {}): Review =>
+    ({
+      id: 'review-1', bookingId: 'booking-1', salonId: 'salon-1', userId: 'user-1',
+      rating: 5, comment: 'عالی بود', status: 'published', salonReply: null, salonReplyAt: null,
+      createdAt: new Date(FIXED_NOW), ...over,
+    }) as Review;
+
+  it('scopes the query to the caller and never to a bare booking id', async () => {
+    await service.listMine('user-1', 'booking-1');
+
+    expect(reviewsFind).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: 'user-1', bookingId: 'booking-1' } }),
+    );
+  });
+
+  it('returns every review of the caller when no bookingId filter is given', async () => {
+    await service.listMine('user-1');
+
+    expect(reviewsFind).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: 'user-1' } }));
+  });
+
+  it('reports a fresh review as editable, with the linked worker rating attached', async () => {
+    reviewsFind.mockResolvedValue([review()]);
+    workerRatingsFind.mockResolvedValue([{ id: 'wr-1', reviewId: 'review-1', workerId: 'worker-1', rating: 4 }]);
+
+    const [item] = await service.listMine('user-1');
+
+    expect(item).toMatchObject({
+      id: 'review-1',
+      bookingId: 'booking-1',
+      rating: 5,
+      comment: 'عالی بود',
+      workerRating: 4,
+      status: 'published',
+      canEdit: true,
+    });
+    expect(item!.editableUntil).toEqual(new Date(FIXED_NOW + WINDOW_MS));
+  });
+
+  it('derives the window from platform_config rather than a hardcoded 72h', async () => {
+    getReviewEditWindowHours.mockResolvedValue(1);
+    reviewsFind.mockResolvedValue([review({ createdAt: new Date(FIXED_NOW - 2 * 60 * 60_000) })]);
+
+    const [item] = await service.listMine('user-1');
+
+    expect(getReviewEditWindowHours).toHaveBeenCalled();
+    expect(item!.canEdit).toBe(false);
+  });
+
+  // Same boundary rule assertWithinEditWindow enforces: the deadline instant itself is
+  // still inside the window, one millisecond later is not.
+  it('agrees with update()/remove() on the exact window boundary', async () => {
+    reviewsFind.mockResolvedValue([
+      review({ id: 'at-boundary', createdAt: new Date(FIXED_NOW - WINDOW_MS) }),
+      review({ id: 'past-boundary', createdAt: new Date(FIXED_NOW - WINDOW_MS - 1) }),
+    ]);
+
+    const items = await service.listMine('user-1');
+
+    expect(items.find((i) => i.id === 'at-boundary')!.canEdit).toBe(true);
+    expect(items.find((i) => i.id === 'past-boundary')!.canEdit).toBe(false);
+  });
+
+  // reviews_booking_uidx is keyed on booking_id regardless of status, so a withdrawn
+  // review still has to be reported -- a caller that saw "no review" here would offer a
+  // "ثبت نظر" button that can only ever 409.
+  it('still reports a withdrawn review, as non-editable', async () => {
+    reviewsFind.mockResolvedValue([review({ status: 'withdrawn' })]);
+
+    const [item] = await service.listMine('user-1');
+
+    expect(item).toMatchObject({ status: 'withdrawn', canEdit: false });
+  });
+
+  it('returns an empty list without touching worker ratings or platform config', async () => {
+    reviewsFind.mockResolvedValue([]);
+
+    await expect(service.listMine('user-1')).resolves.toEqual([]);
+    expect(workerRatingsFind).not.toHaveBeenCalled();
+    expect(getReviewEditWindowHours).not.toHaveBeenCalled();
+  });
+});
+
 describe('ReviewsService.moderateWorkerRating', () => {
   let service: ReviewsService;
   let reviewsFindOneBy: jest.Mock;

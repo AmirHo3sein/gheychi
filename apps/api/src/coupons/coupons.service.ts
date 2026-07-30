@@ -23,15 +23,19 @@ export class CouponsService {
     return code.trim().toUpperCase();
   }
 
+  // Returns the same CouponWithRedeemedCount shape the list endpoints do, so a caller can
+  // append the created row straight into a list it already holds. A brand-new coupon has
+  // exactly zero redemptions by construction -- omitting the field left every consumer
+  // rendering `undefined`, indistinguishable from missing data, until the next reload.
   private async create(data: {
     code: string;
     salonId: string | null;
     discountPercent: number;
     expiresAt?: string;
     maxRedemptions?: number;
-  }): Promise<Coupon> {
+  }): Promise<CouponWithRedeemedCount> {
     try {
-      return await this.coupons.save(
+      const coupon = await this.coupons.save(
         this.coupons.create({
           code: this.normalize(data.code),
           salonId: data.salonId,
@@ -40,17 +44,18 @@ export class CouponsService {
           maxRedemptions: data.maxRedemptions ?? null,
         }),
       );
+      return { ...coupon, redeemedCount: 0 };
     } catch (err) {
       if (isUniqueViolation(err)) throw new ConflictException('این کد قبلا استفاده شده است');
       throw err;
     }
   }
 
-  createForSalon(salonId: string, dto: CreateCouponDto): Promise<Coupon> {
+  createForSalon(salonId: string, dto: CreateCouponDto): Promise<CouponWithRedeemedCount> {
     return this.create({ ...dto, salonId });
   }
 
-  createPlatformWide(dto: CreateCouponDto): Promise<Coupon> {
+  createPlatformWide(dto: CreateCouponDto): Promise<CouponWithRedeemedCount> {
     return this.create({ ...dto, salonId: null });
   }
 

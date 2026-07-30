@@ -35,6 +35,9 @@ interface SalonRow {
   status: 'pending' | 'approved' | 'rejected' | 'suspended'
   genderTarget: 'women' | 'men'
   isFeatured: boolean
+  // The paid window's end. NULL means "featured with no end date" -- not "not featured";
+  // the flag and the window are two separate facts and both gate the boost (see below).
+  featuredUntil: string | null
   createdAt: string
 }
 
@@ -93,6 +96,27 @@ function loadFromFilterChange() {
 
 function formatDate(iso: string): string {
   return new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
+}
+
+// Mirrors SearchService's public boost predicate exactly:
+//   is_featured AND (featured_until IS NULL OR featured_until > now())
+// Once the paid window elapses the salon silently loses both its search boost and its
+// public badge while is_featured stays true, so gating on the flag alone would keep
+// labelling it ویژه here -- the wrong answer for an operator auditing what is actually
+// boosted right now, or answering "why has my ad stopped showing?".
+function isFeaturedNow(salon: SalonRow): boolean {
+  return salon.isFeatured && (salon.featuredUntil === null || new Date(salon.featuredUntil).getTime() > Date.now())
+}
+
+// An elapsed window still deserves a marker: with the badge simply gone, a salon whose ad
+// just ran out is indistinguishable from one that was never featured -- which is exactly
+// the question this screen gets asked.
+function isFeaturedExpired(salon: SalonRow): boolean {
+  return salon.isFeatured && !isFeaturedNow(salon)
+}
+
+function featuredTitle(salon: SalonRow): string {
+  return salon.featuredUntil ? `نشان ویژه تا ${formatDate(salon.featuredUntil)}` : 'نشان ویژه بدون تاریخ پایان'
 }
 
 function clearFilters() {
@@ -183,13 +207,22 @@ watch(page, load)
                     {{ salon.name }}
                   </RouterLink>
                   <span
-                    v-if="salon.isFeatured"
+                    v-if="isFeaturedNow(salon)"
                     data-testid="featured-badge"
-                    title="نشان ویژه"
+                    :title="featuredTitle(salon)"
                     class="inline-flex items-center gap-1 rounded-full bg-(--tone-warning-bg) px-2 py-0.5 text-[11px] font-semibold text-(--tone-warning-text)"
                   >
                     <AppIcon name="star" :size="11" />
                     ویژه
+                  </span>
+                  <span
+                    v-else-if="isFeaturedExpired(salon)"
+                    data-testid="featured-expired-badge"
+                    :title="featuredTitle(salon)"
+                    class="inline-flex items-center gap-1 rounded-full bg-(--color-border-soft) px-2 py-0.5 text-[11px] font-semibold text-(--color-text-muted)"
+                  >
+                    <AppIcon name="star" :size="11" />
+                    ویژه (منقضی)
                   </span>
                 </div>
               </td>

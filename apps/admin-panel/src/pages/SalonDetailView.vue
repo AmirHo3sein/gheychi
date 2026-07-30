@@ -233,7 +233,15 @@ onMounted(load)
         </AppCard>
 
         <AppCard>
-          <SalonStatusActions :salon-id="salon.id" :status="salon.status" @updated="onUpdated" />
+          <!-- suspendedCause is passed through so the actions can refuse to offer a
+               reapprove the backend would 409: an owner-suspension cascade is undone by
+               reactivating the owner, not from here. -->
+          <SalonStatusActions
+            :salon-id="salon.id"
+            :status="salon.status"
+            :suspended-cause="salon.suspendedCause"
+            @updated="onUpdated"
+          />
         </AppCard>
       </template>
 

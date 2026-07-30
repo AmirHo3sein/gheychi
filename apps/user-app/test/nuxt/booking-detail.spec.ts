@@ -24,6 +24,26 @@ const BASE_BOOKING = {
   refundStatus: null as string | null,
 }
 
+const MY_REVIEW = {
+  id: 'rev-1',
+  bookingId: 'b1',
+  rating: 4,
+  comment: 'خیلی خوب بود',
+  workerRating: null as number | null,
+  status: 'published',
+  editableUntil: '2099-01-01T00:00:00.000Z',
+  canEdit: true,
+}
+
+// The page fetches the booking and, for a completed one, the caller's own review of it.
+function stub(booking: unknown, reviews: unknown[] = []) {
+  fetchMock.mockImplementation(async (path: string, opts?: { method?: string }) => {
+    if (path === '/bookings/b1' && (!opts || opts.method === undefined || opts.method === 'GET')) return booking
+    if (path === '/reviews/mine') return reviews
+    throw new Error(`unexpected fetch path in test: ${path}`)
+  })
+}
+
 describe('booking detail page', () => {
   let wrapper: Awaited<ReturnType<typeof mountSuspended>> | undefined
 
@@ -32,7 +52,7 @@ describe('booking detail page', () => {
     vi.stubGlobal('$fetch', fetchStub)
     wrapper?.unmount()
     wrapper = undefined
-    clearNuxtData('booking-detail-b1')
+    clearNuxtData(['booking-detail-b1', 'booking-review-b1'])
   })
 
   afterEach(() => {
@@ -107,16 +127,71 @@ describe('booking detail page', () => {
   })
 
   it('shows a review action for a completed booking, opening the review prompt on click', async () => {
-    fetchMock.mockResolvedValue({ ...BASE_BOOKING, status: 'completed', workerName: 'Sara' })
+    stub({ ...BASE_BOOKING, status: 'completed', workerName: 'Sara' })
     wrapper = await mountSuspended(BookingDetailPage)
     const reviewButton = wrapper.find('[data-testid="review-booking-button"]')
     expect(reviewButton.exists()).toBe(true)
+    expect(reviewButton.text()).toBe('ثبت نظر')
     expect(wrapper.find('[data-testid="cancel-booking-button"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="retry-payment-button"]').exists()).toBe(false)
 
     await reviewButton.trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('این نوبت چطور بود؟')
+  })
+
+  // Regression: the action read "ثبت نظر" for an already-reviewed booking too, so the
+  // only thing it could do was 409 -- leaving the shipped 72h edit/delete window
+  // unreachable from this screen.
+  it('offers ویرایش نظر for an already-reviewed booking and opens the modal pre-filled', async () => {
+    stub({ ...BASE_BOOKING, status: 'completed' }, [MY_REVIEW])
+    wrapper = await mountSuspended(BookingDetailPage)
+
+    const reviewButton = wrapper.get('[data-testid="review-booking-button"]')
+    expect(reviewButton.text()).toBe('ویرایش نظر')
+
+    await reviewButton.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('این نوبت چطور بود؟')
+    expect(wrapper.text()).toContain('خیلی خوب بود')
+    expect(wrapper.find('[data-testid="edit-review-button"]').exists()).toBe(true)
+  })
+
+  it('asks the API only for this booking\'s own review, not the caller\'s whole history', async () => {
+    stub({ ...BASE_BOOKING, status: 'completed' }, [MY_REVIEW])
+    wrapper = await mountSuspended(BookingDetailPage)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/reviews/mine',
+      expect.objectContaining({ query: { bookingId: 'b1' } }),
+    )
+  })
+
+  it('does not look up a review for a booking that cannot have one', async () => {
+    stub({ ...BASE_BOOKING, status: 'confirmed' })
+    wrapper = await mountSuspended(BookingDetailPage)
+
+    expect(fetchMock).not.toHaveBeenCalledWith('/reviews/mine', expect.anything())
+  })
+
+  it('drops to مشاهده نظر once the edit window has closed', async () => {
+    stub({ ...BASE_BOOKING, status: 'completed' }, [{ ...MY_REVIEW, canEdit: false, editableUntil: '2020-01-01T00:00:00.000Z' }])
+    wrapper = await mountSuspended(BookingDetailPage)
+
+    await wrapper.get('[data-testid="review-booking-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="edit-review-button"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="edit-window-closed"]').text()).toContain('مهلت ویرایش')
+  })
+
+  it('shows a note instead of a review action once the review has been withdrawn', async () => {
+    stub({ ...BASE_BOOKING, status: 'completed' }, [{ ...MY_REVIEW, status: 'withdrawn', canEdit: false }])
+    wrapper = await mountSuspended(BookingDetailPage)
+
+    expect(wrapper.find('[data-testid="review-booking-button"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="review-withdrawn-note"]').text()).toContain('حذف شده')
   })
 
   it('shows no action buttons for a booking in a terminal, non-actionable state', async () => {

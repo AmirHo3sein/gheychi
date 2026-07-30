@@ -155,6 +155,45 @@ describe('SalonStatusActions', () => {
     expect(wrapper.find('[data-testid="reapprove-button"]').exists()).toBe(true)
   })
 
+  // The backend 409s an approve while the owner account is suspended, so a salon that is
+  // only suspended BECAUSE of that cascade must not be offered a reapprove at all.
+  describe('a salon suspended by the owner-suspension cascade', () => {
+    it('disables the reapprove control and explains where the real fix is', async () => {
+      const wrapper = mount(SalonStatusActions, {
+        props: { salonId: 's1', status: 'suspended', suspendedCause: 'owner_suspended' },
+      })
+
+      const button = wrapper.get('[data-testid="reapprove-button"]')
+      expect((button.element as HTMLButtonElement).disabled).toBe(true)
+      expect(wrapper.get('[data-testid="reapprove-blocked-hint"]').text()).toContain('حساب مالک')
+
+      // Even a forced click must not reach the API or open the confirm strip.
+      await button.trigger('click')
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(wrapper.find('[data-testid="reapprove-confirm"]').exists()).toBe(false)
+    })
+
+    it('leaves an admin-suspended salon fully reapprovable', () => {
+      const wrapper = mount(SalonStatusActions, {
+        props: { salonId: 's1', status: 'suspended', suspendedCause: 'admin' },
+      })
+
+      expect((wrapper.get('[data-testid="reapprove-button"]').element as HTMLButtonElement).disabled).toBe(false)
+      expect(wrapper.find('[data-testid="reapprove-blocked-hint"]').exists()).toBe(false)
+    })
+
+    it('does not block an approved salon that still carries a stale owner_suspended cause', () => {
+      // suspendedCause is only scrubbed on the next approve/suspend, so a non-suspended
+      // salon can legitimately still carry it -- the status must dominate.
+      const wrapper = mount(SalonStatusActions, {
+        props: { salonId: 's1', status: 'approved', suspendedCause: 'owner_suspended' },
+      })
+
+      expect(wrapper.find('[data-testid="reapprove-blocked-hint"]').exists()).toBe(false)
+      expect((wrapper.get('[data-testid="suspend-button"]').element as HTMLButtonElement).disabled).toBe(false)
+    })
+  })
+
   it('keeps rejected salons on the provider-resubmit-only flow (no admin action)', () => {
     const wrapper = mount(SalonStatusActions, { props: { salonId: 's1', status: 'rejected' } })
 

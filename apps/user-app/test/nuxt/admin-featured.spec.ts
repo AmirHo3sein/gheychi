@@ -141,7 +141,9 @@ describe('admin featured page', () => {
       '/admin/salons/s1/featured',
       expect.objectContaining({
         method: 'PATCH',
-        body: { isFeatured: true, featuredUntil: new Date('2026-09-01').toISOString() },
+        // End-of-day, not midnight: the boost is gated on `featured_until > now()`, so a
+        // midnight instant would lapse at 03:30 local on the very date the field shows.
+        body: { isFeatured: true, featuredUntil: new Date('2026-09-01T23:59:59.999').toISOString() },
       }),
     )
   })

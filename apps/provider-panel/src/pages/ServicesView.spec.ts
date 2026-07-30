@@ -210,6 +210,112 @@ describe('ServicesView', () => {
     expect(fetchMock.mock.calls.length).toBe(2)
   })
 
+  // CreateServiceDto is @Min(5)/@Max(600) on durationMin, and clearing the field lands here
+  // as 0 (Number('')). The form used to validate only category and name, so the DTO rejection
+  // -- an English validator array in a toast -- was the provider's only feedback.
+  it.each([['', 'empty'], ['0', 'zero'], ['3', 'below the 5 minute minimum'], ['900', 'above the 600 minute maximum']])(
+    'shows an inline Persian error and skips the request when adding a service with duration %s (%s)',
+    async (value) => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+      vi.stubGlobal('fetch', fetchMock)
+
+      const wrapper = mount(ServicesView)
+      await new Promise((r) => setTimeout(r, 0))
+
+      await wrapper.findAll('input[type="text"]').at(-1)!.setValue('رنگ مو')
+      await wrapper.findComponent(AppSelect).vm.$emit('update:modelValue', 1)
+      // No service rows are rendered, so the create card owns every number input:
+      // [0] price, [1] duration, [2] discount.
+      const numberInputs = wrapper.findAll('input[type="number"]')
+      await numberInputs[0]!.setValue('150000')
+      await numberInputs[1]!.setValue(value)
+
+      const addButton = wrapper.findAll('button').find((b) => b.text().includes('افزودن'))!
+      await addButton.trigger('click')
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(wrapper.text()).toContain('مدت زمان خدمت باید عددی صحیح بین ۵ تا ۶۰۰ دقیقه باشد.')
+      expect(fetchMock.mock.calls.length).toBe(2)
+    },
+  )
+
+  it('shows an inline Persian error and skips the request when adding a service with an out-of-range discount', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(ServicesView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    await wrapper.findAll('input[type="text"]').at(-1)!.setValue('رنگ مو')
+    await wrapper.findComponent(AppSelect).vm.$emit('update:modelValue', 1)
+    const numberInputs = wrapper.findAll('input[type="number"]')
+    await numberInputs[0]!.setValue('150000')
+    await numberInputs[2]!.setValue('150')
+
+    const addButton = wrapper.findAll('button').find((b) => b.text().includes('افزودن'))!
+    await addButton.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(wrapper.text()).toContain('درصد تخفیف باید عددی صحیح بین ۱ تا ۱۰۰ باشد.')
+    expect(fetchMock.mock.calls.length).toBe(2)
+  })
+
+  // The row's `min="1"` attribute never stopped anyone typing 0, and UpdateServiceDto's
+  // @Min(1) rejects it -- so a typed 0 used to produce nothing but an English validator array.
+  it.each([['0', 'zero'], ['150', 'above 100'], ['-5', 'negative']])(
+    'refuses to save %s (%s) as a row discount, restores the field and warns in Persian',
+    async (value) => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE, discountPercent: 20 }] }) // GET services
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      vi.stubGlobal('fetch', fetchMock)
+
+      const wrapper = mount(ServicesView)
+      await new Promise((r) => setTimeout(r, 0))
+
+      // Row inputs come first: [0] price, [1] discount.
+      const discountInput = wrapper.findAll('input[type="number"]')[1]!
+      await discountInput.setValue(value)
+      await discountInput.trigger('change')
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(fetchMock.mock.calls.length).toBe(2)
+      expect((discountInput.element as HTMLInputElement).value).toBe('20')
+      expect(useToast().toasts.value.some((t) => t.message === 'درصد تخفیف باید عددی صحیح بین ۱ تا ۱۰۰ باشد.')).toBe(true)
+      expect(useToast().toasts.value.some((t) => t.message === 'تخفیف به‌روزرسانی شد')).toBe(false)
+    },
+  )
+
+  it('saves a valid row discount, and clears it with an explicit null', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({ ...SERVICE }) }) // PATCHes
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(ServicesView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    const discountInput = wrapper.findAll('input[type="number"]')[1]!
+    await discountInput.setValue('20')
+    await discountInput.trigger('change')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(JSON.parse(fetchMock.mock.calls[2]![1].body)).toEqual({ discountPercent: 20 })
+    expect(useToast().toasts.value.some((t) => t.message === 'تخفیف به‌روزرسانی شد')).toBe(true)
+
+    // Emptying the field is the clear path -- null, not 0.
+    await discountInput.setValue('')
+    await discountInput.trigger('change')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(JSON.parse(fetchMock.mock.calls[3]![1].body)).toEqual({ discountPercent: null })
+  })
+
   it('shows an inline error and skips the request when adding a service without a category', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services

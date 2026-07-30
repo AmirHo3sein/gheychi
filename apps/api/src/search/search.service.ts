@@ -12,6 +12,8 @@ export interface SearchResult {
   ratingAvg: number;
   ratingCount: number;
   distanceKm: number;
+  // Cheapest AFTER per-service discounts -- the price the customer would really pay,
+  // so the card can never advertise more than the salon page and checkout charge.
   minPrice: number | null;
   coverPhoto: string | null;
   isFeatured: boolean;
@@ -36,7 +38,20 @@ export class SearchService {
         s.rating_avg, s.rating_count,
         (s.is_featured AND (s.featured_until IS NULL OR s.featured_until > now())) AS is_featured,
         ST_Distance(s.location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) / 1000.0 AS distance_km,
-        (SELECT MIN(ss.price) FROM salon_services ss
+        -- The card's "از X تومان" has to quote what the customer would actually be
+        -- charged, so the minimum is taken over each service's DISCOUNTED price. Note
+        -- MIN(discounted), not discount-applied-to-MIN(price): the cheapest service
+        -- before a discount is often not the cheapest one after it.
+        --
+        -- The expression mirrors applyDiscount() (booking/discount.util.ts) exactly, so a
+        -- card price can never disagree with checkout by a rounding unit: the ::numeric
+        -- cast is load-bearing twice over -- it keeps price * pct / 100 out of integer
+        -- division, and it picks round(numeric) (half away from zero, matching JS
+        -- Math.round for positive prices) over round(double precision), which
+        -- banker's-rounds. A NULL discount_percent means "no discount" and the CHECK
+        -- constraint pins the rest to 1..100, so the 0 case is exactly a no-op here.
+        (SELECT MIN(round(ss.price::numeric * (100 - COALESCE(ss.discount_percent, 0)) / 100))
+           FROM salon_services ss
            WHERE ss.salon_id = s.id AND ss.is_active
              AND ($5::int IS NULL OR ss.category_id = $5)) AS min_price,
         (SELECT sp.url FROM salon_photos sp

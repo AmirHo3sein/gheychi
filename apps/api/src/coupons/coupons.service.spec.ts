@@ -1,5 +1,6 @@
-import { BadRequestException } from '@nestjs/common';
-import { EntityManager } from 'typeorm';
+import { BadRequestException, ConflictException } from '@nestjs/common';
+import { EntityManager, QueryFailedError } from 'typeorm';
+import { UNIQUE_VIOLATION } from '../common/postgres-error-codes';
 import { CouponRedemption } from './coupon-redemption.entity';
 import { Coupon } from './coupon.entity';
 import { CouponsService } from './coupons.service';
@@ -19,6 +20,44 @@ function makeCoupon(overrides: Partial<Coupon> = {}): Coupon {
     ...overrides,
   };
 }
+
+describe('CouponsService create', () => {
+  let couponsRepo: { create: jest.Mock; save: jest.Mock };
+  let service: CouponsService;
+
+  beforeEach(() => {
+    couponsRepo = {
+      create: jest.fn((data: Partial<Coupon>) => data),
+      save: jest.fn((data: Partial<Coupon>) => Promise.resolve(makeCoupon(data))),
+    };
+    service = new CouponsService(couponsRepo as never, {} as never);
+  });
+
+  // The create and list contracts must agree: the admin/provider coupon screens append the
+  // created row straight into the list they already hold, so a missing redeemedCount rendered
+  // as an empty usage cell -- "not used yet" indistinguishable from "data missing".
+  it('returns redeemedCount 0 on a platform-wide create, matching the list shape', async () => {
+    const created = await service.createPlatformWide({ code: 'summer20', discountPercent: 20 });
+    expect(created.redeemedCount).toBe(0);
+    expect(created.code).toBe('SUMMER20');
+    expect(created.salonId).toBeNull();
+  });
+
+  it('returns redeemedCount 0 on a salon-scoped create too', async () => {
+    const created = await service.createForSalon('salon-1', { code: 'VIP10', discountPercent: 10 });
+    expect(created.redeemedCount).toBe(0);
+    expect(created.salonId).toBe('salon-1');
+  });
+
+  it('still translates a duplicate code into a 409 rather than returning a row', async () => {
+    const err = new QueryFailedError('query', [], new Error('duplicate key'));
+    (err as unknown as { code: string }).code = UNIQUE_VIOLATION;
+    couponsRepo.save.mockRejectedValueOnce(err);
+    await expect(service.createPlatformWide({ code: 'SUMMER20', discountPercent: 20 })).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+});
 
 describe('CouponsService.resolveAndValidate', () => {
   let couponsRepo: { findOneBy: jest.Mock };

@@ -38,10 +38,23 @@ const newService = reactive({
 
 const categoryOptions = computed<SelectOption[]>(() => categories.value.map((c) => ({ value: c.id, label: c.name })))
 
+// Create/UpdateServiceDto both bound discountPercent with @IsInt @Min(1) @Max(100); the
+// create form and the per-row editor share the rule, so they share the check and the copy.
+const DISCOUNT_RANGE_ERROR = 'درصد تخفیف باید عددی صحیح بین ۱ تا ۱۰۰ باشد.'
+function isValidDiscount(value: number): boolean {
+  return Number.isInteger(value) && value >= 1 && value <= 100
+}
+
 // The price field edits a draft string rather than s.price directly: AppInput needs a real
 // two-way v-model target, and updatePrice() below has to be able to put a rejected edit back
 // to the last persisted price (same reason PortfolioView.vue keeps captionDrafts).
 const priceDrafts = reactive<Record<string, string>>({})
+
+// Same draft treatment as priceDrafts, for the same reason plus one more: a rejected
+// discount edit has to be put back visually, and binding the input straight to
+// s.discountPercent can't do that -- the prop never changed, so Vue has nothing to patch
+// and the invalid text would stay in the field.
+const discountDrafts = reactive<Record<string, string>>({})
 
 async function load() {
   loading.value = true
@@ -59,7 +72,10 @@ async function load() {
   }
 
   services.value = servicesRes.data ?? []
-  for (const s of services.value) priceDrafts[s.id] = String(s.price)
+  for (const s of services.value) {
+    priceDrafts[s.id] = String(s.price)
+    discountDrafts[s.id] = s.discountPercent === null ? '' : String(s.discountPercent)
+  }
   categories.value = categoriesRes.data ?? []
   loading.value = false
 }
@@ -81,6 +97,18 @@ async function addService() {
   // as updatePrice() below; a genuinely free service isn't something this screen offers.
   if (!Number.isInteger(newService.price) || newService.price <= 0) {
     createError.value = 'قیمت خدمت باید یک عدد صحیح بزرگ‌تر از صفر باشد.'
+    return
+  }
+  // CreateServiceDto's @Min(5)/@Max(600). Clearing the field lands here as 0 (Number('')),
+  // which the DTO rejects -- previously with no inline error at all, so the only feedback
+  // was the API's English validator text in a toast.
+  if (!Number.isInteger(newService.durationMin) || newService.durationMin < 5 || newService.durationMin > 600) {
+    createError.value = 'مدت زمان خدمت باید عددی صحیح بین ۵ تا ۶۰۰ دقیقه باشد.'
+    return
+  }
+  // Optional, but when given it must satisfy @Min(1)/@Max(100).
+  if (newService.discountPercent !== null && !isValidDiscount(newService.discountPercent)) {
+    createError.value = DISCOUNT_RANGE_ERROR
     return
   }
 
@@ -117,6 +145,7 @@ async function deactivate(service: Service) {
   if (!error) {
     services.value = services.value.filter((s) => s.id !== service.id)
     delete priceDrafts[service.id]
+    delete discountDrafts[service.id]
     pushToast('خدمت غیرفعال شد')
   }
 }
@@ -159,16 +188,31 @@ async function updatePrice(service: Service) {
   pushToast('قیمت به‌روزرسانی شد')
 }
 
-async function updateDiscount(service: Service, value: string) {
-  const discountPercent = value === '' ? null : Number(value)
+// UpdateServiceDto accepts null (clear the discount) or an integer 1-100 -- notably NOT 0,
+// which is what an emptied-then-retyped `0` produces and what the `min="1"` attribute does
+// nothing to stop (it only blocks the spinner, not typing). Guarding here keeps the failure
+// in Persian and next to the field instead of as an English validator array in a toast.
+async function updateDiscount(service: Service) {
+  const raw = String(discountDrafts[service.id] ?? '').trim()
+  const discountPercent = raw === '' ? null : Number(raw)
+  if (discountPercent !== null && !isValidDiscount(discountPercent)) {
+    discountDrafts[service.id] = service.discountPercent === null ? '' : String(service.discountPercent)
+    pushToast(DISCOUNT_RANGE_ERROR)
+    return
+  }
+  if (discountPercent === service.discountPercent) return
+
   const { error } = await apiFetch(`/salons/mine/services/${service.id}`, {
     method: 'PATCH',
     body: { discountPercent },
   })
-  if (!error) {
-    service.discountPercent = discountPercent
-    pushToast('تخفیف به‌روزرسانی شد')
+  if (error) {
+    discountDrafts[service.id] = service.discountPercent === null ? '' : String(service.discountPercent)
+    return
   }
+  service.discountPercent = discountPercent
+  discountDrafts[service.id] = discountPercent === null ? '' : String(discountPercent)
+  pushToast('تخفیف به‌روزرسانی شد')
 }
 </script>
 
@@ -212,14 +256,14 @@ async function updateDiscount(service: Service, value: string) {
               @change="updatePrice(s)"
             />
             <AppInput
-              :model-value="s.discountPercent != null ? String(s.discountPercent) : ''"
+              v-model="discountDrafts[s.id]"
               label="٪ تخفیف"
               type="number"
               min="1"
               max="100"
               placeholder="٪ تخفیف"
               class="tnum w-24"
-              @change="updateDiscount(s, ($event.target as HTMLInputElement).value)"
+              @change="updateDiscount(s)"
             />
           </div>
         </AppCard>
@@ -242,6 +286,8 @@ async function updateDiscount(service: Service, value: string) {
           :model-value="String(newService.durationMin)"
           label="مدت زمان (دقیقه)"
           type="number"
+          min="5"
+          max="600"
           class="tnum"
           @update:model-value="(v) => (newService.durationMin = Number(v))"
         />

@@ -44,6 +44,15 @@ interface RewardItem {
   couponId: string | null
   currency: 'toman' | 'points' | null
   couponCode: string | null
+  // A referral coupon inherits the referral's salon: a salon_owner/worker-type referral
+  // pays out a code the API only accepts at that one salon (and only until its expiry).
+  // Both are shown on the card -- otherwise the code reads as generally usable and the
+  // user discovers the restriction as "کد تخفیف نامعتبر است" at checkout.
+  // couponSalonId null = platform-wide, usable anywhere.
+  couponSalonId: string | null
+  couponSalonName: string | null
+  couponSalonSlug: string | null
+  couponExpiresAt: string | null
 }
 
 interface RewardsResponse {
@@ -191,14 +200,39 @@ function copyShareLink() {
   if (myCode.value) copyToClipboard(myCode.value.shareUrl, 'لینک دعوت کپی شد')
 }
 
+// Mirrors CouponsService.resolveAndValidate's own boundary exactly (`expiresAt < now`
+// -- the expiry instant itself is still valid), so the card never offers a code the
+// API would reject as 'کد تخفیف منقضی شده است'.
+function isCouponExpired(reward: RewardItem): boolean {
+  return !!reward.couponExpiresAt && new Date(reward.couponExpiresAt).getTime() < Date.now()
+}
+
+function couponScopeLabel(reward: RewardItem): string {
+  return reward.couponSalonName ? `فقط برای سالن ${reward.couponSalonName}` : 'قابل استفاده در همهٔ سالن‌ها'
+}
+
+function couponValidityLabel(reward: RewardItem): string | null {
+  if (!reward.couponExpiresAt) return null
+  return isCouponExpired(reward)
+    ? 'مهلت استفاده از این کد گذشته است'
+    : `معتبر تا ${formatDate(reward.couponExpiresAt)}`
+}
+
 // A coupon-kind reward's couponCode is a literal, redeemable row in the same `coupons`
 // table the booking page's "کد تخفیف دارید؟" field validates via POST /coupons/validate
-// -- so "using" it here is just: copy the code, then hand the user off to the salon
-// list to pick where to book (the coupon field itself lives on the per-service booking
-// page, which needs a salon+service chosen first). No new redemption path.
-async function useCoupon(code: string) {
-  await copyToClipboard(code, 'کد تخفیف کپی شد؛ هنگام رزرو آن را وارد کن')
-  await navigateTo('/')
+// -- so "using" it here is just: copy the code, then hand the user off to where the
+// booking flow starts (the coupon field itself lives on the per-service booking page,
+// which needs a salon+service chosen first). No new redemption path. A salon-restricted
+// code goes straight to ITS salon, since the salon list would only lead the user to
+// pick a salon where their own code is invalid.
+async function useCoupon(reward: RewardItem) {
+  if (!reward.couponCode) return
+  const salonSlug = reward.couponSalonSlug
+  await copyToClipboard(
+    reward.couponCode,
+    salonSlug ? 'کد تخفیف کپی شد؛ هنگام رزرو در همین سالن آن را وارد کن' : 'کد تخفیف کپی شد؛ هنگام رزرو آن را وارد کن',
+  )
+  await navigateTo(salonSlug ? `/salons/${salonSlug}` : '/')
 }
 
 function statusLabel(status: ReferralStatus): string {
@@ -237,7 +271,7 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('fa-IR')
 }
 
-useSeoMeta({ title: 'دعوت از دوستان — آرایشگاه' })
+useSeoMeta({ title: 'دعوت از دوستان — قیچی' })
 </script>
 
 <template>
@@ -346,16 +380,21 @@ useSeoMeta({ title: 'دعوت از دوستان — آرایشگاه' })
               <p class="text-xs text-(--color-text-muted)">
                 {{ rewardBeneficiaryLabel(rw.beneficiaryRole) }} · {{ formatDate(rw.grantedAt) }}
               </p>
-              <p v-if="rw.couponCode" class="text-xs text-(--color-text-muted)">کد تخفیف: {{ rw.couponCode }}</p>
-              <button
-                v-if="rw.couponCode"
-                type="button"
-                data-testid="use-coupon-button"
-                class="text-xs text-(--color-accent-text) hover:underline"
-                @click="useCoupon(rw.couponCode)"
-              >
-                استفاده از این کد
-              </button>
+              <template v-if="rw.couponCode">
+                <p class="text-xs text-(--color-text-muted)">کد تخفیف: {{ rw.couponCode }}</p>
+                <p data-testid="coupon-terms" class="text-xs text-(--color-text-muted)">
+                  {{ couponScopeLabel(rw) }}<template v-if="couponValidityLabel(rw)"> — {{ couponValidityLabel(rw) }}</template>
+                </p>
+                <button
+                  v-if="!isCouponExpired(rw)"
+                  type="button"
+                  data-testid="use-coupon-button"
+                  class="text-xs text-(--color-accent-text) hover:underline"
+                  @click="useCoupon(rw)"
+                >
+                  استفاده از این کد
+                </button>
+              </template>
               <NuxtLink v-if="rw.walletTransactionId" to="/account/wallet" class="text-xs text-(--color-accent-text) hover:underline">
                 مشاهده در کیف پول
               </NuxtLink>

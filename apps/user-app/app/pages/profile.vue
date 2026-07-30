@@ -97,7 +97,7 @@ async function logout() {
   await navigateTo('/login')
 }
 
-useSeoMeta({ title: 'پروفایل — آرایشگاه' })
+useSeoMeta({ title: 'پروفایل — قیچی' })
 </script>
 
 <template>

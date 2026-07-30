@@ -14,6 +14,14 @@ const props = withDefaults(
   { endpoint: '/salons/mine/photos', extraFields: () => ({}) },
 )
 
+// Every endpoint this uploader targets (photos, stories, portfolio) caps the upload at 5 MB
+// via the same multer `limits.fileSize`, and Nest turns multer's LIMIT_FILE_SIZE into a bare
+// 413 with no usable body -- so the limit has to be stated and checked here, in one place.
+// Straight-from-the-phone photos routinely exceed it, and without this the provider only saw
+// the generic failure text with no hint that resizing would fix it.
+const MAX_FILE_BYTES = 5 * 1024 * 1024
+const FILE_TOO_LARGE_ERROR = 'حجم تصویر باید کمتر از ۵ مگابایت باشد.'
+
 // The created row's shape depends on the target endpoint (photo vs. story vs. portfolio
 // item) -- the uploader just relays whatever the API returned; callers type their own
 // @uploaded handler, so the payload is deliberately `any`.
@@ -34,6 +42,12 @@ async function onFileChange(event: Event) {
     return
   }
 
+  if (file.size > MAX_FILE_BYTES) {
+    error.value = FILE_TOO_LARGE_ERROR
+    input.value = ''
+    return
+  }
+
   uploading.value = true
   const form = new FormData()
   form.append('file', file)
@@ -45,7 +59,16 @@ async function onFileChange(event: Event) {
     // A 409 is a business-rule rejection with a Persian message from the API (the
     // story/portfolio caps) -- surface it verbatim. The photos endpoint has no cap,
     // so the default-endpoint (PhotosView) failure text is unchanged.
-    error.value = apiError?.status === 409 && apiError.message ? apiError.message : 'بارگذاری تصویر ناموفق بود.'
+    if (apiError?.status === 409 && apiError.message) {
+      error.value = apiError.message
+    } else if (apiError?.status === 413) {
+      // The client-side size check above normally catches this first; a 413 still reaches
+      // here when the browser reports a stale/rounded size, so give it the same reason
+      // rather than the generic failure text.
+      error.value = FILE_TOO_LARGE_ERROR
+    } else {
+      error.value = 'بارگذاری تصویر ناموفق بود.'
+    }
     return
   }
   emit('uploaded', data)
@@ -61,7 +84,7 @@ async function onFileChange(event: Event) {
         <AppIcon name="upload" :size="18" />
       </div>
       <span class="text-sm font-semibold text-(--color-text)">{{ uploading ? 'در حال بارگذاری…' : 'افزودن تصویر جدید' }}</span>
-      <span class="text-xs text-(--color-text-muted)">jpeg, png, webp</span>
+      <span class="text-xs text-(--color-text-muted)">حداکثر ۵ مگابایت — jpeg, png, webp</span>
       <input
         type="file"
         accept="image/jpeg,image/png,image/webp"

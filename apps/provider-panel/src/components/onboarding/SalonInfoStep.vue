@@ -1,6 +1,6 @@
 <!-- apps/provider-panel/src/components/onboarding/SalonInfoStep.vue -->
 <script setup lang="ts">
-import { useId } from 'vue'
+import { computed, useId } from 'vue'
 import SalonPinPicker from './SalonPinPicker.vue'
 import AppInput from '../ui/AppInput.vue'
 
@@ -18,6 +18,22 @@ const model = defineModel<{
   lng: number | null
 }>({ required: true })
 
+// Client-side mirrors of Create/UpdateSalonDto's @Length bounds (name 2-150, city 2-80,
+// address 5-500). Without them a two-letter address passed the parent's "not empty" gate,
+// the save button stayed green, and the only feedback was the API's English validator text.
+// Shown only once the field has content -- an untouched empty field is the parent's own
+// disabled-save/hint concern, not an error to shout about while the form is still blank.
+// The upper bounds are enforced by each input's maxlength rather than a message.
+const nameError = computed(() =>
+  model.value.name.trim() !== '' && model.value.name.trim().length < 2 ? 'نام آرایشگاه باید حداقل ۲ حرف باشد.' : '',
+)
+const cityError = computed(() =>
+  model.value.city.trim() !== '' && model.value.city.trim().length < 2 ? 'نام شهر باید حداقل ۲ حرف باشد.' : '',
+)
+const addressError = computed(() =>
+  model.value.address.trim() !== '' && model.value.address.trim().length < 5 ? 'آدرس باید حداقل ۵ حرف باشد.' : '',
+)
+
 function onPin(pos: { lat: number; lng: number }) {
   model.value.lat = pos.lat
   model.value.lng = pos.lng
@@ -31,6 +47,8 @@ function onPin(pos: { lat: number; lng: number }) {
       label="نام آرایشگاه"
       data-testid="salon-name"
       placeholder="مثلاً سالن زیبایی ستاره"
+      :maxlength="150"
+      :error="nameError"
     />
 
     <div>
@@ -64,6 +82,8 @@ function onPin(pos: { lat: number; lng: number }) {
         label="شهر"
         data-testid="city"
         placeholder="شهر"
+        :maxlength="80"
+        :error="cityError"
       />
       <AppInput
         :model-value="String(model.capacity)"
@@ -82,6 +102,8 @@ function onPin(pos: { lat: number; lng: number }) {
       label="آدرس"
       data-testid="address"
       placeholder="آدرس کامل"
+      :maxlength="500"
+      :error="addressError"
     />
 
     <fieldset class="m-0 min-w-0 border-0 p-0">

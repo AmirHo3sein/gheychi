@@ -1,6 +1,6 @@
 <!-- apps/admin-panel/src/components/salons/SalonStatusActions.vue -->
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -8,7 +8,15 @@ import AppButton from '@/components/ui/AppButton.vue'
 const props = defineProps<{
   salonId: string
   status: 'pending' | 'approved' | 'rejected' | 'suspended'
+  // Why the salon is suspended. 'owner_suspended' means the cascade from a suspended owner
+  // account put it here, and the backend 409s any approve while that owner is still
+  // suspended -- so the reapprove control is disabled rather than offered and rejected.
+  suspendedCause?: 'admin' | 'owner_suspended' | null
 }>()
+
+const blockedByOwnerSuspension = computed(
+  () => props.status === 'suspended' && props.suspendedCause === 'owner_suspended',
+)
 
 const emit = defineEmits<{ updated: [salon: { id: string; status: string }] }>()
 
@@ -97,18 +105,23 @@ async function submitReason() {
         <template #icon><AppIcon name="warning" :size="16" /></template>
         تعلیق آرایشگاه
       </AppButton>
-      <AppButton
-        v-if="status === 'suspended'"
-        data-testid="reapprove-button"
-        type="button"
-        variant="primary"
-        :disabled="submitting"
-        :loading="submitting"
-        @click="confirmingApprove = true"
-      >
-        <template #icon><AppIcon name="check" :size="16" /></template>
-        رفع تعلیق و تایید مجدد
-      </AppButton>
+      <div v-if="status === 'suspended'" class="space-y-2">
+        <AppButton
+          data-testid="reapprove-button"
+          type="button"
+          variant="primary"
+          :disabled="submitting || blockedByOwnerSuspension"
+          :loading="submitting"
+          @click="confirmingApprove = true"
+        >
+          <template #icon><AppIcon name="check" :size="16" /></template>
+          رفع تعلیق و تایید مجدد
+        </AppButton>
+        <p v-if="blockedByOwnerSuspension" data-testid="reapprove-blocked-hint" class="text-sm text-(--color-text-muted)">
+          تا زمانی که حساب مالک معلق است، تایید این آرایشگاه ممکن نیست. ابتدا از صفحهٔ کاربران، تعلیق حساب مالک را
+          بردارید؛ آرایشگاه به‌صورت خودکار به حالت تایید بازمی‌گردد.
+        </p>
+      </div>
       <p v-if="status === 'rejected'" class="text-sm text-(--color-text-muted)">
         اقدامی برای این وضعیت لازم نیست.
       </p>

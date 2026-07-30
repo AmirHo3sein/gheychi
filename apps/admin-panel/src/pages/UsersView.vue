@@ -12,6 +12,7 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
+import { useSessionStore } from '@/stores/session'
 import { debounce } from '@/utils/debounce'
 import { userRoleLabel, userStatusLabel } from '@/utils/labels'
 
@@ -39,6 +40,11 @@ interface UserListResponse {
 }
 
 const { apiFetch } = useApi()
+const session = useSessionStore()
+// AdminUsersService.setStatus rejects a self-targeted change outright (400), so the acting
+// admin's own row must not offer the control at all -- otherwise the only way to learn that
+// is to click it and read an error. Also removes the "did I just lock myself out?" moment.
+const isSelf = (userId: string) => userId === session.user?.id
 const users = ref<UserRow[]>([])
 const loading = ref(true)
 const page = ref(1)
@@ -178,7 +184,16 @@ watch(page, load)
                 <StatusBadge :label="userStatusLabel(user.status).label" :tone="userStatusLabel(user.status).tone" />
               </td>
               <td class="px-5 py-3.5">
-                <SuspendUserButton :user-id="user.id" :status="user.status" :role="user.role" @updated="(u) => onUpdated(u.id, u.status)" />
+                <span v-if="isSelf(user.id)" data-testid="self-row-hint" class="text-xs text-(--color-text-muted)">
+                  حساب شما
+                </span>
+                <SuspendUserButton
+                  v-else
+                  :user-id="user.id"
+                  :status="user.status"
+                  :role="user.role"
+                  @updated="(u) => onUpdated(u.id, u.status)"
+                />
               </td>
             </tr>
           </tbody>

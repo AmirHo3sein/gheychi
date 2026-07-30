@@ -21,7 +21,8 @@ export class AdminUsersService {
    */
   async setStatus(actingAdminId: string, targetUserId: string, status: UserStatus): Promise<User> {
     if (targetUserId === actingAdminId) {
-      throw new BadRequestException('You cannot change your own account status');
+      // Persian: this message is surfaced verbatim by the admin panel's toast.
+      throw new BadRequestException('تغییر وضعیت حساب خودتان امکان‌پذیر نیست');
     }
 
     return this.dataSource.transaction(async (em) => {

@@ -17,9 +17,25 @@ interface BookingItem {
 // per-file DTO convention rather than a shared type.
 interface BookingTerms { depositPercent: number; depositMinToman: number; cancellationWindowHours: number }
 
+// GET /reviews/mine -- the caller's own reviews, so a completed booking that already
+// has one offers "ویرایش نظر" instead of a "ثبت نظر" button whose only possible outcome
+// is a 409. `canEdit` is the server's edit-window verdict (platform_config's
+// review_edit_window_hours), never recomputed here.
+interface MyReview {
+  id: string
+  bookingId: string
+  rating: number
+  comment: string | null
+  workerRating: number | null
+  status: 'published' | 'rejected' | 'withdrawn'
+  editableUntil: string
+  canEdit: boolean
+}
+
 const { apiFetch } = useApi()
 const bookings = ref<BookingItem[]>([])
 const terms = ref<BookingTerms | null>(null)
+const reviewByBookingId = ref<Record<string, MyReview>>({})
 const loading = ref(true)
 const reviewingBooking = ref<BookingItem | null>(null)
 
@@ -38,11 +54,19 @@ const STATUS_META: Record<BookingItem['status'], { label: string; icon: IconName
 
 const CANCELLABLE_STATUSES: BookingItem['status'][] = ['pending_payment', 'confirmed']
 
+// Split out of load() so a review submitted/edited/deleted in the modal can refresh
+// just this slice, without flipping the whole list back to its loading state.
+async function loadReviews() {
+  const { data } = await apiFetch<MyReview[]>('/reviews/mine', { silent: true })
+  reviewByBookingId.value = Object.fromEntries((data ?? []).map((review) => [review.bookingId, review]))
+}
+
 async function load() {
   loading.value = true
   const [bookingsRes, termsRes] = await Promise.all([
     apiFetch<BookingItem[]>('/bookings/mine', { silent: true }),
     apiFetch<BookingTerms>('/platform-config/booking-terms', { silent: true }),
+    loadReviews(),
   ])
   bookings.value = bookingsRes.data ?? []
   terms.value = termsRes.data ?? null
@@ -50,6 +74,18 @@ async function load() {
 }
 
 onMounted(load)
+
+function reviewFor(bookingId: string): MyReview | null {
+  return reviewByBookingId.value[bookingId] ?? null
+}
+
+// A withdrawn review has no label here -- reviews_booking_uidx keeps the booking
+// permanently un-reviewable, so the card shows a note instead of any button.
+function reviewButtonLabel(bookingId: string): string {
+  const review = reviewFor(bookingId)
+  if (!review) return 'ثبت نظر'
+  return review.canEdit ? 'ویرایش نظر' : 'مشاهده نظر'
+}
 
 const retryingId = ref<string | null>(null)
 
@@ -172,14 +208,19 @@ const { titleId: cancelTitleId } = useDialog(cancelDialogRoot, { onClose: closeC
           لغو نوبت
         </BaseButton>
 
-        <BaseButton
-          v-if="booking.status === 'completed'"
-          variant="secondary"
-          data-testid="review-booking-button"
-          @click="reviewingBooking = booking"
-        >
-          ثبت نظر
-        </BaseButton>
+        <template v-if="booking.status === 'completed'">
+          <BaseButton
+            v-if="reviewFor(booking.id)?.status !== 'withdrawn'"
+            variant="secondary"
+            data-testid="review-booking-button"
+            @click="reviewingBooking = booking"
+          >
+            {{ reviewButtonLabel(booking.id) }}
+          </BaseButton>
+          <p v-else data-testid="review-withdrawn-note" class="text-(--color-text-muted)">
+            نظر شما برای این نوبت حذف شده است
+          </p>
+        </template>
 
         <NuxtLink
           :to="`/bookings/${booking.id}`"
@@ -196,6 +237,8 @@ const { titleId: cancelTitleId } = useDialog(cancelDialogRoot, { onClose: closeC
       v-if="reviewingBooking"
       :booking-id="reviewingBooking.id"
       :worker-name="reviewingBooking.workerName"
+      :review="reviewFor(reviewingBooking.id)"
+      @changed="loadReviews"
       @close="reviewingBooking = null"
     />
 

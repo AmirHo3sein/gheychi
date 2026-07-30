@@ -78,7 +78,8 @@ export class AdminSalonsController {
       if (!salon) throw new NotFoundException();
       const owner = await this.users.findById(salon.ownerId);
       if (owner?.status === 'suspended') {
-        throw new ConflictException('Cannot approve a salon whose owner account is suspended');
+        // Persian: this message is surfaced verbatim by the admin panel's toast.
+        throw new ConflictException('تایید این آرایشگاه ممکن نیست؛ حساب مالک آن معلق است');
       }
     }
     const patch: Partial<Salon> = {

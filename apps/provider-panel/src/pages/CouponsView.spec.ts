@@ -189,6 +189,47 @@ describe('CouponsView', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  // A bare YYYY-MM-DD parses as UTC midnight, i.e. 03:30 local on the chosen day here, so
+  // the coupon used to stop redeeming on the very morning of the expiry date this list still
+  // displayed -- and a same-day promo was already expired the moment it was created.
+  it('sends the expiry as the end of the chosen local day, not UTC midnight', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET coupons
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          id: 'c-1',
+          code: 'SUMMER20',
+          discountPercent: 20,
+          expiresAt: '2026-08-01T20:29:59.999Z',
+          maxRedemptions: null,
+          isActive: true,
+          createdAt: '2026-07-30T00:00:00.000Z',
+        }),
+      }) // POST coupon
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = await mountCoupons()
+    await wrapper.find('input.uppercase').setValue('SUMMER20')
+    await wrapper.findAll('input[type="number"]')[0]!.setValue('20')
+    await wrapper.find('input[type="date"]').setValue('2026-08-01')
+
+    const addButton = wrapper.findAll('button').find((b) => b.text() === 'افزودن')!
+    await addButton.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    const sent = new Date(JSON.parse(fetchMock.mock.calls[1]![1].body).expiresAt)
+    // Asserted through local getters so the expectation holds in any TZ the suite runs in:
+    // the instant must be the last moment of 1 August locally, never its first.
+    expect(sent.getFullYear()).toBe(2026)
+    expect(sent.getMonth()).toBe(7)
+    expect(sent.getDate()).toBe(1)
+    expect(sent.getHours()).toBe(23)
+    expect(sent.getMinutes()).toBe(59)
+    expect(sent.getTime()).toBeGreaterThan(new Date('2026-08-01').getTime())
+  })
+
   it('maps a non-409 create failure to Persian copy rather than the raw backend message', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET coupons

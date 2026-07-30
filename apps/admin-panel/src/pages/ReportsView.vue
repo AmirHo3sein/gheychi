@@ -179,7 +179,7 @@ watch(page, load)
 
         <!-- Gated on targetType, NOT the storyId FK: ON DELETE SET NULL nulls the FK when
              the provider deletes the story or the expiry GC collects it, and that is exactly
-             when the «منقضی شده» placeholder must still identify the report as story-targeted. -->
+             when the fallback placeholder must still identify the report as story-targeted. -->
         <div v-if="report.targetType === 'story'" data-testid="quoted-story" class="mt-3 rounded-xl bg-(--color-border-soft) p-3">
           <p class="mb-1 flex items-center gap-1.5 text-xs font-semibold text-(--color-text-muted)">
             <AppIcon name="sparkles" :size="13" />
@@ -193,7 +193,12 @@ watch(page, load)
             />
             <p v-if="report.storyCaption" class="mt-2 text-sm text-(--color-text)">{{ report.storyCaption }}</p>
           </template>
-          <p v-else class="text-sm text-(--color-text-muted)">منقضی شده</p>
+          <!-- A story reaches here two ways -- the provider deleted it, or the 24h GC
+               collected it -- and nothing on the row distinguishes them, so the copy must
+               cover both rather than assert the benign one. -->
+          <p v-else data-testid="story-gone-note" class="text-sm text-(--color-text-muted)">
+            این استوری دیگر در دسترس نیست؛ یا آرایشگاه‌دار آن را حذف کرده یا مهلت ۲۴ ساعته‌اش تمام شده است. گزارش را بر اساس متن آن بررسی کنید.
+          </p>
         </div>
 
         <div v-if="report.targetType === 'portfolio'" data-testid="quoted-portfolio-item" class="mt-3 rounded-xl bg-(--color-border-soft) p-3">
@@ -209,7 +214,12 @@ watch(page, load)
             />
             <p v-if="report.portfolioItemCaption" class="mt-2 text-sm text-(--color-text)">{{ report.portfolioItemCaption }}</p>
           </template>
-          <p v-else class="text-sm text-(--color-text-muted)">منقضی شده</p>
+          <!-- Portfolio items have no expiry column at all -- nothing ever collects them --
+               so a nulled FK can only mean the provider deleted the item themselves. Saying
+               "expired" here would read as benign and no-action-needed; it is the opposite. -->
+          <p v-else data-testid="portfolio-gone-note" class="text-sm text-(--color-text-muted)">
+            این نمونه کار توسط آرایشگاه‌دار حذف شده است. گزارش را بر اساس متن آن بررسی کنید.
+          </p>
         </div>
 
         <div v-if="report.resolutionNote" class="mt-3 rounded-xl bg-(--color-border-soft) p-3">

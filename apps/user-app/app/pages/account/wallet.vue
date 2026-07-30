@@ -93,7 +93,7 @@ function formatAmount(amount: number): string {
   return `${amount > 0 ? '+' : ''}${amount.toLocaleString('fa-IR')}`
 }
 
-useSeoMeta({ title: 'کیف پول — آرایشگاه' })
+useSeoMeta({ title: 'کیف پول — قیچی' })
 </script>
 
 <template>
