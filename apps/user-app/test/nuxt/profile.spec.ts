@@ -138,9 +138,11 @@ describe('profile page', () => {
 
     expect(useSessionStore().user?.name).toBe('Existing Name')
     // apiFetch itself toasts the generic server error (not silent), but the page's own
-    // success toast must not additionally fire.
+    // success toast must not additionally fire. The mock supplies only a `statusMessage`
+    // (the HTTP reason phrase) and no body `message`, so apiFetch correctly falls back to
+    // its own Persian copy rather than surfacing the English phrase.
     expect(toasts.value.length).toBe(before + 1)
-    expect(toasts.value.at(-1)?.message).toBe('Server error')
+    expect(toasts.value.at(-1)?.message).toBe('خطایی رخ داد')
   })
 
   it('renders the sign-out control with danger styling, not the reserved ad/sponsorship color', async () => {

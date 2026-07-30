@@ -43,7 +43,23 @@ export function useApi() {
       return { data, error: null }
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } })?.response?.status ?? 0
-      const message = (err as { statusMessage?: string })?.statusMessage ?? 'Something went wrong'
+      // Read the API's own JSON `message` (Persian, written for the user), the same way
+      // provider-panel/admin-panel's useApi does. This used to read ofetch's
+      // `statusMessage`, which is the HTTP *reason phrase* -- so a 409 surfaced as the
+      // English "Conflict" instead of the real explanation, and over HTTP/2 (no reason
+      // phrases exist in the protocol) it surfaced as an empty toast.
+      const fetchErr = err as {
+        data?: { message?: unknown }
+        response?: { _data?: { message?: unknown } }
+        statusMessage?: string
+      }
+      const bodyMessage = fetchErr.data?.message ?? fetchErr.response?._data?.message
+      const message =
+        typeof bodyMessage === 'string' && bodyMessage.trim()
+          ? bodyMessage
+          : status === 0
+            ? 'خطا در ارتباط با سرور'
+            : 'خطایی رخ داد'
       const apiError: ApiError = { status, message }
 
       if (status === 401) {

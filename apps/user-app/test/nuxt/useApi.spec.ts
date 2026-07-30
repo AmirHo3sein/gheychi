@@ -72,4 +72,45 @@ describe('useApi', () => {
     expect(toasts.value.length).toBe(before + 1)
     expect(result.error?.status).toBe(500)
   })
+
+  it("surfaces the API's own message, not the HTTP reason phrase", async () => {
+    // ofetch's `statusMessage` is the protocol reason phrase ('Conflict'), not the API's
+    // Persian explanation -- and HTTP/2 has no reason phrases at all, so relying on it meant
+    // an English toast in dev and a blank one in production.
+    fetchMock.mockRejectedValue({
+      response: { status: 409 },
+      statusMessage: 'Conflict',
+      data: { message: 'این بازه زمانی دیگر آزاد نیست' },
+    })
+    const { apiFetch } = useApi()
+    const result = await apiFetch('/bookings', { method: 'POST', silent: true })
+    expect(result.error?.message).toBe('این بازه زمانی دیگر آزاد نیست')
+    expect(result.error?.message).not.toContain('Conflict')
+  })
+
+  it("reads the message off response._data when ofetch exposes it there instead", async () => {
+    fetchMock.mockRejectedValue({
+      response: { status: 400, _data: { message: 'کد تخفیف منقضی شده است' } },
+      statusMessage: 'Bad Request',
+    })
+    const { apiFetch } = useApi()
+    const result = await apiFetch('/coupons/validate', { method: 'POST', silent: true })
+    expect(result.error?.message).toBe('کد تخفیف منقضی شده است')
+  })
+
+  it('falls back to Persian copy -- never an English phrase -- when the body carries no message', async () => {
+    fetchMock.mockRejectedValue({ response: { status: 500 }, statusMessage: 'Internal Server Error' })
+    const { apiFetch } = useApi()
+    const result = await apiFetch('/search', { silent: true })
+    expect(result.error?.message).not.toMatch(/[A-Za-z]{4,}/)
+  })
+
+  it('names a dead network distinctly from a server fault', async () => {
+    // status 0 is this composable's "no HTTP response at all" marker.
+    fetchMock.mockRejectedValue(new TypeError('Failed to fetch'))
+    const { apiFetch } = useApi()
+    const result = await apiFetch('/search', { silent: true })
+    expect(result.error?.status).toBe(0)
+    expect(result.error?.message).toContain('ارتباط')
+  })
 })
