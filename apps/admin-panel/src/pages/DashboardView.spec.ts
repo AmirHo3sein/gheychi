@@ -36,10 +36,16 @@ const salonsPayload = {
   ],
   total: 2,
 }
-const usersPayload = [
-  { role: 'customer', status: 'active' },
-  { role: 'admin', status: 'suspended' },
-]
+// Paginated envelope, matching what GET /admin/users actually returns. This fixture used
+// to be a bare array, which kept the suite green while the real dashboard threw on
+// `users.value.filter(...)` in production.
+const usersPayload = {
+  items: [
+    { role: 'customer', status: 'active' },
+    { role: 'admin', status: 'suspended' },
+  ],
+  total: 2,
+}
 const reviewsPayload = { items: [{ rating: 5, status: 'published' }], total: 1 }
 const categoriesPayload = [{ id: 1 }, { id: 2 }, { id: 3 }]
 const reportsPayload = { items: [], total: 4321 }
@@ -47,7 +53,7 @@ const reportsPayload = { items: [], total: 4321 }
 function resolvedFetch(overrides: Record<string, unknown> = {}) {
   return (url: string) => {
     if (url.startsWith('/admin/salons')) return Promise.resolve(overrides.salons ?? ok(salonsPayload))
-    if (url === '/admin/users') return Promise.resolve(overrides.users ?? ok(usersPayload))
+    if (url.startsWith('/admin/users')) return Promise.resolve(overrides.users ?? ok(usersPayload))
     if (url.startsWith('/admin/reviews')) return Promise.resolve(overrides.reviews ?? ok(reviewsPayload))
     if (url === '/categories') return Promise.resolve(overrides.categories ?? ok(categoriesPayload))
     if (url.startsWith('/admin/reports')) return Promise.resolve(overrides.reports ?? ok(reportsPayload))
@@ -77,7 +83,7 @@ describe('DashboardView', () => {
       (url: string) =>
         new Promise((resolve) => {
           if (url.startsWith('/admin/salons')) resolvers.salons = () => resolve(ok(salonsPayload))
-          else if (url === '/admin/users') resolvers.users = () => resolve(ok(usersPayload))
+          else if (url.startsWith('/admin/users')) resolvers.users = () => resolve(ok(usersPayload))
           else if (url.startsWith('/admin/reviews')) resolvers.reviews = () => resolve(ok(reviewsPayload))
           else if (url === '/categories') resolvers.categories = () => resolve(ok(categoriesPayload))
           else if (url.startsWith('/admin/reports')) resolvers.reports = () => resolve(ok(reportsPayload))

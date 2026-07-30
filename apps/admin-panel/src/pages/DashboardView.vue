@@ -227,14 +227,16 @@ onMounted(async () => {
   // aggregate/stats endpoint if the dataset ever meaningfully exceeds that.
   const [salonsRes, usersRes, reviewsRes, categoriesRes, reportsRes] = await Promise.all([
     apiFetch<{ items: SalonRow[]; total: number }>('/admin/salons?status=all&pageSize=100', { silent: true }),
-    apiFetch<UserRow[]>('/admin/users', { silent: true }),
+    // Paginated like salons/reviews above (pageSize maxes at 100 server-side) -- the role
+    // and status breakdowns below need the distribution, not one default-sized page.
+    apiFetch<{ items: UserRow[]; total: number }>('/admin/users?pageSize=100', { silent: true }),
     apiFetch<{ items: ReviewRow[]; total: number }>('/admin/reviews?pageSize=100', { silent: true }),
     apiFetch<CategoryRow[]>('/categories', { silent: true }),
     // Only the total matters for the stat card -- pageSize=1 keeps the payload minimal.
     apiFetch<{ items: unknown[]; total: number }>('/admin/reports?status=open&pageSize=1', { silent: true }),
   ])
   salons.value = salonsRes.data?.items ?? []
-  users.value = usersRes.data ?? []
+  users.value = usersRes.data?.items ?? []
   reviews.value = reviewsRes.data?.items ?? []
   categoryCount.value = categoriesRes.data?.length ?? 0
   openReportCount.value = reportsRes.data?.total ?? 0

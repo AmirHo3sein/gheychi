@@ -42,9 +42,15 @@ export function usePhoneUserSearch() {
     if (!query) return
     searching.value = true
     const token = ++searchToken
-    const { data } = await apiFetch<MatchedUser[]>(`/admin/users?phone=${encodeURIComponent(query)}`, { silent: true })
+    // GET /admin/users returns a paginated envelope, not a bare array -- reading it as an
+    // array yielded `matches = []` for every query, so the picker could never find anyone
+    // and never said "not found" either (noResults is derived from the same empty list).
+    const { data } = await apiFetch<{ items: MatchedUser[]; total: number }>(
+      `/admin/users?phone=${encodeURIComponent(query)}`,
+      { silent: true },
+    )
     if (token === searchToken) {
-      matches.value = data ?? []
+      matches.value = data?.items ?? []
       searching.value = false
       noResults.value = matches.value.length === 0
     }
