@@ -86,7 +86,9 @@ async function sendReply(id: string) {
 </script>
 
 <template>
-  <div class="space-y-3 p-4">
+  <!-- max-w-4xl, deliberately narrower than the list screens: this page is prose (a customer
+       comment, the reply textarea) and an 1888px measure is simply unreadable. -->
+  <div class="mx-auto w-full max-w-4xl space-y-3 p-4 lg:p-6">
     <h1 class="text-lg font-bold text-(--color-text)">نظرات مشتریان</h1>
 
     <div v-if="loadError" class="space-y-3 rounded-xl border border-dashed border-(--color-border) p-4 text-center">
@@ -100,9 +102,9 @@ async function sendReply(id: string) {
       <EmptyState v-if="!loading && reviews.length === 0" icon="reviews" message="هنوز نظری ثبت نشده است." />
 
       <AppCard v-for="r in sortedReviews" :key="r.id" class="space-y-3">
-        <div class="flex items-center justify-between gap-2">
+        <div class="flex flex-wrap items-center justify-between gap-2">
           <div
-            class="flex items-center gap-1 text-(--tone-warning-text)"
+            class="flex shrink-0 items-center gap-1 text-(--tone-warning-text)"
             :aria-label="`${r.rating.toLocaleString('fa-IR')} از ۵ ستاره`"
           >
             <AppIcon
@@ -120,8 +122,10 @@ async function sendReply(id: string) {
           </div>
         </div>
 
-        <p v-if="r.comment" class="text-sm text-(--color-text)">{{ r.comment }}</p>
-        <p v-if="r.salonReply" class="rounded-xl bg-(--tone-info-bg) p-3 text-sm text-(--color-text)">
+        <!-- break-words: customer-authored text can contain an unbreakable run (a URL, a
+             long handle) that would otherwise widen the card past the viewport. -->
+        <p v-if="r.comment" class="break-words text-sm text-(--color-text)">{{ r.comment }}</p>
+        <p v-if="r.salonReply" class="break-words rounded-xl bg-(--tone-info-bg) p-3 text-sm text-(--color-text)">
           <span class="font-semibold text-(--color-accent-text)">پاسخ شما: </span>{{ r.salonReply }}
         </p>
 

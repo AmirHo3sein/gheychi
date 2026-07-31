@@ -341,8 +341,9 @@ async function confirmRemoveCover() {
 }
 </script>
 
+<!-- p-8 from `sm` up (unchanged); below that 64px of gutter is a fifth of a 320px screen. -->
 <template>
-  <div class="mx-auto max-w-6xl space-y-5 p-8">
+  <div class="mx-auto max-w-6xl space-y-5 p-4 sm:p-8">
     <EmptyState v-if="notFound" icon="warning" message="مطلب یافت نشد." />
 
     <AppCard
@@ -373,7 +374,10 @@ async function confirmRemoveCover() {
           />
         </div>
 
-        <div class="flex items-center gap-2">
+        <!-- flex-wrap: every confirm branch below injects a full sentence plus two buttons
+             into this strip, which is far wider than a narrow viewport -- without wrapping the
+             trailing "cancel" button is pushed out of the page's content column. -->
+        <div class="flex flex-wrap items-center gap-2">
           <template v-if="confirmingDelete">
             <span class="text-sm font-semibold text-(--tone-danger-text)">مطلب حذف شود؟</span>
             <AppButton data-testid="confirm-delete" variant="danger" :disabled="submitting" :loading="submitting" @click="confirmDelete">
@@ -454,8 +458,13 @@ async function confirmRemoveCover() {
         </div>
       </div>
 
+      <!-- Editor and preview sit side by side from `lg` up and stack below it (unchanged).
+           `min-w-0` on both columns is what makes the stacked case honest: a grid item
+           defaults to `min-width: auto`, so an unbroken string in the preview -- or the
+           fixed-width fields in the editor -- would otherwise force the column wider than
+           its track and push the whole page. -->
       <div class="grid gap-5 lg:grid-cols-2">
-        <div class="space-y-5">
+        <div class="min-w-0 space-y-5">
           <AppCard class="space-y-4">
             <div>
               <label class="mb-1 block text-xs text-(--color-text-muted)" for="post-title">عنوان</label>
@@ -488,12 +497,14 @@ async function confirmRemoveCover() {
               </p>
             </div>
 
+            <!-- min-w-0 on both cells: a grid item's automatic minimum size is its content,
+                 so a text field's intrinsic width would otherwise overflow a narrow track. -->
             <div class="grid grid-cols-2 gap-3">
-              <div>
+              <div class="min-w-0">
                 <label class="mb-1 block text-xs text-(--color-text-muted)">دسته‌بندی</label>
                 <AppSelect v-model="categoryId" :options="categoryOptions" width="100%" />
               </div>
-              <div>
+              <div class="min-w-0">
                 <label class="mb-1 block text-xs text-(--color-text-muted)" for="post-author">نویسنده</label>
                 <AppInput
                   id="post-author"
@@ -578,7 +589,9 @@ async function confirmRemoveCover() {
                 :disabled="submitting"
                 @change="onCoverChange"
               />
-              <div class="flex items-center gap-3">
+              <!-- flex-wrap for the same reason as the action strip above: the remove-cover
+                   confirm branch adds a question plus two more buttons to this row. -->
+              <div class="flex flex-wrap items-center gap-3">
                 <AppButton
                   data-testid="cover-upload"
                   variant="secondary"
@@ -625,10 +638,17 @@ async function confirmRemoveCover() {
           </AppCard>
         </div>
 
-        <AppCard class="self-start">
+        <AppCard class="min-w-0 self-start">
           <p class="mb-3 text-xs font-semibold text-(--color-text-muted)">پیش‌نمایش</p>
           <!-- sanctioned v-html: renderMarkdown uses html:false so raw HTML never parses — see its invariant test -->
-          <div data-testid="preview" class="space-y-3 text-sm leading-7 text-(--color-text)" v-html="previewHtml" />
+          <!-- The rendered body is arbitrary author markdown: long URLs and long words get
+               `break-words`, and the two constructs that genuinely cannot wrap -- fenced code
+               blocks and tables -- scroll inside themselves rather than widening the page. -->
+          <div
+            data-testid="preview"
+            class="space-y-3 break-words text-sm leading-7 text-(--color-text) [&_img]:max-w-full [&_pre]:overflow-x-auto [&_table]:block [&_table]:overflow-x-auto"
+            v-html="previewHtml"
+          />
         </AppCard>
       </div>
     </template>

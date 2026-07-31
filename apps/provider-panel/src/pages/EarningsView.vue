@@ -43,7 +43,10 @@ function toman(amount: number | null | undefined): string {
 </script>
 
 <template>
-  <div class="space-y-4 p-4">
+  <!-- The one screen PRODUCT.md names for a desktop review session: the three figures go
+       side by side from sm (a 430px phone in landscape already has room), and the container
+       stops them stretching to an unreadable 1888px on a 1920px monitor. -->
+  <div class="mx-auto w-full max-w-5xl space-y-4 p-4 lg:p-6">
     <h1 class="text-lg font-bold text-(--color-text)">درآمد</h1>
 
     <div v-if="loading" class="flex items-center justify-center py-14 text-(--color-text-muted)">
@@ -59,30 +62,34 @@ function toman(amount: number | null | undefined): string {
 
     <EmptyState v-else-if="!earnings" icon="earnings" message="اطلاعات درآمدی برای نمایش وجود ندارد." />
 
-    <div v-else class="space-y-3 md:grid md:grid-cols-3 md:gap-4 md:space-y-0">
-      <AppCard class="bg-(--color-surface-subtle)">
+    <div v-else class="grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+      <!-- The headline figure spans both columns at sm/md (where three across would squeeze
+           a long toman number into two wrapped lines) and joins the row at lg. -->
+      <AppCard class="bg-(--color-surface-subtle) sm:col-span-2 lg:col-span-1">
         <div class="flex items-center gap-3">
           <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-(--color-surface-card) text-(--color-text-muted)">
             <AppIcon name="earnings" :size="18" />
           </div>
-          <div>
+          <!-- min-w-0 + break-words: a large toman figure is a long unbreakable digit run,
+               and it must wrap inside the card rather than widen it. -->
+          <div class="min-w-0">
             <p class="text-xs text-(--color-text-muted)">مجموع دریافتی</p>
-            <p class="tnum text-xl font-bold text-(--color-text)">{{ toman(earnings.totalCollected) }}</p>
+            <p class="tnum break-words text-xl font-bold text-(--color-text)">{{ toman(earnings.totalCollected) }}</p>
           </div>
         </div>
       </AppCard>
 
       <AppCard>
-        <div class="flex items-center justify-between md:flex-col md:items-start md:gap-1">
+        <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 sm:flex-col sm:items-start">
           <p class="text-sm text-(--color-text-muted)">کارمزد پلتفرم ({{ earnings.commissionPercent }}٪)</p>
-          <p class="tnum text-lg font-bold text-(--color-text-muted)">−{{ toman(earnings.commissionAmount) }}</p>
+          <p class="tnum break-words text-lg font-bold text-(--color-text-muted)">−{{ toman(earnings.commissionAmount) }}</p>
         </div>
       </AppCard>
 
       <AppCard>
-        <div class="flex items-center justify-between md:flex-col md:items-start md:gap-1">
+        <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 sm:flex-col sm:items-start">
           <p class="text-sm font-semibold text-(--color-text)">مبلغ قابل پرداخت</p>
-          <p class="tnum text-xl font-bold text-(--tone-success-text)">{{ toman(earnings.netPayout) }}</p>
+          <p class="tnum break-words text-xl font-bold text-(--tone-success-text)">{{ toman(earnings.netPayout) }}</p>
         </div>
       </AppCard>
     </div>

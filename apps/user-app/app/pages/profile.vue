@@ -121,7 +121,7 @@ useSeoMeta({ title: 'پروفایل — قیچی' })
       <button
         type="button"
         :aria-pressed="isSubscribed"
-        class="rounded-full px-3 py-1 text-sm font-medium transition-colors"
+        class="inline-flex min-h-11 items-center rounded-full px-3 text-sm font-medium transition-colors"
         :class="isSubscribed ? 'bg-(--color-accent-soft) text-(--color-text)' : 'bg-(--color-surface-subtle) text-(--color-text-muted)'"
         @click="togglePush"
       >
@@ -154,7 +154,8 @@ useSeoMeta({ title: 'پروفایل — قیچی' })
       <p v-if="!favorites.length" class="text-sm text-(--color-text-muted)">سالنی ذخیره نکرده‌اید</p>
       <div v-else class="space-y-2">
         <NuxtLink v-for="salon in favorites" :key="salon.id" :to="`/salons/${salon.slug}`" class="block">
-          <BaseCard class="text-sm text-(--color-text)">{{ salon.name }} — {{ salon.city }}</BaseCard>
+          <!-- Provider-authored salon name in a card with no other constraint on it. -->
+          <BaseCard class="text-sm break-words text-(--color-text)">{{ salon.name }} — {{ salon.city }}</BaseCard>
         </NuxtLink>
       </div>
     </section>

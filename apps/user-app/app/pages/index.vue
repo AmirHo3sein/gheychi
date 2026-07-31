@@ -157,7 +157,11 @@ watch(view, (v) => {
       </div>
     </div>
 
-    <div class="flex items-center justify-between gap-3">
+    <!-- flex-wrap: at 320px the two view chips (~132px, neither label breakable) plus the
+         two sort buttons (~152px at their smallest, "نزدیک‌ترین" is one unbreakable word
+         thanks to its ZWNJ) exceed the 288px content box. Wrapping puts the sort pair on
+         its own row there and keeps a single row from ~360px up. -->
+    <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
       <div class="flex gap-2" role="group" aria-label="نوع نمایش">
         <button
           type="button"

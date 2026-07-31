@@ -111,7 +111,7 @@ function formatBookingDateTime(iso: string): string {
 </script>
 
 <template>
-  <div class="space-y-3 p-4">
+  <div class="mx-auto w-full max-w-6xl space-y-3 p-4 lg:p-6">
     <h1 class="text-lg font-bold text-(--color-text)">نوبت‌ها</h1>
 
     <div v-if="loadError" class="space-y-3 rounded-xl border border-dashed border-(--color-border) p-4 text-center">
@@ -129,71 +129,85 @@ function formatBookingDateTime(iso: string): string {
       <template v-else>
         <EmptyState v-if="bookings.length === 0" icon="bookings" message="هنوز نوبتی ثبت نشده است." />
 
-        <AppCard v-for="b in sortedBookings" :key="b.id" :data-testid="`booking-${b.id}`" :padded="false" class="space-y-3 p-4">
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <p class="text-sm font-bold text-(--color-text)">{{ b.serviceName }}</p>
-              <p class="tnum text-xs text-(--color-text-muted)">{{ b.priceSnapshot.toLocaleString('fa-IR') }} تومان</p>
+        <!-- One column on phone; more columns (i.e. more visible bookings, not wider cards)
+             as the viewport grows -- PRODUCT.md treats the desktop review session as equally
+             real, and a single 1888px-wide card would waste all of it. -->
+        <div v-else class="grid items-start gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <AppCard v-for="b in sortedBookings" :key="b.id" :data-testid="`booking-${b.id}`" :padded="false" class="space-y-3 p-4">
+            <div class="flex items-start justify-between gap-3">
+              <!-- min-w-0 + break-words: a long salon-authored service name must wrap inside
+                   the card, never push the badge out of it. -->
+              <div class="min-w-0">
+                <p class="break-words text-sm font-bold text-(--color-text)">{{ b.serviceName }}</p>
+                <p class="tnum text-xs text-(--color-text-muted)">{{ b.priceSnapshot.toLocaleString('fa-IR') }} تومان</p>
+              </div>
+              <div class="shrink-0">
+                <StatusBadge :label="bookingStatusLabel(b.status).label" :tone="bookingStatusLabel(b.status).tone" />
+              </div>
             </div>
-            <StatusBadge :label="bookingStatusLabel(b.status).label" :tone="bookingStatusLabel(b.status).tone" />
-          </div>
-          <p class="tnum text-sm text-(--color-text-muted)">{{ formatBookingDateTime(b.startsAt) }}</p>
+            <p class="tnum text-sm text-(--color-text-muted)">{{ formatBookingDateTime(b.startsAt) }}</p>
 
-          <div v-if="b.status === 'confirmed' && workers.length > 0">
-            <label :for="`worker-select-${b.id}`" class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">تخصیص کارمند</label>
-            <select
-              :id="`worker-select-${b.id}`"
-              :value="b.workerId ?? ''"
-              :disabled="submittingId === b.id"
-              data-testid="assign-worker"
-              class="native-select w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-1.5 text-sm"
-              @change="assignWorker(b, $event)"
-            >
-              <option value="">بدون تخصیص کارمند</option>
-              <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
-            </select>
-          </div>
-          <p v-else-if="b.workerName" class="text-sm text-(--color-text-muted)">
-            کارمند: <span class="font-semibold text-(--color-text)">{{ b.workerName }}</span>
-          </p>
+            <div v-if="b.status === 'confirmed' && workers.length > 0">
+              <label :for="`worker-select-${b.id}`" class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">تخصیص کارمند</label>
+              <select
+                :id="`worker-select-${b.id}`"
+                :value="b.workerId ?? ''"
+                :disabled="submittingId === b.id"
+                data-testid="assign-worker"
+                class="native-select w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-1.5 text-sm"
+                @change="assignWorker(b, $event)"
+              >
+                <option value="">بدون تخصیص کارمند</option>
+                <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
+              </select>
+            </div>
+            <p v-else-if="b.workerName" class="text-sm text-(--color-text-muted)">
+              کارمند: <span class="font-semibold text-(--color-text)">{{ b.workerName }}</span>
+            </p>
 
-          <div v-if="b.status === 'confirmed'" class="flex gap-2">
-            <AppButton
-              data-testid="mark-completed"
-              type="button"
-              variant="secondary"
-              class="flex-1"
-              :disabled="submittingId === b.id"
-              :loading="submittingId === b.id"
-              @click="markStatus(b.id, 'completed')"
-            >
-              <template #icon><AppIcon name="check" :size="15" /></template>
-              انجام شد
-            </AppButton>
-            <AppButton
-              data-testid="mark-no-show"
-              type="button"
-              variant="secondary"
-              class="flex-1"
-              :disabled="submittingId === b.id"
-              :loading="submittingId === b.id"
-              @click="markStatus(b.id, 'no_show')"
-            >
-              <template #icon><AppIcon name="x" :size="15" /></template>
-              عدم حضور
-            </AppButton>
-            <AppButton
-              data-testid="cancel-booking"
-              type="button"
-              variant="danger"
-              :disabled="submittingId === b.id"
-              :loading="submittingId === b.id"
-              @click="cancelBooking(b.id)"
-            >
-              لغو
-            </AppButton>
-          </div>
-        </AppCard>
+            <!--
+              A grid, not a flex row: the three labelled buttons need ~300px side by side and
+              the card only offers ~256px at 320px, so a single row overflowed the page. Two
+              per row on a phone with the destructive «لغو» on its own full-width row (which
+              also stops it sitting a thumb-width from «انجام شد»); one row from sm up.
+            -->
+            <div v-if="b.status === 'confirmed'" class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <AppButton
+                data-testid="mark-completed"
+                type="button"
+                variant="secondary"
+                :disabled="submittingId === b.id"
+                :loading="submittingId === b.id"
+                @click="markStatus(b.id, 'completed')"
+              >
+                <template #icon><AppIcon name="check" :size="15" /></template>
+                انجام شد
+              </AppButton>
+              <AppButton
+                data-testid="mark-no-show"
+                type="button"
+                variant="secondary"
+                :disabled="submittingId === b.id"
+                :loading="submittingId === b.id"
+                @click="markStatus(b.id, 'no_show')"
+              >
+                <template #icon><AppIcon name="x" :size="15" /></template>
+                عدم حضور
+              </AppButton>
+              <AppButton
+                data-testid="cancel-booking"
+                type="button"
+                variant="danger"
+                class="col-span-2 sm:col-span-1"
+                :disabled="submittingId === b.id"
+                :loading="submittingId === b.id"
+                @click="cancelBooking(b.id)"
+              >
+                لغو
+              </AppButton>
+            </div>
+          </AppCard>
+        </div>
       </template>
     </template>
   </div>

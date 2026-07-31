@@ -136,7 +136,9 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="space-y-4 p-4">
+  <!-- A single-column form all the way down (map picker, textareas, prefixed input), so it
+       is capped narrower than the list screens rather than stretched across a monitor. -->
+  <div class="mx-auto w-full max-w-3xl space-y-4 p-4 lg:p-6">
     <h1 class="text-lg font-bold text-(--color-text)">تنظیمات آرایشگاه</h1>
 
     <div v-if="loadError" class="space-y-3 rounded-xl border border-dashed border-(--color-border) p-4 text-center">
@@ -188,8 +190,15 @@ onMounted(load)
 
         <div>
           <label :for="instagramId" class="mb-1.5 block text-sm font-semibold text-(--color-text)">آیدی اینستاگرام</label>
+          <!--
+            min-w-0 on the input is load-bearing: an <input> defaults to a ~20-character
+            intrinsic min-width that flex will not shrink past, so the ~130px unbreakable
+            "instagram.com/" prefix plus a ~180px field overflowed a 320px card -- and the
+            wrapper's overflow-hidden CLIPPED the field rather than showing it. shrink-0
+            keeps the prefix legible while the field takes whatever is left.
+          -->
           <div dir="ltr" class="flex items-center overflow-hidden rounded-xl border border-(--color-border) bg-(--color-surface-card)">
-            <span class="select-none border-e border-(--color-border) bg-(--color-border-soft) p-3 text-sm text-(--color-text-muted)">instagram.com/</span>
+            <span class="shrink-0 select-none border-e border-(--color-border) bg-(--color-border-soft) p-3 text-sm text-(--color-text-muted)">instagram.com/</span>
             <input
               :id="instagramId"
               v-model="form.instagramHandle"
@@ -197,7 +206,7 @@ onMounted(load)
               dir="ltr"
               maxlength="30"
               placeholder="my.salon"
-              class="w-full bg-transparent p-3 text-sm outline-none"
+              class="w-full min-w-0 bg-transparent p-3 text-sm outline-none"
             />
           </div>
           <p
@@ -216,8 +225,8 @@ onMounted(load)
           class="rounded-xl border border-dashed border-(--color-border) bg-(--color-surface) p-3"
         >
           <p class="mb-2 text-xs font-semibold text-(--color-text-muted)">پیش‌نمایش صفحه عمومی</p>
-          <p v-if="form.tagline.trim()" class="text-sm text-(--color-text-muted)">{{ form.tagline.trim() }}</p>
-          <p v-if="form.about.trim()" class="mt-1 whitespace-pre-line text-sm text-(--color-text)">{{ aboutExcerpt }}</p>
+          <p v-if="form.tagline.trim()" class="break-words text-sm text-(--color-text-muted)">{{ form.tagline.trim() }}</p>
+          <p v-if="form.about.trim()" class="mt-1 break-words whitespace-pre-line text-sm text-(--color-text)">{{ aboutExcerpt }}</p>
         </div>
       </div>
 

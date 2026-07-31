@@ -125,10 +125,12 @@ async function copyReferralCode(code: string) {
 </script>
 
 <template>
-  <div class="space-y-4 p-4">
+  <div class="mx-auto w-full max-w-5xl space-y-4 p-4 lg:p-6">
     <h1 class="text-lg font-bold text-(--color-text)">تیم</h1>
 
-    <AppCard class="space-y-3">
+    <!-- Capped independently of the page container so the two short fields don't stretch
+         across a laptop while the roster below still uses the full width. -->
+    <AppCard class="max-w-2xl space-y-3">
       <h2 class="font-bold text-(--color-text)">افزودن عضو جدید</h2>
       <AppInput v-model="newWorker.name" placeholder="نام" />
       <AppInput v-model="newWorker.phone" type="tel" inputmode="tel" placeholder="شماره موبایل" class="tnum" />
@@ -143,56 +145,63 @@ async function copyReferralCode(code: string) {
     </div>
     <EmptyState v-else-if="workers.length === 0" icon="team" message="هنوز عضوی به تیم اضافه نشده است." />
 
-    <AppCard v-for="w in workers" :key="w.id" :padded="false" class="space-y-3 p-4">
-      <div class="flex items-center justify-between">
+    <!-- Roster in columns from md: more of the team visible per screen rather than one very
+         wide row per member. -->
+    <div v-else class="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <AppCard v-for="w in workers" :key="w.id" :padded="false" class="space-y-3 p-4">
+        <div class="flex items-center justify-between gap-2">
+          <div class="min-w-0">
+            <p class="break-words text-sm font-bold text-(--color-text)">{{ w.name }}</p>
+            <p class="tnum flex items-center gap-1 text-sm text-(--color-text-muted)">
+              <AppIcon v-if="w.ratingCount > 0" name="star" :size="14" fill="currentColor" class="text-(--tone-warning-text)" />
+              {{ ratingText(w) }}
+            </p>
+          </div>
+          <label class="-mx-1 flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-1 py-2 text-sm text-(--color-text)">
+            <input type="checkbox" class="h-4 w-4 accent-(--color-accent)" :checked="w.active" @change="toggleActive(w, $event)" />
+            فعال
+          </label>
+        </div>
+
         <div>
-          <p class="text-sm font-bold text-(--color-text)">{{ w.name }}</p>
-          <p class="tnum flex items-center gap-1 text-sm text-(--color-text-muted)">
-            <AppIcon v-if="w.ratingCount > 0" name="star" :size="14" fill="currentColor" class="text-(--tone-warning-text)" />
-            {{ ratingText(w) }}
-          </p>
-        </div>
-        <label class="-mx-1 flex min-h-11 items-center gap-2 rounded-lg px-1 py-2 text-sm text-(--color-text)">
-          <input type="checkbox" class="h-4 w-4 accent-(--color-accent)" :checked="w.active" @change="toggleActive(w, $event)" />
-          فعال
-        </label>
-      </div>
+          <AppButton
+            type="button"
+            variant="ghost"
+            data-testid="toggle-referral-code"
+            :aria-expanded="referralRevealed[w.id] ?? false"
+            :aria-controls="`referral-panel-${w.id}`"
+            @click="toggleReferralCode(w)"
+          >
+            {{ referralRevealed[w.id] ? 'پنهان کردن کد معرفی' : 'نمایش کد معرفی' }}
+          </AppButton>
 
-      <div>
-        <AppButton
-          type="button"
-          variant="ghost"
-          data-testid="toggle-referral-code"
-          :aria-expanded="referralRevealed[w.id] ?? false"
-          :aria-controls="`referral-panel-${w.id}`"
-          @click="toggleReferralCode(w)"
-        >
-          {{ referralRevealed[w.id] ? 'پنهان کردن کد معرفی' : 'نمایش کد معرفی' }}
-        </AppButton>
-
-        <div
-          v-if="referralRevealed[w.id]"
-          :id="`referral-panel-${w.id}`"
-          data-testid="referral-code-panel"
-          class="mt-2 flex items-center gap-2 rounded-xl border border-(--color-border) bg-(--color-surface) p-3"
-        >
-          <p v-if="referralLoading[w.id]" class="text-sm text-(--color-text-muted)">در حال دریافت...</p>
-          <p v-else-if="referralError[w.id]" class="text-sm text-(--tone-danger-text)">{{ referralError[w.id] }}</p>
-          <template v-else-if="referralCodes[w.id]">
-            <span class="tnum flex-1 text-sm font-bold text-(--color-text)" data-testid="referral-code-value">
-              {{ referralCodes[w.id]!.code }}
-            </span>
-            <AppButton
-              type="button"
-              variant="secondary"
-              data-testid="copy-referral-code"
-              @click="copyReferralCode(referralCodes[w.id]!.code)"
-            >
-              کپی
-            </AppButton>
-          </template>
+          <div
+            v-if="referralRevealed[w.id]"
+            :id="`referral-panel-${w.id}`"
+            data-testid="referral-code-panel"
+            class="mt-2 flex items-center gap-2 rounded-xl border border-(--color-border) bg-(--color-surface) p-3"
+          >
+            <p v-if="referralLoading[w.id]" class="text-sm text-(--color-text-muted)">در حال دریافت...</p>
+            <p v-else-if="referralError[w.id]" class="text-sm text-(--tone-danger-text)">{{ referralError[w.id] }}</p>
+            <template v-else-if="referralCodes[w.id]">
+              <!-- A referral code is an unbreakable Latin run; min-w-0 + break-all keeps it
+                   inside the panel instead of pushing the copy button out of reach. -->
+              <span class="tnum min-w-0 flex-1 break-all text-sm font-bold text-(--color-text)" data-testid="referral-code-value">
+                {{ referralCodes[w.id]!.code }}
+              </span>
+              <AppButton
+                type="button"
+                variant="secondary"
+                class="shrink-0"
+                data-testid="copy-referral-code"
+                @click="copyReferralCode(referralCodes[w.id]!.code)"
+              >
+                کپی
+              </AppButton>
+            </template>
+          </div>
         </div>
-      </div>
-    </AppCard>
+      </AppCard>
+    </div>
   </div>
 </template>

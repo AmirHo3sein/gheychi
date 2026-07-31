@@ -134,4 +134,24 @@ describe('PhotosView', () => {
     expect(JSON.parse(patchCall[1].body)).toEqual({ isCover: true })
     expect(wrapper.findAll('[data-testid="set-cover"]')[1]!.text()).toBe('انتخاب شده')
   })
+  // Layout regression. The delete button used to share a footer row with the
+  // «انتخاب به‌عنوان اصلی» button; together they needed ~210px against the ~122px of footer
+  // a tile has at 320px (and still only ~178px at md), and because the tile is
+  // `overflow-hidden` the delete button was silently CLIPPED rather than visibly overflowing.
+  // It now overlays the image, where it keeps its full 44px target at every width.
+  it('renders the delete control as an image overlay, not inside the clipped footer row', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, status: 200, json: async () => [PHOTO_COVER] })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = await mountPhotos()
+    const del = wrapper.get('[data-testid="delete-photo"]')
+
+    expect(del.classes()).toContain('absolute')
+    // start-*, never left-*/right-*: an RTL overflow escapes off the LEFT edge.
+    expect(del.classes()).toContain('start-2')
+    // The cover badge pins to the opposite corner (end-2), so the two never collide.
+    expect(del.element.parentElement?.querySelector('img')).toBeTruthy()
+    // The footer now holds the cover action alone, full width.
+    expect(wrapper.get('[data-testid="set-cover"]').classes()).toContain('w-full')
+  })
 })

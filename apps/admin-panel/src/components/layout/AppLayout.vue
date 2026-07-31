@@ -32,8 +32,17 @@ async function logout() {
 <template>
   <div class="flex h-screen overflow-hidden bg-(--color-surface)">
     <SidebarNav />
-    <div class="flex flex-1 flex-col overflow-hidden">
-      <header class="flex shrink-0 items-center gap-4 border-b border-(--color-border) bg-(--color-surface-card) px-6 py-3.5">
+    <!-- `min-w-0` is load-bearing, not decoration: a flex child defaults to
+         `min-width: auto`, so this column would refuse to shrink below its widest page and
+         push the sidebar off-screen. `overflow-hidden` already implies a 0 automatic minimum
+         size, but stating it keeps the guarantee from silently disappearing if the overflow
+         value is ever relaxed. -->
+    <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <!-- `flex-wrap` + `gap-y`: from `md` up everything fits on one line exactly as before,
+           but on a narrow screen the action cluster drops to a second row instead of pushing
+           the logout button out through the parent's `overflow-hidden`, where it would be
+           both clipped and unreachable (no scroll to recover it). -->
+      <header class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-(--color-border) bg-(--color-surface-card) px-4 py-3.5 sm:px-6">
         <!-- Temporary logo mark, until a real brand asset exists -->
         <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-(--color-accent) font-black text-white shadow-(--shadow-sm)">
           ق
@@ -41,9 +50,11 @@ async function logout() {
 
         <div class="h-6 w-px bg-(--color-border)" />
 
-        <h1 class="text-base font-bold text-(--color-text)">{{ route.meta.title ?? '' }}</h1>
+        <h1 class="min-w-0 truncate text-base font-bold text-(--color-text)">{{ route.meta.title ?? '' }}</h1>
 
-        <div class="mr-auto flex items-center gap-2">
+        <!-- `ms-auto`, not `mr-auto`: identical in this RTL-only app, but the logical
+             property is the one that stays correct if a direction ever changes. -->
+        <div class="ms-auto flex min-w-0 items-center gap-2">
           <button
             type="button"
             :title="isDark ? 'حالت روشن' : 'حالت تیره'"
@@ -57,7 +68,10 @@ async function logout() {
 
           <div class="mx-1 h-6 w-px bg-(--color-border)" />
 
-          <div class="flex items-center gap-2.5 rounded-xl py-1 pe-1 ps-2">
+          <!-- min-w-0 so the inner `truncate` can actually engage: without it this wrapper
+               keeps its content-based minimum width and a long account name widens the whole
+               header instead of being ellipsised. -->
+          <div class="flex min-w-0 items-center gap-2.5 rounded-xl py-1 pe-1 ps-2">
             <div class="min-w-0 text-right leading-tight">
               <p class="truncate text-sm font-semibold text-(--color-text)">{{ session.user?.name || session.user?.phone }}</p>
               <p class="text-[11px] text-(--color-text-muted)">{{ userRoleLabel(session.user?.role ?? '') }}</p>
@@ -77,7 +91,11 @@ async function logout() {
           </button>
         </div>
       </header>
-      <main class="flex-1 overflow-y-auto">
+      <!-- Explicitly `overflow-auto`, not just `overflow-y-auto`: this is the app's single
+           horizontal scroll container. A page that is genuinely too wide for the viewport
+           (the dense tables this admin tool is built around) scrolls here, so the document
+           body itself never gets a horizontal scrollbar at any width. -->
+      <main class="flex-1 overflow-auto">
         <RouterView v-slot="{ Component, route: current }">
           <Transition name="page-fade" mode="out-in">
             <component :is="Component" :key="current.path" />

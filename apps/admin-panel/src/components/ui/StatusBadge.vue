@@ -26,7 +26,9 @@ const DOT_CLASSES: Record<Tone, string> = {
     class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold"
     :class="TONE_CLASSES[tone]"
   >
-    <span class="h-1.5 w-1.5 rounded-full" :class="DOT_CLASSES[tone]" />
+    <!-- shrink-0: the tone dot is the badge's only non-text cue, and as a flex item it would
+         otherwise be the first thing squeezed to nothing in a cramped row. -->
+    <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="DOT_CLASSES[tone]" />
     {{ label }}
   </span>
 </template>

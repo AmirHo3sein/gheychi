@@ -147,60 +147,68 @@ watch(page, load)
         >
           <AppIcon name="spinner" :size="22" class="animate-spin text-(--color-text-muted)" />
         </div>
-        <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
-          <thead>
-            <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
-              <th class="px-5 py-3 font-semibold">کارمند</th>
-              <th class="px-5 py-3 font-semibold">آرایشگاه</th>
-              <th class="px-5 py-3 font-semibold">امتیاز</th>
-              <th class="px-5 py-3 font-semibold">وضعیت</th>
-              <th class="px-5 py-3 font-semibold">اقدام</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="rating in ratings"
-              :key="rating.id"
-              class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
-            >
-              <td class="px-5 py-3.5 font-semibold text-(--color-text)">{{ rating.workerName }}</td>
-              <td class="px-5 py-3.5">
-                <!-- Click-through to the salon detail page -- also how an operator gets a
-                     valid UUID to paste into the salon-id filter above. -->
-                <RouterLink :to="`/salons/${rating.salonId}`" class="text-(--color-text) hover:text-(--color-accent-text)">
-                  {{ rating.salonName }}
-                </RouterLink>
-              </td>
-              <td class="px-5 py-3.5">
-                <div class="flex items-center gap-1 text-(--color-accent-strong)">
-                  <AppIcon
-                    v-for="n in 5"
-                    :key="n"
-                    name="star"
-                    :size="16"
-                    :fill="n <= rating.rating ? 'currentColor' : 'none'"
-                    :class="n > rating.rating && 'text-(--color-border)'"
+        <!-- The table gets its OWN horizontal scroller (CouponsView.vue's idiom). Without it a
+             table narrower than its min-content width doesn't shrink -- it overflows the card,
+             and AppCard's overflow-hidden (there for the rounded corners) then CLIPS the
+             trailing columns. Here that trailing column is the moderation action, so the
+             clipping made a real action unreachable. Desktop is untouched: no scrollbar exists
+             while the table fits, which is the ≥1280px case this app optimizes for. -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
+            <thead>
+              <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
+                <th class="px-5 py-3 font-semibold">کارمند</th>
+                <th class="px-5 py-3 font-semibold">آرایشگاه</th>
+                <th class="px-5 py-3 font-semibold">امتیاز</th>
+                <th class="px-5 py-3 font-semibold">وضعیت</th>
+                <th class="px-5 py-3 font-semibold">اقدام</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="rating in ratings"
+                :key="rating.id"
+                class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
+              >
+                <td class="px-5 py-3.5 font-semibold text-(--color-text)">{{ rating.workerName }}</td>
+                <td class="px-5 py-3.5">
+                  <!-- Click-through to the salon detail page -- also how an operator gets a
+                       valid UUID to paste into the salon-id filter above. -->
+                  <RouterLink :to="`/salons/${rating.salonId}`" class="text-(--color-text) hover:text-(--color-accent-text)">
+                    {{ rating.salonName }}
+                  </RouterLink>
+                </td>
+                <td class="px-5 py-3.5">
+                  <div class="flex items-center gap-1 text-(--color-accent-strong)">
+                    <AppIcon
+                      v-for="n in 5"
+                      :key="n"
+                      name="star"
+                      :size="16"
+                      :fill="n <= rating.rating ? 'currentColor' : 'none'"
+                      :class="n > rating.rating && 'text-(--color-border)'"
+                    />
+                    <span class="tnum mr-1 text-sm font-bold text-(--color-text)">{{ rating.rating }}.0</span>
+                  </div>
+                </td>
+                <td class="px-5 py-3.5">
+                  <StatusBadge
+                    :label="workerRatingStatusLabel(rating.status, rating.reviewStatus).label"
+                    :tone="workerRatingStatusLabel(rating.status, rating.reviewStatus).tone"
                   />
-                  <span class="tnum mr-1 text-sm font-bold text-(--color-text)">{{ rating.rating }}.0</span>
-                </div>
-              </td>
-              <td class="px-5 py-3.5">
-                <StatusBadge
-                  :label="workerRatingStatusLabel(rating.status, rating.reviewStatus).label"
-                  :tone="workerRatingStatusLabel(rating.status, rating.reviewStatus).tone"
-                />
-              </td>
-              <td class="px-5 py-3.5">
-                <ModerateWorkerRatingButton
-                  :rating-id="rating.id"
-                  :status="rating.status"
-                  :review-status="rating.reviewStatus"
-                  @updated="(r) => onUpdated(r.id, r.status)"
-                />
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                </td>
+                <td class="px-5 py-3.5">
+                  <ModerateWorkerRatingButton
+                    :rating-id="rating.id"
+                    :status="rating.status"
+                    :review-status="rating.reviewStatus"
+                    @updated="(r) => onUpdated(r.id, r.status)"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
       <Pagination :page="page" :page-size="pageSize" :total="total" @update:page="(p) => (page = p)" />
     </AppCard>

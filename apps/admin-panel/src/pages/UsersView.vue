@@ -131,12 +131,17 @@ watch(page, load)
           <AppInput v-model="nameFilter" label="نام" placeholder="همه" />
         </div>
         <AppSelect v-model="roleFilter" :options="ROLE_OPTIONS" label="نقش" width="10rem" />
-        <div>
+        <div class="min-w-0">
           <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">بازه عضویت</label>
-          <div class="flex items-center gap-1.5">
-            <JalaliDatePicker v-model="joinedFrom" placeholder="از تاریخ" aria-label="از تاریخ عضویت" class="w-32" />
+          <!-- The outer filter row wraps, but this from/to pair is a nested flex row of its own
+               and would otherwise stay one unbreakable ~19rem block -- the single widest item in
+               the bar, and the first thing to push past the card on a narrow window. flex-wrap
+               lets the second picker drop below the first instead; both fit on one line from
+               ~19rem of filter-bar width up, so nothing changes on a desk-sized screen. -->
+          <div class="flex flex-wrap items-center gap-1.5">
+            <JalaliDatePicker v-model="joinedFrom" placeholder="از تاریخ" aria-label="از تاریخ عضویت" class="w-40" />
             <span class="text-(--color-text-muted)">تا</span>
-            <JalaliDatePicker v-model="joinedTo" placeholder="تا تاریخ" aria-label="تا تاریخ عضویت" class="w-32" />
+            <JalaliDatePicker v-model="joinedTo" placeholder="تا تاریخ" aria-label="تا تاریخ عضویت" class="w-40" />
           </div>
         </div>
         <AppButton v-if="hasActiveFilters" type="button" variant="ghost" class="mb-2" @click="clearFilters">
@@ -159,45 +164,53 @@ watch(page, load)
         >
           <AppIcon name="spinner" :size="22" class="animate-spin text-(--color-text-muted)" />
         </div>
-        <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
-          <thead>
-            <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
-              <th class="px-5 py-3 font-semibold">نام</th>
-              <th class="px-5 py-3 font-semibold">موبایل</th>
-              <th class="px-5 py-3 font-semibold">نقش</th>
-              <th class="px-5 py-3 font-semibold">تاریخ عضویت</th>
-              <th class="px-5 py-3 font-semibold">وضعیت</th>
-              <th class="px-5 py-3"></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="user in users"
-              :key="user.id"
-              class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
-            >
-              <td class="px-5 py-3.5 font-semibold text-(--color-text)">{{ user.name ?? '—' }}</td>
-              <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ user.phone }}</td>
-              <td class="px-5 py-3.5 text-(--color-text-muted)">{{ userRoleLabel(user.role) }}</td>
-              <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDate(user.createdAt) }}</td>
-              <td class="px-5 py-3.5">
-                <StatusBadge :label="userStatusLabel(user.status).label" :tone="userStatusLabel(user.status).tone" />
-              </td>
-              <td class="px-5 py-3.5">
-                <span v-if="isSelf(user.id)" data-testid="self-row-hint" class="text-xs text-(--color-text-muted)">
-                  حساب شما
-                </span>
-                <SuspendUserButton
-                  v-else
-                  :user-id="user.id"
-                  :status="user.status"
-                  :role="user.role"
-                  @updated="(u) => onUpdated(u.id, u.status)"
-                />
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <!-- The table gets its OWN horizontal scroller (CouponsView.vue's idiom). Without it a
+             table narrower than its min-content width doesn't shrink -- it overflows the card,
+             and AppCard's overflow-hidden (there for the rounded corners) then CLIPS the
+             trailing columns. Here that trailing column is the suspend/reactivate control, so
+             the clipping made a real action unreachable. Desktop is untouched: no scrollbar
+             exists while the table fits, which is the ≥1280px case this app optimizes for. -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
+            <thead>
+              <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
+                <th class="px-5 py-3 font-semibold">نام</th>
+                <th class="px-5 py-3 font-semibold">موبایل</th>
+                <th class="px-5 py-3 font-semibold">نقش</th>
+                <th class="px-5 py-3 font-semibold">تاریخ عضویت</th>
+                <th class="px-5 py-3 font-semibold">وضعیت</th>
+                <th class="px-5 py-3"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="user in users"
+                :key="user.id"
+                class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
+              >
+                <td class="px-5 py-3.5 font-semibold text-(--color-text)">{{ user.name ?? '—' }}</td>
+                <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ user.phone }}</td>
+                <td class="px-5 py-3.5 text-(--color-text-muted)">{{ userRoleLabel(user.role) }}</td>
+                <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDate(user.createdAt) }}</td>
+                <td class="px-5 py-3.5">
+                  <StatusBadge :label="userStatusLabel(user.status).label" :tone="userStatusLabel(user.status).tone" />
+                </td>
+                <td class="px-5 py-3.5">
+                  <span v-if="isSelf(user.id)" data-testid="self-row-hint" class="text-xs text-(--color-text-muted)">
+                    حساب شما
+                  </span>
+                  <SuspendUserButton
+                    v-else
+                    :user-id="user.id"
+                    :status="user.status"
+                    :role="user.role"
+                    @updated="(u) => onUpdated(u.id, u.status)"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
       <Pagination :page="page" :page-size="pageSize" :total="total" @update:page="(p) => (page = p)" />
     </AppCard>

@@ -267,34 +267,42 @@ watch(page, load)
           >
             <AppIcon name="spinner" :size="22" class="animate-spin text-(--color-text-muted)" />
           </div>
-          <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
-            <thead>
-              <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
-                <th class="px-5 py-3 font-semibold">عنوان</th>
-                <th class="px-5 py-3 font-semibold">دسته‌بندی</th>
-                <th class="px-5 py-3 font-semibold">وضعیت</th>
-                <th class="px-5 py-3 font-semibold">تاریخ انتشار</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="post in posts"
-                :key="post.id"
-                data-testid="post-row"
-                class="cursor-pointer border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
-                @click="openPost(post)"
-              >
-                <td class="px-5 py-3.5 font-semibold text-(--color-text)">
-                  <RouterLink :to="`/blog/${post.id}`" class="hover:text-(--color-accent-text)">{{ post.title }}</RouterLink>
-                </td>
-                <td class="px-5 py-3.5 text-(--color-text-muted)">{{ post.categoryName ?? '—' }}</td>
-                <td class="px-5 py-3.5">
-                  <StatusBadge :label="blogPostStatusLabel(post.status).label" :tone="blogPostStatusLabel(post.status).tone" />
-                </td>
-                <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDate(post.publishedAt) }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <!-- The table gets its OWN horizontal scroller (CouponsView.vue's idiom). Without it a
+               table narrower than its min-content width doesn't shrink -- it overflows the card,
+               and AppCard's overflow-hidden (there for the rounded corners) then CLIPS the
+               trailing columns. Squeezed hardest on this page, since the categories side card
+               takes a fixed 20rem out of the row from xl up. Desktop is untouched: no scrollbar
+               exists while the table fits, which is the ≥1280px case this app optimizes for. -->
+          <div class="overflow-x-auto">
+            <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
+              <thead>
+                <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
+                  <th class="px-5 py-3 font-semibold">عنوان</th>
+                  <th class="px-5 py-3 font-semibold">دسته‌بندی</th>
+                  <th class="px-5 py-3 font-semibold">وضعیت</th>
+                  <th class="px-5 py-3 font-semibold">تاریخ انتشار</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="post in posts"
+                  :key="post.id"
+                  data-testid="post-row"
+                  class="cursor-pointer border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
+                  @click="openPost(post)"
+                >
+                  <td class="px-5 py-3.5 font-semibold text-(--color-text)">
+                    <RouterLink :to="`/blog/${post.id}`" class="hover:text-(--color-accent-text)">{{ post.title }}</RouterLink>
+                  </td>
+                  <td class="px-5 py-3.5 text-(--color-text-muted)">{{ post.categoryName ?? '—' }}</td>
+                  <td class="px-5 py-3.5">
+                    <StatusBadge :label="blogPostStatusLabel(post.status).label" :tone="blogPostStatusLabel(post.status).tone" />
+                  </td>
+                  <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDate(post.publishedAt) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
         <Pagination :page="page" :page-size="pageSize" :total="total" @update:page="(p) => (page = p)" />
       </AppCard>

@@ -255,16 +255,22 @@ async function confirmBooking() {
     />
 
     <BaseCard v-if="selectedSlot" class="space-y-4 text-sm">
-      <div class="flex items-center justify-between">
+      <!-- At 320px the label, the discount badge and a seven-figure price want ~265px of
+           the card's 254px content box, so something has to give -- and it must not be the
+           numbers. whitespace-nowrap keeps the badge and each price atomic (a price broken
+           between its digits and "تومان", or a badge reading "٪۳۰" over "تخفیف", is the
+           money figure rendered as noise); the gap and the label absorb the difference,
+           with flex-wrap on the price group as the last resort if that still isn't enough. -->
+      <div class="flex items-center justify-between gap-2">
         <span>قیمت کامل</span>
-        <span class="flex items-center gap-2">
+        <span class="flex flex-wrap items-center justify-end gap-2">
           <span
             v-if="activeDiscountPercent"
-            class="rounded-full bg-(--color-danger-soft) px-2 py-0.5 text-xs font-bold text-(--color-danger)"
+            class="whitespace-nowrap rounded-full bg-(--color-danger-soft) px-2 py-0.5 text-xs font-bold text-(--color-danger)"
           >
             ٪{{ activeDiscountPercent.toLocaleString('fa-IR') }} تخفیف
           </span>
-          <span class="flex flex-col items-end leading-tight">
+          <span class="flex flex-col items-end whitespace-nowrap leading-tight">
             <span v-if="activeDiscountPercent" class="text-xs text-(--color-text-muted) line-through">
               {{ page.service.price.toLocaleString('fa-IR') }}
             </span>
@@ -283,8 +289,16 @@ async function confirmBooking() {
         <div class="flex items-end gap-2">
           <!-- role="alert" scoped to just the field (label+input+BaseInput's own error
                message), not the whole row, so an invalid-coupon message is announced to
-               screen readers without also re-announcing the adjacent "اعمال" button. -->
-          <div role="alert" aria-live="assertive" class="flex-1">
+               screen readers without also re-announcing the adjacent "اعمال" button.
+               min-w-0 is required, not cosmetic: a flex item's automatic minimum size is
+               its min-content width, and an <input>'s min-content width is its intrinsic
+               size attribute default (~180px in Chrome), NOT the `w-full` it's styled
+               with -- percentages resolve to auto during intrinsic sizing. So this wrapper
+               refuses to shrink past ~210px, which together with the 72px "اعمال" button
+               overflows the card's 254px content box at 320px. min-w-0 lets it shrink to
+               the width actually available; shrink-0 keeps the button at its full label
+               width instead of letting "اعمال" get squeezed. -->
+          <div role="alert" aria-live="assertive" class="min-w-0 flex-1">
             <BaseInput
               v-model="couponCode"
               type="text"
@@ -296,6 +310,7 @@ async function confirmBooking() {
           <BaseButton
             type="button"
             variant="secondary"
+            class="shrink-0"
             :loading="couponApplying"
             :disabled="!couponCode.trim()"
             @click="applyCoupon"

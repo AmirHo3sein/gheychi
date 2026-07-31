@@ -104,4 +104,17 @@ describe('AuditLogView', () => {
 
     expect(wrapper.text()).toContain('اقدامی با این فیلترها ثبت نشده است.')
   })
+
+  // Regression guard. The table used to sit directly inside AppCard's overflow-hidden box, so
+  // the moment its min-content width exceeded the card the trailing columns were CLIPPED, not
+  // scrolled to. Six columns make this the widest table in the app and the first to hit that.
+  // The wrapper has to stay the table's DIRECT parent -- an overflow-x-auto further up the tree
+  // would let an intermediate box overflow first and defeat the point.
+  it('keeps the table inside its own horizontal scroll container', async () => {
+    fetchMock.mockResolvedValue({ data: { items: [row], total: 1, page: 1, pageSize: 20 }, error: null })
+    const wrapper = mount(AuditLogView, mountOptions)
+    await flushPromises()
+
+    expect(wrapper.get('table').element.parentElement?.className).toContain('overflow-x-auto')
+  })
 })

@@ -162,4 +162,18 @@ describe('StoriesView', () => {
     expect(wrapper.text()).not.toContain('افزودن تصویر جدید')
     wrapper.unmount()
   })
+  // Layout regression, same defect class as PhotosView. Delete used to sit beside the
+  // «... مانده» countdown in the tile footer: ~85px of label plus a 47px button against the
+  // ~122px a tile offers at 320px, inside an `overflow-hidden` tile -- so the button was
+  // CLIPPED rather than visibly overflowing. It now overlays the image.
+  it('renders the delete control as an image overlay, not inside the clipped footer row', async () => {
+    const wrapper = await mountView()
+    const del = wrapper.findAll('[data-testid="delete-story"]')[0]!
+
+    expect(del.classes()).toContain('absolute')
+    // start-*, never left-*/right-*; the admin-removed badge pins to end-2 on the far corner.
+    expect(del.classes()).toContain('start-2')
+    expect(del.element.parentElement?.querySelector('img')).toBeTruthy()
+    wrapper.unmount()
+  })
 })

@@ -185,56 +185,64 @@ watch(page, load)
         >
           <AppIcon name="spinner" :size="22" class="animate-spin text-(--color-text-muted)" />
         </div>
-        <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
-          <thead>
-            <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
-              <th class="px-5 py-3 font-semibold">نام</th>
-              <th class="px-5 py-3 font-semibold">شهر</th>
-              <th class="px-5 py-3 font-semibold">مخاطب</th>
-              <th class="px-5 py-3 font-semibold">وضعیت</th>
-              <th class="px-5 py-3 font-semibold">تاریخ ثبت</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="salon in salons"
-              :key="salon.id"
-              class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
-            >
-              <td class="px-5 py-3.5">
-                <div class="flex items-center gap-2">
-                  <RouterLink :to="`/salons/${salon.id}`" class="font-semibold text-(--color-text) hover:text-(--color-accent-text)">
-                    {{ salon.name }}
-                  </RouterLink>
-                  <span
-                    v-if="isFeaturedNow(salon)"
-                    data-testid="featured-badge"
-                    :title="featuredTitle(salon)"
-                    class="inline-flex items-center gap-1 rounded-full bg-(--tone-warning-bg) px-2 py-0.5 text-[11px] font-semibold text-(--tone-warning-text)"
-                  >
-                    <AppIcon name="star" :size="11" />
-                    ویژه
-                  </span>
-                  <span
-                    v-else-if="isFeaturedExpired(salon)"
-                    data-testid="featured-expired-badge"
-                    :title="featuredTitle(salon)"
-                    class="inline-flex items-center gap-1 rounded-full bg-(--color-border-soft) px-2 py-0.5 text-[11px] font-semibold text-(--color-text-muted)"
-                  >
-                    <AppIcon name="star" :size="11" />
-                    ویژه (منقضی)
-                  </span>
-                </div>
-              </td>
-              <td class="px-5 py-3.5 text-(--color-text-muted)">{{ salon.city }}</td>
-              <td class="px-5 py-3.5 text-(--color-text-muted)">{{ genderTargetLabel(salon.genderTarget) }}</td>
-              <td class="px-5 py-3.5">
-                <StatusBadge :label="salonStatusLabel(salon.status).label" :tone="salonStatusLabel(salon.status).tone" />
-              </td>
-              <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDate(salon.createdAt) }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <!-- The table gets its OWN horizontal scroller (CouponsView.vue's idiom). Without it a
+             table narrower than its min-content width doesn't shrink -- it overflows the card,
+             and AppCard's overflow-hidden (there for the rounded corners) then CLIPS the
+             trailing columns rather than letting the operator reach them. Desktop is untouched:
+             no scrollbar exists while the table fits, which is the ≥1280px case this app
+             optimizes for. -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
+            <thead>
+              <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
+                <th class="px-5 py-3 font-semibold">نام</th>
+                <th class="px-5 py-3 font-semibold">شهر</th>
+                <th class="px-5 py-3 font-semibold">مخاطب</th>
+                <th class="px-5 py-3 font-semibold">وضعیت</th>
+                <th class="px-5 py-3 font-semibold">تاریخ ثبت</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="salon in salons"
+                :key="salon.id"
+                class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
+              >
+                <td class="px-5 py-3.5">
+                  <div class="flex items-center gap-2">
+                    <RouterLink :to="`/salons/${salon.id}`" class="font-semibold text-(--color-text) hover:text-(--color-accent-text)">
+                      {{ salon.name }}
+                    </RouterLink>
+                    <span
+                      v-if="isFeaturedNow(salon)"
+                      data-testid="featured-badge"
+                      :title="featuredTitle(salon)"
+                      class="inline-flex shrink-0 items-center gap-1 rounded-full bg-(--tone-warning-bg) px-2 py-0.5 text-[11px] font-semibold text-(--tone-warning-text)"
+                    >
+                      <AppIcon name="star" :size="11" />
+                      ویژه
+                    </span>
+                    <span
+                      v-else-if="isFeaturedExpired(salon)"
+                      data-testid="featured-expired-badge"
+                      :title="featuredTitle(salon)"
+                      class="inline-flex shrink-0 items-center gap-1 rounded-full bg-(--color-border-soft) px-2 py-0.5 text-[11px] font-semibold text-(--color-text-muted)"
+                    >
+                      <AppIcon name="star" :size="11" />
+                      ویژه (منقضی)
+                    </span>
+                  </div>
+                </td>
+                <td class="px-5 py-3.5 text-(--color-text-muted)">{{ salon.city }}</td>
+                <td class="px-5 py-3.5 text-(--color-text-muted)">{{ genderTargetLabel(salon.genderTarget) }}</td>
+                <td class="px-5 py-3.5">
+                  <StatusBadge :label="salonStatusLabel(salon.status).label" :tone="salonStatusLabel(salon.status).tone" />
+                </td>
+                <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDate(salon.createdAt) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
       <Pagination :page="page" :page-size="pageSize" :total="total" @update:page="(p) => (page = p)" />
     </AppCard>

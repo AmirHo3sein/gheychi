@@ -1,6 +1,6 @@
 <!-- apps/admin-panel/src/components/layout/NotificationBell.vue -->
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -33,6 +33,16 @@ const count = ref(0)
 const notifications = ref<AdminNotification[]>([])
 const loadingList = ref(false)
 
+const panel = ref<HTMLElement | null>(null)
+// Horizontal correction applied to the open panel so it can never sit outside the viewport.
+// The bell lives at the inline-END of the header, so this 20rem panel hangs toward the
+// inline-START -- and in RTL that direction is *past the scroll origin*, i.e. overflow there
+// is not reachable by scrolling at all (the mirror image of a negative `left` in LTR). On any
+// layout with room -- every viewport this desktop-primary panel actually targets -- the
+// measured shift is 0 and nothing moves. Same technique as JalaliDatePicker.vue's popover.
+const panelShiftX = ref(0)
+const VIEWPORT_MARGIN_PX = 8
+
 let pollTimer: ReturnType<typeof setInterval> | undefined
 
 async function loadCount() {
@@ -50,8 +60,25 @@ async function loadList() {
   loadingList.value = false
 }
 
+// Measured from the rendered box rather than computed from the trigger's position, so it
+// stays correct however the header wraps around it.
+async function keepPanelOnScreen() {
+  panelShiftX.value = 0
+  if (!open.value) return
+  await nextTick()
+  const el = panel.value
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  if (rect.left < VIEWPORT_MARGIN_PX) {
+    panelShiftX.value = VIEWPORT_MARGIN_PX - rect.left
+  } else if (rect.right > window.innerWidth - VIEWPORT_MARGIN_PX) {
+    panelShiftX.value = window.innerWidth - VIEWPORT_MARGIN_PX - rect.right
+  }
+}
+
 async function toggle() {
   open.value = !open.value
+  keepPanelOnScreen()
   // Refresh the count too, so the badge can't lag the freshly-loaded list by up to a poll tick.
   if (open.value) await Promise.all([loadList(), loadCount()])
 }
@@ -97,11 +124,13 @@ onMounted(() => {
   loadCount()
   pollTimer = setInterval(loadCount, POLL_INTERVAL_MS)
   document.addEventListener('mousedown', onDocumentClick)
+  window.addEventListener('resize', keepPanelOnScreen)
 })
 
 onUnmounted(() => {
   if (pollTimer !== undefined) clearInterval(pollTimer)
   document.removeEventListener('mousedown', onDocumentClick)
+  window.removeEventListener('resize', keepPanelOnScreen)
 })
 </script>
 
@@ -124,10 +153,14 @@ onUnmounted(() => {
       </span>
     </button>
 
+    <!-- max-width keeps the panel itself from ever being wider than the viewport; the
+         measured `panelShiftX` above keeps it from being *positioned* outside it. -->
     <div
       v-if="open"
+      ref="panel"
       data-testid="notification-dropdown"
-      class="absolute end-0 z-50 mt-1.5 w-80 rounded-2xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-md)"
+      class="absolute end-0 z-50 mt-1.5 w-80 max-w-[calc(100vw-1rem)] rounded-2xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-md)"
+      :style="panelShiftX === 0 ? undefined : { transform: `translateX(${panelShiftX}px)` }"
     >
       <div class="flex items-center justify-between border-b border-(--color-border-soft) px-4 py-2.5">
         <p class="text-sm font-bold text-(--color-text)">اعلان‌ها</p>
@@ -153,11 +186,14 @@ onUnmounted(() => {
             class="flex w-full flex-col gap-0.5 px-4 py-2.5 text-right transition-colors hover:bg-(--color-border-soft)"
             @click="openNotification(notification)"
           >
-            <span class="flex items-center gap-2">
+            <!-- Titles/bodies are server-composed strings that can carry a salon name or an
+                 id with no break opportunity -- `break-words` keeps one from widening the
+                 panel past the clamp above. -->
+            <span class="flex w-full min-w-0 items-center gap-2">
               <span v-if="!notification.readAt" class="h-1.5 w-1.5 shrink-0 rounded-full bg-(--color-accent)" />
-              <span class="text-sm font-semibold text-(--color-text)">{{ notification.title }}</span>
+              <span class="min-w-0 break-words text-sm font-semibold text-(--color-text)">{{ notification.title }}</span>
             </span>
-            <span v-if="notification.body" class="text-xs leading-5 text-(--color-text-muted)">{{ notification.body }}</span>
+            <span v-if="notification.body" class="w-full break-words text-xs leading-5 text-(--color-text-muted)">{{ notification.body }}</span>
             <span class="tnum text-[11px] text-(--color-text-muted)">{{ formatTime(notification.createdAt) }}</span>
           </button>
         </li>

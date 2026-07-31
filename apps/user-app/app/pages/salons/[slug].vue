@@ -193,7 +193,10 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
     <div class="flex items-start justify-between gap-3">
       <div class="min-w-0">
         <div class="flex flex-wrap items-center gap-2">
-          <h1 class="text-xl font-bold text-(--color-text)">{{ page.salon.name }}</h1>
+          <!-- break-words, not just the wrapper's min-w-0: a provider-authored salon name
+               can be one long unbreakable token, and min-w-0 only lets the BOX shrink --
+               the text inside it still overflows unless it is allowed to break. -->
+          <h1 class="text-xl font-bold break-words text-(--color-text)">{{ page.salon.name }}</h1>
           <!-- This page only ever renders an approved salon (the API's findPublicBySlug
                gates on status:'approved'), so this badge makes an already-true fact
                visible rather than asserting a new check. The one accent-colored element
@@ -218,8 +221,12 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
           <BaseIcon name="star" :size="14" />
           {{ Number(page.salon.ratingAvg).toFixed(1) }} ({{ page.salon.ratingCount }})
         </p>
-        <p class="mt-1 flex items-center gap-1 text-sm text-(--color-text-muted)">
-          <BaseIcon name="map-pin" :size="14" />
+        <!-- items-start, unlike the single-line rating row above it: at 320px the name
+             column is ~176px wide and a Persian street address wraps to three lines, which
+             `items-center` would leave the pin floating against the middle of. Same
+             icon-nudge idiom as the deposit note further down. -->
+        <p class="mt-1 flex items-start gap-1 text-sm text-(--color-text-muted)">
+          <BaseIcon name="map-pin" :size="14" class="mt-0.5 shrink-0" />
           {{ page.salon.address }}
         </p>
         <a
@@ -279,15 +286,20 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
             :to="`/booking/${slug}/${service.id}`"
             class="flex items-center justify-between gap-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 text-sm shadow-(--shadow-sm) transition-shadow hover:shadow-(--shadow-md)"
           >
-            <span class="text-(--color-text)">{{ service.name }} ({{ service.durationMin }} دقیقه)</span>
-            <span class="flex items-center gap-2">
+            <!-- Same shape as the booking page's price row, and for the same reason: at
+                 320px a provider-authored service name, a discount badge and a
+                 seven-figure price do not fit one 254px line. The name is allowed to
+                 break (it is the only genuinely elastic part), while the badge and each
+                 price stay whole and wrap as units. -->
+            <span class="min-w-0 break-words text-(--color-text)">{{ service.name }} ({{ service.durationMin }} دقیقه)</span>
+            <span class="flex flex-wrap items-center justify-end gap-2">
               <span
                 v-if="service.discountPercent"
-                class="rounded-full bg-(--color-danger-soft) px-2 py-0.5 text-xs font-bold text-(--color-danger)"
+                class="whitespace-nowrap rounded-full bg-(--color-danger-soft) px-2 py-0.5 text-xs font-bold text-(--color-danger)"
               >
                 ٪{{ service.discountPercent.toLocaleString('fa-IR') }} تخفیف
               </span>
-              <span class="flex flex-col items-end leading-tight">
+              <span class="flex flex-col items-end whitespace-nowrap leading-tight">
                 <span v-if="service.discountPercent" class="text-xs text-(--color-text-muted) line-through">
                   {{ service.price.toLocaleString('fa-IR') }} تومان
                 </span>
@@ -335,7 +347,7 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
       v-if="canReport"
       type="button"
       data-testid="report-salon-button"
-      class="text-xs opacity-70 underline"
+      class="inline-flex min-h-11 items-center text-xs opacity-70 underline"
       @click="openSalonReport"
     >
       گزارش این سالن

@@ -92,15 +92,19 @@ function serviceName(id: string | null) {
 </script>
 
 <template>
-  <div class="space-y-4 p-4">
-    <div class="flex items-center justify-between">
+  <div class="mx-auto w-full max-w-6xl space-y-4 p-4 lg:p-6">
+    <!-- flex-wrap: the cap meter pill is ~165px and the heading ~85px -- together they need
+         two rows once 320px loses its page padding. -->
+    <div class="flex flex-wrap items-center justify-between gap-2">
       <h1 class="text-lg font-bold text-(--color-text)">استوری‌ها</h1>
       <span data-testid="cap-meter" class="tnum rounded-full bg-(--tone-info-bg) px-3 py-1 text-xs font-semibold text-(--tone-info-text)">
         {{ activeCount.toLocaleString('fa-IR') }} از ۱۰ استوری فعال
       </span>
     </div>
 
-    <div class="space-y-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 shadow-(--shadow-sm)">
+    <!-- Composer form: capped so its caption field stays a sane width on a laptop while the
+         story grid below still uses the full container. -->
+    <div class="max-w-2xl space-y-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 shadow-(--shadow-sm)">
       <div>
         <div class="mb-1.5 flex items-center justify-between">
           <label class="block text-sm font-semibold text-(--color-text)">توضیح استوری (اختیاری)</label>
@@ -144,7 +148,7 @@ function serviceName(id: string | null) {
       <template v-else>
         <EmptyState v-if="stories.length === 0" icon="stories" message="هنوز استوری فعالی ندارید." />
 
-        <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           <div
             v-for="s in stories"
             :key="s.id"
@@ -155,28 +159,36 @@ function serviceName(id: string | null) {
               <span
                 v-if="s.status === 'removed'"
                 data-testid="removed-badge"
-                class="absolute end-2 top-2 rounded-full bg-(--tone-danger-bg) px-2 py-0.5 text-xs font-bold text-(--tone-danger-text) shadow-(--shadow-sm)"
+                class="absolute end-2 top-2 max-w-[calc(100%-1rem)] rounded-full bg-(--tone-danger-bg) px-2 py-0.5 text-xs font-bold text-(--tone-danger-text) shadow-(--shadow-sm)"
               >
                 توسط مدیر حذف شد
               </span>
+              <!--
+                Delete overlays the image rather than sharing the footer row with the
+                «... مانده» label: the label (~85px) plus a 47px button exceeded the ~122px
+                of footer a tile has at 320px, and the tile's overflow-hidden CLIPPED the
+                button instead of overflowing visibly. Same treatment as PhotosView, and
+                start-2 keeps it clear of the end-2 removed badge.
+              -->
+              <AppButton
+                type="button"
+                variant="danger"
+                class="absolute start-2 top-2 shadow-(--shadow-md)"
+                aria-label="حذف استوری"
+                data-testid="delete-story"
+                :loading="deletingId === s.id"
+                :disabled="deletingId === s.id"
+                @click="removeStory(s.id)"
+              >
+                <template #icon><AppIcon name="trash" :size="15" /></template>
+              </AppButton>
             </div>
-            <div class="space-y-1.5 p-2">
-              <p v-if="s.caption" class="truncate text-xs text-(--color-text)">{{ s.caption }}</p>
+            <div class="space-y-1 p-2">
+              <!-- line-clamp, not truncate: a 122px tile cuts almost any caption off at the
+                   first word, which reads as data loss rather than a preview. -->
+              <p v-if="s.caption" class="line-clamp-2 break-words text-xs text-(--color-text)">{{ s.caption }}</p>
               <p v-if="serviceName(s.serviceId)" class="truncate text-xs text-(--color-accent-text)">{{ serviceName(s.serviceId) }}</p>
-              <div class="flex items-center justify-between">
-                <span class="tnum text-xs text-(--color-text-muted)">{{ formatRemainingTime(s.expiresAt, now) }}</span>
-                <AppButton
-                  type="button"
-                  variant="danger"
-                  aria-label="حذف استوری"
-                  data-testid="delete-story"
-                  :loading="deletingId === s.id"
-                  :disabled="deletingId === s.id"
-                  @click="removeStory(s.id)"
-                >
-                  <template #icon><AppIcon name="trash" :size="15" /></template>
-                </AppButton>
-              </div>
+              <span class="tnum block text-xs text-(--color-text-muted)">{{ formatRemainingTime(s.expiresAt, now) }}</span>
             </div>
           </div>
         </div>

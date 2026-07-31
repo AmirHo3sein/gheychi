@@ -165,10 +165,12 @@ async function deactivate(coupon: Coupon) {
 </script>
 
 <template>
-  <div class="space-y-4 p-4">
+  <div class="mx-auto w-full max-w-5xl space-y-4 p-4 lg:p-6">
     <h1 class="text-lg font-bold text-(--color-text)">کدهای تخفیف</h1>
 
-    <AppCard class="space-y-3">
+    <!-- Capped independently of the page container: a single-column form whose inputs span
+         1024px reads as broken, while the coupon list below genuinely wants the width. -->
+    <AppCard class="max-w-2xl space-y-3">
       <h2 class="font-bold text-(--color-text)">افزودن کد تخفیف جدید</h2>
       <div>
         <AppInput v-model="newCoupon.code" label="کد تخفیف" placeholder="مثلاً SUMMER20" class="uppercase" />
@@ -213,30 +215,39 @@ async function deactivate(coupon: Coupon) {
       <template v-else>
         <EmptyState v-if="coupons.length === 0" icon="coupons" message="هنوز کد تخفیفی ثبت نشده است." />
 
-        <AppCard v-for="c in coupons" :key="c.id" :padded="false" class="space-y-2 p-4">
-          <div class="flex items-center justify-between">
-            <p class="tnum text-sm font-bold text-(--color-text)">{{ c.code }}</p>
-            <StatusBadge :label="couponStatus(c).label" :tone="couponStatus(c).tone" />
-          </div>
-          <div class="flex items-center justify-between text-sm text-(--color-text-muted)">
-            <span class="tnum">{{ discountLabel(c) }}</span>
-            <span class="tnum">{{ expiryLabel(c) }}</span>
-          </div>
-          <div class="flex items-center justify-between">
-            <span class="tnum text-sm text-(--color-text-muted)">استفاده: {{ usageLabel(c) }}</span>
-            <AppButton
-              v-if="c.isActive"
-              type="button"
-              variant="danger"
-              :loading="deactivatingId === c.id"
-              :disabled="deactivatingId === c.id"
-              @click="deactivate(c)"
-            >
-              <template #icon><AppIcon name="x" :size="15" /></template>
-              غیرفعال‌سازی
-            </AppButton>
-          </div>
-        </AppCard>
+        <div v-else class="grid items-start gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <AppCard v-for="c in coupons" :key="c.id" :padded="false" class="space-y-2 p-4">
+            <!--
+              The code is owner-supplied and has no break opportunities («SUMMERSPECIAL2026»),
+              and the longest status label («به سقف استفاده رسیده») is ~150px on its own -- the
+              pair overflowed a 320px card. break-all lets the code wrap; flex-wrap keeps the
+              badge whole rather than squashed.
+            -->
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <p class="tnum min-w-0 break-all text-sm font-bold text-(--color-text)">{{ c.code }}</p>
+              <StatusBadge :label="couponStatus(c).label" :tone="couponStatus(c).tone" />
+            </div>
+            <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm text-(--color-text-muted)">
+              <span class="tnum">{{ discountLabel(c) }}</span>
+              <span class="tnum">{{ expiryLabel(c) }}</span>
+            </div>
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <span class="tnum text-sm text-(--color-text-muted)">استفاده: {{ usageLabel(c) }}</span>
+              <AppButton
+                v-if="c.isActive"
+                type="button"
+                variant="danger"
+                class="shrink-0"
+                :loading="deactivatingId === c.id"
+                :disabled="deactivatingId === c.id"
+                @click="deactivate(c)"
+              >
+                <template #icon><AppIcon name="x" :size="15" /></template>
+                غیرفعال‌سازی
+              </AppButton>
+            </div>
+          </AppCard>
+        </div>
       </template>
     </template>
   </div>

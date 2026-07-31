@@ -64,7 +64,15 @@ function initMap() {
   for (const salon of props.salons) {
     const coords = props.salonCoords[salon.id]
     if (!coords) continue
-    L.marker([coords.lat, coords.lng]).addTo(mapInstance).bindPopup(popupHtml(salon, coords))
+    // maxWidth 240 rather than Leaflet's 300px default: at 320px this map container is only
+    // 288px wide, so a popup allowed to grow to 300px can never be panned fully into view
+    // (autoPan has nowhere to pan it to) and stays partly clipped by the container's
+    // overflow-hidden -- taking a directions link with it. 240 leaves room for the popup's
+    // own tip and shadow at the hard floor; it only binds for long salon names, since the
+    // popup sizes to its content below that.
+    L.marker([coords.lat, coords.lng])
+      .addTo(mapInstance)
+      .bindPopup(popupHtml(salon, coords), { maxWidth: 240 })
   }
 }
 
@@ -87,6 +95,9 @@ onBeforeUnmount(() => {
   margin: 0 0 0.35rem;
   font-weight: 700;
   font-size: 0.85rem;
+  /* A provider-authored name can be one unbreakable token; inside a popup that is capped
+     at 240px it has to be allowed to break rather than force the popup wider. */
+  overflow-wrap: anywhere;
 }
 .salon-map-popup-actions {
   display: flex;
@@ -97,5 +108,12 @@ onBeforeUnmount(() => {
   font-size: 0.78rem;
   color: var(--color-accent);
   font-weight: 600;
+  /* These two links are the only actionable things in the popup, and they're tapped on a
+     map, where a finger is already imprecise. At their natural ~15px line box they were
+     well under the 44px minimum; the flex box gives them a real target without changing
+     how they read. */
+  display: flex;
+  align-items: center;
+  min-height: 2.75rem;
 }
 </style>

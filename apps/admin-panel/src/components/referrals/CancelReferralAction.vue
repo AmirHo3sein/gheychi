@@ -112,7 +112,7 @@ async function confirmSubmit() {
       <p v-if="reasonError" :id="reasonErrorId" data-testid="cancel-reason-error" class="text-sm text-(--tone-danger-text)">
         وارد کردن دلیل الزامی است.
       </p>
-      <div class="flex gap-2.5">
+      <div class="flex flex-wrap gap-2.5">
         <AppButton
           type="button"
           variant="danger"
@@ -136,7 +136,7 @@ async function confirmSubmit() {
       <p data-testid="cancel-referral-confirm-summary" class="whitespace-pre-wrap text-sm text-(--color-text)">
         این معرفی لغو خواهد شد. دلیل: {{ reason.trim() }}
       </p>
-      <div class="flex gap-2.5">
+      <div class="flex flex-wrap gap-2.5">
         <AppButton
           type="button"
           variant="danger"

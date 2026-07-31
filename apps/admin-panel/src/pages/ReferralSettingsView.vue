@@ -270,8 +270,9 @@ async function save(row: RewardTypeRow) {
 onMounted(load)
 </script>
 
+<!-- p-8 from `sm` up (unchanged); below that 64px of gutter is a fifth of a 320px screen. -->
 <template>
-  <div class="mx-auto max-w-3xl space-y-5 p-8">
+  <div class="mx-auto max-w-3xl space-y-5 p-4 sm:p-8">
     <div
       v-if="loading && rows.length === 0"
       class="flex items-center justify-center gap-2 py-16 text-sm text-(--color-text-muted)"
@@ -284,12 +285,12 @@ onMounted(load)
 
     <div v-for="row in rows" :key="row.referralType">
       <AppCard>
-        <div class="mb-4 flex items-center justify-between gap-3">
-          <p class="flex items-center gap-2 text-sm font-bold text-(--color-text)">
-            <AppIcon name="gift" :size="17" class="text-(--color-accent)" />
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <p class="flex min-w-0 items-center gap-2 text-sm font-bold text-(--color-text)">
+            <AppIcon name="gift" :size="17" class="shrink-0 text-(--color-accent)" />
             {{ referralTypeLabel(row.referralType) }}
           </p>
-          <div class="flex items-center gap-2.5">
+          <div class="flex shrink-0 items-center gap-2.5">
             <StatusBadge :label="row.enabled ? 'فعال' : 'غیرفعال'" :tone="row.enabled ? 'success' : 'neutral'" />
             <button
               type="button"
@@ -328,7 +329,7 @@ onMounted(load)
               {{ diff.oldText }} ← {{ diff.newText }}
             </li>
           </ul>
-          <div class="flex justify-end gap-2.5">
+          <div class="flex flex-wrap justify-end gap-2.5">
             <AppButton
               type="button"
               :ref="(el) => setConfirmButtonRef(row.referralType, el)"
@@ -367,14 +368,17 @@ onMounted(load)
         </div>
 
         <div class="grid gap-5 sm:grid-cols-2">
-          <div class="space-y-3 rounded-xl border border-(--color-border-soft) p-4">
+          <div class="min-w-0 space-y-3 rounded-xl border border-(--color-border-soft) p-4">
             <p class="text-xs font-semibold text-(--color-text-muted)">پاداش معرف</p>
             <div>
               <label class="mb-1.5 block text-xs text-(--color-text-muted)">نوع پاداش</label>
               <AppSelect v-model="row.referrerRewardKind" :options="REWARD_KIND_OPTIONS" width="100%" />
             </div>
+            <!-- min-w-0 on both halves: `flex-1` alone still carries `min-width: auto`, so a
+                 text field's intrinsic width (~11rem) keeps the pair from ever shrinking and
+                 the row overflows its card on a narrow screen. -->
             <div class="flex items-end gap-2">
-              <div class="flex-1">
+              <div class="min-w-0 flex-1">
                 <label class="mb-1.5 block text-xs text-(--color-text-muted)">مقدار ({{ rewardKindUnit(row.referrerRewardKind) }})</label>
                 <AppInput
                   :model-value="String(row.referrerRewardValue)"
@@ -388,7 +392,7 @@ onMounted(load)
                   {{ validateRow(row).referrerValueError }}
                 </p>
               </div>
-              <div class="flex-1">
+              <div class="min-w-0 flex-1">
                 <label class="mb-1.5 block text-xs text-(--color-text-muted)">سقف (اختیاری)</label>
                 <AppInput
                   :model-value="row.referrerRewardMax === null ? '' : String(row.referrerRewardMax)"
@@ -406,14 +410,17 @@ onMounted(load)
             </div>
           </div>
 
-          <div class="space-y-3 rounded-xl border border-(--color-border-soft) p-4">
+          <div class="min-w-0 space-y-3 rounded-xl border border-(--color-border-soft) p-4">
             <p class="text-xs font-semibold text-(--color-text-muted)">پاداش معرفی‌شده</p>
             <div>
               <label class="mb-1.5 block text-xs text-(--color-text-muted)">نوع پاداش</label>
               <AppSelect v-model="row.referredRewardKind" :options="REWARD_KIND_OPTIONS" width="100%" />
             </div>
+            <!-- min-w-0 on both halves: `flex-1` alone still carries `min-width: auto`, so a
+                 text field's intrinsic width (~11rem) keeps the pair from ever shrinking and
+                 the row overflows its card on a narrow screen. -->
             <div class="flex items-end gap-2">
-              <div class="flex-1">
+              <div class="min-w-0 flex-1">
                 <label class="mb-1.5 block text-xs text-(--color-text-muted)">مقدار ({{ rewardKindUnit(row.referredRewardKind) }})</label>
                 <AppInput
                   :model-value="String(row.referredRewardValue)"
@@ -427,7 +434,7 @@ onMounted(load)
                   {{ validateRow(row).referredValueError }}
                 </p>
               </div>
-              <div class="flex-1">
+              <div class="min-w-0 flex-1">
                 <label class="mb-1.5 block text-xs text-(--color-text-muted)">سقف (اختیاری)</label>
                 <AppInput
                   :model-value="row.referredRewardMax === null ? '' : String(row.referredRewardMax)"
@@ -446,12 +453,15 @@ onMounted(load)
           </div>
         </div>
 
+        <!-- min-w-0 on every cell: a grid item's automatic minimum size is its content, and a
+             text field's intrinsic width (~11rem) is wider than a quarter-width track even on
+             a laptop -- without this the four fields overrun their tracks into each other. -->
         <div class="mt-5 grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-          <div>
+          <div class="min-w-0">
             <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">رویداد شرط پاداش</label>
             <AppSelect v-model="row.qualifyingEvent" :options="QUALIFYING_EVENT_OPTIONS" width="100%" />
           </div>
-          <div>
+          <div class="min-w-0">
             <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">مهلت انتظار اعطا (ساعت)</label>
             <AppInput
               :model-value="String(row.grantHoldbackHours)"
@@ -464,7 +474,7 @@ onMounted(load)
               {{ validateRow(row).grantHoldbackError }}
             </p>
           </div>
-          <div>
+          <div class="min-w-0">
             <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">انقضا (روز، اختیاری)</label>
             <AppInput
               :model-value="row.expirationDays === null ? '' : String(row.expirationDays)"
@@ -479,7 +489,7 @@ onMounted(load)
               {{ validateRow(row).expirationError }}
             </p>
           </div>
-          <div>
+          <div class="min-w-0">
             <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">سقف تعداد معرفی هر معرف (اختیاری)</label>
             <AppInput
               :model-value="row.maxReferralsPerReferrer === null ? '' : String(row.maxReferralsPerReferrer)"

@@ -90,7 +90,7 @@ async function submit() {
         maxlength="1000"
         class="w-full rounded-xl border border-(--color-border) p-3 text-sm [color-scheme:light_dark]"
       />
-      <div class="flex gap-2.5">
+      <div class="flex flex-wrap gap-2.5">
         <AppButton
           data-testid="submit-resolution"
           type="button"

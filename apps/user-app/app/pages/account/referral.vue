@@ -321,11 +321,11 @@ useSeoMeta({ title: 'دعوت از دوستان — قیچی' })
       <div v-else class="space-y-2 transition-opacity" :class="{ 'pointer-events-none opacity-60': referralsPending }">
         <BaseCard v-for="r in referrals.items" :key="r.id" data-testid="referral-item">
           <div class="flex items-center justify-between gap-2">
-            <div class="space-y-0.5 text-sm">
+            <div class="min-w-0 space-y-0.5 text-sm">
               <p class="font-medium">{{ r.referredUserPhoneMasked }}</p>
               <p class="text-xs text-(--color-text-muted)">{{ formatDate(r.createdAt) }}</p>
             </div>
-            <p data-testid="referral-status" class="whitespace-nowrap text-sm font-bold" :class="STATUS_CLASSES[r.status]">
+            <p data-testid="referral-status" class="shrink-0 whitespace-nowrap text-sm font-bold" :class="STATUS_CLASSES[r.status]">
               {{ statusLabel(r.status) }}
             </p>
           </div>
@@ -375,7 +375,12 @@ useSeoMeta({ title: 'دعوت از دوستان — قیچی' })
       <div v-else class="space-y-2 transition-opacity" :class="{ 'pointer-events-none opacity-60': rewardsPending }">
         <BaseCard v-for="rw in rewards.items" :key="rw.id" data-testid="reward-item">
           <div class="flex items-center justify-between gap-2">
-            <div class="space-y-0.5 text-sm">
+            <!-- min-w-0 + break-words: the value/status column opposite is nowrap and
+                 shrink-0, so this side owns whatever is left (~150px at 320px) and holds
+                 the two strings most likely to blow past it -- a coupon code (one
+                 unbreakable "REF-XXXXXXXX" token) and a salon name inside
+                 couponScopeLabel(). -->
+            <div class="min-w-0 space-y-0.5 text-sm break-words">
               <p data-testid="reward-kind" class="font-medium">{{ rewardKindLabel(rw.rewardKind) }}</p>
               <p class="text-xs text-(--color-text-muted)">
                 {{ rewardBeneficiaryLabel(rw.beneficiaryRole) }} · {{ formatDate(rw.grantedAt) }}
@@ -389,17 +394,24 @@ useSeoMeta({ title: 'دعوت از دوستان — قیچی' })
                   v-if="!isCouponExpired(rw)"
                   type="button"
                   data-testid="use-coupon-button"
-                  class="text-xs text-(--color-accent-text) hover:underline"
+                  class="inline-flex min-h-11 items-center text-xs text-(--color-accent-text) hover:underline"
                   @click="useCoupon(rw)"
                 >
                   استفاده از این کد
                 </button>
               </template>
-              <NuxtLink v-if="rw.walletTransactionId" to="/account/wallet" class="text-xs text-(--color-accent-text) hover:underline">
+              <NuxtLink
+                v-if="rw.walletTransactionId"
+                to="/account/wallet"
+                class="inline-flex min-h-11 items-center text-xs text-(--color-accent-text) hover:underline"
+              >
                 مشاهده در کیف پول
               </NuxtLink>
             </div>
-            <div class="space-y-0.5 text-left">
+            <!-- text-end, not text-left: this app is RTL-only so the two happen to resolve
+                 the same today, but the intent is "the far side of the row", which is what
+                 the logical property states. -->
+            <div class="shrink-0 space-y-0.5 text-end">
               <p data-testid="reward-value" class="whitespace-nowrap text-sm font-bold">{{ formatRewardValue(rw) }}</p>
               <p data-testid="reward-status" class="whitespace-nowrap text-xs font-bold" :class="REWARD_STATUS_CLASSES[rw.status]">
                 {{ rewardStatusLabel(rw.status) }}

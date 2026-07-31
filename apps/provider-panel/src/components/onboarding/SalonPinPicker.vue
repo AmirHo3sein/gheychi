@@ -86,7 +86,12 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="space-y-2">
-    <div ref="mapEl" class="h-64 w-full rounded-xl border border-(--color-border)" />
+    <!--
+      A fixed h-64 is right on a phone (any taller and the coordinate fields and the wizard's
+      next button fall below the fold), but it wastes a desktop setup session where placing
+      the pin accurately is the whole point -- so it grows with the viewport instead.
+    -->
+    <div ref="mapEl" class="h-64 w-full rounded-xl border border-(--color-border) sm:h-80 lg:h-96" />
     <div class="grid grid-cols-2 gap-3">
       <div>
         <label :for="latId" class="mb-1 block text-xs font-medium text-(--color-text-muted)">عرض جغرافیایی (Lat)</label>

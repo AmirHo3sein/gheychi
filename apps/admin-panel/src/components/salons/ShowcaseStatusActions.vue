@@ -137,7 +137,7 @@ async function setStatus(status: 'published' | 'removed') {
         maxlength="500"
         class="w-full rounded-xl border border-(--color-text-muted) p-3 text-sm"
       />
-      <div class="flex gap-2.5">
+      <div class="flex flex-wrap gap-2.5">
         <AppButton
           data-testid="remove-submit"
           type="button"

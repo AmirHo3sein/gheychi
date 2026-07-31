@@ -146,8 +146,9 @@ function formatDate(iso: string): string {
 onMounted(load)
 </script>
 
+<!-- p-8 from `sm` up (unchanged); below that 64px of gutter is a fifth of a 320px screen. -->
 <template>
-  <div class="mx-auto space-y-5 p-8" :class="activeTab === 'info' ? 'max-w-2xl' : 'max-w-6xl'">
+  <div class="mx-auto space-y-5 p-4 sm:p-8" :class="activeTab === 'info' ? 'max-w-2xl' : 'max-w-6xl'">
     <div v-if="loading && !salon" data-testid="salon-loading" class="flex justify-center py-20">
       <AppIcon name="spinner" :size="28" class="animate-spin text-(--color-accent)" />
     </div>
@@ -189,17 +190,25 @@ onMounted(load)
 
       <template v-if="activeTab === 'info'">
         <AppCard>
-          <div class="flex items-start justify-between gap-4">
-            <div class="flex items-start gap-3">
+          <!-- Salon name and address are provider-supplied free text: `min-w-0` down the
+               chain plus `break-words` so a long name (or an address with no break
+               opportunity) wraps instead of widening the card, and the status badge is
+               pinned rather than squeezed to nothing. -->
+          <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+            <div class="flex min-w-0 flex-1 items-start gap-3">
               <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-(--color-border-soft) text-(--color-accent)">
                 <AppIcon name="building" :size="22" />
               </div>
-              <div>
-                <h2 class="text-lg font-bold text-(--color-text)">{{ salon.name }}</h2>
-                <p class="mt-0.5 text-sm text-(--color-text-muted)">{{ salon.city }} — {{ salon.address }}</p>
+              <div class="min-w-0">
+                <h2 class="break-words text-lg font-bold text-(--color-text)">{{ salon.name }}</h2>
+                <p class="mt-0.5 break-words text-sm text-(--color-text-muted)">{{ salon.city }} — {{ salon.address }}</p>
               </div>
             </div>
-            <StatusBadge :label="salonStatusLabel(salon.status).label" :tone="salonStatusLabel(salon.status).tone" />
+            <StatusBadge
+              class="shrink-0"
+              :label="salonStatusLabel(salon.status).label"
+              :tone="salonStatusLabel(salon.status).tone"
+            />
           </div>
 
           <p v-if="salon.description" class="mt-4 text-sm leading-6 text-(--color-text)">{{ salon.description }}</p>
@@ -278,7 +287,7 @@ onMounted(load)
                 <StatusBadge :label="showcaseStatusLabel(story.status).label" :tone="showcaseStatusLabel(story.status).tone" />
                 <StatusBadge v-if="isExpired(story)" data-testid="expired-badge" label="منقضی شده" tone="neutral" />
               </div>
-              <p v-if="story.caption" class="mt-2 text-sm leading-6 text-(--color-text)">{{ story.caption }}</p>
+              <p v-if="story.caption" class="mt-2 break-words text-sm leading-6 text-(--color-text)">{{ story.caption }}</p>
               <p class="tnum mt-2 text-xs text-(--color-text-muted)">{{ formatDate(story.createdAt) }}</p>
               <div class="mt-4 border-t border-(--color-border-soft) pt-3.5">
                 <ShowcaseStatusActions kind="stories" :item-id="story.id" :status="story.status" @updated="loadStories" @refresh="loadStories" />
@@ -320,7 +329,7 @@ onMounted(load)
               <div class="flex flex-wrap items-center gap-2">
                 <StatusBadge :label="showcaseStatusLabel(item.status).label" :tone="showcaseStatusLabel(item.status).tone" />
               </div>
-              <p v-if="item.caption" class="mt-2 text-sm leading-6 text-(--color-text)">{{ item.caption }}</p>
+              <p v-if="item.caption" class="mt-2 break-words text-sm leading-6 text-(--color-text)">{{ item.caption }}</p>
               <p class="tnum mt-2 text-xs text-(--color-text-muted)">{{ formatDate(item.createdAt) }}</p>
               <div class="mt-4 border-t border-(--color-border-soft) pt-3.5">
                 <ShowcaseStatusActions kind="portfolio" :item-id="item.id" :status="item.status" @updated="loadPortfolio" @refresh="loadPortfolio" />

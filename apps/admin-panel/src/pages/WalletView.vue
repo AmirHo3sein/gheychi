@@ -198,12 +198,15 @@ watch(page, load)
           <AppSelect v-model="typeFilter" :options="TYPE_OPTIONS" width="12rem" />
         </div>
 
-        <div>
+        <div class="min-w-0">
           <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">بازه زمانی</label>
-          <div class="flex items-center gap-1.5">
-            <JalaliDatePicker v-model="fromDate" placeholder="از تاریخ" class="w-32" />
+          <!-- See UsersView.vue: the from/to pair is a nested flex row that would otherwise stay
+               one unbreakable ~19rem block, the widest item in this bar. Wrapping only ever
+               engages below that width, so the desk-sized rendering is unchanged. -->
+          <div class="flex flex-wrap items-center gap-1.5">
+            <JalaliDatePicker v-model="fromDate" placeholder="از تاریخ" class="w-40" />
             <span class="text-(--color-text-muted)">تا</span>
-            <JalaliDatePicker v-model="toDate" placeholder="تا تاریخ" class="w-32" />
+            <JalaliDatePicker v-model="toDate" placeholder="تا تاریخ" class="w-40" />
           </div>
         </div>
 

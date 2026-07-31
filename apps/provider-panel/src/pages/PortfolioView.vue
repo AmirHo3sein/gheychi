@@ -109,15 +109,16 @@ async function move(index: number, direction: -1 | 1) {
 </script>
 
 <template>
-  <div class="space-y-4 p-4">
-    <div class="flex items-center justify-between">
+  <div class="mx-auto w-full max-w-5xl space-y-4 p-4 lg:p-6">
+    <!-- flex-wrap: heading + cap meter don't share a 288px row at 320px. -->
+    <div class="flex flex-wrap items-center justify-between gap-2">
       <h1 class="text-lg font-bold text-(--color-text)">نمونه کارها</h1>
       <span data-testid="cap-meter" class="tnum rounded-full bg-(--tone-info-bg) px-3 py-1 text-xs font-semibold text-(--tone-info-text)">
         {{ items.length.toLocaleString('fa-IR') }} از ۴۰ نمونه کار
       </span>
     </div>
 
-    <PhotoUploader endpoint="/salons/mine/portfolio" @uploaded="onUploaded" />
+    <PhotoUploader class="max-w-2xl" endpoint="/salons/mine/portfolio" @uploaded="onUploaded" />
 
     <div v-if="loadError" class="space-y-3 rounded-2xl border border-dashed border-(--color-border) p-4 text-center">
       <p class="text-sm text-(--tone-danger-text)">نمونه کارها بارگذاری نشد.</p>
@@ -132,7 +133,9 @@ async function move(index: number, direction: -1 | 1) {
       <template v-else>
         <EmptyState v-if="items.length === 0" icon="portfolio" message="هنوز نمونه کاری ثبت نشده است." />
 
-        <div v-else class="space-y-3">
+        <!-- Two columns from xl: each row is a fixed 96px thumbnail plus a compact edit
+             column, so one row per line wastes most of a laptop/desktop viewport. -->
+        <div v-else class="grid items-start gap-3 xl:grid-cols-2">
           <div
             v-for="(p, index) in items"
             :key="p.id"
@@ -171,7 +174,10 @@ async function move(index: number, direction: -1 | 1) {
                 <option value="">بدون خدمت مرتبط</option>
                 <option v-for="s in services" :key="s.id" :value="s.id">{{ s.name }}</option>
               </select>
-              <div class="flex items-center justify-between">
+              <!-- Two reorder buttons + delete come to ~143px against the ~156px this column
+                   has at 320px -- inside the margin, but flex-wrap keeps it honest if a
+                   label or icon size ever grows. -->
+              <div class="flex flex-wrap items-center justify-between gap-2">
                 <div class="flex items-center gap-1">
                   <AppButton
                     type="button"

@@ -397,7 +397,7 @@ onMounted(load)
                       />
                     </td>
                     <td class="px-5 py-3.5">
-                      <JalaliDatePicker v-model="editExpiresAt" placeholder="بدون انقضا" class="w-36" />
+                      <JalaliDatePicker v-model="editExpiresAt" placeholder="بدون انقضا" class="w-40" />
                     </td>
                     <td class="px-5 py-3.5">
                       <AppInput

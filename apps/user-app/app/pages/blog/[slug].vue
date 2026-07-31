@@ -117,7 +117,7 @@ const publishedDate = new Date(post.value.publishedAt).toLocaleDateString('fa-IR
       >
         {{ post.categoryName }}
       </NuxtLink>
-      <h1 class="text-2xl font-bold leading-10">{{ post.title }}</h1>
+      <h1 class="text-2xl font-bold leading-10 break-words">{{ post.title }}</h1>
       <p class="text-xs opacity-70">
         <span v-if="post.authorName">{{ post.authorName }} · </span>
         <time :datetime="post.publishedAt">{{ publishedDate }}</time>
@@ -150,6 +150,12 @@ const publishedDate = new Date(post.value.publishedAt).toLocaleDateString('fa-IR
 .article-body {
   font-size: 1rem;
   line-height: 1.9;
+  /* The body is admin-authored markdown rendered with linkify:true, so a bare URL becomes
+     one unbreakable inline token. At 320px that is wider than the 288px column and would
+     scroll the page body sideways -- in RTL, off the left edge. `anywhere` (not
+     `break-word`) is what also shrinks the min-content width, which matters because this
+     text sits inside flex/grid ancestors elsewhere on the page. */
+  overflow-wrap: anywhere;
 }
 .article-body :deep(h1),
 .article-body :deep(h2),
@@ -207,6 +213,23 @@ const publishedDate = new Date(post.value.publishedAt).toLocaleDateString('fa-IR
 .article-body :deep(pre code) {
   background: none;
   padding: 0;
+}
+/* markdown-it's default preset leaves the `table` rule enabled, so an admin can author a
+   GFM table wider than a 320px column. `display: block` turns the table itself into the
+   scroll container (its rows still lay out as a table via anonymous table boxes), so a wide
+   table scrolls inside its own box instead of scrolling the page body. */
+.article-body :deep(table) {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 1em 0;
+}
+.article-body :deep(th),
+.article-body :deep(td) {
+  border: 1px solid var(--color-border);
+  padding: 0.375em 0.75em;
+  text-align: start;
 }
 .article-body :deep(hr) {
   margin: 2em 0;

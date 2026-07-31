@@ -167,7 +167,10 @@ const { titleId: cancelTitleId } = useDialog(cancelDialogRoot, { onClose: closeC
     <BaseCard v-for="booking in bookings" :key="booking.id" data-testid="booking-card" class="space-y-3 text-sm">
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0">
-          <p class="font-bold text-(--color-text)">{{ booking.salonName }} — {{ booking.serviceName }}</p>
+          <!-- The status badge is shrink-0 and up to ~135px wide ("لغو شده توسط سالن"),
+               leaving this line ~110px at 320px -- both halves are provider-authored, so
+               break-words is what keeps a long one inside the card. -->
+          <p class="font-bold break-words text-(--color-text)">{{ booking.salonName }} — {{ booking.serviceName }}</p>
           <p class="mt-1 flex items-center gap-1 text-(--color-text-muted)">
             <BaseIcon name="calendar" :size="14" />
             {{ new Date(booking.startsAt).toLocaleString('fa-IR') }}
@@ -183,13 +186,19 @@ const { titleId: cancelTitleId } = useDialog(cancelDialogRoot, { onClose: closeC
         </span>
       </div>
 
-      <div v-if="booking.status === 'pending_payment'" class="flex items-center justify-between gap-3 rounded-xl bg-(--color-danger-soft) p-3">
-        <span class="flex items-center gap-1.5 text-(--color-danger)">
-          <BaseIcon name="alert-circle" :size="15" />
+      <!-- flex-wrap + shrink-0 on the button: at 320px this row has ~230px for a ~195px
+           warning and a ~100px call to action. Without wrapping the button is the item
+           that gives, and "تکمیل پرداخت" breaks across two lines -- the one control on the
+           card that recovers an unpaid booking, rendered as the least legible thing on it.
+           Wrapping drops it onto its own full-width-ish line instead. -->
+      <div v-if="booking.status === 'pending_payment'" class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-xl bg-(--color-danger-soft) p-3">
+        <span class="flex min-w-0 items-start gap-1.5 text-(--color-danger)">
+          <BaseIcon name="alert-circle" :size="15" class="mt-0.5" />
           پرداخت این نوبت کامل نشده است
         </span>
         <BaseButton
           size="md"
+          class="shrink-0"
           data-testid="retry-payment-button"
           :loading="retryingId === booking.id"
           @click="retryPayment(booking.id)"
@@ -242,7 +251,12 @@ const { titleId: cancelTitleId } = useDialog(cancelDialogRoot, { onClose: closeC
       @close="reviewingBooking = null"
     />
 
-    <div v-if="cancelTarget" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <!-- items-start + my-auto + overflow-y-auto, same reasoning as ReportForm/
+         ReviewPromptModal: a long salon+service line plus the refund-outcome sentence can
+         push this past a landscape phone's ~360px, and centering an overflowing flex item
+         puts its top out of scroll reach. Auto cross-axis margins center when there's room
+         and collapse to zero when there isn't. -->
+    <div v-if="cancelTarget" class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-black/40 p-4">
       <div
         ref="cancelDialogRoot"
         role="dialog"
@@ -250,10 +264,10 @@ const { titleId: cancelTitleId } = useDialog(cancelDialogRoot, { onClose: closeC
         :aria-labelledby="cancelTitleId"
         tabindex="-1"
         data-testid="cancel-confirm-dialog"
-        class="w-full max-w-sm space-y-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-6 shadow-(--shadow-lg) outline-none"
+        class="my-auto w-full max-w-sm space-y-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-6 shadow-(--shadow-lg) outline-none"
       >
         <h2 :id="cancelTitleId" class="text-lg font-bold text-(--color-text)">لغو نوبت</h2>
-        <p class="text-sm text-(--color-text)">{{ cancelTarget.salonName }} — {{ cancelTarget.serviceName }}</p>
+        <p class="text-sm break-words text-(--color-text)">{{ cancelTarget.salonName }} — {{ cancelTarget.serviceName }}</p>
         <p data-testid="cancel-confirm-refund-copy" class="text-sm text-(--color-text-muted)">
           {{ cancelOutcomeText(cancelTarget) }}
         </p>

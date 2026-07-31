@@ -217,7 +217,7 @@ async function updateDiscount(service: Service) {
 </script>
 
 <template>
-  <div class="space-y-4 p-4">
+  <div class="mx-auto w-full max-w-5xl space-y-4 p-4 lg:p-6">
     <h1 class="text-lg font-bold text-(--color-text)">خدمات و قیمت‌ها</h1>
 
     <div v-if="loadError" class="space-y-3 rounded-xl border border-dashed border-(--color-border) p-4 text-center">
@@ -235,42 +235,57 @@ async function updateDiscount(service: Service) {
       <template v-else>
         <EmptyState v-if="services.length === 0" icon="services" message="هنوز خدمتی ثبت نشده است." />
 
-        <AppCard v-for="s in services" :key="s.id" :padded="false" class="space-y-3 p-4">
-          <div class="flex items-center justify-between gap-3">
-            <div class="mb-1.5 flex items-center gap-2">
-              <p class="text-sm font-bold text-(--color-text)">{{ s.name }}</p>
-              <StatusBadge v-if="s.discountPercent" :label="`٪${s.discountPercent} تخفیف`" tone="success" />
+        <!-- Two columns from lg: more of the catalogue visible in one pricing pass instead
+             of one very wide row per service. -->
+        <div v-else class="grid items-start gap-4 lg:grid-cols-2">
+          <AppCard v-for="s in services" :key="s.id" :padded="false" class="space-y-3 p-4">
+            <!--
+              flex-wrap + min-w-0: the name, its discount badge and the ~140px
+              «غیرفعال‌سازی» button together need more than the ~256px a card has at 320px.
+              Wrapping keeps the button reachable and lets a long service name break instead
+              of pushing the row off the (left, in RTL) edge of the page.
+            -->
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex min-w-0 flex-wrap items-center gap-2">
+                <p class="min-w-0 break-words text-sm font-bold text-(--color-text)">{{ s.name }}</p>
+                <StatusBadge v-if="s.discountPercent" :label="`٪${s.discountPercent} تخفیف`" tone="success" />
+              </div>
+              <AppButton type="button" variant="danger" class="shrink-0" data-testid="deactivate-service" @click="deactivate(s)">
+                <template #icon><AppIcon name="x" :size="15" /></template>
+                غیرفعال‌سازی
+              </AppButton>
             </div>
-            <AppButton type="button" variant="danger" data-testid="deactivate-service" @click="deactivate(s)">
-              <template #icon><AppIcon name="x" :size="15" /></template>
-              غیرفعال‌سازی
-            </AppButton>
-          </div>
-          <div class="flex items-center gap-2">
-            <AppInput
-              v-model="priceDrafts[s.id]"
-              label="قیمت (تومان)"
-              type="number"
-              min="1"
-              class="tnum w-32"
-              @change="updatePrice(s)"
-            />
-            <AppInput
-              v-model="discountDrafts[s.id]"
-              label="٪ تخفیف"
-              type="number"
-              min="1"
-              max="100"
-              placeholder="٪ تخفیف"
-              class="tnum w-24"
-              @change="updateDiscount(s)"
-            />
-          </div>
-        </AppCard>
+            <!-- A 2-up grid rather than fixed w-32/w-24 widths: the old fixed widths also
+                 collided with AppInput's own w-full (both land on the <input> via $attrs).
+                 Capped at sm so the two short numeric fields don't stretch across a laptop. -->
+            <div class="grid grid-cols-2 gap-3 sm:max-w-sm">
+              <AppInput
+                v-model="priceDrafts[s.id]"
+                label="قیمت (تومان)"
+                type="number"
+                min="1"
+                class="tnum"
+                @change="updatePrice(s)"
+              />
+              <AppInput
+                v-model="discountDrafts[s.id]"
+                label="٪ تخفیف"
+                type="number"
+                min="1"
+                max="100"
+                placeholder="٪ تخفیف"
+                class="tnum"
+                @change="updateDiscount(s)"
+              />
+            </div>
+          </AppCard>
+        </div>
       </template>
     </template>
 
-    <AppCard class="space-y-3">
+    <!-- A single-column form: capped so its inputs stay a readable width on a laptop
+         instead of spanning the whole container. -->
+    <AppCard class="max-w-2xl space-y-3">
       <h2 class="font-bold text-(--color-text)">افزودن خدمت جدید</h2>
       <AppSelect v-model="newService.categoryId" :options="categoryOptions" placeholder="دسته‌بندی" />
       <AppInput v-model="newService.name" placeholder="نام خدمت" />

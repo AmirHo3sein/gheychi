@@ -41,22 +41,33 @@ function isActive(to: string): boolean {
 }
 </script>
 
+<!-- 16rem rail from `md` up -- the desktop-primary layout this panel is designed for,
+     unchanged. Below `md` a 256px sidebar would leave 64px of content on a 320px screen,
+     clipping every control on the page rather than merely cramping it, so it narrows to an
+     icon-only rail there. Deliberately NOT an off-canvas drawer: navigation stays
+     permanently visible and this app stays desktop-primary (PRODUCT.md). -->
 <template>
-  <nav class="flex h-screen w-64 shrink-0 flex-col border-l border-(--color-border) bg-(--color-surface-card) py-4">
-    <div class="flex-1 space-y-1 overflow-y-auto px-3">
+  <nav class="flex h-screen w-16 shrink-0 flex-col border-e border-(--color-border) bg-(--color-surface-card) py-4 md:w-64">
+    <div class="flex-1 space-y-1 overflow-y-auto px-2 md:px-3">
       <RouterLink
         v-for="link in LINKS"
         :key="link.to"
         :to="link.to"
-        class="group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text)"
+        :title="link.label"
+        :aria-label="link.label"
+        class="group relative flex min-h-11 items-center justify-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text) md:min-h-0 md:justify-start"
         :class="isActive(link.to) && 'bg-(--tone-info-bg) font-bold text-(--color-accent) hover:bg-(--tone-info-bg) hover:text-(--color-accent)'"
       >
+        <!-- Logical `start-0`, not `right-0`: identical in this RTL-only app, but an
+             inset/overflow bug in RTL escapes to the LEFT, which is easy to miss. -->
         <span
           v-if="isActive(link.to)"
-          class="absolute right-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-full bg-(--color-accent)"
+          class="absolute start-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-full bg-(--color-accent)"
         />
-        <AppIcon :name="link.icon" :size="19" />
-        {{ link.label }}
+        <AppIcon :name="link.icon" :size="19" class="shrink-0" />
+        <!-- Hidden, not dropped, on the icon rail -- `title`/`aria-label` above carry the
+             accessible name so a collapsed link is never anonymous. -->
+        <span class="hidden md:inline">{{ link.label }}</span>
       </RouterLink>
     </div>
   </nav>

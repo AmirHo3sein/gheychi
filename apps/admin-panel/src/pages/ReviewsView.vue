@@ -156,9 +156,17 @@ watch(page, load)
     <EmptyState v-else-if="reviews.length === 0" icon="reviews" message="نظری با این فیلترها یافت نشد." />
 
     <div v-else class="space-y-3">
-      <AppCard v-for="review in reviews" :key="review.id">
+      <!-- break-words on the card, not on each <p>: overflow-wrap is inherited, and every piece
+           of text below (salon name, comment, salon reply) is customer-supplied. A single
+           unbroken token -- a pasted URL in a review, a run-on Persian word -- would otherwise
+           push the card past the page. Only engages when a line genuinely can't fit, so normal
+           text renders identically. -->
+      <AppCard v-for="review in reviews" :key="review.id" class="break-words">
         <div class="flex items-start justify-between gap-4">
-          <div>
+          <!-- min-w-0: a flex item won't shrink below its longest word without it, and
+               overflow-wrap:break-word deliberately doesn't feed back into that intrinsic
+               minimum -- so the pair is what actually keeps a long salon name inside the card. -->
+          <div class="min-w-0">
             <div class="flex items-center gap-1 text-(--color-accent)">
               <AppIcon
                 v-for="n in 5"

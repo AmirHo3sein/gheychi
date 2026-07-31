@@ -172,10 +172,13 @@ watch(page, load)
         />
         <fieldset class="min-w-0 border-0 p-0">
           <legend class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">بازه زمانی</legend>
-          <div class="flex items-center gap-1.5">
-            <JalaliDatePicker v-model="fromDate" placeholder="از تاریخ" class="w-32" />
+          <!-- See UsersView.vue: the from/to pair is a nested flex row that would otherwise stay
+               one unbreakable ~19rem block, the widest item in this bar. Wrapping only ever
+               engages below that width, so the desk-sized rendering is unchanged. -->
+          <div class="flex flex-wrap items-center gap-1.5">
+            <JalaliDatePicker v-model="fromDate" placeholder="از تاریخ" class="w-40" />
             <span class="text-(--color-text-muted)">تا</span>
-            <JalaliDatePicker v-model="toDate" placeholder="تا تاریخ" class="w-32" />
+            <JalaliDatePicker v-model="toDate" placeholder="تا تاریخ" class="w-40" />
           </div>
           <p v-if="dateRangeInverted" class="mt-1.5 text-xs text-(--color-danger)">
             تاریخ پایان باید بعد از تاریخ شروع باشد.
@@ -217,67 +220,79 @@ watch(page, load)
         >
           <AppIcon name="spinner" :size="22" class="animate-spin text-(--color-text-muted)" />
         </div>
-        <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
-          <thead>
-            <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
-              <th class="px-5 py-3 font-semibold">زمان</th>
-              <th class="px-5 py-3 font-semibold">مدیر</th>
-              <th class="px-5 py-3 font-semibold">اقدام</th>
-              <th class="px-5 py-3 font-semibold">هدف</th>
-              <th class="px-5 py-3 font-semibold">جزئیات</th>
-              <th class="px-5 py-3 font-semibold">نتیجه</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="row in rows"
-              :key="row.id"
-              class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
-            >
-              <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDateTime(row.createdAt) }}</td>
-              <td class="px-5 py-3.5">
-                <p class="font-semibold text-(--color-text)">{{ row.actorName ?? '—' }}</p>
-                <p class="tnum text-xs text-(--color-text-muted)">{{ row.actorPhone }}</p>
-              </td>
-              <td class="px-5 py-3.5">
-                <StatusBadge :label="auditActionLabel(row.action).label" :tone="auditActionLabel(row.action).tone" />
-              </td>
-              <td class="px-5 py-3.5">
-                <RouterLink
-                  v-if="targetLink(row)"
-                  :to="targetLink(row)!"
-                  class="font-semibold text-(--color-text) hover:text-(--color-accent)"
-                >
-                  {{ targetTypeLabel(row.targetType) }}
-                </RouterLink>
-                <span v-else class="text-(--color-text-muted)">{{ targetTypeLabel(row.targetType) }}</span>
-                <p v-if="row.targetId" dir="ltr" class="tnum text-right text-xs text-(--color-text-muted)">
-                  {{ row.targetId.slice(0, 8) }}…
-                </p>
-              </td>
-              <td data-testid="payload-cell" class="px-5 py-3.5">
-                <!-- Text interpolation only (never v-html) -- payloads contain user-supplied text. -->
-                <details v-if="row.payload" data-testid="payload-details">
-                  <summary class="cursor-pointer text-xs font-semibold text-(--color-text-muted) transition-colors hover:text-(--color-text)">
-                    نمایش
-                  </summary>
-                  <pre
-                    dir="ltr"
-                    class="mt-1.5 max-h-40 max-w-64 overflow-x-auto overflow-y-auto rounded-2xl bg-(--color-border-soft) p-2 text-left text-xs text-(--color-text-muted)"
-                  >{{ formatPayload(row.payload) }}</pre>
-                </details>
-                <span v-else class="text-(--color-text-muted)">—</span>
-              </td>
-              <td class="px-5 py-3.5">
-                <StatusBadge
-                  data-testid="success-badge"
-                  :label="row.success ? 'موفق' : 'ناموفق'"
-                  :tone="row.success ? 'success' : 'danger'"
-                />
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <!-- The table gets its OWN horizontal scroller (CouponsView.vue's idiom). Without it a
+             table narrower than its min-content width doesn't shrink -- it overflows the card,
+             and AppCard's overflow-hidden (there for the rounded corners) then CLIPS the
+             trailing columns. This is the widest table in the app (six columns, one of them a
+             payload block), so it is the first to need the scroller. Desktop is untouched: no
+             scrollbar exists while the table fits, which is the ≥1280px case this app
+             optimizes for. -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
+            <thead>
+              <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
+                <th class="px-5 py-3 font-semibold">زمان</th>
+                <th class="px-5 py-3 font-semibold">مدیر</th>
+                <th class="px-5 py-3 font-semibold">اقدام</th>
+                <th class="px-5 py-3 font-semibold">هدف</th>
+                <th class="px-5 py-3 font-semibold">جزئیات</th>
+                <th class="px-5 py-3 font-semibold">نتیجه</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="row in rows"
+                :key="row.id"
+                class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
+              >
+                <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDateTime(row.createdAt) }}</td>
+                <td class="px-5 py-3.5">
+                  <p class="font-semibold text-(--color-text)">{{ row.actorName ?? '—' }}</p>
+                  <p class="tnum text-xs text-(--color-text-muted)">{{ row.actorPhone }}</p>
+                </td>
+                <td class="px-5 py-3.5">
+                  <StatusBadge :label="auditActionLabel(row.action).label" :tone="auditActionLabel(row.action).tone" />
+                </td>
+                <td class="px-5 py-3.5">
+                  <RouterLink
+                    v-if="targetLink(row)"
+                    :to="targetLink(row)!"
+                    class="font-semibold text-(--color-text) hover:text-(--color-accent)"
+                  >
+                    {{ targetTypeLabel(row.targetType) }}
+                  </RouterLink>
+                  <span v-else class="text-(--color-text-muted)">{{ targetTypeLabel(row.targetType) }}</span>
+                  <p v-if="row.targetId" dir="ltr" class="tnum text-right text-xs text-(--color-text-muted)">
+                    {{ row.targetId.slice(0, 8) }}…
+                  </p>
+                </td>
+                <td data-testid="payload-cell" class="px-5 py-3.5">
+                  <!-- Text interpolation only (never v-html) -- payloads contain user-supplied text. -->
+                  <details v-if="row.payload" data-testid="payload-details">
+                    <summary class="cursor-pointer text-xs font-semibold text-(--color-text-muted) transition-colors hover:text-(--color-text)">
+                      نمایش
+                    </summary>
+                    <!-- max-w-64 caps the column's contribution to the table's min-content width;
+                         the pre keeps its own inner scroller so a long payload line still can't
+                         widen the row. -->
+                    <pre
+                      dir="ltr"
+                      class="mt-1.5 max-h-40 max-w-64 overflow-x-auto overflow-y-auto rounded-2xl bg-(--color-border-soft) p-2 text-left text-xs text-(--color-text-muted)"
+                    >{{ formatPayload(row.payload) }}</pre>
+                  </details>
+                  <span v-else class="text-(--color-text-muted)">—</span>
+                </td>
+                <td class="px-5 py-3.5">
+                  <StatusBadge
+                    data-testid="success-badge"
+                    :label="row.success ? 'موفق' : 'ناموفق'"
+                    :tone="row.success ? 'success' : 'danger'"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
       <Pagination :page="page" :page-size="pageSize" :total="total" @update:page="(p) => (page = p)" />
     </AppCard>

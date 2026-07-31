@@ -17,7 +17,16 @@ function go(page: number) {
 </script>
 
 <template>
-  <div v-if="total > 0" class="flex items-center justify-between border-t border-(--color-border-soft) px-5 py-3">
+  <!-- flex-wrap, not a breakpoint: this bar is a sibling of the table's scroll container, so
+       unlike the table it has to FIT its card -- every card that hosts it sets overflow-hidden
+       for its rounded corners, which would clip the next-page button rather than scroll to it.
+       Wrapping to a second line is the only outcome that keeps both controls reachable. No
+       effect from ~300px up (both groups fit on one line and justify-between still spreads
+       them), so the desktop rendering is byte-identical. -->
+  <div
+    v-if="total > 0"
+    class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-(--color-border-soft) px-5 py-3"
+  >
     <p class="tnum text-xs text-(--color-text-muted)">{{ rangeStart }}–{{ rangeEnd }} از {{ total }}</p>
     <div class="flex items-center gap-1">
       <button

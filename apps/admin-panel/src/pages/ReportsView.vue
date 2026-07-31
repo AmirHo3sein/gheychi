@@ -144,9 +144,17 @@ watch(page, load)
     <EmptyState v-else-if="reports.length === 0" icon="flag" message="گزارشی با این وضعیت وجود ندارد." />
 
     <div v-else class="space-y-3">
-      <AppCard v-for="report in reports" :key="report.id" data-testid="report-card">
+      <!-- break-words on the card, not on each <p>: overflow-wrap is inherited, and nearly every
+           string below (salon name, report reason, quoted review text, story/portfolio captions,
+           the admin's own resolution note) is free text someone typed. One unbroken token -- a
+           pasted URL in a report -- would otherwise push the card past the page. Only engages
+           when a line genuinely can't fit, so normal text renders identically. -->
+      <AppCard v-for="report in reports" :key="report.id" data-testid="report-card" class="break-words">
         <div class="flex items-start justify-between gap-4">
-          <div class="flex flex-wrap items-center gap-2 text-sm">
+          <!-- min-w-0: a flex item won't shrink below its longest word without it, and
+               overflow-wrap:break-word deliberately doesn't feed back into that intrinsic
+               minimum -- so the pair is what actually keeps a long salon name inside the card. -->
+          <div class="flex min-w-0 flex-wrap items-center gap-2 text-sm">
             <span class="tnum font-semibold text-(--color-text)">{{ report.reporterPhone }}</span>
             <span class="text-(--color-text-muted)">درباره</span>
             <RouterLink :to="`/salons/${report.salonId}`" class="font-semibold text-(--color-accent-text) hover:opacity-80">

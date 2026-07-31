@@ -143,8 +143,10 @@ watch(confirming, async (isConfirming) => {
 onMounted(load)
 </script>
 
+<!-- p-8 from `sm` up (unchanged); 32px of gutter on each side of a 320px screen is a
+     quarter of the usable width, so it relaxes to p-4 below that. -->
 <template>
-  <div class="mx-auto max-w-2xl space-y-5 p-8">
+  <div class="mx-auto max-w-2xl space-y-5 p-4 sm:p-8">
     <div v-if="loading" data-testid="config-loading" class="flex items-center justify-center gap-2 py-16 text-sm text-(--color-text-muted)">
       <AppIcon name="spinner" :size="20" class="animate-spin" />
       در حال بارگذاری تنظیمات…
@@ -162,8 +164,11 @@ onMounted(load)
 
     <template v-else-if="!confirming">
       <AppCard :padded="false">
-        <div v-for="(row, i) in rows" :key="row.key" class="flex items-center justify-between gap-4 px-5 py-4" :class="i > 0 && 'border-t border-(--color-border-soft)'">
-          <div>
+        <!-- flex-wrap: the label column plus the fixed 96px field + unit is ~250px of
+             unshrinkable content, so below `sm` the field drops under its label instead of
+             the row overflowing the card. One line, exactly as today, from `sm` up. -->
+        <div v-for="(row, i) in rows" :key="row.key" class="flex flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-5" :class="i > 0 && 'border-t border-(--color-border-soft)'">
+          <div class="min-w-0">
             <p class="text-sm font-semibold text-(--color-text)">{{ configKeyMeta(row.key).label }}</p>
             <p v-if="configKeyMeta(row.key).hint" class="mt-0.5 text-xs text-(--color-text-muted)">{{ configKeyMeta(row.key).hint }}</p>
           </div>
@@ -195,17 +200,17 @@ onMounted(load)
           v-for="(row, i) in changedRows"
           :key="row.key"
           data-testid="config-confirm-row"
-          class="flex items-center justify-between gap-4 px-5 py-4"
+          class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-4 sm:px-5"
           :class="i > 0 && 'border-t border-(--color-border-soft)'"
         >
-          <p class="text-sm font-semibold text-(--color-text)">{{ configKeyMeta(row.key).label }}</p>
-          <p class="tnum text-sm text-(--color-text-muted)">
+          <p class="min-w-0 text-sm font-semibold text-(--color-text)">{{ configKeyMeta(row.key).label }}</p>
+          <p class="tnum min-w-0 text-sm text-(--color-text-muted)">
             از <span class="font-semibold text-(--color-text)">{{ originalValueOf(row.key)?.toLocaleString('fa-IR') }} {{ configKeyMeta(row.key).unit }}</span>
             به <span class="font-semibold text-(--tone-warning-text)">{{ row.value.toLocaleString('fa-IR') }} {{ configKeyMeta(row.key).unit }}</span>
           </p>
         </div>
       </AppCard>
-      <div class="flex gap-2.5">
+      <div class="flex flex-wrap gap-2.5">
         <AppButton type="button" data-testid="config-confirm-submit" :disabled="saving" :loading="saving" @click="confirmSave">
           تایید و ذخیره
         </AppButton>

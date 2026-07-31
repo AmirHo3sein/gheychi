@@ -215,4 +215,16 @@ describe('SalonsView', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock).toHaveBeenCalledWith('/admin/salons?status=pending&page=1&pageSize=20', { silent: true })
   })
+
+  // Regression guard. The table used to sit directly inside AppCard's overflow-hidden box, so
+  // the moment its min-content width exceeded the card the trailing columns were CLIPPED, not
+  // scrolled to. The wrapper has to stay the table's DIRECT parent -- an overflow-x-auto further
+  // up the tree would let an intermediate box overflow first and defeat the point.
+  it('keeps the table inside its own horizontal scroll container', async () => {
+    fetchMock.mockResolvedValue({ data: { items: [{ ...salon }], total: 1, page: 1, pageSize: 20 }, error: null })
+    const wrapper = mount(SalonsView, mountOptions)
+    await flushPromises()
+
+    expect(wrapper.get('table').element.parentElement?.className).toContain('overflow-x-auto')
+  })
 })

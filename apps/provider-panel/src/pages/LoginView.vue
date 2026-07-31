@@ -78,7 +78,7 @@ async function verifyOtp() {
 </script>
 
 <template>
-  <div class="relative flex min-h-screen items-center justify-center overflow-hidden bg-(--color-surface) p-6">
+  <div class="relative flex min-h-dvh items-center justify-center overflow-hidden bg-(--color-surface) p-4 sm:p-6">
     <div class="mesh-a pointer-events-none absolute -top-20 -start-10 h-72 w-72 rounded-full bg-(--color-accent) opacity-20 blur-[90px]" />
     <div class="mesh-b pointer-events-none absolute -bottom-24 -end-10 h-72 w-72 rounded-full bg-(--tone-warning-text) opacity-20 blur-[90px]" />
 

@@ -193,10 +193,14 @@ async function submit() {
 </script>
 
 <template>
-  <div class="mx-auto max-w-md p-6">
-    <div class="mb-6 flex items-center justify-between">
-      <div class="w-9" />
-      <div class="flex flex-col items-center text-center">
+  <!-- p-4 at 320px: 48px of page padding on a 320px screen is a sixth of the viewport.
+       max-w-xl from sm gives the step-1 map picker and its coordinate fields room to be
+       usable in the desktop setup session PRODUCT.md calls out. -->
+  <div class="mx-auto w-full max-w-md p-4 sm:max-w-xl sm:p-6">
+    <div class="mb-6 flex items-center justify-between gap-2">
+      <!-- Mirrors the logout button's footprint so the title stays optically centred. -->
+      <div class="w-11 shrink-0" />
+      <div class="flex min-w-0 flex-col items-center text-center">
         <div class="mb-2 flex h-11 w-11 items-center justify-center rounded-2xl bg-(--color-accent) text-lg font-black text-white shadow-(--shadow-sm)">
           آ
         </div>
@@ -206,16 +210,18 @@ async function submit() {
         type="button"
         title="خروج"
         data-testid="onboarding-logout"
-        class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-(--color-text-muted) transition-colors hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text)"
+        class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-(--color-text-muted) transition-colors hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text)"
         @click="logout"
       >
         <AppIcon name="logout" :size="18" />
       </button>
     </div>
 
-    <div class="mb-6 flex items-center gap-2">
+    <!-- gap-1 at 320px: with three labelled steps and two connectors, gap-2 spent 16px of a
+         272px row on whitespace. -->
+    <div class="mb-6 flex items-center gap-1 sm:gap-2">
       <template v-for="(label, i) in STEP_LABELS" :key="label">
-        <div class="flex flex-1 flex-col items-center gap-1.5">
+        <div class="flex min-w-0 flex-1 flex-col items-center gap-1.5">
           <div
             class="flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition-colors"
             :class="
@@ -229,7 +235,7 @@ async function submit() {
             <AppIcon v-if="i + 1 < step" name="check" :size="14" />
             <span v-else>{{ i + 1 }}</span>
           </div>
-          <span class="text-[11px] text-(--color-text-muted)">{{ label }}</span>
+          <span class="text-center text-[11px] text-balance text-(--color-text-muted)">{{ label }}</span>
         </div>
         <div v-if="i < STEP_LABELS.length - 1" class="mb-4 h-px flex-1 bg-(--color-border)" />
       </template>
@@ -238,7 +244,7 @@ async function submit() {
     <div
       ref="stepCard"
       tabindex="-1"
-      class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-5 shadow-(--shadow-sm) focus:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40"
+      class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 shadow-(--shadow-sm) focus:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 sm:p-5"
     >
       <SalonInfoStep v-if="step === 1" v-model="form.salonInfo" />
       <ScheduleStep v-else-if="step === 2" v-model="form.hours" :invalid-weekdays="hoursValidation.invalid" />
@@ -250,7 +256,7 @@ async function submit() {
       {{ submitError }}
     </p>
 
-    <div class="mt-4 flex justify-between gap-3">
+    <div class="mt-4 flex flex-wrap justify-between gap-3">
       <AppButton v-if="step > 1" type="button" variant="secondary" @click="back">
         قبلی
       </AppButton>

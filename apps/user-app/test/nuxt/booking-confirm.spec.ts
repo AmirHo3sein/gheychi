@@ -393,6 +393,28 @@ describe('booking confirm page', () => {
     expect(alertEl!.attributes('aria-live')).toBe('assertive')
   })
 
+  // Layout regression guard for the money path at 320px (PRODUCT.md's hard floor: budget
+  // Android). A flex item's automatic minimum size is its min-content width, and an
+  // <input>'s min-content width is its intrinsic `size` default (~180px in Chrome), NOT the
+  // `w-full` it is styled with -- percentages resolve to auto during intrinsic sizing. So
+  // without min-w-0 the coupon field refuses to shrink below ~210px, which together with
+  // the "اعمال" button overflows the card's ~254px content box and scrolls the page body
+  // sideways (leftward, in RTL). happy-dom has no layout engine, so the two classes that
+  // carry the fix are pinned directly.
+  it('lets the coupon field shrink and keeps the apply button whole (no sideways scroll at 320px)', async () => {
+    stubPageLoad('success')
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+
+    const fieldWrapper = wrapper.find('input').element.closest('[role="alert"]')!
+    expect(fieldWrapper.classList.contains('min-w-0')).toBe(true)
+
+    const applyButton = wrapper.findAll('button').find((b: DOMWrapper<Element>) => b.text() === 'اعمال')!
+    expect(applyButton.classes()).toContain('shrink-0')
+  })
+
   it('marks the coupon field as an assertive live region and the coupon-success message as polite', async () => {
     stubPageLoad('success', {
       valid: true,

@@ -170,7 +170,7 @@ async function submitReason() {
         class="w-full rounded-xl border border-(--color-text-muted) p-3 text-sm"
       />
       <p v-if="reasonError" data-testid="reason-error" class="text-sm text-(--tone-danger-text)">وارد کردن دلیل الزامی است.</p>
-      <div class="flex gap-2.5">
+      <div class="flex flex-wrap gap-2.5">
         <AppButton
           data-testid="reject-submit"
           type="button"

@@ -269,7 +269,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: close, enabled: () => !repo
         type="button"
         data-testid="story-close"
         aria-label="بستن"
-        class="absolute top-2 start-2 z-10 rounded-full bg-black/50 p-1.5 text-white"
+        class="absolute top-2 start-2 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-white"
         @click="close"
       >
         <BaseIcon name="x" :size="18" />
@@ -281,19 +281,19 @@ const { titleId } = useDialog(dialogRoot, { onClose: close, enabled: () => !repo
         v-if="canReport"
         type="button"
         data-testid="story-report-button"
-        class="absolute top-2 end-2 z-10 rounded-full bg-black/50 px-3 py-1 text-xs text-white/80"
+        class="absolute top-2 end-2 z-10 inline-flex min-h-11 items-center rounded-full bg-black/50 px-3 text-xs text-white/80"
         @click="openReport"
       >
         گزارش
       </button>
 
       <div class="absolute inset-x-0 bottom-0 z-10 space-y-2 p-4 text-center">
-        <p v-if="current.caption" data-testid="story-caption" class="text-sm text-white">{{ current.caption }}</p>
+        <p v-if="current.caption" data-testid="story-caption" class="text-sm break-words text-white">{{ current.caption }}</p>
         <NuxtLink
           v-if="currentService"
           :to="`/booking/${slug}/${currentService.id}`"
           data-testid="story-booking-pill"
-          class="inline-block rounded-full bg-(--color-accent) px-4 py-2 text-sm font-semibold text-white"
+          class="inline-flex min-h-11 items-center rounded-full bg-(--color-accent) px-4 text-sm font-semibold text-white"
         >
           رزرو این خدمت
         </NuxtLink>

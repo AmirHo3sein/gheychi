@@ -88,10 +88,14 @@ function formatBookingTime(iso: string): string {
 </script>
 
 <template>
-  <div class="mx-auto max-w-3xl space-y-6 p-4">
+  <div class="mx-auto w-full max-w-5xl space-y-6 p-4 lg:p-6">
     <h1 class="text-lg font-bold text-(--color-text)">داشبورد</h1>
 
-    <div class="grid grid-cols-3 gap-2">
+    <!-- These seven tiles are the only route to the screens the nav bar doesn't carry, so
+         they matter at every width: 3-up on a phone (90px tiles at 320px, enough for a
+         two-line label), then more columns rather than taller tiles as the viewport grows,
+         landing on a single 7-across row on a laptop. -->
+    <div class="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-7 lg:gap-3">
       <RouterLink
         v-for="link in QUICK_LINKS"
         :key="link.to"
@@ -101,7 +105,7 @@ function formatBookingTime(iso: string): string {
         <div class="flex h-9 w-9 items-center justify-center rounded-full bg-(--tone-info-bg) text-(--color-text-muted)">
           <AppIcon :name="link.icon" :size="18" />
         </div>
-        <span class="text-xs font-semibold text-(--color-text)">{{ link.label }}</span>
+        <span class="px-1 text-center text-xs font-semibold text-balance text-(--color-text)">{{ link.label }}</span>
       </RouterLink>
     </div>
 
@@ -112,7 +116,9 @@ function formatBookingTime(iso: string): string {
       </AppButton>
     </div>
 
-    <template v-else>
+    <!-- Today and next-up sit side by side from lg: the between-clients phone check reads
+         them in sequence, but a desktop session should see both without scrolling. -->
+    <div v-else class="grid gap-6 lg:grid-cols-2 lg:items-start">
       <section>
         <h2 class="mb-2 flex items-center gap-2 text-sm font-bold text-(--color-text)">
           <AppIcon name="bookings" :size="16" class="text-(--color-text-muted)" />
@@ -124,9 +130,9 @@ function formatBookingTime(iso: string): string {
         <EmptyState v-else-if="todaysBookings.length === 0" icon="bookings" message="نوبتی برای امروز ثبت نشده است." />
         <div v-else class="space-y-2">
           <AppCard v-for="b in todaysBookings" :key="b.id" :padded="false" class="p-3">
-            <div class="flex items-center justify-between">
-              <p class="text-sm font-semibold text-(--color-text)">{{ serviceName(b.serviceId) }}</p>
-              <p class="tnum text-sm font-bold text-(--color-accent-text)">{{ formatBookingTime(b.startsAt) }}</p>
+            <div class="flex items-center justify-between gap-2">
+              <p class="min-w-0 break-words text-sm font-semibold text-(--color-text)">{{ serviceName(b.serviceId) }}</p>
+              <p class="tnum shrink-0 text-sm font-bold text-(--color-accent-text)">{{ formatBookingTime(b.startsAt) }}</p>
             </div>
           </AppCard>
         </div>
@@ -143,13 +149,13 @@ function formatBookingTime(iso: string): string {
         <EmptyState v-else-if="upcomingBookings.length === 0" icon="bookings" message="نوبت بعدی ثبت نشده است." />
         <div v-else class="space-y-2">
           <AppCard v-for="b in upcomingBookings" :key="b.id" :padded="false" class="p-3">
-            <div class="flex items-center justify-between">
-              <p class="text-sm font-semibold text-(--color-text)">{{ serviceName(b.serviceId) }}</p>
-              <p class="tnum text-sm text-(--color-text-muted)">{{ new Date(b.startsAt).toLocaleDateString('fa-IR') }}</p>
+            <div class="flex items-center justify-between gap-2">
+              <p class="min-w-0 break-words text-sm font-semibold text-(--color-text)">{{ serviceName(b.serviceId) }}</p>
+              <p class="tnum shrink-0 text-sm text-(--color-text-muted)">{{ new Date(b.startsAt).toLocaleDateString('fa-IR') }}</p>
             </div>
           </AppCard>
         </div>
       </section>
-    </template>
+    </div>
   </div>
 </template>

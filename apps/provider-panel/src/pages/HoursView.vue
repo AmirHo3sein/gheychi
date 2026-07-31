@@ -109,7 +109,7 @@ function exceptionDateLabel(e: ScheduleException): string {
 </script>
 
 <template>
-  <div class="space-y-6 p-4">
+  <div class="mx-auto w-full max-w-5xl space-y-6 p-4 lg:p-6">
     <h1 class="text-lg font-bold text-(--color-text)">ساعات کاری</h1>
 
     <div v-if="loadError" class="space-y-3 rounded-2xl border border-dashed border-(--color-border) p-4 text-center">
@@ -117,7 +117,10 @@ function exceptionDateLabel(e: ScheduleException): string {
       <AppButton type="button" variant="secondary" data-testid="retry-hours" @click="loadAll">تلاش دوباره</AppButton>
     </div>
 
-    <template v-else>
+    <!-- Two independent setup surfaces. Stacked on phone/tablet-portrait; side by side from
+         lg, so a desktop setup session sees the whole week and its exceptions at once
+         rather than a narrow column with most of a 1920px screen left empty. -->
+    <div v-else class="grid gap-6 lg:grid-cols-2 lg:items-start">
       <section>
         <h2 class="mb-2 text-sm font-bold text-(--color-text)">ساعات کاری هفتگی</h2>
         <div
@@ -154,23 +157,27 @@ function exceptionDateLabel(e: ScheduleException): string {
           در حال بارگذاری…
         </div>
         <template v-else>
-          <div class="flex gap-2">
-            <AppInput v-model="newExceptionDate" label="تاریخ تعطیلی" type="date" class="tnum flex-1" />
-            <AppButton type="button" variant="secondary" aria-label="افزودن تعطیلی" @click="addException">
+          <!-- items-end, not the default stretch: the AppInput carries a label above its
+               field, so a stretched button would centre itself against label+field and sit
+               visibly above the input it belongs to. min-w-0 lets the date field shrink to
+               the 320px row instead of forcing it wider. -->
+          <div class="flex items-end gap-2">
+            <AppInput v-model="newExceptionDate" label="تاریخ تعطیلی" type="date" class="tnum min-w-0 flex-1" />
+            <AppButton type="button" variant="secondary" class="shrink-0" aria-label="افزودن تعطیلی" @click="addException">
               <AppIcon name="plus" :size="16" />
             </AppButton>
           </div>
           <EmptyState v-if="exceptions.length === 0" icon="hours" message="تعطیلی موردی ثبت نشده است." class="mt-3" />
           <div v-else class="mt-3 space-y-2">
-            <AppCard v-for="e in exceptions" :key="e.id" :padded="false" class="flex items-center justify-between p-3">
-              <span class="tnum text-sm text-(--color-text)">{{ exceptionDateLabel(e) }}</span>
-              <AppButton type="button" variant="danger" aria-label="حذف تعطیلی" @click="removeException(e.id)">
+            <AppCard v-for="e in exceptions" :key="e.id" :padded="false" class="flex items-center justify-between gap-2 p-3">
+              <span class="tnum min-w-0 text-sm text-(--color-text)">{{ exceptionDateLabel(e) }}</span>
+              <AppButton type="button" variant="danger" class="shrink-0" aria-label="حذف تعطیلی" @click="removeException(e.id)">
                 <AppIcon name="trash" :size="16" />
               </AppButton>
             </AppCard>
           </div>
         </template>
       </section>
-    </template>
+    </div>
   </div>
 </template>

@@ -127,7 +127,10 @@ useSeoMeta({
           </div>
           <div class="space-y-1 p-3 text-sm">
             <p v-if="post.categoryName" class="text-xs text-(--color-accent-strong)">{{ post.categoryName }}</p>
-            <h2 class="font-bold text-(--color-text)">{{ post.title }}</h2>
+            <!-- BaseCard here is overflow-hidden, so an unbreakable title doesn't scroll
+                 the body -- it gets silently clipped instead, which loses meaning. Let it
+                 break. -->
+            <h2 class="font-bold break-words text-(--color-text)">{{ post.title }}</h2>
             <p v-if="post.excerpt" class="line-clamp-2 text-(--color-text-muted)">{{ post.excerpt }}</p>
             <p class="text-xs text-(--color-text-muted)">
               <span v-if="post.authorName">{{ post.authorName }} · </span>

@@ -275,4 +275,20 @@ describe('SalonSettingsView', () => {
       body: expect.objectContaining({ lat: 36.1, lng: 51.4 }),
     })
   })
+  // Layout regression. The handle field sits in a `flex ... overflow-hidden` row behind an
+  // unbreakable ~130px "instagram.com/" prefix. An <input> has a ~20-character intrinsic
+  // minimum width that flex will not shrink past, so at 320px the field was pushed out of
+  // the row and CLIPPED by the wrapper -- an unreachable control. min-w-0 is the fix.
+  it('lets the instagram handle field shrink behind its prefix instead of being clipped', async () => {
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null })
+    const wrapper = mount(SalonSettingsView)
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const input = wrapper.get('[data-testid="instagram-handle"]')
+    expect(input.classes()).toContain('min-w-0')
+    // The prefix keeps its full width; the field takes whatever is left.
+    const prefix = input.element.parentElement!.querySelector('span')!
+    expect(prefix.className).toContain('shrink-0')
+  })
 })

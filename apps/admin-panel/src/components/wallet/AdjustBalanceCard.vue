@@ -244,7 +244,7 @@ async function submit() {
         </li>
         <li class="whitespace-pre-wrap"><span class="font-semibold">دلیل:</span> {{ reason }}</li>
       </ul>
-      <div class="flex gap-2.5">
+      <div class="flex flex-wrap gap-2.5">
         <AppButton type="button" data-testid="adjust-confirm-submit" :disabled="submitting" @click="submit">
           تایید و ثبت
         </AppButton>

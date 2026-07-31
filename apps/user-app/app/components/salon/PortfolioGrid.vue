@@ -68,23 +68,32 @@ const { titleId } = useDialog(dialogRoot, { onClose: closeLightbox, enabled: () 
           class="aspect-square w-full rounded-xl object-cover"
           :alt="item.caption || 'نمونه کار سالن'"
         />
-        <p v-if="item.caption" class="mt-1 text-xs text-(--color-text-muted)">{{ item.caption }}</p>
+        <!-- A grid track is minmax(0, 1fr) so the box shrinks fine, but a caption with a
+             long unbreakable run would still spill out of it (~122px wide at 320px). -->
+        <p v-if="item.caption" class="mt-1 text-xs break-words text-(--color-text-muted)">{{ item.caption }}</p>
       </button>
     </div>
 
     <div
       v-if="lightboxItem"
       data-testid="portfolio-lightbox"
-      class="fixed inset-0 bg-black/80 flex items-center justify-center overscroll-contain p-4 z-50"
+      class="fixed inset-0 bg-black/80 flex items-start justify-center overflow-y-auto overscroll-contain p-4 z-50"
       @click.self="closeLightbox"
     >
+      <!-- items-start + my-auto, not items-center: on a short viewport (a phone held in
+           landscape, ~360px tall) the 70vh image plus caption, booking pill, report link
+           and close button are taller than the overlay, and `items-center` on an
+           overflowing flex container pushes the excess off BOTH ends -- the top is then
+           unreachable by scrolling and "بستن" sits below the fold with no way to reach it.
+           A cross-axis auto margin centers exactly the same way when there IS free space
+           and collapses to zero when there isn't, so the overlay just scrolls instead. -->
       <div
         ref="dialogRoot"
         role="dialog"
         aria-modal="true"
         :aria-labelledby="titleId"
         tabindex="-1"
-        class="w-full max-w-sm space-y-3 text-center outline-none"
+        class="my-auto w-full max-w-sm space-y-3 text-center outline-none"
       >
         <h2 :id="titleId" class="sr-only">نمایش نمونه کار</h2>
         <NuxtImg
@@ -95,12 +104,12 @@ const { titleId } = useDialog(dialogRoot, { onClose: closeLightbox, enabled: () 
           class="max-h-[70vh] w-full rounded-xl object-contain"
           :alt="lightboxItem.caption || 'نمونه کار سالن'"
         />
-        <p v-if="lightboxItem.caption" class="text-sm text-white">{{ lightboxItem.caption }}</p>
+        <p v-if="lightboxItem.caption" class="text-sm break-words text-white">{{ lightboxItem.caption }}</p>
         <NuxtLink
           v-if="lightboxService"
           :to="`/booking/${slug}/${lightboxService.id}`"
           data-testid="portfolio-booking-pill"
-          class="inline-block rounded-full bg-(--color-accent) px-4 py-2 text-sm font-semibold text-white"
+          class="inline-flex min-h-11 items-center rounded-full bg-(--color-accent) px-4 text-sm font-semibold text-white"
         >
           رزرو این خدمت
         </NuxtLink>
@@ -108,7 +117,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: closeLightbox, enabled: () 
           v-if="canReport"
           type="button"
           data-testid="portfolio-report-button"
-          class="text-xs text-white/70 underline"
+          class="inline-flex min-h-11 items-center text-xs text-white/70 underline"
           @click="reportOpen = true"
         >
           گزارش این نمونه کار
@@ -116,7 +125,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: closeLightbox, enabled: () 
         <button
           type="button"
           data-testid="portfolio-lightbox-close"
-          class="w-full text-sm text-white"
+          class="min-h-11 w-full text-sm text-white"
           @click="closeLightbox"
         >
           بستن

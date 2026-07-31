@@ -28,12 +28,14 @@ async function checkStatus() {
 </script>
 
 <template>
-  <div v-if="salon?.status === 'rejected'" class="mx-auto flex min-h-screen max-w-sm flex-col items-center justify-center gap-4 p-6 text-center">
+  <div v-if="salon?.status === 'rejected'" class="mx-auto flex min-h-dvh max-w-sm flex-col items-center justify-center gap-4 p-4 text-center sm:p-6">
     <div class="flex h-14 w-14 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)">
       <AppIcon name="x" :size="26" />
     </div>
     <h1 class="text-lg font-bold text-(--color-text)">درخواست شما رد شد</h1>
-    <p v-if="salon.rejectionReason" class="rounded-xl bg-(--tone-danger-bg) px-4 py-3 text-sm text-(--tone-danger-text)">
+    <!-- break-words: an admin-authored rejection reason is arbitrary text and may contain an
+         unbreakable run; it must wrap inside this max-w-sm column, never widen the page. -->
+    <p v-if="salon.rejectionReason" class="w-full break-words rounded-xl bg-(--tone-danger-bg) px-4 py-3 text-sm text-(--tone-danger-text)">
       {{ salon.rejectionReason }}
     </p>
     <RouterLink to="/settings" class="text-sm font-semibold text-(--color-accent-text) hover:underline">ویرایش اطلاعات آرایشگاه</RouterLink>
@@ -42,7 +44,7 @@ async function checkStatus() {
     </AppButton>
   </div>
 
-  <div v-else class="mx-auto flex min-h-screen max-w-sm flex-col items-center justify-center gap-4 p-6 text-center">
+  <div v-else class="mx-auto flex min-h-dvh max-w-sm flex-col items-center justify-center gap-4 p-4 text-center sm:p-6">
     <div
       class="flex h-14 w-14 items-center justify-center rounded-full"
       :class="salon?.status === 'suspended' ? 'bg-(--tone-danger-bg) text-(--tone-danger-text)' : 'bg-(--tone-warning-bg) text-(--tone-warning-text)'"

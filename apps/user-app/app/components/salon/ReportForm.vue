@@ -72,20 +72,29 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
 </script>
 
 <template>
-  <div class="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+  <!-- items-start + my-auto rather than items-center, plus overflow-y-auto: this dialog is
+       ~280px tall, which fits a 320x568 phone but not a phone held in landscape (~360px
+       tall) once the on-screen keyboard opens for the textarea and claims most of the
+       visual viewport. Centering an overflowing flex item pushes its top off-screen with
+       no way to scroll back to it; a cross-axis auto margin centers identically when there
+       IS room and collapses to zero when there isn't, leaving a plain scroll. -->
+  <div class="fixed inset-0 bg-black/40 flex items-start justify-center overflow-y-auto overscroll-contain p-4 z-50">
     <div
       ref="dialogRoot"
       role="dialog"
       aria-modal="true"
       :aria-labelledby="titleId"
       tabindex="-1"
-      class="bg-(--color-surface-card) rounded-xl p-4 w-full max-w-sm space-y-3 outline-none"
+      class="my-auto bg-(--color-surface-card) rounded-xl p-4 w-full max-w-sm space-y-3 outline-none"
     >
       <h2 :id="titleId" class="font-bold">{{ title }}</h2>
       <div>
         <label :for="reasonId" class="mb-1 block text-xs text-(--color-text-muted)">
           دلیل گزارش (حداقل ۵ کاراکتر)
         </label>
+        <!-- resize-y: a textarea's default `resize: both` lets the user drag it WIDER than
+             its w-full box, which on a 320px screen scrolls the whole dialog sideways.
+             Vertical resizing stays available. -->
         <textarea
           :id="reasonId"
           v-model="reason"
@@ -94,7 +103,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
           maxlength="500"
           rows="4"
           :aria-describedby="counterId"
-          class="w-full rounded-lg border p-2 text-sm"
+          class="w-full resize-y rounded-lg border p-2 text-sm"
         />
       </div>
       <p :id="counterId" data-testid="report-reason-counter" aria-live="polite" class="text-xs opacity-70">
@@ -104,12 +113,12 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
         type="button"
         data-testid="submit-report-button"
         :disabled="submitting || !isValid"
-        class="w-full rounded-lg bg-(--color-accent) text-white p-2 font-semibold disabled:opacity-50"
+        class="min-h-11 w-full rounded-lg bg-(--color-accent) text-white p-2 font-semibold disabled:opacity-50"
         @click="submit"
       >
         ثبت گزارش
       </button>
-      <button type="button" data-testid="report-close-button" class="w-full text-sm" @click="close">بستن</button>
+      <button type="button" data-testid="report-close-button" class="min-h-11 w-full text-sm" @click="close">بستن</button>
     </div>
   </div>
 </template>

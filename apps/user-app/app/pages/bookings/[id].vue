@@ -97,7 +97,10 @@ const reviewButtonLabel = computed(() => {
        handled. Without this v-if, that pass throws inside the render function itself (an
        unhandled rejection, not the createError) -- see salons/[slug].vue, which this mirrors. -->
   <div v-if="booking" class="p-4 space-y-4">
-    <BaseCard class="space-y-2 text-sm">
+    <!-- break-words on the card, not per line: overflow-wrap inherits, and every field in
+         here (salon name, service name, worker name) is provider-authored free text that
+         can arrive as one unbreakable token. -->
+    <BaseCard class="space-y-2 text-sm break-words">
       <h1 class="text-lg font-bold text-(--color-text)">{{ booking.salonName }}</h1>
       <p class="text-(--color-text)">{{ booking.serviceName }}</p>
       <p v-if="booking.workerName" class="text-(--color-text-muted)">کارمند: {{ booking.workerName }}</p>

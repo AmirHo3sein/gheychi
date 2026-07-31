@@ -264,11 +264,15 @@ onMounted(async () => {
     <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
       <RouterLink v-for="stat in stats" :key="stat.label" :to="stat.to">
         <AppCard class="transition-shadow hover:shadow-(--shadow-lg)">
-          <div class="flex items-center justify-between">
-            <div class="flex h-10 w-10 items-center justify-center rounded-xl" :class="TONE_BG[stat.tone]">
+          <!-- Two columns of these land at ~110px on a 320px screen; the 40px icon tile plus
+               a three-digit `text-2xl` count overruns the card's own padding there, so the
+               count steps down one size below `sm` (still the largest text on the card) and
+               the gap keeps the two from touching. Unchanged from `sm` up. -->
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" :class="TONE_BG[stat.tone]">
               <AppIcon :name="stat.icon" :size="19" />
             </div>
-            <span class="tnum text-2xl font-black text-(--color-text)" data-testid="stat-value">{{
+            <span class="tnum text-xl font-black text-(--color-text) sm:text-2xl" data-testid="stat-value">{{
               loading || loadError ? '—' : stat.value.toLocaleString('fa-IR')
             }}</span>
           </div>
@@ -335,7 +339,9 @@ onMounted(async () => {
               <p class="font-semibold text-(--color-text)">{{ link.label }}</p>
               <p class="truncate text-xs text-(--color-text-muted)">{{ link.desc }}</p>
             </div>
-            <AppIcon name="chevron-left" :size="16" class="mr-auto shrink-0 text-(--color-border)" />
+            <!-- `ms-auto`, not `mr-auto`: identical in this RTL-only app, but the logical
+                 property is the one that stays correct if a direction ever changes. -->
+            <AppIcon name="chevron-left" :size="16" class="ms-auto shrink-0 text-(--color-border)" />
           </AppCard>
         </RouterLink>
       </div>

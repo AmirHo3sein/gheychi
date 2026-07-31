@@ -133,14 +133,19 @@ useSeoMeta({ title: 'کیف پول — قیچی' })
       <div v-else class="space-y-2 transition-opacity" :class="{ 'pointer-events-none opacity-60': transactionsPending }">
         <BaseCard v-for="tx in transactions.items" :key="tx.id" data-testid="wallet-transaction">
           <div class="flex items-center justify-between gap-2">
-            <div class="space-y-0.5 text-sm">
+            <!-- min-w-0 + break-words: the amount opposite is whitespace-nowrap (a money
+                 figure must never break mid-number), so it holds ~100px of the card's
+                 254px at 320px and this column has to shrink into the rest. `reason` is
+                 free text an admin typed on a manual adjustment -- the one field here that
+                 can carry an arbitrarily long unbreakable run. -->
+            <div class="min-w-0 space-y-0.5 text-sm break-words">
               <p class="font-medium">{{ typeLabel(tx.type) }}</p>
               <p class="text-xs text-(--color-text-muted)">{{ formatDate(tx.createdAt) }}</p>
               <p v-if="tx.reason" class="text-xs text-(--color-text-muted)">{{ tx.reason }}</p>
             </div>
             <p
               data-testid="wallet-transaction-amount"
-              class="whitespace-nowrap text-sm font-bold"
+              class="shrink-0 whitespace-nowrap text-sm font-bold"
               :class="tx.amount > 0 ? 'text-(--color-success)' : 'text-(--color-danger)'"
             >
               {{ formatAmount(tx.amount) }} {{ currencyLabel(tx.currency) }}

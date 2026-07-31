@@ -151,15 +151,18 @@ useSeoMeta({ title: 'مدیریت سالن‌های ویژه — قیچی' })
       <div
         v-if="pageCount > 1"
         data-testid="featured-pager"
-        class="flex items-center justify-between gap-3 border-t border-(--color-border) p-3"
+        class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-(--color-border) p-3"
       >
-        <BaseButton variant="secondary" data-testid="featured-prev" :disabled="loading || page <= 1" @click="page--">
+        <!-- shrink-0 + flex-wrap: at 320px the two button labels and the count line want
+             ~368px of a 264px row. Left to shrink, "صفحه قبل"/"صفحه بعد" each break across
+             two lines; wrapping moves the count onto its own row and keeps both intact. -->
+        <BaseButton variant="secondary" class="shrink-0" data-testid="featured-prev" :disabled="loading || page <= 1" @click="page--">
           صفحه قبل
         </BaseButton>
         <p class="text-xs text-(--color-text-muted)">
           صفحه {{ page }} از {{ pageCount }} — {{ total }} سالن تاییدشده
         </p>
-        <BaseButton variant="secondary" data-testid="featured-next" :disabled="loading || page >= pageCount" @click="page++">
+        <BaseButton variant="secondary" class="shrink-0" data-testid="featured-next" :disabled="loading || page >= pageCount" @click="page++">
           صفحه بعد
         </BaseButton>
       </div>

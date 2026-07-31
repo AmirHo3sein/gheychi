@@ -138,14 +138,21 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
 </script>
 
 <template>
-  <div class="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+  <!-- items-start + my-auto rather than items-center, plus overflow-y-auto: the create/edit
+       phases stack a title, two star rows, a 3-row textarea and up to three buttons -- around
+       330px, which already fills a phone in landscape (~360px tall) and overflows it the
+       moment the keyboard opens for the comment. Centering an overflowing flex item pushes
+       its top off-screen unreachably; a cross-axis auto margin centers identically when
+       there IS free space and collapses to zero when there isn't, leaving a plain scroll
+       that reaches "ثبت نظر" and "بستن". -->
+  <div class="fixed inset-0 bg-black/40 flex items-start justify-center overflow-y-auto overscroll-contain p-4 z-50">
     <div
       ref="dialogRoot"
       role="dialog"
       aria-modal="true"
       :aria-labelledby="titleId"
       tabindex="-1"
-      class="w-full max-w-sm space-y-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 shadow-(--shadow-sm) outline-none"
+      class="my-auto w-full max-w-sm space-y-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 shadow-(--shadow-sm) outline-none"
     >
       <template v-if="phase === 'already-reviewed'">
         <h2 :id="titleId" class="text-sm font-bold">شما قبلا برای این نوبت نظر ثبت کرده‌اید</h2>
@@ -181,7 +188,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
             />
           </div>
         </template>
-        <p v-if="comment" class="text-sm text-(--color-text-muted)">{{ comment }}</p>
+        <p v-if="comment" class="text-sm break-words text-(--color-text-muted)">{{ comment }}</p>
 
         <div v-if="canEdit" class="flex gap-2">
           <BaseButton variant="secondary" block data-testid="edit-review-button" @click="startEdit">
@@ -206,6 +213,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
             :key="n"
             type="button"
             :aria-label="`امتیاز ${n} از ۵ به سالن`"
+            class="flex h-11 w-11 items-center justify-center"
             @click="editRating = n"
           >
             <BaseIcon name="star" :size="24" :class="n <= editRating ? 'text-(--color-accent-strong)' : 'text-(--color-border)'" />
@@ -219,6 +227,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
               :key="n"
               type="button"
               :aria-label="`امتیاز ${n} از ۵ به ${workerName}`"
+              class="flex h-11 w-11 items-center justify-center"
               @click="editWorkerRating = n"
             >
               <BaseIcon name="star" :size="24" :class="n <= editWorkerRating ? 'text-(--color-accent-strong)' : 'text-(--color-border)'" />
@@ -228,7 +237,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
         <textarea
           v-model="editComment"
           placeholder="نظر شما (اختیاری)"
-          class="w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-2 text-sm focus:outline-none focus:ring-2 focus:ring-(--color-accent)/30"
+          class="w-full resize-y rounded-xl border border-(--color-border) bg-(--color-surface-card) p-2 text-sm focus:outline-none focus:ring-2 focus:ring-(--color-accent)/30"
           rows="3"
         />
         <div class="flex gap-2">
@@ -249,6 +258,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
             :key="n"
             type="button"
             :aria-label="`امتیاز ${n} از ۵ به سالن`"
+            class="flex h-11 w-11 items-center justify-center"
             @click="rating = n"
           >
             <BaseIcon name="star" :size="24" :class="n <= rating ? 'text-(--color-accent-strong)' : 'text-(--color-border)'" />
@@ -262,6 +272,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
               :key="n"
               type="button"
               :aria-label="`امتیاز ${n} از ۵ به ${workerName}`"
+              class="flex h-11 w-11 items-center justify-center"
               @click="workerRating = n"
             >
               <BaseIcon name="star" :size="24" :class="n <= workerRating ? 'text-(--color-accent-strong)' : 'text-(--color-border)'" />
@@ -271,7 +282,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
         <textarea
           v-model="comment"
           placeholder="نظر شما (اختیاری)"
-          class="w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-2 text-sm focus:outline-none focus:ring-2 focus:ring-(--color-accent)/30"
+          class="w-full resize-y rounded-xl border border-(--color-border) bg-(--color-surface-card) p-2 text-sm focus:outline-none focus:ring-2 focus:ring-(--color-accent)/30"
           rows="3"
         />
         <BaseButton block :loading="submitting" data-testid="submit-review-button" @click="submit">
@@ -279,7 +290,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
         </BaseButton>
       </template>
 
-      <button type="button" class="w-full text-sm text-(--color-text-muted)" @click="close">بستن</button>
+      <button type="button" class="min-h-11 w-full text-sm text-(--color-text-muted)" @click="close">بستن</button>
     </div>
   </div>
 </template>

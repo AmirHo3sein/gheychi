@@ -37,8 +37,12 @@ defineProps<{
       class="h-20 w-20 flex-shrink-0 rounded-xl bg-(--color-surface)"
       :class="salon.hasActiveStory ? 'ring-2 ring-(--color-accent)' : undefined"
     />
-    <div class="flex-1 text-sm">
-      <h3 class="font-bold text-(--color-text)">{{ salon.name }}</h3>
+    <!-- min-w-0: the 80px thumbnail is flex-shrink-0, so this column owns only what's left
+         (~160px at 320px) and must be allowed to shrink to it rather than to its
+         min-content width. break-words then covers the provider-authored name itself,
+         which can be a single unbreakable token. -->
+    <div class="min-w-0 flex-1 text-sm">
+      <h3 class="font-bold break-words text-(--color-text)">{{ salon.name }}</h3>
       <p class="mt-1 flex items-center gap-1 text-(--color-text-muted)">
         <BaseIcon name="star" :size="14" />
         {{ salon.ratingAvg.toFixed(1) }} ({{ salon.ratingCount }}) · {{ salon.distanceKm.toFixed(1) }} کیلومتر

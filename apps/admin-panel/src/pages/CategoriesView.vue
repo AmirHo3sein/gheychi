@@ -102,14 +102,18 @@ async function confirmDelete() {
 onMounted(load)
 </script>
 
+<!-- p-8 from `sm` up (unchanged); below that 64px of gutter is a fifth of a 320px screen. -->
 <template>
-  <div class="mx-auto max-w-3xl space-y-5 p-8">
+  <div class="mx-auto max-w-3xl space-y-5 p-4 sm:p-8">
     <AppCard>
       <p class="mb-3 flex items-center gap-2 text-sm font-semibold text-(--color-text)">
         <AppIcon name="plus" :size="16" class="text-(--color-accent)" />
         افزودن دسته‌بندی جدید
       </p>
-      <form class="flex items-end gap-2.5" @submit.prevent="add">
+      <!-- flex-wrap: the icon key field + its 44px preview tile is ~165px that cannot shrink,
+           so on a narrow screen the name field and the submit button wrap onto their own
+           lines rather than pushing the button out of the card. Single row from `sm` up. -->
+      <form class="flex flex-wrap items-end gap-2.5" @submit.prevent="add">
         <div>
           <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">کلید آیکون</label>
           <div class="flex items-center gap-2">

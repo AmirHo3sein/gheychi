@@ -78,7 +78,7 @@ async function onFileChange(event: Event) {
 <template>
   <div>
     <label
-      class="relative flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-(--color-border) bg-(--color-surface-card) py-8 text-center transition-colors hover:border-(--color-accent) has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-(--color-accent)/30"
+      class="relative flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-(--color-border) bg-(--color-surface-card) px-4 py-8 text-center text-balance transition-colors hover:border-(--color-accent) has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-(--color-accent)/30"
     >
       <div class="flex h-10 w-10 items-center justify-center rounded-full bg-(--color-accent-soft) text-(--color-accent-text)">
         <AppIcon name="upload" :size="18" />
@@ -93,9 +93,11 @@ async function onFileChange(event: Event) {
         @change="onFileChange"
       />
     </label>
-    <p v-if="error" class="mt-2 flex items-center gap-1.5 text-sm text-(--tone-danger-text)">
-      <AppIcon name="warning" :size="14" class="shrink-0" />
-      {{ error }}
+    <!-- items-start + min-w-0: an API-supplied 409 message is arbitrary length, so it wraps
+         under a top-aligned icon rather than pushing the row wider than the dropzone. -->
+    <p v-if="error" class="mt-2 flex items-start gap-1.5 text-sm text-(--tone-danger-text)">
+      <AppIcon name="warning" :size="14" class="mt-0.5 shrink-0" />
+      <span class="min-w-0 break-words">{{ error }}</span>
     </p>
   </div>
 </template>

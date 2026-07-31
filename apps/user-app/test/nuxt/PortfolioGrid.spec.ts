@@ -63,6 +63,24 @@ describe('PortfolioGrid', () => {
     expect(wrapper.find('[data-testid="portfolio-booking-pill"]').exists()).toBe(false)
   })
 
+  // Layout regression guard, not styling taste. On a viewport shorter than the panel (a
+  // phone held in landscape: 70vh of image plus caption, booking pill, report link and
+  // close button), `items-center` on an overflowing flex container pushes the excess off
+  // BOTH ends -- the top becomes unreachable by scrolling and "بستن" sits below the fold
+  // with no way to get to it. The fix is items-start + a cross-axis auto margin (centers
+  // when there is free space, collapses to zero when there isn't) on a scrollable overlay.
+  // happy-dom has no layout engine, so the combination is pinned by class instead.
+  it('keeps the lightbox panel reachable on a viewport shorter than its own content', async () => {
+    const wrapper = await mountSuspended(PortfolioGrid, { props: BASE_PROPS })
+    await wrapper.findAll('[data-testid="portfolio-item"]')[0]!.trigger('click')
+
+    const overlay = wrapper.get('[data-testid="portfolio-lightbox"]')
+    expect(overlay.classes()).toContain('overflow-y-auto')
+    expect(overlay.classes()).toContain('items-start')
+    expect(overlay.classes()).not.toContain('items-center')
+    expect(wrapper.get('[role="dialog"]').classes()).toContain('my-auto')
+  })
+
   it('closes the lightbox via its close button', async () => {
     const wrapper = await mountSuspended(PortfolioGrid, { props: BASE_PROPS })
     await wrapper.findAll('[data-testid="portfolio-item"]')[0]!.trigger('click')

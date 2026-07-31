@@ -96,6 +96,16 @@ describe('BlogPostsView list', () => {
     expect(rows[1].text()).toContain('۱۴۰۵') // fa-IR (Persian calendar) year for 2026-07-01
   })
 
+  // Regression guard. The table used to sit directly inside AppCard's overflow-hidden box, so
+  // the moment its min-content width exceeded the card the trailing columns were CLIPPED, not
+  // scrolled to. This page squeezes it hardest, since the categories side card takes a fixed
+  // 20rem out of the row from xl up. The wrapper has to stay the table's DIRECT parent.
+  it('keeps the table inside its own horizontal scroll container', async () => {
+    const wrapper = await mountView()
+
+    expect(wrapper.get('table').element.parentElement?.className).toContain('overflow-x-auto')
+  })
+
   it('shows an empty state when nothing matches', async () => {
     postsResponse = { items: [], total: 0, page: 1, pageSize: 20 }
     const wrapper = await mountView()

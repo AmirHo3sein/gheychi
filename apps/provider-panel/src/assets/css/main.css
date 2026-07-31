@@ -86,7 +86,9 @@ html, body {
 }
 
 #app {
-  min-height: 100vh;
+  /* dvh, not vh: on mobile Safari/Chrome 100vh is the *large* viewport, so the last row of
+     a full-height screen hides behind the collapsing URL bar. */
+  min-height: 100dvh;
 }
 
 * {

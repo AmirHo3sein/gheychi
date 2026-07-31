@@ -75,9 +75,9 @@ async function removePhoto(photo: SalonPhoto) {
 </script>
 
 <template>
-  <div class="space-y-4 p-4">
+  <div class="mx-auto w-full max-w-6xl space-y-4 p-4 lg:p-6">
     <h1 class="text-lg font-bold text-(--color-text)">تصاویر آرایشگاه</h1>
-    <PhotoUploader @uploaded="onUploaded" />
+    <PhotoUploader class="max-w-2xl" @uploaded="onUploaded" />
 
     <div v-if="loadError" class="space-y-3 rounded-xl border border-dashed border-(--color-border) p-4 text-center">
       <p class="text-sm text-(--tone-danger-text)">تصاویر بارگذاری نشد.</p>
@@ -94,7 +94,7 @@ async function removePhoto(photo: SalonPhoto) {
       <template v-else>
         <EmptyState v-if="photos.length === 0" icon="photos" message="هنوز تصویری بارگذاری نشده است." />
 
-        <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+        <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
           <div v-for="p in photos" :key="p.id" class="overflow-hidden rounded-2xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-sm)">
             <div class="relative aspect-square w-full">
               <img :src="p.url" :alt="p.isCover ? 'عکس اصلی آرایشگاه' : 'تصویر آرایشگاه'" class="h-full w-full object-cover" />
@@ -104,21 +104,18 @@ async function removePhoto(photo: SalonPhoto) {
               >
                 عکس اصلی
               </span>
-            </div>
-            <div class="flex items-center justify-between p-2">
-              <AppButton
-                type="button"
-                variant="ghost"
-                data-testid="set-cover"
-                :loading="busyId === p.id"
-                :disabled="p.isCover || busyId === p.id"
-                @click="setCover(p.id)"
-              >
-                {{ p.isCover ? 'انتخاب شده' : 'انتخاب به‌عنوان اصلی' }}
-              </AppButton>
+              <!--
+                Delete sits on the tile, not in the footer beside the cover action. Those two
+                side by side needed ~210px and a tile only offers ~122px of footer at 320px
+                (and ~178px even at md) -- with the tile's own overflow-hidden that silently
+                CLIPPED the delete button rather than overflowing visibly. As an overlay it
+                keeps its full 44px target at every width. start-2 vs the cover badge's end-2:
+                opposite corners, so they never collide.
+              -->
               <AppButton
                 type="button"
                 variant="danger"
+                class="absolute start-2 top-2 shadow-(--shadow-md)"
                 data-testid="delete-photo"
                 aria-label="حذف تصویر"
                 :loading="busyId === p.id"
@@ -126,6 +123,19 @@ async function removePhoto(photo: SalonPhoto) {
                 @click="removePhoto(p)"
               >
                 <template #icon><AppIcon name="trash" :size="15" /></template>
+              </AppButton>
+            </div>
+            <div class="p-2">
+              <AppButton
+                type="button"
+                variant="ghost"
+                block
+                data-testid="set-cover"
+                :loading="busyId === p.id"
+                :disabled="p.isCover || busyId === p.id"
+                @click="setCover(p.id)"
+              >
+                {{ p.isCover ? 'انتخاب شده' : 'انتخاب به‌عنوان اصلی' }}
               </AppButton>
             </div>
           </div>
