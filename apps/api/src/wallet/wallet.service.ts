@@ -15,6 +15,11 @@ export interface DebitResult {
   debited: number;
   shortfall: number;
   balanceAfter: number;
+  // null when debited is 0 -- no ledger row was written, so there is nothing to
+  // reference. Lets a caller that couldn't name its own referenceId up front (e.g.
+  // BookingsService.createHold, which doesn't have a booking id until after this
+  // call) backfill it afterward via an update keyed on this id.
+  transactionId: string | null;
 }
 
 export interface WalletTransactionPage {
@@ -131,11 +136,11 @@ export class WalletService {
     const shortfall = amount - actualDebit;
 
     if (actualDebit === 0) {
-      return { debited: 0, shortfall, balanceAfter: balance.balance };
+      return { debited: 0, shortfall, balanceAfter: balance.balance, transactionId: null };
     }
 
     const balanceAfter = balance.balance - actualDebit;
-    await em.getRepository(WalletTransaction).insert({
+    const inserted = await em.getRepository(WalletTransaction).insert({
       userId,
       currency,
       amount: -actualDebit,
@@ -147,7 +152,7 @@ export class WalletService {
     });
     await em.getRepository(WalletBalance).update({ userId, currency }, { balance: balanceAfter, updatedAt: new Date() });
 
-    return { debited: actualDebit, shortfall, balanceAfter };
+    return { debited: actualDebit, shortfall, balanceAfter, transactionId: inserted.identifiers[0].id as string };
   }
 
   /** Read-only, no lock -- all wallet_balances rows for a user. */

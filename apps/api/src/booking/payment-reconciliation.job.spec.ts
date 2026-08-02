@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { Booking } from './booking.entity';
 import { CouponRedemption } from '../coupons/coupon-redemption.entity';
+import { WalletService } from '../wallet/wallet.service';
 import { PAYMENT_GATEWAY } from './payment-gateway';
 import { Payment } from './payment.entity';
 import { PaymentReconciliationJob } from './payment-reconciliation.job';
@@ -44,11 +45,17 @@ describe('PaymentReconciliationJob', () => {
         {
           provide: DataSource,
           useValue: {
-            transaction: jest.fn(async (cb: (em: unknown) => unknown) => cb({ update: emUpdate, delete: emDelete })),
+            // find: [] -- releaseBookingHold's wallet-reversal lookup runs unconditionally
+            // alongside the coupon-redemption delete on the verify-failed branch; these
+            // tests don't exercise wallet spend, so an empty result keeps that half a no-op.
+            transaction: jest.fn(async (cb: (em: unknown) => unknown) =>
+              cb({ update: emUpdate, delete: emDelete, find: jest.fn().mockResolvedValue([]) }),
+            ),
           },
         },
         { provide: PAYMENT_GATEWAY, useValue: { verifyPayment } },
         { provide: AlertsService, useValue: { raise } },
+        { provide: WalletService, useValue: { debit: jest.fn(), credit: jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' }) } },
       ],
     }).compile();
 

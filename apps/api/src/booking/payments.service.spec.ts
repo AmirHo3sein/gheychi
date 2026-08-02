@@ -5,6 +5,7 @@ import { AlertsService } from '../alerts/alerts.service';
 import { CouponRedemption } from '../coupons/coupon-redemption.entity';
 import { PushService } from '../push/push.service';
 import { ReferralsService } from '../referrals/referrals.service';
+import { WalletService } from '../wallet/wallet.service';
 import { SMS_PROVIDER } from '../sms/sms.provider';
 import { SalonsService } from '../salons/salons.service';
 import { UsersService } from '../users/users.service';
@@ -54,6 +55,7 @@ describe('PaymentsService.attemptRefund', () => {
         { provide: PushService, useValue: { sendToUser: pushSend } },
         { provide: AlertsService, useValue: { raise } },
         { provide: ReferralsService, useValue: { reverseIfNeeded } },
+        { provide: WalletService, useValue: { debit: jest.fn(), credit: jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' }) } },
       ],
     }).compile();
 
@@ -190,6 +192,7 @@ describe('PaymentsService.handleCallback lost-CAS recovery', () => {
         { provide: PushService, useValue: { sendToUser: jest.fn() } },
         { provide: AlertsService, useValue: { raise } },
         { provide: ReferralsService, useValue: { reverseIfNeeded: jest.fn().mockResolvedValue(undefined) } },
+        { provide: WalletService, useValue: { debit: jest.fn(), credit: jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' }) } },
       ],
     }).compile();
 
@@ -282,7 +285,13 @@ describe('PaymentsService.handleCallback — capture, dead bookings and unknown 
         {
           provide: DataSource,
           useValue: {
-            transaction: jest.fn(async (cb: (em: unknown) => unknown) => cb({ update: emUpdate, delete: emDelete })),
+            // find: [] -- releaseBookingHold's wallet-reversal lookup (inside markFailed's
+            // verify-failed branch) runs unconditionally alongside the coupon-redemption
+            // delete; these tests don't exercise wallet spend, so an empty result keeps
+            // that half a no-op.
+            transaction: jest.fn(async (cb: (em: unknown) => unknown) =>
+              cb({ update: emUpdate, delete: emDelete, find: jest.fn().mockResolvedValue([]) }),
+            ),
           },
         },
         {
@@ -295,6 +304,7 @@ describe('PaymentsService.handleCallback — capture, dead bookings and unknown 
         { provide: PushService, useValue: { sendToUser: jest.fn().mockResolvedValue(undefined) } },
         { provide: AlertsService, useValue: { raise } },
         { provide: ReferralsService, useValue: { reverseIfNeeded: jest.fn().mockResolvedValue(undefined) } },
+        { provide: WalletService, useValue: { debit: jest.fn(), credit: jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' }) } },
       ],
     }).compile();
 
@@ -503,6 +513,7 @@ describe('PaymentsService.handleCallback verify-persist failure', () => {
         { provide: PushService, useValue: { sendToUser: jest.fn() } },
         { provide: AlertsService, useValue: { raise } },
         { provide: ReferralsService, useValue: { reverseIfNeeded: jest.fn().mockResolvedValue(undefined) } },
+        { provide: WalletService, useValue: { debit: jest.fn(), credit: jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' }) } },
       ],
     }).compile();
     const service = moduleRef.get(PaymentsService);

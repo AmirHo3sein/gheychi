@@ -20,6 +20,7 @@ const routes = [
       { path: 'categories', name: 'categories', component: () => import('@/pages/CategoriesView.vue'), meta: { title: 'دسته‌بندی‌ها' } },
       { path: 'coupons', name: 'coupons', component: () => import('@/pages/CouponsView.vue'), meta: { title: 'کدهای تخفیف' } },
       { path: 'wallet', name: 'wallet', component: () => import('@/pages/WalletView.vue'), meta: { title: 'کیف پول' } },
+      { path: 'invoices', name: 'invoices', component: () => import('@/pages/InvoicesView.vue'), meta: { title: 'صورتحساب‌ها' } },
       { path: 'referrals', name: 'referrals', component: () => import('@/pages/ReferralsView.vue'), meta: { title: 'معرفی‌ها' } },
       {
         path: 'referrals/settings',

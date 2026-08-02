@@ -8,6 +8,6 @@ export class AvailabilityController {
 
   @Get()
   get(@Param('salonId', ParseUUIDPipe) salonId: string, @Query() query: AvailabilityQueryDto) {
-    return this.availability.computeFor(salonId, query.serviceId);
+    return this.availability.computeFor(salonId, query.serviceId, undefined, query.workerId);
   }
 }

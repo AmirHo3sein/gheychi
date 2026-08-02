@@ -14,9 +14,12 @@ import { SalonService } from '../salons/salon-service.entity';
 import { Salon } from '../salons/salon.entity';
 import { Worker } from '../salons/worker.entity';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
+import { InvoicingService } from '../invoicing/invoicing.service';
 import { ReferralsService } from '../referrals/referrals.service';
+import { WalletTransaction } from '../wallet/wallet-transaction.entity';
+import { WalletService } from '../wallet/wallet.service';
 import { Booking, BookingStatus } from './booking.entity';
-import { releaseCouponRedemption } from './coupon-release.util';
+import { releaseBookingHold } from './booking-hold-release.util';
 import { CreateBookingDto } from './dto/booking.dto';
 import { calculateDeposit } from './deposit.util';
 import { DiscountCandidate, resolveBestPriceWithWinner } from './discount.util';
@@ -45,6 +48,8 @@ export class BookingsService {
     private readonly alerts: AlertsService,
     private readonly couponsService: CouponsService,
     private readonly referralsService: ReferralsService,
+    private readonly walletService: WalletService,
+    private readonly invoicing: InvoicingService,
   ) {}
 
   async createHold(
@@ -91,6 +96,29 @@ export class BookingsService {
         });
         if (overlapping >= salon.capacity) throw new ConflictException('Slot no longer available');
 
+        // A specific worker is never merely "one more unit of salon capacity" -- they can
+        // only be in one place at a time regardless of how many chairs are free, so this is
+        // a second, independent check alongside the salon-wide one above, not a replacement
+        // for it. Race-safety comes from the SAME per-salon redis lock guarding the whole
+        // critical section (see LOCK_TTL_MS above), not a separate row lock: no worker can
+        // belong to two salons, so serializing on dto.salonId already serializes every
+        // request that could conflict on this worker too.
+        if (dto.workerId) {
+          const worker = await this.workers.findOneBy({ id: dto.workerId, salonId: dto.salonId });
+          if (!worker) throw new NotFoundException('Worker not found');
+          if (!worker.active) throw new BadRequestException('این کارمند غیرفعال است');
+
+          const workerOverlapping = await em.count(Booking, {
+            where: {
+              workerId: dto.workerId,
+              status: In(['pending_payment', 'confirmed']),
+              startsAt: LessThan(endsAt),
+              endsAt: MoreThan(startsAt),
+            },
+          });
+          if (workerOverlapping > 0) throw new ConflictException('این کارمند در این زمان نوبت دیگری دارد');
+        }
+
         // Passing `em` activates the row-lock/race-safety path inside
         // resolveAndValidate -- this is the real, money-moving redemption attempt,
         // not the read-only preview.
@@ -128,7 +156,28 @@ export class BookingsService {
         const depositMin = await this.config.getDepositMinToman();
         // Capped at finalPrice by calculateDeposit, so a fully-discounted booking (100%-off
         // coupon, or a fixed-amount referral coupon worth at least the price) lands on 0.
-        const deposit = calculateDeposit(finalPrice, depositPercent, depositMin);
+        const depositBeforeWallet = calculateDeposit(finalPrice, depositPercent, depositMin);
+
+        // Wallet balance reduces the DEPOSIT (the only money the platform ever captures
+        // online) -- not finalPrice/the full service price. The remaining ~80% is cash
+        // paid at the salon, which the platform can neither observe nor enforce a
+        // discount against, so there is nothing honest to apply wallet credit to there.
+        // debit() itself caps at the customer's real balance and never throws, so
+        // requesting more than they have (or requesting against a zero deposit) simply
+        // debits nothing -- no separate "enough balance?" check is needed here.
+        let walletAmountUsed: number | null = null;
+        let walletTransactionId: string | null = null;
+        if (dto.applyWalletBalance && depositBeforeWallet > 0) {
+          const result = await this.walletService.debit(em, userId, 'toman', depositBeforeWallet, 'booking_spend', {
+            referenceType: 'booking',
+            reason: 'Applied to booking deposit at checkout',
+          });
+          if (result.debited > 0) {
+            walletAmountUsed = result.debited;
+            walletTransactionId = result.transactionId;
+          }
+        }
+        const deposit = depositBeforeWallet - (walletAmountUsed ?? 0);
         // Nothing to collect => no gateway session and no Payment row at all, and the
         // booking is confirmed outright instead of being held in pending_payment. Sending
         // the customer to Zarinpal for 0 toman is not an option: the gateway rejects a
@@ -137,7 +186,8 @@ export class BookingsService {
         // that reads one -- cancel()'s payment UPDATE matches no row, attemptRefund()
         // skips, findMine()'s refundStatus stays null, getEarnings() counts nothing, and
         // the referral first_paid_booking trigger correctly never fires for a free booking
-        // -- so this needs no special-casing outside createHold.
+        // -- so this needs no special-casing outside createHold. A deposit reduced to 0 by
+        // wallet credit alone lands on exactly the same path.
         const requiresPayment = deposit > 0;
 
         const savedBooking = await em.save(
@@ -150,6 +200,11 @@ export class BookingsService {
             endsAt,
             priceSnapshot: finalPrice,
             depositAmount: deposit,
+            walletAmountUsed,
+            // Customer-chosen at booking time when provided; otherwise still assignable
+            // later by the provider via assignWorker (unchanged) -- this is a second,
+            // earlier write path onto the same nullable column, not a replacement for it.
+            workerId: dto.workerId ?? null,
             status: requiresPayment ? 'pending_payment' : 'confirmed',
             // Only the coupon that actually produced the price is recorded against the
             // booking -- a losing coupon was never applied to it in any sense.
@@ -163,6 +218,13 @@ export class BookingsService {
             originalPriceSnapshot: winner !== null ? service.price : null,
           }),
         );
+        // The debit above couldn't name the booking it funds until this insert produced
+        // an id -- backfill it now so the ledger row is fully attributable, same
+        // "insert the dependent row, then backfill its pointer" ordering CouponRedemption
+        // already uses (via bookingId) below.
+        if (walletTransactionId) {
+          await em.update(WalletTransaction, { id: walletTransactionId }, { referenceId: savedBooking.id });
+        }
         if (requiresPayment) {
           await em.save(
             Payment,
@@ -410,9 +472,10 @@ export class BookingsService {
         // for a payment we marked 'failed' -- but this guard ensures we never
         // clobber a payment that already progressed past 'initiated'.
         await em.update(Payment, { bookingId: booking.id, status: 'initiated' }, { status: 'failed' });
-        // Nothing was captured, so the coupon code this hold consumed goes back to the
-        // customer -- otherwise cancelling before paying would burn it for life.
-        await releaseCouponRedemption(em, booking.id);
+        // Nothing was captured, so the coupon code and any wallet balance this hold
+        // consumed go back to the customer -- otherwise cancelling before paying would
+        // burn them for life.
+        await releaseBookingHold(em, this.walletService, booking.id);
       }
     });
 
@@ -523,10 +586,21 @@ export class BookingsService {
     // interleave. Conditioning on the status still being confirmed (the same pattern
     // already used by cancel() and the payment callback) means only the winner's
     // write lands; a losing concurrent call gets a clear 409 instead.
-    const result = await this.bookings.update({ id: bookingId, status: 'confirmed' }, { status });
-    if (!result.affected) {
-      throw new ConflictException('Booking status changed before this update could be applied');
-    }
+    //
+    // Wrapped in a transaction, unlike before, so the commission ledger row
+    // (recordCommission) commits atomically with the status write -- a DB failure
+    // writing the ledger row must roll back the status flip too, not leave a
+    // completed/no_show booking with no corresponding commission ever accrued.
+    await this.dataSource.transaction(async (em) => {
+      const result = await em.update(Booking, { id: bookingId, status: 'confirmed' }, { status });
+      if (!result.affected) {
+        throw new ConflictException('Booking status changed before this update could be applied');
+      }
+      // Commission applies identically to a no-show and a completion -- see
+      // InvoicingService.recordCommission's own doc comment on why (both forfeit/
+      // deduct the deposit the same way, per this method's own comment above).
+      await this.invoicing.recordCommission(em, booking);
+    });
 
     // The first-completed-booking referral trigger (R6). Only on 'completed' -- a
     // no-show is not a qualifying event. tryGrantReward already never throws and

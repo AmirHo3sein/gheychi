@@ -5,7 +5,9 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useApi } from '@/composables/useApi'
+import { invoiceStatusLabel, jalaliMonthLabel } from '@/utils/labels'
 
 interface Earnings {
   totalCollected: number
@@ -14,23 +16,45 @@ interface Earnings {
   netPayout: number
 }
 
+interface Invoice {
+  id: string
+  jalaliYear: number
+  jalaliMonth: number
+  totalNetPayable: number
+  paidTotal: number
+  status: 'issued' | 'partially_paid' | 'paid' | 'void'
+}
+
 const { apiFetch } = useApi()
 const earnings = ref<Earnings | null>(null)
 const loading = ref(true)
 const loadError = ref(false)
 
+// Read-only settlement history -- no interaction here, recording a payment is an admin
+// action (InvoiceStatusActions.vue in admin-panel). Fetched alongside earnings but kept
+// in its own ref/error state so one endpoint failing doesn't blank out the other.
+const invoices = ref<Invoice[]>([])
+const invoicesError = ref(false)
+
 async function load() {
   loading.value = true
   loadError.value = false
 
-  const { data, error } = await apiFetch<Earnings>('/salons/mine/earnings', { silent: true })
-  if (error) {
+  const [earningsRes, invoicesRes] = await Promise.all([
+    apiFetch<Earnings>('/salons/mine/earnings', { silent: true }),
+    apiFetch<Invoice[]>('/salons/mine/invoices', { silent: true }),
+  ])
+
+  if (earningsRes.error) {
     loadError.value = true
     loading.value = false
     return
   }
+  earnings.value = earningsRes.data
 
-  earnings.value = data
+  invoicesError.value = !!invoicesRes.error
+  invoices.value = invoicesRes.data ?? []
+
   loading.value = false
 }
 
@@ -90,6 +114,45 @@ function toman(amount: number | null | undefined): string {
         <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 sm:flex-col sm:items-start">
           <p class="text-sm font-semibold text-(--color-text)">مبلغ قابل پرداخت</p>
           <p class="tnum break-words text-xl font-bold text-(--tone-success-text)">{{ toman(earnings.netPayout) }}</p>
+        </div>
+      </AppCard>
+    </div>
+
+    <div v-if="!loading && !loadError" class="space-y-3">
+      <h2 class="text-base font-bold text-(--color-text)">تسویه‌حساب‌های ماهانه</h2>
+      <p v-if="invoicesError" class="text-sm text-(--tone-danger-text)">تاریخچه تسویه‌حساب بارگذاری نشد.</p>
+      <EmptyState
+        v-else-if="invoices.length === 0"
+        icon="earnings"
+        message="هنوز صورتحسابی صادر نشده است."
+      />
+      <AppCard v-else :padded="false" class="overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-right text-sm">
+            <thead>
+              <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
+                <th scope="col" class="px-4 py-3 font-semibold">دوره</th>
+                <th scope="col" class="px-4 py-3 font-semibold">خالص قابل‌پرداخت</th>
+                <th scope="col" class="px-4 py-3 font-semibold">پرداخت‌شده</th>
+                <th scope="col" class="px-4 py-3 font-semibold">وضعیت</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="invoice in invoices"
+                :key="invoice.id"
+                data-testid="invoice-row"
+                class="border-b border-(--color-border-soft) last:border-0"
+              >
+                <td class="tnum px-4 py-3 text-(--color-text)">{{ jalaliMonthLabel(invoice.jalaliYear, invoice.jalaliMonth) }}</td>
+                <td class="tnum px-4 py-3 font-semibold text-(--color-text)">{{ toman(invoice.totalNetPayable) }}</td>
+                <td class="tnum px-4 py-3 text-(--color-text-muted)">{{ toman(invoice.paidTotal) }}</td>
+                <td class="px-4 py-3">
+                  <StatusBadge :label="invoiceStatusLabel(invoice.status).label" :tone="invoiceStatusLabel(invoice.status).tone" />
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </AppCard>
     </div>

@@ -11,6 +11,7 @@ import { ContentModule } from './content/content.module';
 import { CouponsModule } from './coupons/coupons.module';
 import { FavoritesModule } from './favorites/favorites.module';
 import { HealthController } from './health/health.controller';
+import { InvoicingModule } from './invoicing/invoicing.module';
 import { PlatformConfigModule } from './platform-config/platform-config.module';
 import { PushModule } from './push/push.module';
 import { RedisModule } from './redis/redis.module';
@@ -58,6 +59,7 @@ import { WalletModule } from './wallet/wallet.module';
     ContentModule,
     WalletModule,
     ReferralsModule,
+    InvoicingModule,
   ],
   controllers: [HealthController],
 })

@@ -8,8 +8,9 @@ import { SMS_PROVIDER, SmsProvider } from '../sms/sms.provider';
 import { SalonsService } from '../salons/salons.service';
 import { User } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
+import { WalletService } from '../wallet/wallet.service';
 import { Booking } from './booking.entity';
-import { releaseCouponRedemption } from './coupon-release.util';
+import { releaseBookingHold } from './booking-hold-release.util';
 import { PAYMENT_GATEWAY, PaymentGateway, PaymentRefundResult } from './payment-gateway';
 import { Payment } from './payment.entity';
 
@@ -54,6 +55,7 @@ export class PaymentsService {
     private readonly push: PushService,
     private readonly alerts: AlertsService,
     private readonly referralsService: ReferralsService,
+    private readonly walletService: WalletService,
   ) {}
 
   async handleCallback(authority: string, status: string): Promise<{ status: CallbackOutcome; bookingId: string | null }> {
@@ -384,9 +386,9 @@ export class PaymentsService {
       // path: unconditionally stamping cancelled_by_user would rewrite the history of a
       // booking that had already expired or been cancelled by the salon.
       await em.update(Booking, { id: bookingId, status: 'pending_payment' }, { status: 'cancelled_by_user' });
-      // The deposit was never captured, so the coupon code this hold consumed goes back
-      // to the customer instead of being burned for life.
-      await releaseCouponRedemption(em, bookingId);
+      // The deposit was never captured, so the coupon code and wallet balance this hold
+      // consumed go back to the customer instead of being burned for life.
+      await releaseBookingHold(em, this.walletService, bookingId);
     });
   }
 

@@ -42,12 +42,23 @@ function stubPageLoad(
   // Overrides the single service the page resolves, for tests that need a different price
   // (e.g. one below depositMinToman). Defaults to the shared SERVICE fixture.
   service: typeof SERVICE = SERVICE,
+  // 0 (the default) matches every pre-wallet-feature test's implicit behavior: the page's
+  // own /wallet/mine lookup uses redirectOn401:false + silent:true, so even an unstubbed
+  // path here (which the catch-all below throws on) is swallowed by apiFetch into a quiet
+  // {data:null} -- same as a logged-out guest, no checkbox rendered.
+  walletBalanceToman = 0,
+  // [] (the default) matches every pre-worker-picker test's implicit behavior (an
+  // unstubbed /workers path also degrades to [] via the same apiFetch-catches-everything
+  // path) -- no workers means no picker renders, exactly today's "any available" default.
+  workers: Array<{ id: string; name: string; ratingAvg: number; ratingCount: number }> = [],
 ) {
   fetchMock.mockImplementation(async (path: string, opts?: { method?: string }) => {
     if (path === '/salons/test-salon') return SALON
     if (path === '/salons/test-salon/services') return [service]
     if (path === '/platform-config/booking-terms') return TERMS
+    if (path === '/salons/test-salon/workers') return workers
     if (path === `/salons/${SALON.id}/availability`) return []
+    if (path === '/wallet/mine') return { balances: [{ currency: 'toman', balance: walletBalanceToman }] }
     if (path === '/coupons/validate' && opts?.method === 'POST') {
       if (couponValidateResponse && typeof couponValidateResponse === 'object' && 'rejectWith' in couponValidateResponse) {
         throw (couponValidateResponse as { rejectWith: unknown }).rejectWith
@@ -109,6 +120,100 @@ describe('booking confirm page', () => {
 
     expect(wrapper.text()).toContain((150_000).toLocaleString('fa-IR'))
     expect(wrapper.text()).not.toContain((200_000).toLocaleString('fa-IR'))
+  })
+
+  it('does not render a wallet checkbox when the customer has no wallet balance', async () => {
+    stubPageLoad('success', undefined, SERVICE, 0)
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+
+    expect(wrapper.find('input[type="checkbox"]').exists()).toBe(false)
+  })
+
+  it('applying the wallet checkbox reduces the online deposit preview and is sent on submit', async () => {
+    stubPageLoad('success', undefined, SERVICE, 50_000)
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+
+    // deposit before wallet: max(round(300,000*20/100), 200,000) = 200,000 (the cap).
+    expect(wrapper.text()).toContain((200_000).toLocaleString('fa-IR'))
+
+    await wrapper.find('input[type="checkbox"]').setValue(true)
+    await nextTick()
+
+    // min(50,000 balance, 200,000 deposit) = 50,000 applied -- 150,000 due online.
+    expect(wrapper.text()).toContain((150_000).toLocaleString('fa-IR'))
+
+    await wrapper.find('[data-testid="confirm-booking-button"]').trigger('click')
+    await flushPromises()
+
+    const bookingCall = fetchMock.mock.calls.find(([path]) => path === '/bookings')
+    expect(bookingCall?.[1]).toMatchObject({ body: expect.objectContaining({ applyWalletBalance: true }) })
+  })
+
+  it('does not send applyWalletBalance when the wallet checkbox is left unchecked', async () => {
+    stubPageLoad('success', undefined, SERVICE, 50_000)
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+    await wrapper.find('[data-testid="confirm-booking-button"]').trigger('click')
+    await flushPromises()
+
+    const bookingCall = fetchMock.mock.calls.find(([path]) => path === '/bookings')
+    expect(bookingCall?.[1]).toMatchObject({ body: expect.objectContaining({ applyWalletBalance: undefined }) })
+  })
+
+  it('does not render a worker picker when the salon has no workers', async () => {
+    stubPageLoad('success', undefined, SERVICE, 0, [])
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    expect(wrapper.text()).not.toContain('هر متخصص در دسترس')
+  })
+
+  it('defaults to "any available staff" (no workerId sent) and passes it through to SlotPicker', async () => {
+    stubPageLoad('success', undefined, SERVICE, 0, [{ id: 'w1', name: 'Sara', ratingAvg: 4.5, ratingCount: 10 }])
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    expect(wrapper.text()).toContain('هر متخصص در دسترس')
+    expect(wrapper.text()).toContain('Sara')
+    expect(wrapper.findComponent(SlotPicker).props('workerId')).toBeNull()
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+    await wrapper.find('[data-testid="confirm-booking-button"]').trigger('click')
+    await flushPromises()
+
+    const bookingCall = fetchMock.mock.calls.find(([path]) => path === '/bookings')
+    expect(bookingCall?.[1]).toMatchObject({ body: expect.objectContaining({ workerId: undefined }) })
+  })
+
+  it('picking a specific worker feeds SlotPicker, clears any already-selected slot, and is sent on submit', async () => {
+    stubPageLoad('success', undefined, SERVICE, 0, [{ id: 'w1', name: 'Sara', ratingAvg: 4.5, ratingCount: 10 }])
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+    expect(wrapper.find('[data-testid="confirm-booking-button"]').exists()).toBe(true)
+
+    await wrapper.findAll('button').find((b: DOMWrapper<Element>) => b.text() === 'Sara')!.trigger('click')
+    await nextTick()
+
+    // Switching workers invalidates whatever slot was picked against the old choice.
+    expect(wrapper.find('[data-testid="confirm-booking-button"]').exists()).toBe(false)
+    expect(wrapper.findComponent(SlotPicker).props('workerId')).toBe('w1')
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+    await wrapper.find('[data-testid="confirm-booking-button"]').trigger('click')
+    await flushPromises()
+
+    const bookingCall = fetchMock.mock.calls.find(([path]) => path === '/bookings')
+    expect(bookingCall?.[1]).toMatchObject({ body: expect.objectContaining({ workerId: 'w1' }) })
   })
 
   it('on a 409 from POST /bookings, shows the conflict message and clears the selected slot', async () => {

@@ -4,11 +4,6 @@
      paginate UX mirrors AuditLogView.vue and UsersView.vue exactly (debounced free-text
      search, AppSelect dropdown, JalaliDatePicker range, Pagination, clear-filters button).
 
-     Slice 2 note: nothing in this slice produces referral_reward/referral_reversal rows
-     yet (referrals don't exist until slices 3-5) -- the type filter still lists all three
-     CHECK-constraint values today so the UI doesn't need to change again once they start
-     appearing.
-
      User targeting matches UsersView.vue's own identifier field: phone (free-text, ILIKE
      via GET /admin/users?phone=), resolved locally to a userId before it's sent as the
      `userId` filter GET /admin/wallet/transactions actually accepts. Leaving no user
@@ -35,9 +30,16 @@ const TYPE_OPTIONS = [
   { value: 'admin_adjustment', label: 'تعدیل دستی' },
   { value: 'referral_reward', label: 'پاداش معرفی' },
   { value: 'referral_reversal', label: 'برگشت پاداش معرفی' },
+  { value: 'booking_spend', label: 'استفاده در رزرو' },
+  { value: 'booking_spend_reversal', label: 'برگشت وجه رزرو' },
 ]
 
-type WalletTransactionType = 'referral_reward' | 'referral_reversal' | 'admin_adjustment'
+type WalletTransactionType =
+  | 'referral_reward'
+  | 'referral_reversal'
+  | 'admin_adjustment'
+  | 'booking_spend'
+  | 'booking_spend_reversal'
 
 interface WalletTransactionRow {
   id: string

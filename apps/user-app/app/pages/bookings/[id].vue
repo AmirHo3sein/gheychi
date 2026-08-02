@@ -7,6 +7,7 @@ interface BookingDetail {
   startsAt: string
   priceSnapshot: number
   depositAmount: number
+  walletAmountUsed: number | null
   status: 'pending_payment' | 'confirmed' | 'completed' | 'cancelled_by_user' | 'cancelled_by_salon' | 'expired' | 'no_show'
   refundStatus: 'pending' | 'done' | null
 }
@@ -111,6 +112,12 @@ const reviewButtonLabel = computed(() => {
       <div class="space-y-1 border-t border-(--color-border) pt-2">
         <p>مبلغ کل: {{ booking.priceSnapshot.toLocaleString('fa-IR') }} تومان</p>
         <p>پیش‌پرداخت: {{ booking.depositAmount.toLocaleString('fa-IR') }} تومان</p>
+        <!-- depositAmount above is already what's charged online (post-wallet) --
+             this line exists only so the reduction is traceable back to the wallet,
+             mirroring booking.entity.ts's own walletAmountUsed doc comment. -->
+        <p v-if="booking.walletAmountUsed" class="text-(--color-text-muted)">
+          {{ booking.walletAmountUsed.toLocaleString('fa-IR') }} تومان از کیف پول شما کسر شد
+        </p>
       </div>
     </BaseCard>
 

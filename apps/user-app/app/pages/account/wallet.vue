@@ -9,7 +9,7 @@ interface WalletTransactionItem {
   currency: string
   amount: number
   balanceAfter: number
-  type: 'referral_reward' | 'referral_reversal' | 'admin_adjustment'
+  type: 'referral_reward' | 'referral_reversal' | 'admin_adjustment' | 'booking_spend' | 'booking_spend_reversal'
   reason: string | null
   createdAt: string
 }
@@ -36,6 +36,8 @@ const TYPE_LABELS: Record<WalletTransactionItem['type'], string> = {
   admin_adjustment: 'اصلاح توسط پشتیبانی',
   referral_reward: 'پاداش معرفی',
   referral_reversal: 'برگشت پاداش معرفی',
+  booking_spend: 'استفاده در رزرو',
+  booking_spend_reversal: 'برگشت وجه رزرو',
 }
 
 const page = computed(() => {

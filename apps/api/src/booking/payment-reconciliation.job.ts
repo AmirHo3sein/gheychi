@@ -3,8 +3,9 @@ import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, LessThan, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
+import { WalletService } from '../wallet/wallet.service';
 import { Booking } from './booking.entity';
-import { releaseCouponRedemption } from './coupon-release.util';
+import { releaseBookingHold } from './booking-hold-release.util';
 import { PAYMENT_GATEWAY, PaymentGateway } from './payment-gateway';
 import { Payment } from './payment.entity';
 
@@ -19,6 +20,7 @@ export class PaymentReconciliationJob {
     private readonly dataSource: DataSource,
     @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
     private readonly alerts: AlertsService,
+    private readonly walletService: WalletService,
   ) {}
 
   @Cron('*/5 * * * *')
@@ -106,10 +108,11 @@ export class PaymentReconciliationJob {
               { status: 'cancelled_by_user' },
             );
             await em.update(Payment, { id: payment.id, status: 'initiated' }, { status: 'failed' });
-            // No capture ever happened, so give the customer back the coupon code this
-            // hold consumed -- unconditional and idempotent, so it also covers the case
-            // where the booking had already expired (BookingExpiryJob released it too).
-            await releaseCouponRedemption(em, payment.bookingId);
+            // No capture ever happened, so give the customer back the coupon code and
+            // wallet balance this hold consumed -- unconditional and idempotent, so it
+            // also covers the case where the booking had already expired (BookingExpiryJob
+            // released it too).
+            await releaseBookingHold(em, this.walletService, payment.bookingId);
           }
         });
         reconciled++;

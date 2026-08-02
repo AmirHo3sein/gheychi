@@ -2,7 +2,13 @@ import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsISO8601, IsOptional, IsUUID, Max, Min } from 'class-validator';
 import { WalletTransactionType } from '../wallet-transaction.entity';
 
-const WALLET_TRANSACTION_TYPES: WalletTransactionType[] = ['referral_reward', 'referral_reversal', 'admin_adjustment'];
+const WALLET_TRANSACTION_TYPES: WalletTransactionType[] = [
+  'referral_reward',
+  'referral_reversal',
+  'admin_adjustment',
+  'booking_spend',
+  'booking_spend_reversal',
+];
 
 /** GET /admin/wallet/transactions -- global ledger search, mirrors AuditLogQueryDto's
  * filter/paginate shape (actorId/action/targetType/from/to/page/pageSize). */

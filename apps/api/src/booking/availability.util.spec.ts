@@ -198,6 +198,87 @@ describe('computeAvailableSlots', () => {
     expect(negative).toEqual([]);
   });
 
+  it('excludes a slot for the requested worker even when the salon has spare capacity', () => {
+    const result = computeAvailableSlots({
+      now: NOW,
+      days: 1,
+      durationMin: 60,
+      capacity: 3, // plenty of salon-wide room -- the worker is still the constraint
+      hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '11:00:00' }]]]),
+      closedDates: new Set(),
+      existingBookings: [
+        {
+          startsAt: new Date('2026-08-03T05:30:00.000Z'),
+          endsAt: new Date('2026-08-03T06:30:00.000Z'),
+          workerId: 'worker-1',
+        },
+      ],
+      requestedWorkerId: 'worker-1',
+    });
+    // 09:00 is this worker's own conflict; 10:00 remains free for them.
+    expect(result[0].slots).toEqual(['2026-08-03T06:30:00.000Z']);
+  });
+
+  it('does not exclude a slot for a DIFFERENT worker than the one that is busy', () => {
+    const result = computeAvailableSlots({
+      now: NOW,
+      days: 1,
+      durationMin: 60,
+      capacity: 3,
+      hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '10:00:00' }]]]),
+      closedDates: new Set(),
+      existingBookings: [
+        {
+          startsAt: new Date('2026-08-03T05:30:00.000Z'),
+          endsAt: new Date('2026-08-03T06:30:00.000Z'),
+          workerId: 'worker-1',
+        },
+      ],
+      requestedWorkerId: 'worker-2',
+    });
+    expect(result[0].slots).toEqual(['2026-08-03T05:30:00.000Z']);
+  });
+
+  it('ignores workerId on existing bookings entirely when no specific worker is requested', () => {
+    const result = computeAvailableSlots({
+      now: NOW,
+      days: 1,
+      durationMin: 60,
+      capacity: 3,
+      hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '10:00:00' }]]]),
+      closedDates: new Set(),
+      existingBookings: [
+        {
+          startsAt: new Date('2026-08-03T05:30:00.000Z'),
+          endsAt: new Date('2026-08-03T06:30:00.000Z'),
+          workerId: 'worker-1',
+        },
+      ],
+      // no requestedWorkerId -- "any available staff", unaffected by which worker a booking names
+    });
+    expect(result[0].slots).toEqual(['2026-08-03T05:30:00.000Z']);
+  });
+
+  it('treats a null workerId on an existing booking as never matching a requested worker', () => {
+    const result = computeAvailableSlots({
+      now: NOW,
+      days: 1,
+      durationMin: 60,
+      capacity: 3,
+      hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '10:00:00' }]]]),
+      closedDates: new Set(),
+      existingBookings: [
+        {
+          startsAt: new Date('2026-08-03T05:30:00.000Z'),
+          endsAt: new Date('2026-08-03T06:30:00.000Z'),
+          workerId: null, // a solo-owner-operated-salon-style booking with no worker assigned
+        },
+      ],
+      requestedWorkerId: 'worker-1',
+    });
+    expect(result[0].slots).toEqual(['2026-08-03T05:30:00.000Z']);
+  });
+
   it('returns slots in chronological order even when working-hour ranges are given out of order', () => {
     const result = computeAvailableSlots({
       now: NOW,

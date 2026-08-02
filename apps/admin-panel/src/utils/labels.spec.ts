@@ -4,6 +4,9 @@ import {
   AUDIT_ACTION_KEYS,
   auditActionLabel,
   blogPostStatusLabel,
+  invoicePaymentMethodLabel,
+  invoiceStatusLabel,
+  jalaliMonthLabel,
   qualifyingEventLabel,
   referralStatusLabel,
   referralTypeLabel,
@@ -141,5 +144,41 @@ describe('qualifyingEventLabel', () => {
 
   it('falls back to the raw value for an unknown event', () => {
     expect(qualifyingEventLabel('weird')).toBe('weird')
+  })
+})
+
+describe('invoiceStatusLabel', () => {
+  it('maps every invoice status to a Farsi label and tone', () => {
+    expect(invoiceStatusLabel('issued')).toEqual({ label: 'صادرشده', tone: 'info' })
+    expect(invoiceStatusLabel('partially_paid')).toEqual({ label: 'پرداخت جزئی', tone: 'warning' })
+    expect(invoiceStatusLabel('paid')).toEqual({ label: 'پرداخت‌شده', tone: 'success' })
+    expect(invoiceStatusLabel('void')).toEqual({ label: 'باطل‌شده', tone: 'neutral' })
+  })
+
+  it('falls back to the raw value for an unknown status', () => {
+    expect(invoiceStatusLabel('weird')).toEqual({ label: 'weird', tone: 'neutral' })
+  })
+})
+
+describe('invoicePaymentMethodLabel', () => {
+  it('maps every payment method to a Farsi label', () => {
+    expect(invoicePaymentMethodLabel('bank_transfer')).toBe('حواله بانکی')
+    expect(invoicePaymentMethodLabel('cash')).toBe('نقدی')
+    expect(invoicePaymentMethodLabel('other')).toBe('سایر')
+  })
+
+  it('falls back to the raw value for an unknown method', () => {
+    expect(invoicePaymentMethodLabel('weird')).toBe('weird')
+  })
+})
+
+describe('jalaliMonthLabel', () => {
+  it('formats a Jalali (year, month) pair with Persian digits and the Persian month name', () => {
+    expect(jalaliMonthLabel(1403, 1)).toBe('فروردین ۱۴۰۳')
+    expect(jalaliMonthLabel(1403, 12)).toBe('اسفند ۱۴۰۳')
+  })
+
+  it('does not insert a thousands separator into the year', () => {
+    expect(jalaliMonthLabel(1403, 7)).not.toContain('٬')
   })
 })

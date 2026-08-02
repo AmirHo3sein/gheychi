@@ -138,7 +138,7 @@ describe('WalletService', () => {
       const { em, store } = makeFakeEm({ 'user-1:toman': 1000 });
       const result = await service.debit(em, 'user-1', 'toman', 400, 'admin_adjustment');
 
-      expect(result).toEqual({ debited: 400, shortfall: 0, balanceAfter: 600 });
+      expect(result).toEqual({ debited: 400, shortfall: 0, balanceAfter: 600, transactionId: 'tx-id' });
       expect(store.get('user-1:toman')).toBe(600);
     });
 
@@ -146,7 +146,7 @@ describe('WalletService', () => {
       const { em, store, insertCalls } = makeFakeEm({ 'user-1:toman': 40 });
       const result = await service.debit(em, 'user-1', 'toman', 120, 'admin_adjustment');
 
-      expect(result).toEqual({ debited: 40, shortfall: 80, balanceAfter: 0 });
+      expect(result).toEqual({ debited: 40, shortfall: 80, balanceAfter: 0, transactionId: 'tx-id' });
       expect(store.get('user-1:toman')).toBe(0);
       expect(insertCalls[0]).toMatchObject({ amount: -40, balanceAfter: 0 });
     });
@@ -161,7 +161,7 @@ describe('WalletService', () => {
       const { em, store, insertCalls, walletBalanceRepo } = makeFakeEm({ 'user-1:toman': 0 });
       const result = await service.debit(em, 'user-1', 'toman', 50, 'admin_adjustment');
 
-      expect(result).toEqual({ debited: 0, shortfall: 50, balanceAfter: 0 });
+      expect(result).toEqual({ debited: 0, shortfall: 50, balanceAfter: 0, transactionId: null });
       expect(store.get('user-1:toman')).toBe(0);
       expect(insertCalls).toHaveLength(0);
       expect(walletBalanceRepo.update).not.toHaveBeenCalled();
@@ -188,7 +188,7 @@ describe('WalletService', () => {
       expect(creditResult.balanceAfter).toBe(600);
 
       const debitResult = await service.debit(em, 'user-1', 'toman', 200, 'admin_adjustment');
-      expect(debitResult).toEqual({ debited: 200, shortfall: 0, balanceAfter: 400 });
+      expect(debitResult).toEqual({ debited: 200, shortfall: 0, balanceAfter: 400, transactionId: 'tx-id' });
       expect(store.get('user-1:toman')).toBe(400);
     });
   });

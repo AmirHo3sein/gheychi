@@ -5,7 +5,11 @@ import { pickDefaultDate, formatSlotTime, formatDateLabel, type DayAvailability 
 // so this component can render which slot is actually selected -- previously the parent
 // tracked selection itself from the `select` emit but never fed it back in, leaving the
 // clicked button with zero visual/ARIA confirmation of its own selected state.
-const props = defineProps<{ salonId: string; serviceId: string; selectedSlot?: string | null }>()
+// workerId is optional -- omitted means "any available staff", the unchanged default.
+// Set from the parent's own worker picker; refetching on change (not just on mount) is
+// what actually enforces the choice, since a slot free for "any staff" can be exactly
+// the slot a specific chosen worker is busy in.
+const props = defineProps<{ salonId: string; serviceId: string; selectedSlot?: string | null; workerId?: string | null }>()
 const emit = defineEmits<{ select: [iso: string] }>()
 
 const { apiFetch } = useApi()
@@ -14,17 +18,19 @@ const selectedDate = ref<string | null>(null)
 const loading = ref(true)
 const hasError = ref(false)
 
-onMounted(async () => {
+async function fetchSlots() {
   loading.value = true
   const { data, error } = await apiFetch<DayAvailability[]>(`/salons/${props.salonId}/availability`, {
-    query: { serviceId: props.serviceId },
+    query: { serviceId: props.serviceId, workerId: props.workerId || undefined },
     silent: true,
   })
   hasError.value = !!error
   days.value = data ?? []
   selectedDate.value = pickDefaultDate(days.value)
   loading.value = false
-})
+}
+
+watch(() => props.workerId, fetchSlots, { immediate: true })
 
 const daysWithSlots = computed(() => days.value.filter((d) => d.slots.length > 0))
 const slotsForSelectedDate = computed(() => days.value.find((d) => d.date === selectedDate.value)?.slots ?? [])

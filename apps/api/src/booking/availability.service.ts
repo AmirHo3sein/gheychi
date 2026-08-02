@@ -20,7 +20,12 @@ export class AvailabilityService {
     @InjectRepository(Booking) private readonly bookings: Repository<Booking>,
   ) {}
 
-  async computeFor(salonId: string, serviceId: string, now: Date = new Date()): Promise<DayAvailability[]> {
+  async computeFor(
+    salonId: string,
+    serviceId: string,
+    now: Date = new Date(),
+    workerId?: string,
+  ): Promise<DayAvailability[]> {
     const salon = await this.salons.findOneBy({ id: salonId, status: 'approved' });
     if (!salon) throw new NotFoundException('Salon not found');
 
@@ -59,7 +64,9 @@ export class AvailabilityService {
       existingBookings: activeBookingRows.map((b) => ({
         startsAt: b.startsAt,
         endsAt: b.endsAt,
+        workerId: b.workerId,
       })),
+      requestedWorkerId: workerId,
     });
   }
 }

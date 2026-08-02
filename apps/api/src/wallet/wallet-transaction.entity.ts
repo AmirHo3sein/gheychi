@@ -1,11 +1,17 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
 import { WalletCurrency } from './wallet-balance.entity';
 
-// referral_reward/referral_reversal are listed per the DB CHECK constraint even
-// though nothing produces them yet in this slice -- referrals don't exist until
-// slices 3-5 (see docs/superpowers/specs/2026-07-21-referral-and-rating-system-design.md
-// section 2, Slice 2). This slice only ever writes 'admin_adjustment' rows.
-export type WalletTransactionType = 'referral_reward' | 'referral_reversal' | 'admin_adjustment';
+// booking_spend/booking_spend_reversal are written by BookingsService.createHold
+// (applying a customer's wallet balance to a deposit) and releaseBookingHold
+// (giving it back if the hold dies before payment captures) -- see
+// booking-hold-release.util.ts for why release, not refund-time reversal, is the
+// only path that ever needs to undo a booking_spend row.
+export type WalletTransactionType =
+  | 'referral_reward'
+  | 'referral_reversal'
+  | 'admin_adjustment'
+  | 'booking_spend'
+  | 'booking_spend_reversal';
 
 const bigintToNumber = {
   to: (v: number) => v,

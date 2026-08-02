@@ -89,6 +89,8 @@ const WALLET_TRANSACTION_TYPE: Record<string, LabelEntry> = {
   admin_adjustment: { label: 'تعدیل دستی', tone: 'info' },
   referral_reward: { label: 'پاداش معرفی', tone: 'success' },
   referral_reversal: { label: 'برگشت پاداش معرفی', tone: 'danger' },
+  booking_spend: { label: 'استفاده در رزرو', tone: 'info' },
+  booking_spend_reversal: { label: 'برگشت وجه رزرو', tone: 'success' },
 }
 
 export function walletTransactionTypeLabel(type: string): LabelEntry {
@@ -257,4 +259,48 @@ const CONFIG_META: Record<string, ConfigMeta> = {
 /** Falls back to the raw key as its own label -- new config keys stay editable, just less pretty. */
 export function configKeyMeta(key: string): ConfigMeta {
   return CONFIG_META[key] ?? { label: key, hint: '', unit: '' }
+}
+
+const INVOICE_STATUS: Record<string, LabelEntry> = {
+  issued: { label: 'صادرشده', tone: 'info' },
+  partially_paid: { label: 'پرداخت جزئی', tone: 'warning' },
+  paid: { label: 'پرداخت‌شده', tone: 'success' },
+  void: { label: 'باطل‌شده', tone: 'neutral' },
+}
+
+export function invoiceStatusLabel(status: string): LabelEntry {
+  return INVOICE_STATUS[status] ?? { label: status, tone: 'neutral' }
+}
+
+const INVOICE_PAYMENT_METHOD: Record<string, string> = {
+  bank_transfer: 'حواله بانکی',
+  cash: 'نقدی',
+  other: 'سایر',
+  automatic_payout: 'واریز خودکار',
+  wallet_credit: 'کیف پول',
+}
+
+export function invoicePaymentMethodLabel(method: string): string {
+  return INVOICE_PAYMENT_METHOD[method] ?? method
+}
+
+/** Persian month names for jalaliMonth (1-12), matching JalaliDatePicker.vue's own list. */
+const JALALI_MONTHS = [
+  'فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور',
+  'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند',
+]
+
+const PERSIAN_DIGITS = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹']
+
+// Plain digit substitution, not toLocaleString('fa-IR') -- a 4-digit year would
+// otherwise pick up a "٬" thousands separator (matches JalaliDatePicker.vue's own
+// toPersianDigits, duplicated here rather than imported since it's a one-line helper
+// and importing a component file into a plain util module would be backwards).
+function toPersianDigits(n: number): string {
+  return String(n).replace(/[0-9]/g, (d) => PERSIAN_DIGITS[Number(d)])
+}
+
+export function jalaliMonthLabel(year: number, month: number): string {
+  const name = JALALI_MONTHS[month - 1] ?? String(month)
+  return `${name} ${toPersianDigits(year)}`
 }

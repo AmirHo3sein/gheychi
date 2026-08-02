@@ -86,6 +86,17 @@ export class Booking {
   @Column({ name: 'worker_id', type: 'uuid', nullable: true })
   workerId: string | null;
 
+  // How much of THIS booking's depositAmount was funded from the customer's wallet
+  // balance rather than charged online -- null means wallet wasn't applied. Debited
+  // (and, if the hold dies before payment, credited back) by
+  // booking-hold-release.util.ts's releaseBookingHold, mirroring how couponId tracks
+  // a coupon's spend/release lifecycle. depositAmount itself already reflects the
+  // reduced online-payable amount (deposit - walletAmountUsed) -- this column exists
+  // only so that reduction is traceable back to the wallet, not to record a second
+  // "full" deposit figure.
+  @Column({ name: 'wallet_amount_used', type: 'bigint', nullable: true, transformer: nullableBigintToNumber })
+  walletAmountUsed: number | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 }

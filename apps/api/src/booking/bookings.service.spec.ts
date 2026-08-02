@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -6,9 +6,12 @@ import { DataSource } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { CouponRedemption } from '../coupons/coupon-redemption.entity';
 import { CouponsService } from '../coupons/coupons.service';
+import { InvoicingService } from '../invoicing/invoicing.service';
 import { REDIS } from '../redis/redis.module';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
 import { ReferralsService } from '../referrals/referrals.service';
+import { WalletTransaction } from '../wallet/wallet-transaction.entity';
+import { WalletService } from '../wallet/wallet.service';
 import { PAYMENT_GATEWAY } from './payment-gateway';
 import { Booking } from './booking.entity';
 import { Payment } from './payment.entity';
@@ -45,6 +48,14 @@ describe('BookingsService.getEarnings', () => {
         { provide: AlertsService, useValue: { raise: jest.fn() } },
         { provide: CouponsService, useValue: { resolveAndValidate: jest.fn() } },
         { provide: ReferralsService, useValue: { tryGrantReward: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: WalletService,
+          useValue: {
+            debit: jest.fn().mockResolvedValue({ debited: 0, shortfall: 0, balanceAfter: 0, transactionId: null }),
+            credit: jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' }),
+          },
+        },
+        { provide: InvoicingService, useValue: { recordCommission: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
@@ -83,11 +94,14 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
   let service: BookingsService;
   let emCount: jest.Mock;
   let emSave: jest.Mock;
+  let emUpdate: jest.Mock;
   let requestPayment: jest.Mock;
   let notifyConfirmed: jest.Mock;
   let resolveAndValidate: jest.Mock;
   let redisSet: jest.Mock;
   let redisDel: jest.Mock;
+  let walletDebit: jest.Mock;
+  let workersFindOneBy: jest.Mock;
 
   // Cheap enough that the live config's 200,000-toman minimum would otherwise exceed it.
   const SERVICE = {
@@ -115,6 +129,11 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
     resolveAndValidate = jest.fn();
     redisSet = jest.fn().mockResolvedValue('OK');
     redisDel = jest.fn().mockResolvedValue(1);
+    emUpdate = jest.fn();
+    // Default: wallet balance is never applied unless a test opts in via
+    // applyWalletBalance and overrides this to actually debit something.
+    walletDebit = jest.fn().mockResolvedValue({ debited: 0, shortfall: 0, balanceAfter: 0, transactionId: null });
+    workersFindOneBy = jest.fn().mockResolvedValue({ id: 'worker-1', salonId: 'salon-1', active: true });
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -126,13 +145,13 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
           useValue: { findOneBy: jest.fn().mockResolvedValue({ id: 'salon-1', name: 'Test Salon', capacity: 1 }) },
         },
         { provide: getRepositoryToken(SalonService), useValue: { findOneBy: jest.fn().mockResolvedValue({ ...SERVICE }) } },
-        { provide: getRepositoryToken(Worker), useValue: {} },
+        { provide: getRepositoryToken(Worker), useValue: { findOneBy: workersFindOneBy } },
         {
           provide: DataSource,
           useValue: {
             // Serves both the createHold transaction and createPaymentSession's own.
             transaction: jest.fn((cb: (em: unknown) => unknown) =>
-              cb({ count: emCount, create: (_e: unknown, obj: unknown) => obj, save: emSave, update: jest.fn(), query: jest.fn() }),
+              cb({ count: emCount, create: (_e: unknown, obj: unknown) => obj, save: emSave, update: emUpdate, query: jest.fn() }),
             ),
           },
         },
@@ -156,6 +175,14 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
         { provide: AlertsService, useValue: { raise: jest.fn() } },
         { provide: CouponsService, useValue: { resolveAndValidate } },
         { provide: ReferralsService, useValue: { tryGrantReward: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: WalletService,
+          useValue: {
+            debit: walletDebit,
+            credit: jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' }),
+          },
+        },
+        { provide: InvoicingService, useValue: { recordCommission: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
@@ -171,6 +198,58 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
     expect(requestPayment).toHaveBeenCalledWith(150_000, expect.any(String), expect.any(String));
     expect(result.paymentRequired).toBe(true);
     expect(result.paymentUrl).toBe('https://pay.example/AUTH-1');
+    // No applyWalletBalance in the request -- the wallet must never be touched.
+    expect(walletDebit).not.toHaveBeenCalled();
+  });
+
+  it('partially covers the deposit with wallet balance and charges only the remainder online', async () => {
+    walletDebit.mockResolvedValue({ debited: 50_000, shortfall: 0, balanceAfter: 0, transactionId: 'wt-1' });
+
+    const result = await service.createHold('customer-1', { ...DTO, applyWalletBalance: true });
+
+    // debit() is asked for the FULL pre-wallet deposit (150,000) -- it caps at the
+    // customer's real balance itself, so createHold doesn't need to know the balance
+    // up front, only the ceiling it would accept.
+    expect(walletDebit).toHaveBeenCalledWith(
+      expect.anything(),
+      'customer-1',
+      'toman',
+      150_000,
+      'booking_spend',
+      expect.objectContaining({ referenceType: 'booking' }),
+    );
+    expect(savedBooking().walletAmountUsed).toBe(50_000);
+    // depositAmount is what's actually charged online, not the nominal pre-wallet figure.
+    expect(savedBooking().depositAmount).toBe(100_000);
+    expect(requestPayment).toHaveBeenCalledWith(100_000, expect.any(String), expect.any(String));
+    expect(result.paymentRequired).toBe(true);
+    // The wallet ledger row couldn't name the booking until after the insert produced an
+    // id -- backfilled via a follow-up update keyed on the transaction id debit() returned.
+    expect(emUpdate).toHaveBeenCalledWith(WalletTransaction, { id: 'wt-1' }, { referenceId: 'booking-1' });
+  });
+
+  it('confirms the booking outright when wallet balance alone covers the whole deposit -- same path as a 100%-off coupon', async () => {
+    walletDebit.mockResolvedValue({ debited: 150_000, shortfall: 0, balanceAfter: 0, transactionId: 'wt-1' });
+
+    const result = await service.createHold('customer-1', { ...DTO, applyWalletBalance: true });
+
+    expect(savedBooking().walletAmountUsed).toBe(150_000);
+    expect(savedBooking().depositAmount).toBe(0);
+    expect(savedBooking().status).toBe('confirmed');
+    expect(emSave).not.toHaveBeenCalledWith(Payment, expect.anything());
+    expect(requestPayment).not.toHaveBeenCalled();
+    expect(notifyConfirmed).toHaveBeenCalledWith('booking-1');
+    expect(result.paymentRequired).toBe(false);
+  });
+
+  it('does not touch the wallet when the deposit is already 0 before any wallet credit is considered', async () => {
+    resolveAndValidate.mockResolvedValue({ id: 'coupon-1', discountPercent: 100, discountFixedAmount: null });
+
+    await service.createHold('customer-1', { ...DTO, couponCode: 'FREE100', applyWalletBalance: true });
+
+    // Nothing to reduce -- debit() must never be called against a zero deposit.
+    expect(walletDebit).not.toHaveBeenCalled();
+    expect(savedBooking().walletAmountUsed).toBeNull();
   });
 
   it('confirms a fully-discounted booking outright: no deposit, no Payment row, no gateway session', async () => {
@@ -208,6 +287,52 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
     expect(result.booking.id).toBe('booking-1');
     expect(result.paymentRequired).toBe(false);
   });
+
+  describe('customer-chosen worker', () => {
+    it('records the chosen worker on the booking when it is active and belongs to the salon', async () => {
+      const result = await service.createHold('customer-1', { ...DTO, workerId: 'worker-1' });
+
+      expect(workersFindOneBy).toHaveBeenCalledWith({ id: 'worker-1', salonId: 'salon-1' });
+      expect(savedBooking().workerId).toBe('worker-1');
+      expect(result.paymentRequired).toBe(true);
+    });
+
+    it('404s when the chosen worker does not belong to this salon', async () => {
+      workersFindOneBy.mockResolvedValue(null);
+
+      await expect(service.createHold('customer-1', { ...DTO, workerId: 'worker-9' })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(emSave).not.toHaveBeenCalledWith(Booking, expect.anything());
+    });
+
+    it('400s when the chosen worker belongs to the salon but is inactive', async () => {
+      workersFindOneBy.mockResolvedValue({ id: 'worker-1', salonId: 'salon-1', active: false });
+
+      await expect(service.createHold('customer-1', { ...DTO, workerId: 'worker-1' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(emSave).not.toHaveBeenCalledWith(Booking, expect.anything());
+    });
+
+    it('409s when the chosen worker already has an overlapping booking, even with spare salon capacity', async () => {
+      // The FIRST em.count call is the salon-wide capacity check (kept under capacity);
+      // the SECOND is the per-worker overlap check, keyed on the same overlap shape.
+      emCount.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
+
+      await expect(service.createHold('customer-1', { ...DTO, workerId: 'worker-1' })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(emSave).not.toHaveBeenCalledWith(Booking, expect.anything());
+    });
+
+    it('never checks the worker repo or the per-worker overlap when no workerId is sent', async () => {
+      await service.createHold('customer-1', DTO);
+
+      expect(workersFindOneBy).not.toHaveBeenCalled();
+      expect(emCount).toHaveBeenCalledTimes(1); // salon capacity only
+    });
+  });
 });
 
 describe('BookingsService.cancel', () => {
@@ -244,7 +369,13 @@ describe('BookingsService.cancel', () => {
         {
           provide: DataSource,
           useValue: {
-            transaction: jest.fn((cb: (em: unknown) => unknown) => cb({ update: emUpdate, delete: emDelete })),
+            // find: [] -- releaseBookingHold's wallet-reversal lookup runs unconditionally
+            // alongside the coupon-redemption delete; these cancel() tests don't exercise
+            // wallet spend, so an empty result keeps that half a no-op, same as a booking
+            // that never used its wallet.
+            transaction: jest.fn((cb: (em: unknown) => unknown) =>
+              cb({ update: emUpdate, delete: emDelete, find: jest.fn().mockResolvedValue([]) }),
+            ),
           },
         },
         {
@@ -258,6 +389,14 @@ describe('BookingsService.cancel', () => {
         { provide: AlertsService, useValue: { raise: jest.fn() } },
         { provide: CouponsService, useValue: { resolveAndValidate: jest.fn() } },
         { provide: ReferralsService, useValue: { tryGrantReward: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: WalletService,
+          useValue: {
+            debit: jest.fn().mockResolvedValue({ debited: 0, shortfall: 0, balanceAfter: 0, transactionId: null }),
+            credit: jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' }),
+          },
+        },
+        { provide: InvoicingService, useValue: { recordCommission: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
@@ -376,6 +515,14 @@ describe('BookingsService.retryPayment authority persist failure', () => {
         { provide: AlertsService, useValue: { raise } },
         { provide: CouponsService, useValue: { resolveAndValidate: jest.fn() } },
         { provide: ReferralsService, useValue: { tryGrantReward: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: WalletService,
+          useValue: {
+            debit: jest.fn().mockResolvedValue({ debited: 0, shortfall: 0, balanceAfter: 0, transactionId: null }),
+            credit: jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' }),
+          },
+        },
+        { provide: InvoicingService, useValue: { recordCommission: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
@@ -425,6 +572,14 @@ describe('BookingsService.assignWorker', () => {
         { provide: AlertsService, useValue: { raise: jest.fn() } },
         { provide: CouponsService, useValue: { resolveAndValidate: jest.fn() } },
         { provide: ReferralsService, useValue: { tryGrantReward: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: WalletService,
+          useValue: {
+            debit: jest.fn().mockResolvedValue({ debited: 0, shortfall: 0, balanceAfter: 0, transactionId: null }),
+            credit: jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' }),
+          },
+        },
+        { provide: InvoicingService, useValue: { recordCommission: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
@@ -505,6 +660,14 @@ describe('BookingsService.listMine / findMine -- workerName enrichment', () => {
         { provide: AlertsService, useValue: { raise: jest.fn() } },
         { provide: CouponsService, useValue: { resolveAndValidate: jest.fn() } },
         { provide: ReferralsService, useValue: { tryGrantReward: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: WalletService,
+          useValue: {
+            debit: jest.fn().mockResolvedValue({ debited: 0, shortfall: 0, balanceAfter: 0, transactionId: null }),
+            credit: jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' }),
+          },
+        },
+        { provide: InvoicingService, useValue: { recordCommission: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
@@ -535,25 +698,36 @@ describe('BookingsService.listMine / findMine -- workerName enrichment', () => {
 describe('BookingsService.updateStatus -- first-completed-booking referral trigger', () => {
   let service: BookingsService;
   let bookingsFindOneBy: jest.Mock;
-  let bookingsUpdate: jest.Mock;
+  let emUpdate: jest.Mock;
   let tryGrantReward: jest.Mock;
+  let recordCommission: jest.Mock;
 
-  const CONFIRMED_BOOKING = { id: 'booking-1', userId: 'customer-1', salonId: 'salon-1', status: 'confirmed' };
+  const CONFIRMED_BOOKING = {
+    id: 'booking-1',
+    userId: 'customer-1',
+    salonId: 'salon-1',
+    status: 'confirmed',
+    depositAmount: 40_000,
+  };
 
   beforeEach(async () => {
     bookingsFindOneBy = jest.fn().mockResolvedValue({ ...CONFIRMED_BOOKING });
-    bookingsUpdate = jest.fn().mockResolvedValue({ affected: 1 });
+    emUpdate = jest.fn().mockResolvedValue({ affected: 1 });
     tryGrantReward = jest.fn().mockResolvedValue(undefined);
+    recordCommission = jest.fn().mockResolvedValue(undefined);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         BookingsService,
-        { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy, update: bookingsUpdate } },
+        { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy } },
         { provide: getRepositoryToken(Payment), useValue: {} },
         { provide: getRepositoryToken(Salon), useValue: {} },
         { provide: getRepositoryToken(SalonService), useValue: {} },
         { provide: getRepositoryToken(Worker), useValue: {} },
-        { provide: DataSource, useValue: {} },
+        {
+          provide: DataSource,
+          useValue: { transaction: jest.fn((cb: (em: unknown) => unknown) => cb({ update: emUpdate })) },
+        },
         { provide: PlatformConfigService, useValue: {} },
         { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
         { provide: REDIS, useValue: {} },
@@ -562,6 +736,14 @@ describe('BookingsService.updateStatus -- first-completed-booking referral trigg
         { provide: AlertsService, useValue: { raise: jest.fn() } },
         { provide: CouponsService, useValue: { resolveAndValidate: jest.fn() } },
         { provide: ReferralsService, useValue: { tryGrantReward } },
+        {
+          provide: WalletService,
+          useValue: {
+            debit: jest.fn().mockResolvedValue({ debited: 0, shortfall: 0, balanceAfter: 0, transactionId: null }),
+            credit: jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' }),
+          },
+        },
+        { provide: InvoicingService, useValue: { recordCommission } },
       ],
     }).compile();
 
@@ -587,5 +769,26 @@ describe('BookingsService.updateStatus -- first-completed-booking referral trigg
 
     expect(result).toBeDefined();
     expect(tryGrantReward).toHaveBeenCalled();
+  });
+
+  it('records a commission ledger row for a completed booking, inside the same transaction as the status write', async () => {
+    await service.updateStatus('salon-1', 'booking-1', 'completed');
+
+    expect(recordCommission).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 'booking-1', salonId: 'salon-1', depositAmount: 40_000 }));
+  });
+
+  it('records a commission ledger row for a no-show identically to a completion', async () => {
+    await service.updateStatus('salon-1', 'booking-1', 'no_show');
+
+    expect(recordCommission).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 'booking-1' }));
+  });
+
+  it('rolls back the status write when recording the commission row fails', async () => {
+    recordCommission.mockRejectedValue(new Error('db down'));
+
+    await expect(service.updateStatus('salon-1', 'booking-1', 'completed')).rejects.toThrow('db down');
+    // tryGrantReward runs AFTER the transaction commits -- a rolled-back transaction
+    // must never reach it.
+    expect(tryGrantReward).not.toHaveBeenCalled();
   });
 });

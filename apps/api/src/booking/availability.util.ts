@@ -6,6 +6,9 @@ export interface WorkingHourRange {
 export interface BookingInterval {
   startsAt: Date;
   endsAt: Date;
+  // null for a booking with no worker assigned -- irrelevant to the requestedWorkerId
+  // filter below, which only ever compares against a real id.
+  workerId?: string | null;
 }
 
 export interface ComputeAvailabilityParams {
@@ -16,6 +19,11 @@ export interface ComputeAvailabilityParams {
   hoursByWeekday: Map<number, WorkingHourRange[]>;
   closedDates: Set<string>;
   existingBookings: BookingInterval[];
+  // When set, a slot is excluded if this specific worker already has an overlapping
+  // booking -- independent of, and in ADDITION to, the salon-wide capacity check below.
+  // A worker can only be in one place at a time regardless of how many chairs the salon
+  // has free, so this is never merely "one more unit of capacity."
+  requestedWorkerId?: string;
 }
 
 export interface DayAvailability {
@@ -73,7 +81,7 @@ function iranWallClockToInstant(dateStr: string, minutesFromMidnight: number): D
  * boundary; do not reintroduce a naive-digits shortcut in any caller.
  */
 export function computeAvailableSlots(params: ComputeAvailabilityParams): DayAvailability[] {
-  const { now, days, durationMin, capacity, hoursByWeekday, closedDates, existingBookings } = params;
+  const { now, days, durationMin, capacity, hoursByWeekday, closedDates, existingBookings, requestedWorkerId } = params;
   const results: DayAvailability[] = [];
 
   // A zero or negative duration would make `cursorMin += durationMin` in the loop
@@ -112,6 +120,13 @@ export function computeAvailableSlots(params: ComputeAvailabilityParams): DayAva
           (b) => b.startsAt < candidateEnd && b.endsAt > candidateStart,
         ).length;
         if (overlapCount >= capacity) continue;
+
+        if (requestedWorkerId) {
+          const workerBusy = existingBookings.some(
+            (b) => b.workerId === requestedWorkerId && b.startsAt < candidateEnd && b.endsAt > candidateStart,
+          );
+          if (workerBusy) continue;
+        }
 
         daySlots.push(candidateStart.toISOString());
       }

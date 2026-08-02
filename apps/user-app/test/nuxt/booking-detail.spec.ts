@@ -20,6 +20,7 @@ const BASE_BOOKING = {
   startsAt: '2026-07-20T09:00:00.000Z',
   priceSnapshot: 300_000,
   depositAmount: 200_000,
+  walletAmountUsed: null as number | null,
   status: 'cancelled_by_salon',
   refundStatus: null as string | null,
 }
@@ -80,6 +81,19 @@ describe('booking detail page', () => {
     expect(line.html()).toContain('text-(--color-text-muted)')
     expect(line.html()).not.toContain('text-(--color-accent)')
     expect(line.html()).not.toContain('text-(--color-success)')
+  })
+
+  it('shows how much wallet balance was applied when walletAmountUsed is set', async () => {
+    fetchMock.mockResolvedValue({ ...BASE_BOOKING, walletAmountUsed: 50_000 })
+    wrapper = await mountSuspended(BookingDetailPage)
+    expect(wrapper.text()).toContain((50_000).toLocaleString('fa-IR'))
+    expect(wrapper.text()).toContain('از کیف پول شما کسر شد')
+  })
+
+  it('does not mention the wallet at all when walletAmountUsed is null', async () => {
+    fetchMock.mockResolvedValue({ ...BASE_BOOKING, walletAmountUsed: null })
+    wrapper = await mountSuspended(BookingDetailPage)
+    expect(wrapper.text()).not.toContain('کیف پول')
   })
 
   it('shows the completed line, in success color, once the refund is done', async () => {

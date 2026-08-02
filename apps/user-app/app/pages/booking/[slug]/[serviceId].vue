@@ -4,6 +4,9 @@ import { applyDiscount } from '../../../utils/discount'
 interface Salon { id: string; name: string; address: string }
 interface SalonServiceItem { id: string; name: string; price: number; durationMin: number; discountPercent: number | null }
 interface BookingTerms { depositPercent: number; depositMinToman: number; cancellationWindowHours: number }
+// GET /salons/:slug/workers (PublicSalonContentController) -- active workers only,
+// the same minimal projection the public worker-ratings page already relies on.
+interface SalonWorker { id: string; name: string; ratingAvg: number; ratingCount: number }
 
 /**
  * Authoritative shape of POST /coupons/validate's 201 response (Slice 6:
@@ -30,23 +33,50 @@ const serviceId = route.params.serviceId as string
 const { apiFetch } = useApi()
 
 const { data: page } = await useAsyncData(`booking-${slug}-${serviceId}`, async () => {
-  const [salonRes, servicesRes, termsRes] = await Promise.all([
+  const [salonRes, servicesRes, termsRes, workersRes] = await Promise.all([
     apiFetch<Salon>(`/salons/${slug}`, { silent: true }),
     apiFetch<SalonServiceItem[]>(`/salons/${slug}/services`, { silent: true }),
     apiFetch<BookingTerms>('/platform-config/booking-terms', { silent: true }),
+    apiFetch<SalonWorker[]>(`/salons/${slug}/workers`, { silent: true }),
   ])
   const service = servicesRes.data?.find((s) => s.id === serviceId)
   if (!salonRes.data || !service) return null
-  return { salon: salonRes.data, service, terms: termsRes.data }
+  return { salon: salonRes.data, service, terms: termsRes.data, workers: workersRes.data ?? [] }
 })
 
 if (!page.value) {
   throw createError({ statusCode: 404, statusMessage: 'Service not found' })
 }
 
+// null = "any available staff", exactly today's unchanged default.
+const selectedWorkerId = ref<string | null>(null)
+
+// redirectOn401: false -- an anonymous customer can browse this whole page before ever
+// logging in (login only happens at confirmBooking's own 401 branch), so a guest's wallet
+// lookup failing quietly (no balance to show) must not force-redirect them off a page they
+// haven't asked to log in for yet. silent: true for the same reason: no toast for a lookup
+// the customer never triggered themselves.
+const { data: walletBalanceToman } = await useAsyncData(`booking-wallet-${slug}-${serviceId}`, async () => {
+  const { data } = await apiFetch<{ balances: Array<{ currency: string; balance: number }> }>('/wallet/mine', {
+    silent: true,
+    redirectOn401: false,
+  })
+  return data?.balances.find((b) => b.currency === 'toman')?.balance ?? 0
+})
+
+const applyWalletBalance = ref(false)
+
 const selectedSlot = ref<string | null>(null)
 const submitting = ref(false)
 const submitError = ref('')
+
+// Choosing a specific worker re-filters SlotPicker's own availability fetch to that
+// worker's real schedule (see its workerId prop) -- a slot picked before switching
+// workers may no longer be valid for the new one, so the selection is cleared on
+// change rather than silently carried over to a worker it was never checked against.
+watch(selectedWorkerId, () => {
+  selectedSlot.value = null
+})
 
 const couponCode = ref('')
 const couponApplying = ref(false)
@@ -129,6 +159,20 @@ const estimatedDeposit = computed(() => {
   return Math.max(0, Math.min(Math.max(pct, page.value.terms.depositMinToman), discountedPrice))
 })
 
+// Display-only preview of what createHold's own wallet debit will actually apply
+// (min(balance, deposit)) -- the server is still the sole source of truth (same
+// caveat as estimatedDeposit above), this only keeps the checkbox from promising an
+// amount larger than either the deposit or the customer's real balance.
+const walletAmountToApply = computed(() => {
+  if (!applyWalletBalance.value || estimatedDeposit.value === null) return 0
+  return Math.min(walletBalanceToman.value ?? 0, estimatedDeposit.value)
+})
+
+const depositDueOnline = computed(() => {
+  if (estimatedDeposit.value === null) return null
+  return estimatedDeposit.value - walletAmountToApply.value
+})
+
 // The API's 4xx bodies are the only explanation of WHY a coupon or a hold was refused, and
 // every one a customer can act on is already written for them in Persian (CouponsService's
 // four distinct rejections: unknown code, expired, already redeemed by this user, redemption
@@ -190,6 +234,8 @@ async function confirmBooking() {
       serviceId,
       startsAt: selectedSlot.value,
       couponCode: appliedCoupon.value ? appliedCoupon.value.code : undefined,
+      applyWalletBalance: applyWalletBalance.value || undefined,
+      workerId: selectedWorkerId.value || undefined,
     },
     silent: true,
   })
@@ -244,12 +290,44 @@ async function confirmBooking() {
       <p class="text-sm">{{ page.salon.name }} — {{ page.salon.address }}</p>
     </div>
 
+    <!-- Optional -- omitted (selectedWorkerId stays null) means "any available staff",
+         unchanged from before this picker existed. Placed before SlotPicker because the
+         choice narrows which slots are even offered, not just who shows up for one
+         already picked. -->
+    <div v-if="page.workers.length" class="flex gap-2 overflow-x-auto pb-1">
+      <button
+        type="button"
+        :aria-pressed="selectedWorkerId === null"
+        class="inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-full px-4 text-sm font-medium transition-colors"
+        :class="selectedWorkerId === null
+          ? 'bg-(--color-accent-strong) text-white'
+          : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text) hover:bg-(--color-surface-subtle)'"
+        @click="selectedWorkerId = null"
+      >
+        هر متخصص در دسترس
+      </button>
+      <button
+        v-for="worker in page.workers"
+        :key="worker.id"
+        type="button"
+        :aria-pressed="selectedWorkerId === worker.id"
+        class="inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-full px-4 text-sm font-medium transition-colors"
+        :class="selectedWorkerId === worker.id
+          ? 'bg-(--color-accent-strong) text-white'
+          : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text) hover:bg-(--color-surface-subtle)'"
+        @click="selectedWorkerId = worker.id"
+      >
+        {{ worker.name }}
+      </button>
+    </div>
+
     <!-- selected-slot feeds SlotPicker's own selectedSlot prop so it can render which slot is
          actually selected (aria-pressed + accent-strong fill) rather than only emitting 'select'
          with no feedback loop back in. -->
     <SlotPicker
       :salon-id="page.salon.id"
       :service-id="serviceId"
+      :worker-id="selectedWorkerId"
       :selected-slot="selectedSlot"
       @select="selectedSlot = $event"
     />
@@ -278,7 +356,23 @@ async function confirmBooking() {
           </span>
         </span>
       </div>
-      <p v-if="estimatedDeposit !== null">پیش‌پرداخت آنلاین: {{ estimatedDeposit.toLocaleString('fa-IR') }} تومان</p>
+      <!-- Only offered when there's an actual balance to spend -- an unauthenticated
+           guest gets walletBalanceToman: 0 from the quiet (redirectOn401: false) lookup
+           above, so the checkbox simply never appears for them rather than nudging a
+           guest toward a login they haven't asked for yet. -->
+      <label
+        v-if="walletBalanceToman"
+        class="flex items-center gap-2 rounded-xl border border-(--color-border) px-3 py-2 text-(--color-text)"
+      >
+        <input v-model="applyWalletBalance" type="checkbox" class="h-4 w-4 shrink-0" />
+        <span>استفاده از موجودی کیف پول ({{ walletBalanceToman.toLocaleString('fa-IR') }} تومان)</span>
+      </label>
+      <p v-if="depositDueOnline !== null">
+        پیش‌پرداخت آنلاین: {{ depositDueOnline.toLocaleString('fa-IR') }} تومان
+        <span v-if="walletAmountToApply > 0" class="text-(--color-text-muted)">
+          ({{ walletAmountToApply.toLocaleString('fa-IR') }} تومان از کیف پول)
+        </span>
+      </p>
       <p v-if="page.terms" class="text-(--color-text-muted)">لغو رایگان تا {{ page.terms.cancellationWindowHours }} ساعت قبل از نوبت</p>
       <!-- Non-refundable-by-default disclosure (Product Principle #3) -- calm/muted, not
            danger-red: this informs what happens after the free-cancel window, it doesn't
