@@ -3,6 +3,13 @@
 # project with empty volumes and strand the existing data under the old name.
 name: gheychi
 
+# Every service below carries a conservative mem_limit/cpus ceiling -- a leak or runaway
+# burst in any ONE container (most plausibly api) must not be able to starve the whole
+# single-VPS host and take down every other service with it. These are deliberately
+# generous starting points (bound a genuine leak, not tuned to normal peak usage) rather
+# than measured allocations -- re-tune to the actual VPS's total RAM/vCPU before relying
+# on them as a hard sizing guarantee. memswap_limit == mem_limit disables swap for that
+# container, so mem_limit is a real ceiling, not a soft one the kernel can paper over.
 services:
   postgres:
     image: postgis/postgis:16-3.4
@@ -18,11 +25,17 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: 1.5
     networks: [internal]
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.5
     networks: [internal]
 
   api:
@@ -41,6 +54,9 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+    mem_limit: 768m
+    memswap_limit: 768m
+    cpus: 1.5
     networks: [internal]
 
   user-app:
@@ -48,18 +64,27 @@ services:
     restart: unless-stopped
     env_file: .env
     depends_on: [api]
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1.0
     networks: [internal]
 
   provider-panel:
     image: ghcr.io/amirho3sein/gheychi-provider-panel:latest
     restart: unless-stopped
     depends_on: [api]
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.3
     networks: [internal]
 
   admin-panel:
     image: ghcr.io/amirho3sein/gheychi-admin-panel:latest
     restart: unless-stopped
     depends_on: [api]
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.3
     networks: [internal]
 
   caddy:
@@ -74,6 +99,9 @@ services:
       - caddy_config:/config
     env_file: .env
     depends_on: [api, user-app, provider-panel, admin-panel]
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.5
     networks: [internal]
 
   backup:
@@ -85,6 +113,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.5
     networks: [internal]
 
 networks:

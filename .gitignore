@@ -15,3 +15,4 @@ playwright-report/
 blob-report/
 apps/api/uploads/
 *.tsbuildinfo
+.DS_Store

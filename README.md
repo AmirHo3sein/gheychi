@@ -35,6 +35,13 @@ pnpm --filter @gheychi/api test        # unit
 pnpm --filter @gheychi/api test:e2e    # e2e (needs docker services)
 ```
 
+Each frontend app also has its own Playwright e2e suite (`pnpm --filter @gheychi/user-app test:e2e`, and the same for `provider-panel`/`admin-panel`) against a real browser + a real running API. These reset their own `gheychi_e2e` database on every run — `docker/postgres-init/` provisions it automatically on a **fresh** `docker compose up -d` volume; if your `postgres` volume predates this (an existing checkout, `pgdata` already initialized), create it once manually:
+
+```bash
+docker compose exec postgres psql -U gheychi -d postgres -c "CREATE DATABASE gheychi_e2e;"
+docker compose exec postgres psql -U gheychi -d gheychi_e2e -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+```
+
 ## Booking & payments (Plan 2)
 
 - `POST /api/bookings` — hold a slot + get a Zarinpal deposit payment URL (customer, authenticated)

@@ -1,0 +1,32 @@
+version: 2
+updates:
+  # pnpm workspace -- Dependabot's npm ecosystem understands pnpm-lock.yaml and the whole
+  # workspace from a single root entry, no per-app entry needed.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # One entry per Dockerfile -- Dependabot's docker ecosystem doesn't recurse.
+  - package-ecosystem: docker
+    directory: /apps/api
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /apps/user-app
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /apps/provider-panel
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /apps/admin-panel
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly

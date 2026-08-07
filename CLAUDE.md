@@ -114,9 +114,10 @@ src/booking/
 ```
 
 - **One entity file per table**, one service per domain, but **multiple controllers per module** when a resource is exposed differently to different actors (customer-facing vs `salons/mine/*` provider-facing vs admin).
+- **Simple single-entity CRUD controllers may skip the service layer** and operate directly against an injected `Repository<T>` (e.g. `catalog/`, `favorites/`, `push/`) — this is a deliberate exception to "one service per domain," not drift: reserve a service for modules with actual business logic (validation beyond DTOs, multi-step writes, cross-entity reads). Even without a service, reuse the shared `common/` helpers rather than re-deriving the same logic inline: `postgres-error-codes.ts`'s `isUniqueViolation`/`isForeignKeyViolation` (DB-constraint→HTTP mapping) and `trusted-image-upload.ts`'s `assertTrustedImageMimeType()` (every upload endpoint must call this — `file.mimetype` is client-supplied and NestJS's `FileTypeValidator` sniffs real bytes but never rewrites it, so trusting the header alone is a stored-XSS vector via S3's `Content-Type`).
 - **DTOs** live in `dto/`, named `{Action}{Entity}Dto` (`CreateBookingDto`, `UpdateSalonDto`). Validated via `class-validator` decorators (`@Matches`, `@IsIn`, `@Length`, `@Type(() => Number)`, etc.) — global `ValidationPipe` enforces them.
 - **Unit tests (`.spec.ts`) are colocated** next to the file they test, not in a parallel `test/` tree. Only e2e tests live under `test/`.
-- **Background jobs** live in their owning module as `@Injectable()` classes with `@Cron()` on a `handleCron()` method that delegates to a plain `async run()` (keeps the logic independently callable from tests). Registered as providers in the module.
+- **Background jobs** live in their owning module as `@Injectable()` classes with `@Cron()` on a `handleCron()` method that delegates to a plain `async run()` (keeps the logic independently callable from tests). Registered as providers in the module. `handleCron()` always goes through `CronJobRunner.run(jobName, fn, {lockTtlMs?, warnAfterMs?})` (`common/cron-job-runner.service.ts`, `@Global()` via `CommonModule`) — wraps `run()` in `CronLockService`'s distributed Redis lock (no overlapping runs across instances), pages `AlertsService` on an uncaught failure, and raises a non-cancelling "still running" warning past `warnAfterMs`. All 9 current jobs (`booking-expiry`, `booking-reminder`, `payment-reconciliation`, `refund-retry`, `referral-expiry`, `referral-grant`, `story-cleanup`, `storage-reconciliation`, `invoicing/monthly-invoice-generation`) go through it — a new job should too, not call `run()` directly from `handleCron()`.
 
 ### Auth & guards
 
@@ -156,6 +157,12 @@ Default local/test config runs everything through the console/mock implementatio
 
 - Throw NestJS built-ins directly from services (`NotFoundException`, `BadRequestException`, `ConflictException`, `ForbiddenException`) — no global exception filter; NestJS's default mapping to HTTP status is relied on.
 - `@nestjs/config`, global module, env file picked by `NODE_ENV` (`.env.test` vs `.env`). **No schema validation** — services call `config.getOrThrow('KEY')` (throws at runtime if missing) or `config.get('KEY', default)`. Be careful introducing a new required env var — nothing will catch a missing one until the code path runs.
+
+### Observability
+
+- `GET /api/health` (`health/health.controller.ts`) does real dependency checks, not a bare liveness stub — `SELECT 1` against Postgres and Redis `PING`, each with a 2s timeout, returning `{status:'ok',db:'ok',redis:'ok'}` (200) or `{status:'error',...}` (503) per-dependency. Safe for an orchestrator's restart-on-unhealthy policy.
+- Every request gets an `X-Request-Id` (generated, or reused from a trusted incoming header) via `common/request-logging.middleware.ts`, echoed on the response and appended to one access-log line per request (`main.ts`; deliberately NOT mirrored into the e2e test harness — see the middleware's own doc comment for why).
+- `AlertsService` (`alerts/`) is the one place money-critical or job-critical failures get **paged**, not just logged: every alert becomes an admin-panel notification, `severity: 'critical'` also SMS's `ALERT_ADMIN_PHONE`. Dedup'd per key/window so a repeatedly-failing condition doesn't spam. Used by `CronJobRunner` (any job failure), payment/refund failure paths, and per-salon invoice-generation failures.
 
 ### API route conventions
 
@@ -226,7 +233,9 @@ Tailwind v4 (via `@tailwindcss/vite`, no `tailwind.config`) + CSS custom propert
 
 - **Unit** (`test/unit/*.spec.ts`, Vitest `environment: 'node'`) — pure functions: `geo.spec.ts`, `slot-format.spec.ts`, `gender-map.spec.ts`, `route-guard.spec.ts`.
 - **Component/composable** (`test/nuxt/*.spec.ts`, Vitest `environment: 'nuxt'` via `@nuxt/test-utils`) — anything touching Nuxt context: `useApi.spec.ts`, `SalonCard.spec.ts`, `SlotPicker.spec.ts`, `booking-confirm.spec.ts`, `auth.global.spec.ts`.
-- **E2E** (`e2e/*.spec.ts`, Playwright, `workers: 1` — serialized because tests share Redis-backed OTP state) — `01-happy-path.spec.ts`, `02-admin-featured-badge.spec.ts`.
+- **E2E** (`e2e/*.spec.ts`, Playwright, `workers: 1` per app — serialized because tests share Redis-backed OTP state) exists in all three frontend apps, not just user-app: user-app has `01-happy-path.spec.ts` + `02-admin-featured-badge.spec.ts`; provider-panel has `01-onboarding.spec.ts` + `02-bookings-status.spec.ts`; admin-panel has `01-approve-salon.spec.ts`. All three run in CI (`.github/workflows/ci.yml`), none exercise a flow spanning more than one app (a booking created via user-app is never followed onto provider-panel/admin-panel in the same test — a real, currently-open coverage gap for that specific bug class).
+  - **DB prep is a `test:e2e` pretest step (`node e2e/prepare-db.cjs && playwright test`), not Playwright's `globalSetup` option** — Playwright gives no ordering guarantee between `globalSetup` and `webServer` startup (confirmed empirically: the webServer-spawned API process raced ahead of a schema reset/migration happening inside `globalSetup`, on real runs, in all three apps). `prepare-db.cjs` is deliberately plain CommonJS, not TypeScript, so it runs directly via `node` with no loader.
+  - **Each suite resets its own `gheychi_e2e` database** (`docker/postgres-init/02-e2e-db.sql` provisions it on a fresh volume; an existing checkout needs a one-time `CREATE DATABASE gheychi_e2e;`), never the shared `gheychi` dev database `pnpm dev` uses — `prepare-db.cjs` `DROP SCHEMA CASCADE`s its target on every run, so sharing the dev DB would destroy real local dev data on every local e2e run.
 
 ---
 
@@ -243,6 +252,7 @@ Tailwind v4 (via `@tailwindcss/vite`, no `tailwind.config`) + CSS custom propert
 | One salon per owner | `Salon.ownerId` is looked up via `findOneBy({ ownerId })` — the data model does not support multiple salons per provider account |
 | `Referral.status` | `awaiting_qualifying_event` → `reward_granted` \| `partially_granted` (one beneficiary side granted, the other's reward kind not supported at the time — a transient state as of the referral system's slice 6, not a durable dead end) \| `expired` \| `cancelled` (admin-only, only from `awaiting_qualifying_event`) — reward terms are snapshotted onto the row at redemption time and never re-read live, even if the admin later changes `referral_reward_types` |
 | `WalletTransaction` | Append-only ledger, never a mutable balance column — `wallet_balances` is a row-locked, recompute-under-lock cache. A debit is capped at the available balance (never negative); any shortfall is recorded, never silently absorbed |
+| `FinancialTransaction` / `Invoice` | `invoicing/` module: `financial_transactions` is an append-only per-booking commission ledger (`commissionPercent`/`commissionAmount` FROZEN at write time — a later platform commission-rate change never retroactively alters a past row). `MonthlyInvoiceGenerationJob` (daily cron) rolls unlinked ledger rows into one `Invoice` per (salon, Jalali month), `status`: `issued` → `partially_paid` \| `paid`, `void`. Admin records an already-made bank transfer via `PATCH /api/admin/invoices/:id/payment` (there's no payout infrastructure to initiate one); `GET /api/salons/mine/earnings` reads the same ledger, never a live payments+rate recomputation |
 
 ---
 
@@ -252,6 +262,8 @@ This repo is developed via the **superpowers skill pipeline** — brainstorming 
 
 - `docs/superpowers/specs/` — approved design docs (one per plan), e.g. `2026-07-04-gheychi-marketplace-design.md` (original full-product spec), `2026-07-05-plan-4-user-app-frontend-design.md`.
 - `docs/superpowers/plans/` — the executed implementation plans, one per numbered plan (`plan-1-foundation-backend-core.md` through `plan-8-blog-cms.md`, dated filenames like `2026-07-10-plan-8-blog-cms.md`). These record what was actually built, including task-by-task completion notes and any deviations from the design doc.
+- `docs/phase1-audit.md` / `docs/phase2-plan.md` — outside the `superpowers/` naming convention, but the same kind of record, covering an earlier correctness/security audit and a maintainability/scalability pass (shared `common/` utilities, cities table, cursor pagination, cron locking, storage reconciliation, per-user notification reads).
+- A later, broader production-readiness hardening pass (reliability, security, scalability, architecture, observability, performance, API/frontend consistency, testing — `CronJobRunner`, the real health check, request-id correlation, `trusted-image-upload.ts`, the pagination-shape split, `MAX_*_LISTED` caps, etc.) shipped without a dedicated spec/plan doc — its record is the commit history, not a file under `docs/`. Worth writing up retroactively if a `specs/`/`plans/` doc would help onboard the next person touching this surface.
 
 New feature work should follow the same shape: brainstorm to a spec in `specs/`, get it approved, turn it into a task-by-task plan in `plans/`, then execute. Don't skip straight to implementation for anything beyond a small bug fix.
 

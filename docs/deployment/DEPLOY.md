@@ -6,7 +6,7 @@ One Linux VPS running the four app images (built by CI, pulled from GHCR — nev
 
 1. Install Docker Engine + the Compose plugin (follow Docker's official install docs for your distro).
 2. Point DNS `A`/`AAAA` records for all four domains (`DOMAIN_APEX` and its `www.` alias, `DOMAIN_API`, `DOMAIN_PANEL`, `DOMAIN_ADMIN`) at the VPS's IP. Caddy cannot issue certificates until this resolves.
-3. Create a deploy directory and copy three files into it from this repo: `docker-compose.prod.yml`, `Caddyfile`, and a `.env` you create from `.env.example` — **fill in real values**, especially `DB_PASS`, `JWT_SECRET`, the four `DOMAIN_*` vars, `ACME_EMAIL`, and (per the provider cutover checklist below) the real SMS/payment/storage/push credentials once you're ready to go live with them. **Also override `DB_HOST=postgres` and `REDIS_HOST=redis`** — `.env.example`'s `localhost` defaults are correct for local dev only; in this compose stack, `api`, `user-app`, and `backup` all reach Postgres/Redis by their Docker Compose service names, not `localhost`.
+3. Create a deploy directory and copy three files into it from this repo: `docker-compose.prod.yml`, `Caddyfile`, and a `.env` you create from `.env.example` — **fill in real values**, especially `DB_PASS`, `JWT_SECRET`, the four `DOMAIN_*` vars, `ACME_EMAIL`, and (per the provider cutover checklist below) the real SMS/payment/storage/push credentials once you're ready to go live with them. **Also override `DB_HOST=postgres` and `REDIS_HOST=redis`** — `.env.example`'s `localhost` defaults are correct for local dev only; in this compose stack, `api`, `user-app`, and `backup` all reach Postgres/Redis by their Docker Compose service names, not `localhost`. `chmod 600 .env` once you've filled it in — it holds every credential this stack has (DB password, JWT secret, provider API keys).
 4. `docker login ghcr.io -u <your-github-username>` with a GitHub personal access token that has `read:packages` scope, so the VPS can pull the private images CI pushed.
 
 ## Routine deploy
@@ -18,13 +18,22 @@ docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-If the deploy includes a new database migration, run it once the `api` container is up:
+If the deploy includes a new database migration, take an on-demand backup first (the automated one only runs daily at 03:00 UTC, so relying on it alone means a mid-day migration could be up to ~24h stale to restore from), then run the migration once the `api` container is up:
 
 ```bash
+docker compose -f docker-compose.prod.yml exec backup /backup.sh
 docker compose -f docker-compose.prod.yml exec api pnpm migration:run
 ```
 
 This is a manual step by design — migrations never run automatically on container start, so an unreviewed schema change can't fire on every restart.
+
+**If a migration turns out to be wrong**, `pnpm migration:revert` (reverts the single most recent migration, running its `down()`) is the first thing to reach for — faster and less disruptive than a full restore:
+
+```bash
+docker compose -f docker-compose.prod.yml exec api pnpm migration:revert
+```
+
+Only fall back to "## Restoring a backup" below if the migration's `down()` can't cleanly undo it (e.g. a destructive column drop) or the backup taken just before it is the safer path.
 
 ## Rollback
 
@@ -62,6 +71,7 @@ Stopping `api` first avoids live writes racing the restore; `--clean --if-exists
 
 - **Never share raw `docker compose -f docker-compose.prod.yml config` output for troubleshooting.** Compose fully resolves and inlines every `env_file`-sourced variable for `api`, `user-app`, and `caddy` into that output — including secrets never referenced anywhere in the compose file itself (`JWT_SECRET`, `KAVENEGAR_API_KEY`, `ZARINPAL_MERCHANT_ID`, S3 credentials, `VAPID_PRIVATE_KEY`). This is standard, unavoidable Docker Compose behavior (not specific to this file) — if you need to share `config` output for debugging, redact it first.
 - **Database backups run automatically.** The `backup` service dumps Postgres daily (03:00 UTC, plus once immediately whenever the stack starts) to `s3://$S3_BUCKET/backups/`, keeping 14 days. A failed backup logs loudly to `docker compose logs backup` rather than paging anyone — check it periodically. See "## Restoring a backup" below.
+- **Every service carries a `mem_limit`/`cpus` ceiling** in `docker-compose.prod.yml` — a leak or runaway burst in one container (most plausibly `api`) can't starve the whole VPS and take every other service down with it. These are conservative starting points sized for a generic small VPS, not measured against real production traffic — re-tune them (`docker stats` under real load is the fastest way to see current headroom) if the VPS's actual RAM/vCPU total differs meaningfully from what a modest single-VPS deployment implies, or if `api`/`postgres` are ever OOM-killed under legitimate load.
 
 ## Provider cutover checklist
 

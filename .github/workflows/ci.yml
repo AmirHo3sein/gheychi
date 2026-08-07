@@ -53,6 +53,14 @@ jobs:
           psql -h localhost -p 5544 -U gheychi -d gheychi -c "CREATE EXTENSION IF NOT EXISTS postgis;"
           psql -h localhost -p 5544 -U gheychi -d postgres -c "CREATE DATABASE gheychi_test;"
           psql -h localhost -p 5544 -U gheychi -d gheychi_test -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          # Each Playwright suite's prepare-db.cjs now targets its own gheychi_e2e database
+          # (not the shared gheychi dev DB it used to DROP SCHEMA on every run) -- see
+          # apps/user-app/e2e/prepare-db.cjs's own comment for the full rationale. Must exist
+          # before prepare-db.cjs and the webServer-spawned API process both run, since
+          # Playwright gives no ordering guarantee between globalSetup and webServer startup
+          # (which is exactly why prepare-db.cjs is a separate pretest step, not globalSetup).
+          psql -h localhost -p 5544 -U gheychi -d postgres -c "CREATE DATABASE gheychi_e2e;"
+          psql -h localhost -p 5544 -U gheychi -d gheychi_e2e -c "CREATE EXTENSION IF NOT EXISTS postgis;"
 
       - name: Create apps/api/.env for dev-mode servers (used by Playwright e2e)
         run: cp .env.example apps/api/.env
@@ -79,6 +87,18 @@ jobs:
           pnpm --filter @gheychi/user-app test
           pnpm --filter @gheychi/provider-panel test
           pnpm --filter @gheychi/admin-panel test
+
+      - name: Cache Playwright browsers
+        # Keyed on the lockfile hash so a Playwright version bump invalidates it automatically.
+        # This only caches the downloaded browser binary (~/.cache/ms-playwright) -- the
+        # runner VM is fresh every run, so the OS-level deps (--with-deps below) still need to
+        # actually install every time regardless of cache hit; `playwright install` itself
+        # skips re-downloading the browser when it's already present at that path, so no
+        # conditional logic is needed here beyond restoring the cache before running it.
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
 
       - name: Install Playwright browsers
         # `playwright` isn't a root dependency (only a devDependency of the three frontend

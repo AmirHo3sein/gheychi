@@ -217,6 +217,9 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.3.2
         version: 4.3.2(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(yaml@2.9.0))
+      jalaali-js:
+        specifier: ^2.0.0
+        version: 2.0.0
       leaflet:
         specifier: ^1.9.4
         version: 1.9.4
@@ -293,6 +296,9 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.3.2
         version: 4.3.2(vite@7.3.6(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(yaml@2.9.0))
+      jalaali-js:
+        specifier: ^2.0.0
+        version: 2.0.0
       leaflet:
         specifier: ^1.9.4
         version: 1.9.4
@@ -308,6 +314,9 @@ importers:
       tailwindcss:
         specifier: ^4.3.2
         version: 4.3.2
+      vue-multiselect:
+        specifier: ^3.5.0
+        version: 3.5.0
     devDependencies:
       '@nuxt/test-utils':
         specifier: ^3.15.0
