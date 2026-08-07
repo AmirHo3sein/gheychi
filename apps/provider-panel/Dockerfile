@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1
 
-FROM node:20-alpine AS pruner
+FROM node:25-alpine AS pruner
 WORKDIR /app
 RUN npm install -g turbo@2
 COPY . .
 RUN turbo prune @gheychi/provider-panel --docker
 
-FROM node:20-alpine AS installer
+FROM node:25-alpine AS installer
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 COPY --from=pruner /app/out/json/ .
