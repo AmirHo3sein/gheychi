@@ -179,4 +179,40 @@ describe('ReferralSettingsView', () => {
       body: expect.objectContaining({ maxReferralsPerReferrer: null, expirationDays: null, referrerRewardMax: null, referredRewardMax: null }),
     })
   })
+
+  it('surfaces each row\'s updatedAt, falling back to a dash rather than rendering "Invalid Date"', async () => {
+    const wrapper = await mountView()
+
+    // fa-IR + Asia/Tehran, matching the rest of the panel's date rendering -- the seeded
+    // 2026-07-21T00:00 UTC lands on 1405/04/30 in Tehran (+03:30), rendered with Persian digits.
+    expect(wrapper.text()).toContain('آخرین بروزرسانی')
+    expect(wrapper.text()).toContain('۱۴۰۵')
+
+    fetchMock.mockReset()
+    fetchMock.mockResolvedValueOnce({
+      data: REWARD_TYPES.map((r) => ({ ...r, updatedAt: 'not-a-date' })),
+      error: null,
+    })
+    const broken = mount(ReferralSettingsView)
+    await flushPromises()
+
+    expect(broken.text()).not.toContain('Invalid Date')
+    expect(broken.text()).toContain('—')
+  })
+
+  it('shows a distinct error state (this screen has no empty state of its own) when the fetch fails, and retry reloads', async () => {
+    fetchMock.mockResolvedValueOnce({ data: null, error: { status: 500, message: 'Something went wrong' } })
+    const wrapper = mount(ReferralSettingsView)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="load-error"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('کاربر عادی')
+
+    fetchMock.mockResolvedValueOnce({ data: REWARD_TYPES.map((r) => ({ ...r })), error: null })
+    await wrapper.get('[data-testid="retry-load"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="load-error"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('کاربر عادی')
+  })
 })

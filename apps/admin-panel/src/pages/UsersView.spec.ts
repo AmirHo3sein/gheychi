@@ -92,4 +92,20 @@ describe('UsersView', () => {
     expect(wrapper.find('[data-testid="self-row-hint"]').exists()).toBe(false)
     expect(wrapper.findComponent(SuspendUserButton).exists()).toBe(true)
   })
+
+  it('shows a distinct error state (not the empty state) when the fetch fails, and retry reloads', async () => {
+    fetchMock.mockResolvedValueOnce({ data: null, error: { status: 500, message: 'Something went wrong' } })
+    const wrapper = mount(UsersView)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="load-error"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('کاربری با این فیلترها یافت نشد.')
+
+    respondWith([{ ...user }])
+    await wrapper.get('[data-testid="retry-load"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="load-error"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('کاربر نمونه')
+  })
 })

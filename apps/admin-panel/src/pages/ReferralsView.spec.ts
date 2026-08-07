@@ -117,16 +117,16 @@ describe('ReferralsView', () => {
     await flushPromises()
 
     expect(fetchMock).toHaveBeenCalledWith('/admin/referrals/ref-1/cancel', {
-      method: 'PATCH',
+      method: 'POST',
       body: { reason: 'fraud suspected' },
     })
-    // Only the list GET + the cancel PATCH fired -- no extra reload needed on success.
+    // Only the list GET + the cancel POST fired -- no extra reload needed on success.
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain('لغو شده')
     expect(wrapper.find('[data-testid="cancel-referral-button"]').exists()).toBe(false)
   })
 
-  it('reloads the list when the cancel PATCH fails (409 lost race)', async () => {
+  it('reloads the list when the cancel request fails (409 lost race)', async () => {
     fetchMock.mockResolvedValueOnce({ data: { items: [{ ...referral }], total: 1, page: 1, pageSize: 20 }, error: null })
     const wrapper = mount(ReferralsView)
     await flushPromises()
@@ -368,5 +368,21 @@ describe('ReferralsView', () => {
     // granted yet", not fabricated as reversed/pending.
     expect(wrapper.find('[data-testid="reward-status-referred"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="referral-details"]').text()).toContain('هنوز اعطا نشده')
+  })
+
+  it('shows a distinct error state (not the empty state) when the fetch fails, and retry reloads', async () => {
+    fetchMock.mockResolvedValueOnce({ data: null, error: { status: 500, message: 'Something went wrong' } })
+    const wrapper = mount(ReferralsView)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="load-error"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('معرفی‌ای با این فیلترها یافت نشد.')
+
+    fetchMock.mockResolvedValueOnce({ data: { items: [{ ...referral }], total: 1, page: 1, pageSize: 20 }, error: null })
+    await wrapper.get('[data-testid="retry-load"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="load-error"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('09121234567')
   })
 })

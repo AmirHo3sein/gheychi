@@ -17,21 +17,21 @@ function mountNav(path: string) {
 describe('SidebarNav', () => {
   it('marks only the dashboard active on /', () => {
     const wrapper = mountNav('/')
-    const active = wrapper.findAllComponents(RouterLinkStub).filter((l) => l.classes().includes('text-(--color-accent)'))
+    const active = wrapper.findAllComponents(RouterLinkStub).filter((l) => l.classes().includes('text-(--color-accent-text)'))
     expect(active).toHaveLength(1)
     expect(active[0]!.props('to')).toBe('/')
   })
 
   it('keeps the salons link active on a salon detail route', () => {
     const wrapper = mountNav('/salons/abc-123')
-    const active = wrapper.findAllComponents(RouterLinkStub).filter((l) => l.classes().includes('text-(--color-accent)'))
+    const active = wrapper.findAllComponents(RouterLinkStub).filter((l) => l.classes().includes('text-(--color-accent-text)'))
     expect(active).toHaveLength(1)
     expect(active[0]!.props('to')).toBe('/salons')
   })
 
   it('does not double-highlight /referrals when on the sibling settings route', () => {
     const wrapper = mountNav('/referrals/settings')
-    const active = wrapper.findAllComponents(RouterLinkStub).filter((l) => l.classes().includes('text-(--color-accent)'))
+    const active = wrapper.findAllComponents(RouterLinkStub).filter((l) => l.classes().includes('text-(--color-accent-text)'))
     expect(active).toHaveLength(1)
     expect(active[0]!.props('to')).toBe('/referrals/settings')
   })

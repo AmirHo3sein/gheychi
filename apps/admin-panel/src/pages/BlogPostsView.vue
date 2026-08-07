@@ -310,7 +310,7 @@ watch(page, load)
 
     <AppCard class="w-full shrink-0 xl:w-80">
       <p class="mb-3 flex items-center gap-2 text-sm font-semibold text-(--color-text)">
-        <AppIcon name="categories" :size="16" class="text-(--color-accent)" />
+        <AppIcon name="categories" :size="16" class="text-(--color-accent-text)" />
         دسته‌بندی‌های بلاگ
       </p>
 

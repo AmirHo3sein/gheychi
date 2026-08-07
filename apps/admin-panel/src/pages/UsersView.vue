@@ -47,6 +47,9 @@ const session = useSessionStore()
 const isSelf = (userId: string) => userId === session.user?.id
 const users = ref<UserRow[]>([])
 const loading = ref(true)
+// A fetch failure must not be silently repainted as an empty state -- see
+// SalonsView.vue's identical loadError pattern.
+const loadError = ref(false)
 const page = ref(1)
 const total = ref(0)
 const pageSize = 20
@@ -65,6 +68,7 @@ const requestId = ref(0)
 
 async function load() {
   loading.value = true
+  loadError.value = false
   const currentRequestId = ++requestId.value
   const params = new URLSearchParams({ page: String(page.value), pageSize: String(pageSize) })
   if (phoneFilter.value) params.set('phone', phoneFilter.value)
@@ -75,10 +79,16 @@ async function load() {
   if (joinedFrom.value) params.set('joinedFrom', new Date(`${joinedFrom.value}T00:00:00.000`).toISOString())
   if (joinedTo.value) params.set('joinedTo', new Date(`${joinedTo.value}T23:59:59.999`).toISOString())
 
-  const { data } = await apiFetch<UserListResponse>(`/admin/users?${params.toString()}`, { silent: true })
+  const { data, error } = await apiFetch<UserListResponse>(`/admin/users?${params.toString()}`, { silent: true })
   if (currentRequestId !== requestId.value) return
-  users.value = data?.items ?? []
-  total.value = data?.total ?? 0
+  if (error) {
+    loadError.value = true
+    users.value = []
+    total.value = 0
+  } else {
+    users.value = data?.items ?? []
+    total.value = data?.total ?? 0
+  }
   loading.value = false
 }
 
@@ -153,7 +163,20 @@ watch(page, load)
       </div>
     </AppCard>
 
-    <EmptyState v-if="!loading && users.length === 0" icon="users" message="کاربری با این فیلترها یافت نشد." />
+    <AppCard
+      v-if="loadError"
+      :padded="false"
+      data-testid="load-error"
+      class="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center"
+    >
+      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)">
+        <AppIcon name="warning" :size="22" />
+      </div>
+      <p class="text-sm text-(--color-text-muted)">خطا در دریافت فهرست کاربران.</p>
+      <AppButton type="button" variant="secondary" data-testid="retry-load" @click="load">تلاش دوباره</AppButton>
+    </AppCard>
+
+    <EmptyState v-else-if="!loading && users.length === 0" icon="users" message="کاربری با این فیلترها یافت نشد." />
 
     <AppCard v-else :padded="false" class="overflow-hidden">
       <div class="relative">

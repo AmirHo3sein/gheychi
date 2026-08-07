@@ -112,3 +112,24 @@ describe('CategoriesView rename', () => {
     expect(wrapper.text()).toContain('اصلاح مو (جدید)')
   })
 })
+
+describe('CategoriesView load error', () => {
+  beforeEach(() => {
+    fetchMock.mockReset()
+  })
+
+  it('shows a distinct error state (not the empty state) when the fetch fails, and retry reloads', async () => {
+    fetchMock.mockResolvedValueOnce({ data: null, error: { status: 500, message: 'Something went wrong' } })
+    const wrapper = await mountView()
+
+    expect(wrapper.find('[data-testid="load-error"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('هنوز دسته‌بندی‌ای ثبت نشده است.')
+
+    fetchMock.mockResolvedValueOnce({ data: categories.map((c) => ({ ...c })), error: null })
+    await wrapper.get('[data-testid="retry-load"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="load-error"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('اصلاح مو')
+  })
+})

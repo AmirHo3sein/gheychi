@@ -163,16 +163,25 @@ onMounted(load)
     </div>
 
     <template v-else-if="!confirming">
+      <p class="text-sm text-(--color-text-muted)">
+        این مقادیر رفتار کل پلتفرم را کنترل می‌کنند -- تغییرات پیش از ذخیره برای بازبینی نمایش داده می‌شوند.
+      </p>
+
       <AppCard :padded="false">
         <!-- flex-wrap: the label column plus the fixed 96px field + unit is ~250px of
              unshrinkable content, so below `sm` the field drops under its label instead of
              the row overflowing the card. One line, exactly as today, from `sm` up. -->
         <div v-for="(row, i) in rows" :key="row.key" class="flex flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-5" :class="i > 0 && 'border-t border-(--color-border-soft)'">
-          <div class="min-w-0">
-            <p class="text-sm font-semibold text-(--color-text)">{{ configKeyMeta(row.key).label }}</p>
-            <p v-if="configKeyMeta(row.key).hint" class="mt-0.5 text-xs text-(--color-text-muted)">{{ configKeyMeta(row.key).hint }}</p>
+          <div class="flex min-w-0 items-center gap-3">
+            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-(--color-border-soft) text-(--color-accent-text)">
+              <AppIcon :name="configKeyMeta(row.key).icon" :size="18" />
+            </span>
+            <div class="min-w-0">
+              <p class="text-sm font-semibold text-(--color-text)">{{ configKeyMeta(row.key).label }}</p>
+              <p v-if="configKeyMeta(row.key).hint" class="mt-0.5 text-xs text-(--color-text-muted)">{{ configKeyMeta(row.key).hint }}</p>
+            </div>
           </div>
-          <div class="flex shrink-0 items-start gap-2">
+          <div class="flex shrink-0 items-center gap-2">
             <AppInput
               :model-value="rowText[row.key]"
               type="number"
@@ -181,7 +190,7 @@ onMounted(load)
               :error="rowError(row.key)"
               @update:model-value="(v) => onRowInput(row, v)"
             />
-            <span v-if="configKeyMeta(row.key).unit" class="mt-3 w-14 text-xs text-(--color-text-muted)">{{ configKeyMeta(row.key).unit }}</span>
+            <span v-if="configKeyMeta(row.key).unit" class="w-14 text-xs text-(--color-text-muted)">{{ configKeyMeta(row.key).unit }}</span>
           </div>
         </div>
       </AppCard>

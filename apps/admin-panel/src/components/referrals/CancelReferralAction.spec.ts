@@ -41,7 +41,7 @@ describe('CancelReferralAction', () => {
 
     // Deliberately not silent -- a 409 must surface via the standard toast path.
     expect(fetchMock).toHaveBeenCalledWith('/admin/referrals/r1/cancel', {
-      method: 'PATCH',
+      method: 'POST',
       body: { reason: 'fraud suspected' },
     })
     expect(wrapper.emitted('cancelled')?.[0]).toEqual([{ id: 'r1', status: 'cancelled', cancelledReason: 'fraud suspected' }])
@@ -49,7 +49,7 @@ describe('CancelReferralAction', () => {
     expect(wrapper.find('[data-testid="cancel-reason-input"]').exists()).toBe(false)
   })
 
-  it('collapses and emits refresh instead of cancelled when the PATCH fails (409 lost race)', async () => {
+  it('collapses and emits refresh instead of cancelled when the request fails (409 lost race)', async () => {
     fetchMock.mockResolvedValueOnce({
       data: null,
       error: { status: 409, message: 'این ارجاع دیگر در وضعیت در انتظار رویداد نیست' },

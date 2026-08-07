@@ -9,76 +9,95 @@
 @theme static {
   --font-sans: 'Vazirmatn Variable', ui-sans-serif, system-ui, sans-serif;
 
-  /* Light mode -- "Teal Trust", same brand tokens as provider-panel/user-app's light theme */
-  --color-surface: #F4FBFA;
+  /* Light mode -- exact palette handed down from the brand's design-system spec, same
+     derivation as provider-panel's identical token set (see that app's main.css for the
+     full WCAG-contrast derivation notes and the --color-fill-text rationale). */
+  --color-surface: #FFF8F5;
   --color-surface-card: #FFFFFF;
-  --color-text: #0B4F4A;
-  --color-accent: #0EA89B;
-  --color-accent-strong: #0F766E;
-  --color-accent-deep: #115E59;
-  --color-accent-soft: #E3F6F3;
-  --color-accent-text: #0F766E;
-  --color-border: #DCEDEA;
-  --color-border-soft: #EAF6F5;
-  --color-text-muted: #4C716D;
-  --color-danger: #C0392B;
-  --color-danger-strong: #B91C1C;
+  --color-surface-subtle: #FFF3EF;
+  --color-text: #2D2D2D;
+  /* #666666, not the spec's literal #777777 "Secondary": that only reaches 4.48:1
+     on white -- failing AA by a hair -- and drops to 3.67:1 on --color-border-soft,
+     which is where muted text actually sits (ghost-button hover, table headers).
+     This clears 4.5:1 on every light surface in the system. */
+  --color-text-muted: #666666;
+  --color-border: #E2D7D3;
+  --color-border-soft: #EFE7E4;
+  --color-accent: #FFB6A3;
+  --color-accent-strong: #FFB6A3;
+  --color-accent-deep: #F59C86;
+  --color-accent-pressed: #E98871;
+  --color-accent-soft: #FFF1EC;
+  --color-accent-text: #8F4335;
+  --color-fill-text: #2D2D2D;
+  /* Darkened a shade off #DA2525 so danger copy also clears AA on its own tinted
+     backdrop (--color-danger-soft / --color-accent-soft), not just on white. */
+  --color-danger: #D12424;
+  --color-danger-strong: #E76F6F;
 
   /* Status tone system -- replaces raw enum strings everywhere with a consistent color language */
-  --tone-success-bg: #E3F7EE;
-  /* Darkened from #0F8A54 (3.93:1 against --tone-success-bg, fails WCAG AA) to
-     4.83:1 -- dark mode's #4ADE80 already passes and is untouched. Same fix already
-     applied to provider-panel's identical pre-fix token this session. */
-  --tone-success-text: #0D7A48;
-  --tone-warning-bg: #FEF3DE;
-  /* Darkened from #B4740E (3.51:1 against --tone-warning-bg, fails WCAG AA) to
-     4.87:1 -- dark mode's #FBBF24 already passes and is untouched. */
-  --tone-warning-text: #955F09;
-  --tone-danger-bg: #FCE8EA;
-  --tone-danger-text: #C22B3F;
-  --tone-neutral-bg: #EEF1F2;
-  --tone-neutral-text: #4B5F5E;
-  --tone-info-bg: #E7EFFC;
-  --tone-info-text: #2A5FBE;
+  --tone-success-bg: #E6F4EC;
+  --tone-success-text: #34744E;
+  --tone-warning-bg: #F8F0E2;
+  --tone-warning-text: #8F600A;
+  --tone-danger-bg: #F9E7E7;
+  --tone-danger-text: #C92222;
+  --tone-neutral-bg: #F3F1F0;
+  --tone-neutral-text: #5C5656;
+  --tone-info-bg: #E2EDF8;
+  --tone-info-text: #1B68B6;
 
-  --shadow-color: 178 45% 20%;
-  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.06), 0 1px 1px hsl(var(--shadow-color) / 0.04);
-  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.16), 0 2px 6px -2px hsl(var(--shadow-color) / 0.08);
-  --shadow-lg: 0 24px 48px -16px hsl(var(--shadow-color) / 0.22), 0 8px 16px -4px hsl(var(--shadow-color) / 0.1);
+  --color-premium: #D4AF37;
+  --color-wallet: #5EC9A3;
+  --color-ai: #A78BFA;
+  --color-reports: #6FA8FF;
+
+  --shadow-color: 0 0% 18%;
+  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.04), 0 1px 1px hsl(var(--shadow-color) / 0.03);
+  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.08), 0 2px 6px -2px hsl(var(--shadow-color) / 0.06);
+  --shadow-lg: 0 24px 48px -16px hsl(var(--shadow-color) / 0.12), 0 8px 16px -4px hsl(var(--shadow-color) / 0.08);
 }
 
-/* Dark mode -- "Bold Editorial", same accent/surface values as user-app's dark theme so the
-   two apps feel like one product family; the extra tokens this app has (border/muted/tone-*)
-   are new dark equivalents in the same spirit. */
+/* Dark mode -- warm charcoal, same derivation as provider-panel's identical token set (see
+   that app's main.css for the full notes). --color-fill-text isn't redefined here -- every
+   fill it sits on is still a light/pastel color in dark mode too, so the light mode value
+   (constant graphite) still applies. */
 .dark {
-  --color-surface: #151217;
-  --color-surface-card: #211D24;
-  --color-text: #F5F0F2;
-  --color-accent: #7A3FF2;
-  --color-accent-strong: #6D28D9;
-  --color-accent-deep: #5B21B6;
-  --color-accent-soft: #2C2140;
-  --color-accent-text: #A78BFA;
-  --color-border: #38323D;
-  --color-border-soft: #2A242E;
-  --color-text-muted: #B3A3B0;
-  --color-danger: #F2645C;
-  --color-danger-strong: #9F1239;
+  --color-surface: #171616;
+  --color-surface-card: #262323;
+  --color-surface-subtle: #1F1D1D;
+  --color-text: #F7F4F2;
+  --color-text-muted: #B8B0AB;
+  --color-border: #494444;
+  --color-border-soft: #3A3636;
+  --color-accent: #FFB6A3;
+  --color-accent-strong: #FFB6A3;
+  --color-accent-deep: #FF9F87;
+  --color-accent-pressed: #FF8D72;
+  --color-accent-soft: #3F2018;
+  --color-accent-text: #FFB6A3;
+  --color-danger: #E66B6B;
+  --color-danger-strong: #E76F6F;
 
-  --tone-success-bg: #16301F;
-  --tone-success-text: #4ADE80;
-  --tone-warning-bg: #332507;
-  --tone-warning-text: #FBBF24;
-  --tone-danger-bg: #33141B;
-  --tone-danger-text: #FB7185;
-  --tone-neutral-bg: #2A242E;
-  --tone-neutral-text: #C4B8CC;
-  --tone-info-bg: #1E2247;
-  --tone-info-text: #A5A8F5;
+  --tone-success-bg: #193826;
+  --tone-success-text: #53B179;
+  --tone-warning-bg: #3F3012;
+  --tone-warning-text: #F2B440;
+  --tone-danger-bg: #3F1212;
+  --tone-danger-text: #E66B6B;
+  --tone-neutral-bg: #2A2626;
+  --tone-neutral-text: #B7B0AC;
+  --tone-info-bg: #12293F;
+  --tone-info-text: #64A5E8;
 
-  --shadow-color: 275 55% 4%;
-  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.4), 0 1px 1px hsl(var(--shadow-color) / 0.3);
-  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.55), 0 2px 6px -2px hsl(var(--shadow-color) / 0.4);
+  --color-premium: #D4AF37;
+  --color-wallet: #5EC9A3;
+  --color-ai: #A78BFA;
+  --color-reports: #6FA8FF;
+
+  --shadow-color: 0 0% 0%;
+  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.35), 0 1px 1px hsl(var(--shadow-color) / 0.25);
+  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.45), 0 2px 6px -2px hsl(var(--shadow-color) / 0.35);
   --shadow-lg: 0 24px 48px -16px hsl(var(--shadow-color) / 0.65), 0 8px 16px -4px hsl(var(--shadow-color) / 0.5);
 }
 
@@ -133,7 +152,7 @@ html, body {
 
 ::selection {
   background: var(--color-accent);
-  color: white;
+  color: var(--color-fill-text);
 }
 
 input, select, textarea {
@@ -141,9 +160,11 @@ input, select, textarea {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
+/* accent-text, not the raw pastel accent -- a light peach border on a light input would
+   barely be visible as a focus indicator (WCAG 1.4.11 non-text contrast). */
 input:focus, select:focus, textarea:focus {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 30%, transparent);
+  border-color: var(--color-accent-text);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent-text) 30%, transparent);
 }
 
 button {
@@ -171,8 +192,8 @@ button:disabled {
   text-align: right;
 }
 .app-select .multiselect--active .multiselect__tags {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 30%, transparent);
+  border-color: var(--color-accent-text);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent-text) 30%, transparent);
 }
 .app-select .multiselect__select {
   right: auto;
@@ -209,7 +230,15 @@ button:disabled {
   background: var(--color-surface-card);
   box-shadow: var(--shadow-md);
   margin-top: 0.25rem;
-  overflow: hidden;
+  /* overflow-y: auto (not `hidden`) is load-bearing, not a style choice -- vue-multiselect's
+     own default CSS relies on this element scrolling internally once the option list
+     exceeds its max-height (default 300px, set inline via the maxHeight prop). `hidden`
+     silently cancelled that: for a short list (a handful of categories) nothing ever
+     overflowed, so it went unnoticed, but a long list (e.g. an 80+ city picker) rendered
+     fully unclipped instead of scrolling, swallowing the rest of the page under it.
+     overflow-x stays hidden so the rounded corners never show a horizontal scrollbar. */
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 .app-select .multiselect__option {
   padding: 0.6rem 0.9rem;
@@ -230,11 +259,39 @@ button:disabled {
 .app-select .multiselect__option--highlight,
 .app-select .multiselect__option--highlight::after {
   background: var(--color-accent);
-  color: white;
+  color: var(--color-fill-text);
 }
 
-/* Login page -- a clean, centered form panel (no visual/hero side panel; this app is
-   Operate-only per DESIGN.md, so login stays a plain form like every other screen). */
+/* Login screen -- one centred composition, byte-identical in all three apps (own copy per the
+   cross-app isolation convention), so change them together. Replaces an earlier 50/50 split
+   layout: at desktop widths that gave each half far more room than its contents needed, so
+   the page read as two large empty rectangles with a small card and a small mascot adrift in
+   them. A single centred column keeps the artwork, the heading and the form in one compact
+   group at every width, which also removes the need for a separate mobile treatment. */
+.login-bg {
+  background:
+    radial-gradient(65% 55% at 12% 8%, color-mix(in srgb, var(--color-accent) 55%, transparent), transparent 72%),
+    radial-gradient(60% 50% at 88% 92%, color-mix(in srgb, var(--color-accent-deep) 45%, transparent), transparent 72%),
+    var(--color-surface);
+}
+
+/* Soft glow seating the mascot so it doesn't float against the gradient unattached. */
+.login-glow {
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--color-accent) 55%, transparent), transparent);
+}
+
+/* Slow drift on the atmospheric blobs behind the composition. */
+@keyframes mesh-morph-a {
+  0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); }
+  50% { transform: translate(4%, -6%) scale(1.15) rotate(8deg); }
+}
+@keyframes mesh-morph-b {
+  0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); }
+  50% { transform: translate(-5%, 5%) scale(1.1) rotate(-6deg); }
+}
+.mesh-a { animation: mesh-morph-a 18s ease-in-out infinite; }
+.mesh-b { animation: mesh-morph-b 22s ease-in-out infinite; }
+
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(16px); }
   to { opacity: 1; transform: translateY(0); }
@@ -243,15 +300,43 @@ button:disabled {
   opacity: 0;
   animation: fade-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
 @media (prefers-reduced-motion: reduce) {
   .login-stagger {
     opacity: 1;
     animation: none;
   }
+  .mesh-a,
+  .mesh-b {
+    animation: none;
+  }
 }
 
 /* Route-change transition -- a quick fade + gentle rise, applied to the RouterView
-   in AppLayout.vue. Kept subtle and fast so it reads as polish, not a delay. */
+   in AppLayout.vue. Kept subtle and fast so it reads as polish, not a delay.
+
+   `mode="out-in"` is deliberately NOT used (see the comment above that Transition), so during
+   a swap BOTH pages are in the tree at once. Stacking them into a single grid cell takes the
+   outgoing page out of the incoming one's flow: without this the two lay out one after
+   another, so the incoming page starts pushed down by the outgoing one's full height and
+   visibly snaps upward the moment the outgoing one unmounts.
+
+   Grid rather than `position: absolute` on the leaving page specifically because <main> here
+   is `overflow-auto` -- its own scroll container -- so an absolutely-positioned leaver would
+   be laid out from the top of the scrolled content and jump whenever the page was scrolled
+   down. Identical block in provider-panel's main.css. align-items: start keeps each page
+   content-height (a stretched grid item would be a behaviour change from plain block flow).
+
+   Targets a class, not the bare `main` element: these are unlayered rules, so they beat any
+   Tailwind display utility, and a bare `main {}` would silently re-layout every other <main>
+   in the app -- the login screen's own <main> included. */
+.route-outlet {
+  display: grid;
+  align-items: start;
+}
+.route-outlet > * {
+  grid-area: 1 / 1;
+}
 .page-fade-enter-active {
   transition: opacity 0.18s ease, transform 0.18s ease;
 }

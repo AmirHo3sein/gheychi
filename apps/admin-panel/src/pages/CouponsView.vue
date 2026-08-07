@@ -36,6 +36,9 @@ interface Coupon {
 const { apiFetch } = useApi()
 const coupons = ref<Coupon[]>([])
 const loading = ref(true)
+// A fetch failure must not be silently repainted as an empty state -- see
+// SalonsView.vue's identical loadError pattern.
+const loadError = ref(false)
 
 const newCode = ref('')
 const newDiscountPercent = ref<number | null>(null)
@@ -110,8 +113,14 @@ watch(confirmingToggleId, async (id, oldId) => {
 
 async function load() {
   loading.value = true
-  const { data } = await apiFetch<Coupon[]>('/admin/coupons', { silent: true })
-  coupons.value = data ?? []
+  loadError.value = false
+  const { data, error } = await apiFetch<Coupon[]>('/admin/coupons', { silent: true })
+  if (error) {
+    loadError.value = true
+    coupons.value = []
+  } else {
+    coupons.value = data ?? []
+  }
   loading.value = false
 }
 
@@ -280,7 +289,7 @@ onMounted(load)
   <div class="space-y-5 p-8">
     <AppCard>
       <p class="mb-3 flex items-center gap-2 text-sm font-semibold text-(--color-text)">
-        <AppIcon name="plus" :size="16" class="text-(--color-accent)" />
+        <AppIcon name="plus" :size="16" class="text-(--color-accent-text)" />
         افزودن کد تخفیف جدید
       </p>
       <form class="flex flex-wrap items-end gap-2.5" @submit.prevent="add">
@@ -322,7 +331,20 @@ onMounted(load)
       </form>
     </AppCard>
 
-    <EmptyState v-if="!loading && coupons.length === 0" icon="coupon" message="هنوز کد تخفیفی ثبت نشده است." />
+    <AppCard
+      v-if="loadError"
+      :padded="false"
+      data-testid="load-error"
+      class="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center"
+    >
+      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)">
+        <AppIcon name="warning" :size="22" />
+      </div>
+      <p class="text-sm text-(--color-text-muted)">خطا در دریافت کدهای تخفیف.</p>
+      <AppButton type="button" variant="secondary" data-testid="retry-load" @click="load">تلاش دوباره</AppButton>
+    </AppCard>
+
+    <EmptyState v-else-if="!loading && coupons.length === 0" icon="coupon" message="هنوز کد تخفیفی ثبت نشده است." />
 
     <AppCard v-else :padded="false" class="overflow-hidden">
       <div class="relative">

@@ -17,6 +17,9 @@ interface Category {
 const { apiFetch } = useApi()
 const categories = ref<Category[]>([])
 const loading = ref(true)
+// A fetch failure must not be silently repainted as an empty state -- see
+// SalonsView.vue's identical loadError pattern.
+const loadError = ref(false)
 const newName = ref('')
 const newIcon = ref('')
 const editingId = ref<number | null>(null)
@@ -35,8 +38,14 @@ function iconFor(icon: string): IconName {
 
 async function load() {
   loading.value = true
-  const { data } = await apiFetch<Category[]>('/categories', { silent: true })
-  categories.value = data ?? []
+  loadError.value = false
+  const { data, error } = await apiFetch<Category[]>('/categories', { silent: true })
+  if (error) {
+    loadError.value = true
+    categories.value = []
+  } else {
+    categories.value = data ?? []
+  }
   loading.value = false
 }
 
@@ -107,7 +116,7 @@ onMounted(load)
   <div class="mx-auto max-w-3xl space-y-5 p-4 sm:p-8">
     <AppCard>
       <p class="mb-3 flex items-center gap-2 text-sm font-semibold text-(--color-text)">
-        <AppIcon name="plus" :size="16" class="text-(--color-accent)" />
+        <AppIcon name="plus" :size="16" class="text-(--color-accent-text)" />
         افزودن دسته‌بندی جدید
       </p>
       <!-- flex-wrap: the icon key field + its 44px preview tile is ~165px that cannot shrink,
@@ -120,7 +129,7 @@ onMounted(load)
             <AppInput v-model="newIcon" placeholder="کلید آیکون" :maxlength="20" class="w-28" />
             <div
               data-testid="new-icon-preview"
-              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-(--color-border-soft) text-(--color-accent)"
+              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-(--color-border-soft) text-(--color-accent-text)"
               title="پیش‌نمایش آیکون"
             >
               <AppIcon :name="iconFor(newIcon)" :size="19" />
@@ -141,6 +150,19 @@ onMounted(load)
     <div v-if="loading" class="flex items-center justify-center py-16" role="status" aria-label="در حال بارگذاری">
       <AppIcon name="spinner" :size="24" class="animate-spin text-(--color-text-muted)" />
     </div>
+
+    <AppCard
+      v-else-if="loadError"
+      :padded="false"
+      data-testid="load-error"
+      class="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center"
+    >
+      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)">
+        <AppIcon name="warning" :size="22" />
+      </div>
+      <p class="text-sm text-(--color-text-muted)">خطا در دریافت دسته‌بندی‌ها.</p>
+      <AppButton type="button" variant="secondary" data-testid="retry-load" @click="load">تلاش دوباره</AppButton>
+    </AppCard>
 
     <EmptyState
       v-else-if="categories.length === 0"
@@ -165,7 +187,7 @@ onMounted(load)
               class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
             >
               <td class="px-5 py-3.5">
-                <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-(--color-border-soft) text-(--color-accent)">
+                <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-(--color-border-soft) text-(--color-accent-text)">
                   <AppIcon :name="iconFor(category.icon)" :size="19" />
                 </div>
               </td>
@@ -188,8 +210,8 @@ onMounted(load)
                 <td class="px-5 py-3.5">
                   <AppInput v-model="editName" data-testid="edit-name-input" :maxlength="60" @keyup.enter="saveEdit" />
                 </td>
-                <td class="px-5 py-3.5">
-                  <div class="flex gap-2.5">
+                <td class="px-5 py-3.5 text-end">
+                  <div class="flex justify-end gap-2.5">
                     <AppButton data-testid="save-edit" variant="secondary" :disabled="submitting" @click="saveEdit">
                       ذخیره
                     </AppButton>
@@ -202,8 +224,8 @@ onMounted(load)
 
               <template v-else>
                 <td class="px-5 py-3.5 font-semibold text-(--color-text)">{{ category.name }}</td>
-                <td class="px-5 py-3.5">
-                  <div class="flex gap-2.5">
+                <td class="px-5 py-3.5 text-end">
+                  <div class="flex justify-end gap-2.5">
                     <AppButton variant="secondary" :disabled="submitting" title="ویرایش" @click="startEdit(category)">
                       <template #icon><AppIcon name="pencil" :size="15" /></template>
                     </AppButton>

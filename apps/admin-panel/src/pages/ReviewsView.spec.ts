@@ -160,4 +160,20 @@ describe('ReviewsView', () => {
     const lastCall = fetchMock.mock.calls.at(-1)?.[0] as string
     expect(lastCall).not.toContain('status=')
   })
+
+  it('shows a distinct error state (not the empty state) when the fetch fails, and retry reloads', async () => {
+    fetchMock.mockResolvedValueOnce({ data: null, error: { status: 500, message: 'Something went wrong' } })
+    const wrapper = mount(ReviewsView)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="load-error"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('نظری با این فیلترها یافت نشد.')
+
+    fetchMock.mockResolvedValueOnce({ data: { items: [{ ...publishedReview }], total: 1, page: 1, pageSize: 10 }, error: null })
+    await wrapper.get('[data-testid="retry-load"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="load-error"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('سالن نمونه')
+  })
 })

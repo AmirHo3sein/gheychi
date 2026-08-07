@@ -3,6 +3,8 @@
 // back to the raw value instead of throwing/blanking, so a new backend enum member
 // or a new platform_config key shows up (in its raw form) rather than breaking.
 
+import type { IconName } from '@/components/ui/AppIcon.vue'
+
 export type Tone = 'success' | 'warning' | 'danger' | 'neutral' | 'info'
 
 export interface LabelEntry {
@@ -187,7 +189,8 @@ const AUDIT_ACTION: Record<string, LabelEntry> = {
   'post.publish': { label: 'انتشار مطلب بلاگ', tone: 'success' },
   'post.unpublish': { label: 'لغو انتشار مطلب بلاگ', tone: 'warning' },
   'post.delete': { label: 'حذف مطلب بلاگ', tone: 'danger' },
-  'post.cover.set': { label: 'تغییر تصویر شاخص مطلب', tone: 'info' },
+  'post.cover.upload': { label: 'آپلود تصویر شاخص مطلب', tone: 'info' },
+  'post.cover.remove': { label: 'حذف تصویر شاخص مطلب', tone: 'warning' },
   'blogcategory.create': { label: 'ایجاد دسته‌بندی بلاگ', tone: 'success' },
   'blogcategory.update': { label: 'ویرایش دسته‌بندی بلاگ', tone: 'info' },
   'blogcategory.delete': { label: 'حذف دسته‌بندی بلاگ', tone: 'danger' },
@@ -244,21 +247,22 @@ interface ConfigMeta {
   label: string
   hint: string
   unit: string
+  icon: IconName
 }
 
 const CONFIG_META: Record<string, ConfigMeta> = {
-  deposit_percent: { label: 'درصد پیش‌پرداخت', hint: 'سهم پیش‌پرداخت از قیمت نهایی خدمت', unit: '%' },
-  deposit_min_toman: { label: 'حداقل پیش‌پرداخت', hint: 'کف مبلغ پیش‌پرداخت، صرف‌نظر از درصد', unit: 'تومان' },
-  cancellation_window_hours: { label: 'مهلت لغو رزرو', hint: 'حداقل فاصله زمانی مجاز برای لغو رایگان', unit: 'ساعت' },
-  commission_percent: { label: 'درصد کمیسیون پلتفرم', hint: 'سهم پلتفرم از هر رزرو موفق', unit: '%' },
-  booking_hold_ttl_minutes: { label: 'مهلت نگه‌داری رزرو', hint: 'زمان قفل‌شدن نوبت تا پرداخت', unit: 'دقیقه' },
-  reminder_lead_hours: { label: 'یادآوری قبل از نوبت', hint: 'چند ساعت قبل، پیامک یادآوری ارسال شود', unit: 'ساعت' },
-  review_edit_window_hours: { label: 'مهلت ویرایش نظر', hint: 'مدت زمانی که کاربر می‌تواند نظر ثبت‌شده را ویرایش یا حذف کند', unit: 'ساعت' },
+  deposit_percent: { label: 'درصد پیش‌پرداخت', hint: 'سهم پیش‌پرداخت از قیمت نهایی خدمت', unit: '%', icon: 'invoice' },
+  deposit_min_toman: { label: 'حداقل پیش‌پرداخت', hint: 'کف مبلغ پیش‌پرداخت، صرف‌نظر از درصد', unit: 'تومان', icon: 'wallet' },
+  cancellation_window_hours: { label: 'مهلت لغو رزرو', hint: 'حداقل فاصله زمانی مجاز برای لغو رایگان', unit: 'ساعت', icon: 'history' },
+  commission_percent: { label: 'درصد کمیسیون پلتفرم', hint: 'سهم پلتفرم از هر رزرو موفق', unit: '%', icon: 'invoice' },
+  booking_hold_ttl_minutes: { label: 'مهلت نگه‌داری رزرو', hint: 'زمان قفل‌شدن نوبت تا پرداخت', unit: 'دقیقه', icon: 'calendar' },
+  reminder_lead_hours: { label: 'یادآوری قبل از نوبت', hint: 'چند ساعت قبل، پیامک یادآوری ارسال شود', unit: 'ساعت', icon: 'bell' },
+  review_edit_window_hours: { label: 'مهلت ویرایش نظر', hint: 'مدت زمانی که کاربر می‌تواند نظر ثبت‌شده را ویرایش یا حذف کند', unit: 'ساعت', icon: 'history' },
 }
 
 /** Falls back to the raw key as its own label -- new config keys stay editable, just less pretty. */
 export function configKeyMeta(key: string): ConfigMeta {
-  return CONFIG_META[key] ?? { label: key, hint: '', unit: '' }
+  return CONFIG_META[key] ?? { label: key, hint: '', unit: '', icon: 'config' }
 }
 
 const INVOICE_STATUS: Record<string, LabelEntry> = {

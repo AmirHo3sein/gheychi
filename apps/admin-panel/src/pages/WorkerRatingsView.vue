@@ -179,7 +179,7 @@ watch(page, load)
                   </RouterLink>
                 </td>
                 <td class="px-5 py-3.5">
-                  <div class="flex items-center gap-1 text-(--color-accent-strong)">
+                  <div class="flex items-center gap-1 text-(--color-accent-text)">
                     <AppIcon
                       v-for="n in 5"
                       :key="n"

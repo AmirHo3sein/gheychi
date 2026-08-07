@@ -48,12 +48,12 @@ const FONT = "'Vazirmatn Variable', ui-sans-serif, system-ui, sans-serif"
 // main.css's .dark block, kept in sync with StatusBadge's own tone colors.
 type Tone = 'success' | 'warning' | 'danger' | 'neutral' | 'info' | 'accent'
 const TONE_HEX: Record<Tone, { light: string; dark: string }> = {
-  success: { light: '#0F8A54', dark: '#4ADE80' },
-  warning: { light: '#B4740E', dark: '#FBBF24' },
-  danger: { light: '#C22B3F', dark: '#FB7185' },
-  neutral: { light: '#4B5F5E', dark: '#C4B8CC' },
-  info: { light: '#2A5FBE', dark: '#A5A8F5' },
-  accent: { light: '#0EA89B', dark: '#7A3FF2' },
+  success: { light: '#34744E', dark: '#53B179' },
+  warning: { light: '#8F600A', dark: '#F2B440' },
+  danger: { light: '#C92222', dark: '#E66B6B' },
+  neutral: { light: '#5C5656', dark: '#B7B0AC' },
+  info: { light: '#1B68B6', dark: '#64A5E8' },
+  accent: { light: '#FFB6A3', dark: '#FFB6A3' },
 }
 function toneColor(tone: Tone): string {
   return isDark.value ? TONE_HEX[tone].dark : TONE_HEX[tone].light
@@ -95,11 +95,11 @@ const QUICK_LINKS: { to: string; label: string; icon: IconName; desc: string }[]
   { to: '/config', label: 'تنظیمات پلتفرم', icon: 'config', desc: 'مقادیر پیش‌پرداخت، کمیسیون و...' },
 ]
 
-const baseTextStyle = computed(() => ({ fontFamily: FONT, color: isDark.value ? '#F5F0F2' : '#0B4F4A' }))
-const sliceBorderColor = computed(() => (isDark.value ? '#211D24' : '#FFFFFF'))
-const axisLineColor = computed(() => (isDark.value ? '#362F3D' : '#DCEEEC'))
-const splitLineColor = computed(() => (isDark.value ? '#2A242E' : '#EAF6F5'))
-const axisLabelColor = computed(() => (isDark.value ? '#A79AB0' : '#5B8A86'))
+const baseTextStyle = computed(() => ({ fontFamily: FONT, color: isDark.value ? '#F7F4F2' : '#2D2D2D' }))
+const sliceBorderColor = computed(() => (isDark.value ? '#262323' : '#FFFFFF'))
+const axisLineColor = computed(() => (isDark.value ? '#494444' : '#E2D7D3'))
+const splitLineColor = computed(() => (isDark.value ? '#3A3636' : '#EFE7E4'))
+const axisLabelColor = computed(() => (isDark.value ? '#B8B0AB' : '#777777'))
 
 const salonStatusChart = computed(() => {
   const order: SalonRow['status'][] = ['pending', 'approved', 'rejected', 'suspended']
@@ -332,7 +332,7 @@ onMounted(async () => {
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <RouterLink v-for="link in QUICK_LINKS" :key="link.to" :to="link.to">
           <AppCard class="flex items-center gap-3.5 transition-shadow hover:shadow-(--shadow-lg)">
-            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-(--color-border-soft) text-(--color-accent)">
+            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-(--color-border-soft) text-(--color-accent-text)">
               <AppIcon :name="link.icon" :size="19" />
             </div>
             <div class="min-w-0">

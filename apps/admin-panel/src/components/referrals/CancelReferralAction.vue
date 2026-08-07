@@ -1,6 +1,6 @@
 <!-- apps/admin-panel/src/components/referrals/CancelReferralAction.vue -->
 <!-- Admin cancel action for a referral still awaiting its qualifying event (spec §4/§8:
-     PATCH /admin/referrals/:id/cancel, body {reason}, only valid from
+     POST /admin/referrals/:id/cancel, body {reason}, only valid from
      'awaiting_qualifying_event' -- 409 otherwise). Mirrors the reason-required inline-panel
      shape already used across the app for irreversible/consequential actions
      (SalonStatusActions.vue's reject/suspend, ResolveReportActions.vue's resolve/dismiss),
@@ -15,7 +15,7 @@
      session's money-moving reference pattern (ReferralSettingsView.vue, wallet/
      AdjustBalanceCard.vue's confirm-summary-before-commit shape) per the Uniform Consequence
      Rule -- the reason is typed in step 2, then restated on a review screen in step 3 before
-     the PATCH actually fires. Step 2's validation (non-empty reason) still gates the
+     the request actually fires. Step 2's validation (non-empty reason) still gates the
      transition into step 3. -->
 <script setup lang="ts">
 import { ref, useId } from 'vue'
@@ -27,7 +27,7 @@ const props = defineProps<{ referralId: string }>()
 const emit = defineEmits<{
   /** Cancelled successfully -- caller should reflect the new status/reason locally. */
   cancelled: [referral: { id: string; status: string; cancelledReason: string | null }]
-  /** The PATCH failed (e.g. a 409 lost race) -- caller should reload so the row reflects
+  /** The request failed (e.g. a 409 lost race) -- caller should reload so the row reflects
       whatever actually happened instead of a stale, retry-doomed action. */
   refresh: []
 }>()
@@ -72,7 +72,7 @@ async function confirmSubmit() {
   submitting.value = true
   const { data } = await apiFetch<{ id: string; status: string; cancelledReason: string | null }>(
     `/admin/referrals/${props.referralId}/cancel`,
-    { method: 'PATCH', body: { reason: reason.value.trim() } },
+    { method: 'POST', body: { reason: reason.value.trim() } },
   )
   submitting.value = false
   collapse()

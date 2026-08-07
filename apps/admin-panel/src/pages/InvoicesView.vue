@@ -68,6 +68,9 @@ const STATUS_OPTIONS = [
 const { apiFetch } = useApi()
 const invoices = ref<InvoiceRow[]>([])
 const loading = ref(true)
+// A fetch failure must not be silently repainted as an empty state -- see
+// SalonsView.vue's identical loadError pattern.
+const loadError = ref(false)
 const page = ref(1)
 const total = ref(0)
 const pageSize = 20
@@ -75,12 +78,19 @@ const statusFilter = ref<'' | InvoiceStatus>('')
 
 async function load() {
   loading.value = true
+  loadError.value = false
   const params = new URLSearchParams({ page: String(page.value), pageSize: String(pageSize) })
   if (statusFilter.value) params.set('status', statusFilter.value)
 
-  const { data } = await apiFetch<InvoiceListResponse>(`/admin/invoices?${params.toString()}`, { silent: true })
-  invoices.value = data?.items ?? []
-  total.value = data?.total ?? 0
+  const { data, error } = await apiFetch<InvoiceListResponse>(`/admin/invoices?${params.toString()}`, { silent: true })
+  if (error) {
+    loadError.value = true
+    invoices.value = []
+    total.value = 0
+  } else {
+    invoices.value = data?.items ?? []
+    total.value = data?.total ?? 0
+  }
   loading.value = false
 }
 
@@ -153,7 +163,20 @@ function formatDateTime(iso: string): string {
       </div>
     </AppCard>
 
-    <EmptyState v-if="!loading && invoices.length === 0" icon="invoice" message="هنوز صورتحسابی صادر نشده است." />
+    <AppCard
+      v-if="loadError"
+      :padded="false"
+      data-testid="load-error"
+      class="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center"
+    >
+      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)">
+        <AppIcon name="warning" :size="22" />
+      </div>
+      <p class="text-sm text-(--color-text-muted)">خطا در دریافت صورتحساب‌ها.</p>
+      <AppButton type="button" variant="secondary" data-testid="retry-load" @click="load">تلاش دوباره</AppButton>
+    </AppCard>
+
+    <EmptyState v-else-if="!loading && invoices.length === 0" icon="invoice" message="هنوز صورتحسابی صادر نشده است." />
 
     <AppCard v-else :padded="false" class="overflow-hidden">
       <div class="relative">

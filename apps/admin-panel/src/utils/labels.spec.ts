@@ -26,9 +26,12 @@ describe('auditActionLabel', () => {
     // referral.cancel) from Slice 3 (Referral codes + tracking) + 3 coupon.* (create/update/
     // delete) + 1 worker-rating.moderate, both of which existed on the backend for a while
     // before the admin-panel audit-log sweep caught the drift and added their labels here.
+    // post.cover.set was later split into two distinct backend actions (post.cover.upload /
+    // post.cover.remove, Phase 1 audit-logging fix) so the two operations are distinguishable
+    // in the audit log by action alone, net +1 to this count.
     // This length guard is deliberate: adding a backend @AuditAction without a Farsi label
     // must fail here.
-    expect(AUDIT_ACTION_KEYS).toHaveLength(27)
+    expect(AUDIT_ACTION_KEYS).toHaveLength(28)
     for (const action of AUDIT_ACTION_KEYS) {
       const entry = auditActionLabel(action)
       // A mapped entry never falls back to the raw dotted action name.

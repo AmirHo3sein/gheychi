@@ -104,6 +104,9 @@ interface ReferralRewardRow {
 const { apiFetch } = useApi()
 const referrals = ref<ReferralRow[]>([])
 const loading = ref(true)
+// A fetch failure must not be silently repainted as an empty state -- see
+// SalonsView.vue's identical loadError pattern.
+const loadError = ref(false)
 const page = ref(1)
 const total = ref(0)
 const pageSize = 20
@@ -119,14 +122,21 @@ const rewardsByReferral = ref<Record<string, { loading: boolean; items: Referral
 
 async function load() {
   loading.value = true
+  loadError.value = false
   const params = new URLSearchParams({ page: String(page.value), pageSize: String(pageSize) })
   if (statusFilter.value) params.set('status', statusFilter.value)
   if (typeFilter.value) params.set('referralType', typeFilter.value)
   if (referrerPhoneFilter.value.trim()) params.set('referrerPhone', referrerPhoneFilter.value.trim())
 
-  const { data } = await apiFetch<ReferralListResponse>(`/admin/referrals?${params.toString()}`, { silent: true })
-  referrals.value = data?.items ?? []
-  total.value = data?.total ?? 0
+  const { data, error } = await apiFetch<ReferralListResponse>(`/admin/referrals?${params.toString()}`, { silent: true })
+  if (error) {
+    loadError.value = true
+    referrals.value = []
+    total.value = 0
+  } else {
+    referrals.value = data?.items ?? []
+    total.value = data?.total ?? 0
+  }
   loading.value = false
 }
 
@@ -236,7 +246,20 @@ watch(page, load)
       </div>
     </AppCard>
 
-    <EmptyState v-if="!loading && referrals.length === 0" icon="user-plus" message="معرفی‌ای با این فیلترها یافت نشد." />
+    <AppCard
+      v-if="loadError"
+      :padded="false"
+      data-testid="load-error"
+      class="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center"
+    >
+      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)">
+        <AppIcon name="warning" :size="22" />
+      </div>
+      <p class="text-sm text-(--color-text-muted)">خطا در دریافت معرفی‌ها.</p>
+      <AppButton type="button" variant="secondary" data-testid="retry-load" @click="load">تلاش دوباره</AppButton>
+    </AppCard>
+
+    <EmptyState v-else-if="!loading && referrals.length === 0" icon="user-plus" message="معرفی‌ای با این فیلترها یافت نشد." />
 
     <AppCard v-else :padded="false" class="overflow-hidden">
       <div class="overflow-x-auto">

@@ -169,7 +169,7 @@ onBeforeUnmount(() => {
   <div ref="root" class="relative" @keydown="onKeydown">
     <button
       type="button"
-      class="flex w-full items-center gap-2 rounded-xl border border-(--color-border) p-2 text-sm"
+      class="flex h-11 w-full items-center gap-2 rounded-xl border border-(--color-border) px-3 text-sm"
       :aria-label="ariaLabel"
       :title="displayLabel || undefined"
       aria-haspopup="dialog"
@@ -219,8 +219,8 @@ onBeforeUnmount(() => {
           class="tnum flex h-8 items-center justify-center rounded-lg text-sm transition-colors disabled:cursor-default"
           :class="[
             !day.inMonth && 'invisible',
-            day.isSelected ? 'bg-(--color-accent) font-bold text-white' : 'hover:bg-(--color-border-soft)',
-            day.isToday && !day.isSelected && 'font-bold text-(--color-accent)',
+            day.isSelected ? 'bg-(--color-accent) font-bold text-(--color-fill-text)' : 'hover:bg-(--color-border-soft)',
+            day.isToday && !day.isSelected && 'font-bold text-(--color-accent-text)',
           ]"
           @click="pick(day)"
         >
@@ -229,7 +229,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="mt-2 flex justify-between border-t border-(--color-border-soft) pt-2">
-        <button type="button" class="text-xs font-semibold text-(--color-accent)" @click="goToday">امروز</button>
+        <button type="button" class="text-xs font-semibold text-(--color-accent-text)" @click="goToday">امروز</button>
         <button type="button" class="text-xs font-semibold text-(--color-text-muted)" @click="clear">پاک کردن</button>
       </div>
     </div>

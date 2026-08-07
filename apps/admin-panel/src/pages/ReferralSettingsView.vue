@@ -63,6 +63,10 @@ const rows = ref<RewardTypeRow[]>([])
 // entry to build the per-card confirm summary and to detect "nothing actually changed".
 const originalRows = ref<RewardTypeRow[]>([])
 const loading = ref(true)
+// A fetch failure must not be silently repainted as an empty page -- this screen has no
+// EmptyState fallback at all (it's a fixed 3-row config, never legitimately empty), so
+// without this a failed load previously rendered nothing at all once loading finished.
+const loadError = ref(false)
 const savingType = ref<ReferralType | null>(null)
 // Which single card is showing its confirm-summary, if any -- scoped per-row (not a page-wide
 // boolean) since multiple cards live on this page at once (Uniform Consequence Rule).
@@ -70,11 +74,32 @@ const confirmingType = ref<ReferralType | null>(null)
 
 async function load() {
   loading.value = true
-  const { data } = await apiFetch<RewardTypeRow[]>('/admin/referral-reward-types', { silent: true })
-  const byType = new Map((data ?? []).map((row) => [row.referralType, row]))
-  rows.value = TYPE_ORDER.map((type) => byType.get(type)).filter((row): row is RewardTypeRow => !!row)
-  originalRows.value = rows.value.map((row) => ({ ...row }))
+  loadError.value = false
+  const { data, error } = await apiFetch<RewardTypeRow[]>('/admin/referral-reward-types', { silent: true })
+  if (error) {
+    loadError.value = true
+    rows.value = []
+    originalRows.value = []
+  } else {
+    const byType = new Map((data ?? []).map((row) => [row.referralType, row]))
+    rows.value = TYPE_ORDER.map((type) => byType.get(type)).filter((row): row is RewardTypeRow => !!row)
+    originalRows.value = rows.value.map((row) => ({ ...row }))
+  }
   loading.value = false
+}
+
+// Pinned to the salon-facing timezone rather than the viewing admin's, matching the rest of
+// this panel's date rendering -- an admin abroad must read the same timestamp as the team.
+const UPDATED_AT_FORMAT = new Intl.DateTimeFormat('fa-IR', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+  timeZone: 'Asia/Tehran',
+})
+
+function formatUpdatedAt(iso: string): string {
+  const parsed = new Date(iso)
+  // A malformed/absent timestamp must not render "Invalid Date" into the card footer.
+  return Number.isNaN(parsed.getTime()) ? '—' : UPDATED_AT_FORMAT.format(parsed)
 }
 
 // Empty-string number inputs land here as '' via v-model.number (Vue's .number modifier
@@ -272,7 +297,7 @@ onMounted(load)
 
 <!-- p-8 from `sm` up (unchanged); below that 64px of gutter is a fifth of a 320px screen. -->
 <template>
-  <div class="mx-auto max-w-3xl space-y-5 p-4 sm:p-8">
+  <div class="mx-auto max-w-4xl space-y-5 p-4 sm:p-8">
     <div
       v-if="loading && rows.length === 0"
       class="flex items-center justify-center gap-2 py-16 text-sm text-(--color-text-muted)"
@@ -283,13 +308,31 @@ onMounted(load)
       در حال بارگذاری تنظیمات معرفی…
     </div>
 
+    <AppCard
+      v-else-if="loadError"
+      :padded="false"
+      data-testid="load-error"
+      class="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center"
+    >
+      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)">
+        <AppIcon name="warning" :size="22" />
+      </div>
+      <p class="text-sm text-(--color-text-muted)">خطا در دریافت تنظیمات معرفی.</p>
+      <AppButton type="button" variant="secondary" data-testid="retry-load" @click="load">تلاش دوباره</AppButton>
+    </AppCard>
+
     <div v-for="row in rows" :key="row.referralType">
       <AppCard>
-        <div class="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-          <p class="flex min-w-0 items-center gap-2 text-sm font-bold text-(--color-text)">
-            <AppIcon name="gift" :size="17" class="shrink-0 text-(--color-accent)" />
-            {{ referralTypeLabel(row.referralType) }}
-          </p>
+        <div class="mb-5 flex flex-wrap items-center justify-between gap-x-3 gap-y-3 border-b border-(--color-border-soft) pb-5">
+          <div class="flex min-w-0 items-center gap-3">
+            <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-(--color-accent-soft) text-(--color-accent-text)">
+              <AppIcon name="gift" :size="20" />
+            </span>
+            <div class="min-w-0">
+              <p class="text-base font-bold text-(--color-text)">{{ referralTypeLabel(row.referralType) }}</p>
+              <p class="text-xs text-(--color-text-muted)">قوانین پاداش معرفی برای این نقش</p>
+            </div>
+          </div>
           <div class="flex shrink-0 items-center gap-2.5">
             <StatusBadge :label="row.enabled ? 'فعال' : 'غیرفعال'" :tone="row.enabled ? 'success' : 'neutral'" />
             <button
@@ -302,12 +345,18 @@ onMounted(load)
               class="flex h-11 w-11 shrink-0 items-center justify-center disabled:cursor-not-allowed disabled:opacity-60"
               @click="row.enabled = !row.enabled"
             >
+              <!-- accent-TEXT for the on-track, not the raw accent: the brand peach is a
+                   light pastel (1.68:1 against a white knob), so an accent-filled track read
+                   as barely distinguishable from the off state. accent-text is the darkened
+                   brand shade in light mode and the light one in dark mode, and the knob
+                   follows --color-surface-card, so the pair inverts together and stays
+                   legible in both themes (6.95:1 light / 9.26:1 dark). -->
               <span
                 class="relative h-6 w-11 rounded-full transition-colors"
-                :class="row.enabled ? 'bg-(--color-accent-strong) dark:bg-(--color-accent)' : 'bg-(--color-text-muted)'"
+                :class="row.enabled ? 'bg-(--color-accent-text)' : 'bg-(--color-text-muted)'"
               >
                 <span
-                  class="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-(--shadow-sm) transition-all"
+                  class="absolute top-0.5 h-5 w-5 rounded-full bg-(--color-surface-card) shadow-(--shadow-sm) transition-all"
                   :class="row.enabled ? 'end-0.5' : 'start-0.5'"
                 />
               </span>
@@ -367,17 +416,28 @@ onMounted(load)
           </span>
         </div>
 
-        <div class="grid gap-5 sm:grid-cols-2">
-          <div class="min-w-0 space-y-3 rounded-xl border border-(--color-border-soft) p-4">
-            <p class="text-xs font-semibold text-(--color-text-muted)">پاداش معرف</p>
+        <!-- A single hairline between the two reward columns rather than wrapping each in its
+             own bordered box: at this field count, three nested levels (page card > panel >
+             field) read as clutter. border-e/pe/ps are logical properties, so the rule lands
+             between the columns in RTL, and the columns stack with a horizontal rule below
+             `sm` where there is only one column. -->
+        <div class="grid gap-6 sm:grid-cols-2 sm:gap-0">
+          <div class="min-w-0 space-y-4 sm:border-e sm:border-(--color-border-soft) sm:pe-6">
+            <div class="flex items-center gap-2">
+              <AppIcon name="user-plus" :size="15" class="shrink-0 text-(--color-accent-text)" />
+              <p class="text-sm font-semibold text-(--color-text)">پاداش معرف</p>
+            </div>
             <div>
               <label class="mb-1.5 block text-xs text-(--color-text-muted)">نوع پاداش</label>
               <AppSelect v-model="row.referrerRewardKind" :options="REWARD_KIND_OPTIONS" width="100%" />
             </div>
-            <!-- min-w-0 on both halves: `flex-1` alone still carries `min-width: auto`, so a
-                 text field's intrinsic width (~11rem) keeps the pair from ever shrinking and
-                 the row overflows its card on a narrow screen. -->
-            <div class="flex items-end gap-2">
+            <!-- items-START, not items-end: only the cap field carries a helper line, so
+                 aligning the pair's BOTTOMS pushed its input (and its label) visibly higher
+                 than the value field beside it. min-w-0 on both halves: `flex-1` alone still
+                 carries `min-width: auto`, so a text field's intrinsic width (~11rem) keeps
+                 the pair from ever shrinking and the row overflows its card on a narrow
+                 screen. -->
+            <div class="flex items-start gap-2">
               <div class="min-w-0 flex-1">
                 <label class="mb-1.5 block text-xs text-(--color-text-muted)">مقدار ({{ rewardKindUnit(row.referrerRewardKind) }})</label>
                 <AppInput
@@ -410,16 +470,16 @@ onMounted(load)
             </div>
           </div>
 
-          <div class="min-w-0 space-y-3 rounded-xl border border-(--color-border-soft) p-4">
-            <p class="text-xs font-semibold text-(--color-text-muted)">پاداش معرفی‌شده</p>
+          <div class="min-w-0 space-y-4 border-t border-(--color-border-soft) pt-6 sm:border-t-0 sm:ps-6 sm:pt-0">
+            <div class="flex items-center gap-2">
+              <AppIcon name="gift" :size="15" class="shrink-0 text-(--color-accent-text)" />
+              <p class="text-sm font-semibold text-(--color-text)">پاداش معرفی‌شده</p>
+            </div>
             <div>
               <label class="mb-1.5 block text-xs text-(--color-text-muted)">نوع پاداش</label>
               <AppSelect v-model="row.referredRewardKind" :options="REWARD_KIND_OPTIONS" width="100%" />
             </div>
-            <!-- min-w-0 on both halves: `flex-1` alone still carries `min-width: auto`, so a
-                 text field's intrinsic width (~11rem) keeps the pair from ever shrinking and
-                 the row overflows its card on a narrow screen. -->
-            <div class="flex items-end gap-2">
+            <div class="flex items-start gap-2">
               <div class="min-w-0 flex-1">
                 <label class="mb-1.5 block text-xs text-(--color-text-muted)">مقدار ({{ rewardKindUnit(row.referredRewardKind) }})</label>
                 <AppInput
@@ -453,60 +513,72 @@ onMounted(load)
           </div>
         </div>
 
-        <!-- min-w-0 on every cell: a grid item's automatic minimum size is its content, and a
-             text field's intrinsic width (~11rem) is wider than a quarter-width track even on
-             a laptop -- without this the four fields overrun their tracks into each other. -->
-        <div class="mt-5 grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-          <div class="min-w-0">
-            <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">رویداد شرط پاداش</label>
-            <AppSelect v-model="row.qualifyingEvent" :options="QUALIFYING_EVENT_OPTIONS" width="100%" />
-          </div>
-          <div class="min-w-0">
-            <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">مهلت انتظار اعطا (ساعت)</label>
-            <AppInput
-              :model-value="String(row.grantHoldbackHours)"
-              type="number"
-              min="0"
-              class="tnum"
-              @update:model-value="(v) => (row.grantHoldbackHours = Number(v))"
-            />
-            <p v-if="validateRow(row).grantHoldbackError" class="mt-1 text-xs text-(--tone-danger-text)">
-              {{ validateRow(row).grantHoldbackError }}
-            </p>
-          </div>
-          <div class="min-w-0">
-            <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">انقضا (روز، اختیاری)</label>
-            <AppInput
-              :model-value="row.expirationDays === null ? '' : String(row.expirationDays)"
-              type="number"
-              min="0"
-              placeholder="هرگز"
-              class="tnum"
-              @update:model-value="(v) => (row.expirationDays = v === '' ? null : Number(v))"
-            />
-            <p class="mt-1 text-xs text-(--color-text-muted)">خالی = هرگز</p>
-            <p v-if="validateRow(row).expirationError" class="mt-1 text-xs text-(--tone-danger-text)">
-              {{ validateRow(row).expirationError }}
-            </p>
-          </div>
-          <div class="min-w-0">
-            <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">سقف تعداد معرفی هر معرف (اختیاری)</label>
-            <AppInput
-              :model-value="row.maxReferralsPerReferrer === null ? '' : String(row.maxReferralsPerReferrer)"
-              type="number"
-              min="0"
-              placeholder="نامحدود"
-              class="tnum"
-              @update:model-value="(v) => (row.maxReferralsPerReferrer = v === '' ? null : Number(v))"
-            />
-            <p class="mt-1 text-xs text-(--color-text-muted)">خالی = نامحدود</p>
-            <p v-if="validateRow(row).maxReferralsError" class="mt-1 text-xs text-(--tone-danger-text)">
-              {{ validateRow(row).maxReferralsError }}
-            </p>
+        <div class="mt-6 border-t border-(--color-border-soft) pt-5">
+          <p class="mb-3.5 flex items-center gap-2 text-sm font-semibold text-(--color-text)">
+            <AppIcon name="calendar" :size="15" class="text-(--color-accent-text)" />
+            قوانین اعطای پاداش
+          </p>
+          <!-- min-w-0 on every cell: a grid item's automatic minimum size is its content, and a
+               text field's intrinsic width (~11rem) is wider than a quarter-width track even on
+               a laptop -- without this the four fields overrun their tracks into each other. -->
+          <div class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="min-w-0">
+              <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">رویداد شرط پاداش</label>
+              <AppSelect v-model="row.qualifyingEvent" :options="QUALIFYING_EVENT_OPTIONS" width="100%" />
+            </div>
+            <div class="min-w-0">
+              <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">مهلت انتظار اعطا (ساعت)</label>
+              <AppInput
+                :model-value="String(row.grantHoldbackHours)"
+                type="number"
+                min="0"
+                class="tnum"
+                @update:model-value="(v) => (row.grantHoldbackHours = Number(v))"
+              />
+              <p v-if="validateRow(row).grantHoldbackError" class="mt-1 text-xs text-(--tone-danger-text)">
+                {{ validateRow(row).grantHoldbackError }}
+              </p>
+            </div>
+            <div class="min-w-0">
+              <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">انقضا (روز، اختیاری)</label>
+              <AppInput
+                :model-value="row.expirationDays === null ? '' : String(row.expirationDays)"
+                type="number"
+                min="0"
+                placeholder="هرگز"
+                class="tnum"
+                @update:model-value="(v) => (row.expirationDays = v === '' ? null : Number(v))"
+              />
+              <p class="mt-1 text-xs text-(--color-text-muted)">خالی = هرگز</p>
+              <p v-if="validateRow(row).expirationError" class="mt-1 text-xs text-(--tone-danger-text)">
+                {{ validateRow(row).expirationError }}
+              </p>
+            </div>
+            <div class="min-w-0">
+              <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">سقف تعداد معرفی هر معرف (اختیاری)</label>
+              <AppInput
+                :model-value="row.maxReferralsPerReferrer === null ? '' : String(row.maxReferralsPerReferrer)"
+                type="number"
+                min="0"
+                placeholder="نامحدود"
+                class="tnum"
+                @update:model-value="(v) => (row.maxReferralsPerReferrer = v === '' ? null : Number(v))"
+              />
+              <p class="mt-1 text-xs text-(--color-text-muted)">خالی = نامحدود</p>
+              <p v-if="validateRow(row).maxReferralsError" class="mt-1 text-xs text-(--tone-danger-text)">
+                {{ validateRow(row).maxReferralsError }}
+              </p>
+            </div>
           </div>
         </div>
 
-        <div class="mt-5 flex justify-end">
+        <!-- The row's own updatedAt was fetched but never surfaced -- it anchors the otherwise
+             empty half of the footer, and "when was this last touched" is exactly what an
+             admin wants before changing a money-moving setting. -->
+        <div class="mt-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-t border-(--color-border-soft) pt-5">
+          <p class="tnum min-w-0 text-xs text-(--color-text-muted)">
+            آخرین بروزرسانی: {{ formatUpdatedAt(row.updatedAt) }}
+          </p>
           <AppButton
             type="button"
             :ref="(el) => setSaveButtonRef(row.referralType, el)"

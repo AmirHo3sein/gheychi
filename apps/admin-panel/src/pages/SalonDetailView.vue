@@ -150,7 +150,7 @@ onMounted(load)
 <template>
   <div class="mx-auto space-y-5 p-4 sm:p-8" :class="activeTab === 'info' ? 'max-w-2xl' : 'max-w-6xl'">
     <div v-if="loading && !salon" data-testid="salon-loading" class="flex justify-center py-20">
-      <AppIcon name="spinner" :size="28" class="animate-spin text-(--color-accent)" />
+      <AppIcon name="spinner" :size="28" class="animate-spin text-(--color-accent-text)" />
     </div>
 
     <EmptyState v-else-if="notFound" icon="warning" message="آرایشگاه یافت نشد." />
@@ -196,7 +196,7 @@ onMounted(load)
                pinned rather than squeezed to nothing. -->
           <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
             <div class="flex min-w-0 flex-1 items-start gap-3">
-              <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-(--color-border-soft) text-(--color-accent)">
+              <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-(--color-border-soft) text-(--color-accent-text)">
                 <AppIcon name="building" :size="22" />
               </div>
               <div class="min-w-0">
@@ -256,7 +256,7 @@ onMounted(load)
 
       <template v-else-if="activeTab === 'stories'">
         <div v-if="storiesStatus === 'loading'" data-testid="stories-loading" class="flex justify-center py-16">
-          <AppIcon name="spinner" :size="24" class="animate-spin text-(--color-accent)" />
+          <AppIcon name="spinner" :size="24" class="animate-spin text-(--color-accent-text)" />
         </div>
 
         <div
@@ -299,7 +299,7 @@ onMounted(load)
 
       <template v-else-if="activeTab === 'portfolio'">
         <div v-if="portfolioStatus === 'loading'" data-testid="portfolio-loading" class="flex justify-center py-16">
-          <AppIcon name="spinner" :size="24" class="animate-spin text-(--color-accent)" />
+          <AppIcon name="spinner" :size="24" class="animate-spin text-(--color-accent-text)" />
         </div>
 
         <div

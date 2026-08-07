@@ -62,6 +62,9 @@ interface ReviewListResponse {
 const { apiFetch } = useApi()
 const reviews = ref<ReviewRow[]>([])
 const loading = ref(true)
+// A fetch failure must not be silently repainted as an empty state -- see
+// SalonsView.vue's identical loadError pattern.
+const loadError = ref(false)
 const page = ref(1)
 const total = ref(0)
 const pageSize = 10
@@ -75,14 +78,21 @@ const ratingFilter = ref<'' | number>('')
 
 async function load() {
   loading.value = true
+  loadError.value = false
   const params = new URLSearchParams({ page: String(page.value), pageSize: String(pageSize) })
   if (salonNameFilter.value) params.set('salonName', salonNameFilter.value)
   if (statusFilter.value) params.set('status', statusFilter.value)
   if (ratingFilter.value) params.set('rating', String(ratingFilter.value))
 
-  const { data } = await apiFetch<ReviewListResponse>(`/admin/reviews?${params.toString()}`, { silent: true })
-  reviews.value = data?.items ?? []
-  total.value = data?.total ?? 0
+  const { data, error } = await apiFetch<ReviewListResponse>(`/admin/reviews?${params.toString()}`, { silent: true })
+  if (error) {
+    loadError.value = true
+    reviews.value = []
+    total.value = 0
+  } else {
+    reviews.value = data?.items ?? []
+    total.value = data?.total ?? 0
+  }
   loading.value = false
 }
 
@@ -153,6 +163,19 @@ watch(page, load)
       <AppIcon name="spinner" :size="24" class="animate-spin text-(--color-text-muted)" />
     </div>
 
+    <AppCard
+      v-else-if="loadError"
+      :padded="false"
+      data-testid="load-error"
+      class="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center"
+    >
+      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)">
+        <AppIcon name="warning" :size="22" />
+      </div>
+      <p class="text-sm text-(--color-text-muted)">خطا در دریافت نظرات.</p>
+      <AppButton type="button" variant="secondary" data-testid="retry-load" @click="load">تلاش دوباره</AppButton>
+    </AppCard>
+
     <EmptyState v-else-if="reviews.length === 0" icon="reviews" message="نظری با این فیلترها یافت نشد." />
 
     <div v-else class="space-y-3">
@@ -167,7 +190,7 @@ watch(page, load)
                overflow-wrap:break-word deliberately doesn't feed back into that intrinsic
                minimum -- so the pair is what actually keeps a long salon name inside the card. -->
           <div class="min-w-0">
-            <div class="flex items-center gap-1 text-(--color-accent)">
+            <div class="flex items-center gap-1 text-(--color-accent-text)">
               <AppIcon
                 v-for="n in 5"
                 :key="n"
@@ -186,7 +209,7 @@ watch(page, load)
         <div v-if="review.workerRating" class="mt-2.5 flex items-center gap-1.5 text-sm text-(--color-text-muted)">
           <AppIcon name="worker-ratings" :size="15" />
           <span>امتیاز کارمند ({{ review.workerRating.workerName }}):</span>
-          <span class="flex items-center gap-0.5 text-(--color-accent)">
+          <span class="flex items-center gap-0.5 text-(--color-accent-text)">
             <AppIcon
               v-for="n in 5"
               :key="n"

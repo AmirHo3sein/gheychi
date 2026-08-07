@@ -147,7 +147,7 @@ onUnmounted(() => {
       <span
         v-if="count > 0"
         data-testid="unread-badge"
-        class="tnum absolute -end-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-(--tone-danger-text) px-1 text-[10px] font-bold text-white"
+        class="tnum absolute -end-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-(--color-danger-strong) px-1 text-[10px] font-bold text-(--color-fill-text)"
       >
         {{ count > 99 ? '۹۹+' : count }}
       </span>
@@ -167,7 +167,7 @@ onUnmounted(() => {
         <button
           data-testid="mark-all-read"
           type="button"
-          class="text-xs font-semibold text-(--color-accent) transition-opacity hover:opacity-80"
+          class="text-xs font-semibold text-(--color-accent-text) transition-opacity hover:opacity-80"
           @click="markAllRead"
         >
           خواندن همه

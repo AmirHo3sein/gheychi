@@ -64,6 +64,9 @@ interface WalletTransactionListResponse {
 const { apiFetch } = useApi()
 const transactions = ref<WalletTransactionRow[]>([])
 const loading = ref(true)
+// A fetch failure must not be silently repainted as an empty state -- see
+// SalonsView.vue's identical loadError pattern.
+const loadError = ref(false)
 const page = ref(1)
 const total = ref(0)
 const pageSize = 20
@@ -76,6 +79,7 @@ const toDate = ref('')
 
 async function load() {
   loading.value = true
+  loadError.value = false
   const params = new URLSearchParams({ page: String(page.value), pageSize: String(pageSize) })
   if (selectedUser.value) params.set('userId', selectedUser.value.id)
   if (typeFilter.value) params.set('type', typeFilter.value)
@@ -85,11 +89,17 @@ async function load() {
   if (fromDate.value) params.set('from', new Date(`${fromDate.value}T00:00:00.000`).toISOString())
   if (toDate.value) params.set('to', new Date(`${toDate.value}T23:59:59.999`).toISOString())
 
-  const { data } = await apiFetch<WalletTransactionListResponse>(`/admin/wallet/transactions?${params.toString()}`, {
+  const { data, error } = await apiFetch<WalletTransactionListResponse>(`/admin/wallet/transactions?${params.toString()}`, {
     silent: true,
   })
-  transactions.value = data?.items ?? []
-  total.value = data?.total ?? 0
+  if (error) {
+    loadError.value = true
+    transactions.value = []
+    total.value = 0
+  } else {
+    transactions.value = data?.items ?? []
+    total.value = data?.total ?? 0
+  }
   loading.value = false
 }
 
@@ -225,7 +235,20 @@ watch(page, load)
       </div>
     </AppCard>
 
-    <EmptyState v-if="!loading && transactions.length === 0" icon="wallet" message="تراکنشی با این فیلترها یافت نشد." />
+    <AppCard
+      v-if="loadError"
+      :padded="false"
+      data-testid="load-error"
+      class="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center"
+    >
+      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)">
+        <AppIcon name="warning" :size="22" />
+      </div>
+      <p class="text-sm text-(--color-text-muted)">خطا در دریافت تراکنش‌های کیف پول.</p>
+      <AppButton type="button" variant="secondary" data-testid="retry-load" @click="load">تلاش دوباره</AppButton>
+    </AppCard>
+
+    <EmptyState v-else-if="!loading && transactions.length === 0" icon="wallet" message="تراکنشی با این فیلترها یافت نشد." />
 
     <AppCard v-else :padded="false" class="overflow-hidden">
       <div class="overflow-x-auto">

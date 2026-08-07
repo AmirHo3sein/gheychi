@@ -257,7 +257,7 @@ watch(page, load)
                   <RouterLink
                     v-if="targetLink(row)"
                     :to="targetLink(row)!"
-                    class="font-semibold text-(--color-text) hover:text-(--color-accent)"
+                    class="font-semibold text-(--color-text) hover:text-(--color-accent-text)"
                   >
                     {{ targetTypeLabel(row.targetType) }}
                   </RouterLink>

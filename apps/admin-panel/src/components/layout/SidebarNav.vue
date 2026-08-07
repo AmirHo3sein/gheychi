@@ -57,7 +57,7 @@ function isActive(to: string): boolean {
         :title="link.label"
         :aria-label="link.label"
         class="group relative flex min-h-11 items-center justify-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text) md:min-h-0 md:justify-start"
-        :class="isActive(link.to) && 'bg-(--tone-info-bg) font-bold text-(--color-accent) hover:bg-(--tone-info-bg) hover:text-(--color-accent)'"
+        :class="isActive(link.to) && 'bg-(--tone-info-bg) font-bold text-(--color-accent-text) hover:bg-(--tone-info-bg) hover:text-(--color-accent-text)'"
       >
         <!-- Logical `start-0`, not `right-0`: identical in this RTL-only app, but an
              inset/overflow bug in RTL escapes to the LEFT, which is easy to miss. -->

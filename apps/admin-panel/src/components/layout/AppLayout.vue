@@ -43,10 +43,10 @@ async function logout() {
            the logout button out through the parent's `overflow-hidden`, where it would be
            both clipped and unreachable (no scroll to recover it). -->
       <header class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-(--color-border) bg-(--color-surface-card) px-4 py-3.5 sm:px-6">
-        <!-- Temporary logo mark, until a real brand asset exists -->
-        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-(--color-accent) font-black text-white shadow-(--shadow-sm)">
-          ق
-        </div>
+        <!-- Decorative: the panel name is already the adjacent <h1>, so an alt here would
+             just be read out twice. The artwork carries its own peach field, hence no
+             bg-* utility -- rounded-xl clips it to the same silhouette the mark had. -->
+        <img src="/brand-icon.png" alt="" class="h-9 w-9 shrink-0 rounded-xl shadow-(--shadow-sm)" />
 
         <div class="h-6 w-px bg-(--color-border)" />
 
@@ -76,7 +76,7 @@ async function logout() {
               <p class="truncate text-sm font-semibold text-(--color-text)">{{ session.user?.name || session.user?.phone }}</p>
               <p class="text-[11px] text-(--color-text-muted)">{{ userRoleLabel(session.user?.role ?? '') }}</p>
             </div>
-            <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-(--tone-info-bg) text-sm font-bold text-(--color-accent)">
+            <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-(--tone-info-bg) text-sm font-bold text-(--color-accent-text)">
               {{ initial }}
             </div>
           </div>
@@ -95,9 +95,24 @@ async function logout() {
            horizontal scroll container. A page that is genuinely too wide for the viewport
            (the dense tables this admin tool is built around) scrolls here, so the document
            body itself never gets a horizontal scrollbar at any width. -->
-      <main class="flex-1 overflow-auto">
+      <main class="route-outlet flex-1 overflow-auto">
+        <!--
+          No `mode="out-in"` here -- deliberately. Every route component below is lazy
+          (`() => import(...)` in router/index.ts), which Vue Router hands this slot as an
+          async component. `mode="out-in"` waits for the leave transition to finish, THEN
+          mounts the incoming node and waits for its own enter hooks before considering the
+          cycle done -- but the first time an incoming async component doesn't resolve
+          synchronously (a not-yet-cached chunk: echarts, markdown-it, vue-multiselect are all
+          only pulled in by specific routes), that wait never resolves and Transition's out-in
+          state machine gets permanently wedged. Every navigation after that swaps `Component`
+          correctly but the transition wrapper never mounts it, leaving the header/nav live
+          over a blank <main> until a full reload resets Vue's tree. Default (simultaneous)
+          mode has no such wait, at the cost of old/new briefly overlapping during the fade
+          instead of a clean sequential swap -- confirmed via a scripted multi-route
+          navigation sweep that this trade eliminates the wedge entirely.
+        -->
         <RouterView v-slot="{ Component, route: current }">
-          <Transition name="page-fade" mode="out-in">
+          <Transition name="page-fade">
             <component :is="Component" :key="current.path" />
           </Transition>
         </RouterView>
