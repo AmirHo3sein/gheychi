@@ -26,6 +26,10 @@ const reviews = [
   },
 ]
 
+function page(items: unknown[]) {
+  return { items, total: items.length, page: 1, pageSize: 50 }
+}
+
 async function mountView() {
   const wrapper = mount(ReviewsView)
   await wrapper.vm.$nextTick()
@@ -54,7 +58,7 @@ describe('ReviewsView', () => {
 
   it('renders a textarea (not a single-line input) for the reply draft, with an accessible label', async () => {
     fetchMock.mockImplementation((path: string) => {
-      if (path === '/salons/s1/reviews') return Promise.resolve({ data: structuredClone(reviews), error: null })
+      if (path === '/salons/s1/reviews') return Promise.resolve({ data: page(structuredClone(reviews)), error: null })
       return Promise.resolve({ data: null, error: null })
     })
     const wrapper = await mountView()
@@ -69,7 +73,7 @@ describe('ReviewsView', () => {
 
   it('uses the text-safe accent token for the reply label, not the fill-only accent token', async () => {
     fetchMock.mockImplementation((path: string) => {
-      if (path === '/salons/s1/reviews') return Promise.resolve({ data: structuredClone(reviews), error: null })
+      if (path === '/salons/s1/reviews') return Promise.resolve({ data: page(structuredClone(reviews)), error: null })
       return Promise.resolve({ data: null, error: null })
     })
     const wrapper = await mountView()
@@ -82,7 +86,7 @@ describe('ReviewsView', () => {
 
   it('disables the send button when the draft is empty or whitespace-only, and enables it once text is entered', async () => {
     fetchMock.mockImplementation((path: string) => {
-      if (path === '/salons/s1/reviews') return Promise.resolve({ data: [structuredClone(reviews[0])], error: null })
+      if (path === '/salons/s1/reviews') return Promise.resolve({ data: page([structuredClone(reviews[0])]), error: null })
       return Promise.resolve({ data: null, error: null })
     })
     const wrapper = await mountView()
@@ -98,7 +102,7 @@ describe('ReviewsView', () => {
 
   it('shows a loading state on the send button while the reply request is in flight, and disables it', async () => {
     fetchMock.mockImplementation((path: string) => {
-      if (path === '/salons/s1/reviews') return Promise.resolve({ data: [structuredClone(reviews[0])], error: null })
+      if (path === '/salons/s1/reviews') return Promise.resolve({ data: page([structuredClone(reviews[0])]), error: null })
       return Promise.resolve({ data: null, error: null })
     })
     const wrapper = await mountView()
@@ -136,7 +140,7 @@ describe('ReviewsView', () => {
     expect(wrapper.find('[data-testid="retry-reviews"]').exists()).toBe(true)
 
     fetchMock.mockImplementation((path: string) => {
-      if (path === '/salons/s1/reviews') return Promise.resolve({ data: [], error: null })
+      if (path === '/salons/s1/reviews') return Promise.resolve({ data: page([]), error: null })
       return Promise.resolve({ data: null, error: null })
     })
     await wrapper.get('[data-testid="retry-reviews"]').trigger('click')
@@ -149,7 +153,7 @@ describe('ReviewsView', () => {
 
   it('gives the star rating row an accessible label and hides the individual star icons from assistive tech', async () => {
     fetchMock.mockImplementation((path: string) => {
-      if (path === '/salons/s1/reviews') return Promise.resolve({ data: [structuredClone(reviews[0])], error: null })
+      if (path === '/salons/s1/reviews') return Promise.resolve({ data: page([structuredClone(reviews[0])]), error: null })
       return Promise.resolve({ data: null, error: null })
     })
     const wrapper = await mountView()
@@ -165,7 +169,7 @@ describe('ReviewsView', () => {
 
   it('uses the primary button variant for the send action', async () => {
     fetchMock.mockImplementation((path: string) => {
-      if (path === '/salons/s1/reviews') return Promise.resolve({ data: [structuredClone(reviews[0])], error: null })
+      if (path === '/salons/s1/reviews') return Promise.resolve({ data: page([structuredClone(reviews[0])]), error: null })
       return Promise.resolve({ data: null, error: null })
     })
     const wrapper = await mountView()
@@ -176,7 +180,7 @@ describe('ReviewsView', () => {
 
   it('surfaces a relative recency signal on each review card', async () => {
     fetchMock.mockImplementation((path: string) => {
-      if (path === '/salons/s1/reviews') return Promise.resolve({ data: [structuredClone(reviews[0])], error: null })
+      if (path === '/salons/s1/reviews') return Promise.resolve({ data: page([structuredClone(reviews[0])]), error: null })
       return Promise.resolve({ data: null, error: null })
     })
     const wrapper = await mountView()
@@ -188,7 +192,7 @@ describe('ReviewsView', () => {
     // r2 (answered) is listed before r1 (unanswered) in the source data -- the rendered
     // order must flip that so the review needing action surfaces first.
     fetchMock.mockImplementation((path: string) => {
-      if (path === '/salons/s1/reviews') return Promise.resolve({ data: structuredClone([reviews[1], reviews[0]]), error: null })
+      if (path === '/salons/s1/reviews') return Promise.resolve({ data: page(structuredClone([reviews[1], reviews[0]])), error: null })
       return Promise.resolve({ data: null, error: null })
     })
     const wrapper = await mountView()

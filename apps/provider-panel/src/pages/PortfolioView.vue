@@ -1,10 +1,11 @@
 <!-- apps/provider-panel/src/pages/PortfolioView.vue -->
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import PhotoUploader from '@/components/photos/PhotoUploader.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
+import AppSelect, { type SelectOption } from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useApi } from '@/composables/useApi'
 
@@ -58,6 +59,13 @@ async function load() {
 
 onMounted(load)
 
+// The empty-valued first entry is a REAL selectable option, not a placeholder: picking it
+// is the only way to unlink a service, and it's also what a null serviceId displays as.
+const serviceOptions = computed<SelectOption[]>(() => [
+  { value: '', label: 'بدون خدمت مرتبط' },
+  ...services.value.map((s) => ({ value: s.id, label: s.name })),
+])
+
 function onUploaded(item: PortfolioItem) {
   items.value.push(item)
   captionDrafts[item.id] = item.caption ?? ''
@@ -84,9 +92,10 @@ async function saveCaption(item: PortfolioItem) {
   }
 }
 
-async function setService(item: PortfolioItem, event: Event) {
-  const value = (event.target as HTMLSelectElement).value
-  // '' clears the service link -- the API accepts serviceId: null for that.
+// AppSelect hands over the picked option's raw value, not a DOM Event.
+async function setService(item: PortfolioItem, value: string | number | null) {
+  // '' (the «بدون خدمت مرتبط» option) clears the service link -- the API accepts
+  // serviceId: null for that.
   const { data } = await apiFetch<PortfolioItem>(`/salons/mine/portfolio/${item.id}`, {
     method: 'PATCH',
     body: { serviceId: value || null },
@@ -110,15 +119,19 @@ async function move(index: number, direction: -1 | 1) {
 
 <template>
   <div class="mx-auto w-full max-w-5xl space-y-4 p-4 lg:p-6">
-    <!-- flex-wrap: heading + cap meter don't share a 288px row at 320px. -->
-    <div class="flex flex-wrap items-center justify-between gap-2">
+    <!-- flex-wrap: heading + cap meter don't share a 288px row at 320px. justify-center, not
+         justify-between: the content below is independently centered within this wide
+         container (uploader via mx-auto, item grid via auto-fit + justify-center), not
+         stretched to fill it -- a justify-between header spanning the full container read as
+         visibly offset from that centered content ("the title is on the right"). -->
+    <div class="flex flex-wrap items-center justify-center gap-2">
       <h1 class="text-lg font-bold text-(--color-text)">نمونه کارها</h1>
       <span data-testid="cap-meter" class="tnum rounded-full bg-(--tone-info-bg) px-3 py-1 text-xs font-semibold text-(--tone-info-text)">
         {{ items.length.toLocaleString('fa-IR') }} از ۴۰ نمونه کار
       </span>
     </div>
 
-    <PhotoUploader class="max-w-2xl" endpoint="/salons/mine/portfolio" @uploaded="onUploaded" />
+    <PhotoUploader class="mx-auto max-w-2xl" endpoint="/salons/mine/portfolio" @uploaded="onUploaded" />
 
     <div v-if="loadError" class="space-y-3 rounded-2xl border border-dashed border-(--color-border) p-4 text-center">
       <p class="text-sm text-(--tone-danger-text)">نمونه کارها بارگذاری نشد.</p>
@@ -133,9 +146,13 @@ async function move(index: number, direction: -1 | 1) {
       <template v-else>
         <EmptyState v-if="items.length === 0" icon="portfolio" message="هنوز نمونه کاری ثبت نشده است." />
 
-        <!-- Two columns from xl: each row is a fixed 96px thumbnail plus a compact edit
-             column, so one row per line wastes most of a laptop/desktop viewport. -->
-        <div v-else class="grid items-start gap-3 xl:grid-cols-2">
+        <!-- auto-fit + justify-center, not a fixed xl:grid-cols-2: each row is a fixed 96px
+             thumbnail plus a compact edit column, so one row per line wastes most of a
+             laptop/desktop viewport -- but a FIXED column count strands a lone/odd trailing
+             item in the RTL start (right) column with visibly empty space beside it. This
+             still lays out two-up once there's enough for a second column, but centers the
+             populated tracks when there isn't. -->
+        <div v-else class="grid items-start justify-center gap-3 [grid-template-columns:repeat(auto-fit,minmax(320px,480px))]">
           <div
             v-for="(p, index) in items"
             :key="p.id"
@@ -165,15 +182,16 @@ async function move(index: number, direction: -1 | 1) {
                   {{ (captionDrafts[p.id] ?? '').length.toLocaleString('fa-IR') }}/۳۰۰
                 </span>
               </div>
-              <select
-                :value="p.serviceId ?? ''"
+              <!-- Not v-model: the picked value isn't kept locally, it round-trips through the
+                   PATCH and the row is updated from the server response. aria-label stands in
+                   for the visible label this compact row deliberately doesn't have. -->
+              <AppSelect
+                :model-value="p.serviceId ?? ''"
+                :options="serviceOptions"
                 data-testid="item-service"
-                class="native-select w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-1.5 text-sm"
-                @change="setService(p, $event)"
-              >
-                <option value="">بدون خدمت مرتبط</option>
-                <option v-for="s in services" :key="s.id" :value="s.id">{{ s.name }}</option>
-              </select>
+                aria-label="خدمت مرتبط"
+                @update:model-value="setService(p, $event)"
+              />
               <!-- Two reorder buttons + delete come to ~143px against the ~156px this column
                    has at 320px -- inside the margin, but flex-wrap keeps it honest if a
                    label or icon size ever grows. -->

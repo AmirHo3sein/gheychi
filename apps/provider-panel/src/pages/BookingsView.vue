@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppSelect, { type SelectOption } from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useApi } from '@/composables/useApi'
@@ -60,6 +61,14 @@ onMounted(loadAll)
 // booking always surfaces first.
 const sortedBookings = computed(() => [...bookings.value].sort((a, b) => a.startsAt.localeCompare(b.startsAt)))
 
+// The leading empty entry is the old native <option value="">: it is what an unassigned
+// booking displays, so it stays a real option rather than a placeholder. Picking it is a
+// no-op, exactly as before -- assignWorker ignores an empty value.
+const workerOptions = computed<SelectOption[]>(() => [
+  { value: '', label: 'بدون تخصیص کارمند' },
+  ...workers.value.map((w) => ({ value: w.id, label: w.name })),
+])
+
 async function markStatus(id: string, status: 'completed' | 'no_show') {
   submittingId.value = id
   try {
@@ -81,8 +90,8 @@ async function cancelBooking(id: string) {
   }
 }
 
-async function assignWorker(booking: Booking, event: Event) {
-  const workerId = (event.target as HTMLSelectElement).value
+// AppSelect emits the chosen option's raw value (or null when cleared), not a DOM event.
+async function assignWorker(booking: Booking, workerId: string | number | null) {
   if (!workerId) return
   submittingId.value = booking.id
   try {
@@ -131,8 +140,11 @@ function formatBookingDateTime(iso: string): string {
 
         <!-- One column on phone; more columns (i.e. more visible bookings, not wider cards)
              as the viewport grows -- PRODUCT.md treats the desktop review session as equally
-             real, and a single 1888px-wide card would waste all of it. -->
-        <div v-else class="grid items-start gap-3 md:grid-cols-2 xl:grid-cols-3">
+             real, and a single 1888px-wide card would waste all of it. auto-fit + justify-
+             center rather than a fixed md:/xl: count: a lone or odd trailing booking would
+             otherwise strand in the RTL start (right) column with visibly empty space beside
+             it -- this still goes multi-column once there are enough bookings to fill a row. -->
+        <div v-else class="grid items-start justify-center gap-3 [grid-template-columns:repeat(auto-fit,minmax(280px,360px))]">
           <AppCard v-for="b in sortedBookings" :key="b.id" :data-testid="`booking-${b.id}`" :padded="false" class="space-y-3 p-4">
             <div class="flex items-start justify-between gap-3">
               <!-- min-w-0 + break-words: a long salon-authored service name must wrap inside
@@ -148,18 +160,18 @@ function formatBookingDateTime(iso: string): string {
             <p class="tnum text-sm text-(--color-text-muted)">{{ formatBookingDateTime(b.startsAt) }}</p>
 
             <div v-if="b.status === 'confirmed' && workers.length > 0">
-              <label :for="`worker-select-${b.id}`" class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">تخصیص کارمند</label>
-              <select
-                :id="`worker-select-${b.id}`"
-                :value="b.workerId ?? ''"
+              <!-- AppSelect's root is vue-multiselect's role="combobox" div, not a labelable
+                   native control, so <label for> can no longer reach it; aria-labelledby is
+                   the right ARIA association and falls through onto that root div. -->
+              <label :id="`worker-select-${b.id}`" class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">تخصیص کارمند</label>
+              <AppSelect
+                :model-value="b.workerId ?? ''"
+                :options="workerOptions"
                 :disabled="submittingId === b.id"
+                :aria-labelledby="`worker-select-${b.id}`"
                 data-testid="assign-worker"
-                class="native-select w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-1.5 text-sm"
-                @change="assignWorker(b, $event)"
-              >
-                <option value="">بدون تخصیص کارمند</option>
-                <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
-              </select>
+                @update:model-value="assignWorker(b, $event)"
+              />
             </div>
             <p v-else-if="b.workerName" class="text-sm text-(--color-text-muted)">
               کارمند: <span class="font-semibold text-(--color-text)">{{ b.workerName }}</span>
@@ -170,6 +182,11 @@ function formatBookingDateTime(iso: string): string {
               the card only offers ~256px at 320px, so a single row overflowed the page. Two
               per row on a phone with the destructive «لغو» on its own full-width row (which
               also stops it sitting a thumb-width from «انجام شد»); one row from sm up.
+
+              The two labels are left to wrap naturally (no forced mid-word line break) --
+              CSS Grid's default `align-items: stretch` already equalizes both buttons'
+              height to whichever one wraps, so a forced break isn't needed for that and
+              only made the label read as visually broken.
             -->
             <div v-if="b.status === 'confirmed'" class="grid grid-cols-2 gap-2 sm:grid-cols-3">
               <AppButton
@@ -181,7 +198,7 @@ function formatBookingDateTime(iso: string): string {
                 @click="markStatus(b.id, 'completed')"
               >
                 <template #icon><AppIcon name="check" :size="15" /></template>
-                انجام شد
+                <span class="text-center">انجام شد</span>
               </AppButton>
               <AppButton
                 data-testid="mark-no-show"
@@ -192,7 +209,7 @@ function formatBookingDateTime(iso: string): string {
                 @click="markStatus(b.id, 'no_show')"
               >
                 <template #icon><AppIcon name="x" :size="15" /></template>
-                عدم حضور
+                <span class="text-center">عدم حضور</span>
               </AppButton>
               <AppButton
                 data-testid="cancel-booking"

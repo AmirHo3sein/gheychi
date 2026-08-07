@@ -100,7 +100,7 @@ function formatBookingTime(iso: string): string {
         v-for="link in QUICK_LINKS"
         :key="link.to"
         :to="link.to"
-        class="flex flex-col items-center gap-1.5 rounded-2xl border border-(--color-border) bg-(--color-surface-card) py-4 text-center shadow-(--shadow-sm) transition-colors hover:border-(--color-accent)"
+        class="flex flex-col items-center gap-1.5 rounded-2xl border-2 border-(--color-border) bg-(--color-surface-card) py-4 text-center shadow-(--shadow-sm) transition-colors hover:border-(--color-accent)"
       >
         <div class="flex h-9 w-9 items-center justify-center rounded-full bg-(--tone-info-bg) text-(--color-text-muted)">
           <AppIcon :name="link.icon" :size="18" />

@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import BookingsView from './BookingsView.vue'
 
 describe('BookingsView', () => {
@@ -77,11 +78,13 @@ describe('BookingsView', () => {
     const wrapper = mount(BookingsView)
     await new Promise((r) => setTimeout(r, 0))
 
-    const select = wrapper.find('[data-testid="assign-worker"]')
-    // Only the active worker should be offered as an option (the inactive one is filtered out client-side).
-    expect(select.findAll('option')).toHaveLength(2)
+    // AppSelect wraps vue-multiselect (no native <select> to set), so drive its contract.
+    const select = wrapper.findComponent(AppSelect)
+    // Only the active worker should be offered, alongside the "no worker" entry (the
+    // inactive worker is filtered out client-side).
+    expect(select.props('options')).toHaveLength(2)
 
-    await select.setValue('w1')
+    select.vm.$emit('update:modelValue', 'w1')
     await new Promise((r) => setTimeout(r, 0))
 
     expect(fetchMock.mock.calls[2]![0]).toContain('/salons/mine/bookings/b1/assign-worker')

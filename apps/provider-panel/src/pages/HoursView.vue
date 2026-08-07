@@ -5,8 +5,8 @@ import ScheduleStep from '@/components/onboarding/ScheduleStep.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
-import AppInput from '@/components/ui/AppInput.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
+import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import { validateWorkingHours } from '@/utils/working-hours'
@@ -162,7 +162,10 @@ function exceptionDateLabel(e: ScheduleException): string {
                visibly above the input it belongs to. min-w-0 lets the date field shrink to
                the 320px row instead of forcing it wider. -->
           <div class="flex items-end gap-2">
-            <AppInput v-model="newExceptionDate" label="تاریخ تعطیلی" type="date" class="tnum min-w-0 flex-1" />
+            <div class="min-w-0 flex-1">
+              <label class="mb-1.5 block text-sm font-medium text-(--color-text)">تاریخ تعطیلی</label>
+              <JalaliDatePicker v-model="newExceptionDate" aria-label="تاریخ تعطیلی" />
+            </div>
             <AppButton type="button" variant="secondary" class="shrink-0" aria-label="افزودن تعطیلی" @click="addException">
               <AppIcon name="plus" :size="16" />
             </AppButton>

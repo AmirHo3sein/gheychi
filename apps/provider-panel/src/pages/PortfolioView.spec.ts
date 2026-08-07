@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import { resetToast } from '@/composables/useToast'
 import PortfolioView from './PortfolioView.vue'
 
@@ -101,7 +102,11 @@ describe('PortfolioView', () => {
   it('clears the linked service with serviceId: null when «بدون خدمت مرتبط» is picked', async () => {
     const wrapper = await mountView()
 
-    await wrapper.findAll('[data-testid="item-service"]')[1]!.setValue('')
+    // AppSelect wraps vue-multiselect (no native <select> to setValue), so drive its
+    // contract instead. The service pickers are the only AppSelects on this page -- one per
+    // portfolio item, rendered in item order -- so index 1 is the second item's (pf2).
+    wrapper.findAllComponents(AppSelect)[1]!.vm.$emit('update:modelValue', '')
+    await wrapper.vm.$nextTick()
     expect(fetchMock).toHaveBeenCalledWith('/salons/mine/portfolio/pf2', { method: 'PATCH', body: { serviceId: null } })
   })
 

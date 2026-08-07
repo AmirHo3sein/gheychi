@@ -29,7 +29,7 @@ function isActive(to: string) {
       :key="tab.to"
       :to="tab.to"
       class="flex min-w-0 flex-1 flex-col items-center gap-1 px-1 py-2.5 text-[11px] font-medium text-(--color-text-muted) transition-colors"
-      :class="isActive(tab.to) && 'text-(--color-accent)'"
+      :class="isActive(tab.to) && 'text-(--color-accent-text)'"
     >
       <AppIcon :name="tab.icon" :size="20" />
       <!-- 320px / 5 tabs = 64px a piece; truncate rather than let a label force the bar wider. -->

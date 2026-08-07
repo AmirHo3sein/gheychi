@@ -27,7 +27,14 @@ const inputId = useId()
 </script>
 
 <template>
-  <div>
+  <div class="min-w-0">
+    <!-- min-w-0 above: an <input>'s intrinsic width comes from its `size` attribute (~11rem),
+         so wherever this component is used directly as a flex or grid item its automatic
+         minimum size would stop the field shrinking and overflow the row instead. A no-op
+         wherever there is room, i.e. every layout this desktop-primary panel is built around.
+         Note: this comment must stay INSIDE the root element -- a comment at the template
+         root would make the component multi-root and break `$el` for callers that reach for
+         the inner <input> (LoginView focuses the OTP field that way). -->
     <label v-if="label" :for="inputId" class="mb-1.5 block text-sm font-medium text-(--color-text)">
       {{ label }}
     </label>
@@ -49,7 +56,7 @@ const inputId = useId()
         :disabled="disabled"
         :autofocus="autofocus"
         v-bind="$attrs"
-        class="w-full rounded-xl border bg-(--color-surface-card) py-3 text-(--color-text) transition-colors placeholder:text-(--color-text-muted)/60 focus:outline-none focus:ring-2 focus:ring-(--color-accent)/30 disabled:cursor-not-allowed disabled:opacity-60"
+        class="h-11 w-full rounded-xl border bg-(--color-surface-card) text-(--color-text) transition-colors placeholder:text-(--color-text-muted) focus:outline-none focus:ring-2 focus:ring-(--color-accent)/30 disabled:cursor-not-allowed disabled:opacity-60"
         :class="[
           icon ? 'ps-11 pe-4' : 'px-4',
           align === 'center' ? 'text-center tracking-[0.4em]' : '',
@@ -57,8 +64,8 @@ const inputId = useId()
         ]"
       />
     </div>
-    <p v-if="error" class="mt-1.5 flex items-center gap-1 text-xs text-(--color-danger)">
-      <AppIcon name="warning" :size="14" />
+    <p v-if="error" class="mt-1.5 flex items-start gap-1 text-xs text-(--color-danger)">
+      <AppIcon name="warning" :size="14" class="mt-0.5 shrink-0" />
       {{ error }}
     </p>
   </div>

@@ -76,8 +76,11 @@ async function removePhoto(photo: SalonPhoto) {
 
 <template>
   <div class="mx-auto w-full max-w-6xl space-y-4 p-4 lg:p-6">
-    <h1 class="text-lg font-bold text-(--color-text)">تصاویر آرایشگاه</h1>
-    <PhotoUploader class="max-w-2xl" @uploaded="onUploaded" />
+    <!-- text-center, not just start-aligned: the uploader below is independently centered
+         (mx-auto) within this wide container, not stretched to fill it -- a start-aligned
+         heading above a centered form read as visibly offset from it. -->
+    <h1 class="text-center text-lg font-bold text-(--color-text)">تصاویر آرایشگاه</h1>
+    <PhotoUploader class="mx-auto max-w-2xl" @uploaded="onUploaded" />
 
     <div v-if="loadError" class="space-y-3 rounded-xl border border-dashed border-(--color-border) p-4 text-center">
       <p class="text-sm text-(--tone-danger-text)">تصاویر بارگذاری نشد.</p>
@@ -100,7 +103,7 @@ async function removePhoto(photo: SalonPhoto) {
               <img :src="p.url" :alt="p.isCover ? 'عکس اصلی آرایشگاه' : 'تصویر آرایشگاه'" class="h-full w-full object-cover" />
               <span
                 v-if="p.isCover"
-                class="absolute end-2 top-2 rounded-full bg-(--color-accent-strong) px-2 py-0.5 text-xs font-bold text-white shadow-(--shadow-sm)"
+                class="absolute end-2 top-2 rounded-full bg-(--color-accent-strong) px-2 py-0.5 text-xs font-bold text-(--color-fill-text) shadow-(--shadow-sm)"
               >
                 عکس اصلی
               </span>

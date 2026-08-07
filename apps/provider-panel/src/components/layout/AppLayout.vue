@@ -36,42 +36,52 @@ async function logout() {
     itself also pads for), and drops to zero at lg where the nav moves into the header.
   -->
   <div class="min-h-dvh bg-(--color-surface) pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-0">
-    <header class="sticky top-0 z-30 flex items-center gap-3 border-b border-(--color-border) bg-(--color-surface-card)/90 px-4 py-2.5 backdrop-blur lg:px-6">
-      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-(--color-accent) font-black text-white shadow-(--shadow-sm)">
-        ق
+    <!--
+      Three flex regions (brand / nav / controls), brand and controls both `flex-1` -- that's
+      what actually centers `nav` in the leftover space instead of just shoving it against
+      whichever side has `ms-auto`. Below lg, `nav` is hidden and the two flex-1 regions
+      collapse back to the original brand-left / controls-right layout with nothing between
+      them, so mobile is unaffected.
+    -->
+    <header class="sticky top-0 z-30 flex items-center gap-3 border-b border-(--color-border) bg-(--color-surface-card)/90 px-4 py-2.5 shadow-(--shadow-sm) backdrop-blur lg:px-6">
+      <div class="flex min-w-0 flex-1 items-center gap-3">
+        <!-- Decorative: the salon name sits right beside it. The artwork carries its own
+             peach field, hence no bg-* utility -- rounded-xl clips it to the same silhouette. -->
+        <img
+          src="/brand-icon.png"
+          alt=""
+          class="h-9 w-9 shrink-0 rounded-xl shadow-(--shadow-sm) transition-transform duration-200 hover:scale-105 hover:rotate-3"
+        />
+        <p class="min-w-0 truncate text-sm font-bold text-(--color-text)">{{ salon?.name ?? 'پنل مدیریت آرایشگاه' }}</p>
       </div>
-      <p class="min-w-0 truncate text-sm font-bold text-(--color-text)">{{ salon?.name ?? 'پنل مدیریت آرایشگاه' }}</p>
 
       <!--
         Desktop/laptop navigation. The same five destinations the bottom bar carries, moved
         inline from lg up so a wide screen isn't left with a phone bar spanning 1920px. The
         bar and this row are mutually exclusive (lg:hidden / hidden lg:flex), never both.
       -->
-      <nav class="ms-auto hidden shrink-0 items-center gap-1 lg:flex">
+      <nav class="hidden shrink-0 items-center gap-1 lg:flex" aria-label="ناوبری اصلی">
         <RouterLink
           v-for="tab in NAV_TABS"
           :key="tab.to"
           :to="tab.to"
-          class="flex min-h-11 items-center gap-2 whitespace-nowrap rounded-xl px-3 text-sm font-medium transition-colors"
+          class="group relative flex min-h-11 items-center gap-2 whitespace-nowrap rounded-xl px-3 text-sm font-medium transition-all duration-200 active:scale-[0.97]"
           :class="
             isTabActive(tab.to, route.path)
               ? 'bg-(--color-accent-soft) text-(--color-accent-text)'
-              : 'text-(--color-text-muted) hover:bg-(--color-border-soft) hover:text-(--color-text)'
+              : 'text-(--color-text-muted) hover:-translate-y-0.5 hover:bg-(--color-border-soft) hover:text-(--color-text)'
           "
         >
-          <AppIcon :name="tab.icon" :size="17" />
+          <AppIcon :name="tab.icon" :size="17" class="transition-transform duration-200 group-hover:scale-110" />
           {{ tab.label }}
         </RouterLink>
       </nav>
 
-      <!-- ms-auto (logical), not mr-auto: physical directions are forbidden app-wide, and
-           this one only happened to look right because the app is RTL-only. On lg the nav
-           above already claims the free space, so this collapses to a plain gap. -->
-      <div class="ms-auto flex items-center gap-1 lg:ms-2">
+      <div class="flex flex-1 items-center justify-end gap-1">
         <button
           type="button"
           :title="isDark ? 'حالت روشن' : 'حالت تیره'"
-          class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text)"
+          class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-(--color-text-muted) transition-all duration-200 hover:bg-(--color-border-soft) hover:text-(--color-text) active:scale-90"
           @click="toggleTheme"
         >
           <AppIcon :name="isDark ? 'sun' : 'moon'" :size="18" />
@@ -79,7 +89,7 @@ async function logout() {
         <button
           type="button"
           title="خروج"
-          class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-(--color-text-muted) transition-colors hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text)"
+          class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-(--color-text-muted) transition-all duration-200 hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text) active:scale-90"
           @click="logout"
         >
           <AppIcon name="logout" :size="18" />
@@ -87,9 +97,24 @@ async function logout() {
       </div>
     </header>
 
-    <main>
+    <main class="route-outlet">
+      <!--
+        No `mode="out-in"` here -- deliberately. Every route component below is lazy
+        (`() => import(...)` in router/index.ts), which Vue Router hands this slot as an
+        async component. `mode="out-in"` waits for the leave transition to finish, THEN mounts
+        the incoming node and waits for its own enter hooks before considering the cycle done
+        -- but the first time an incoming async component doesn't resolve synchronously (a
+        not-yet-cached chunk: leaflet/vue-multiselect are only pulled in by the
+        onboarding/settings pickers), that wait never resolves and Transition's out-in state
+        machine gets permanently wedged. Every navigation after that swaps `Component`
+        correctly but the transition wrapper never mounts it, leaving the header/nav live over
+        a blank <main> until a full reload resets Vue's tree. Default (simultaneous) mode has
+        no such wait, at the cost of old/new briefly overlapping during the fade instead of a
+        clean sequential swap -- confirmed via a scripted multi-route navigation sweep that
+        this trade eliminates the wedge entirely.
+      -->
       <RouterView v-slot="{ Component, route: current }">
-        <Transition name="page-fade" mode="out-in">
+        <Transition name="page-fade">
           <component :is="Component" :key="current.path" />
         </Transition>
       </RouterView>

@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import CouponsView from './CouponsView.vue'
+import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 
 async function mountCoupons() {
   const wrapper = mount(CouponsView)
@@ -213,7 +214,9 @@ describe('CouponsView', () => {
     const wrapper = await mountCoupons()
     await wrapper.find('input.uppercase').setValue('SUMMER20')
     await wrapper.findAll('input[type="number"]')[0]!.setValue('20')
-    await wrapper.find('input[type="date"]').setValue('2026-08-01')
+    // JalaliDatePicker isn't a native input -- drive its v-model contract directly, same as
+    // AppSelect/AppMultiSelect elsewhere in this suite.
+    await wrapper.findComponent(JalaliDatePicker).vm.$emit('update:modelValue', '2026-08-01')
 
     const addButton = wrapper.findAll('button').find((b) => b.text() === 'افزودن')!
     await addButton.trigger('click')

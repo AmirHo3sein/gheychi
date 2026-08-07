@@ -88,7 +88,10 @@ function toman(amount: number | null | undefined): string {
 
     <div v-else class="grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
       <!-- The headline figure spans both columns at sm/md (where three across would squeeze
-           a long toman number into two wrapped lines) and joins the row at lg. -->
+           a long toman number into two wrapped lines) and joins the row at lg. All three
+           cards share one icon-capsule-plus-label-value layout -- previously only this first
+           card had it, which read as an unintentional mismatch rather than a deliberate
+           hierarchy (all three are peers: gross, the deduction, and what's left). -->
       <AppCard class="bg-(--color-surface-subtle) sm:col-span-2 lg:col-span-1">
         <div class="flex items-center gap-3">
           <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-(--color-surface-card) text-(--color-text-muted)">
@@ -103,17 +106,27 @@ function toman(amount: number | null | undefined): string {
         </div>
       </AppCard>
 
-      <AppCard>
-        <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 sm:flex-col sm:items-start">
-          <p class="text-sm text-(--color-text-muted)">کارمزد پلتفرم ({{ earnings.commissionPercent }}٪)</p>
-          <p class="tnum break-words text-lg font-bold text-(--color-text-muted)">−{{ toman(earnings.commissionAmount) }}</p>
+      <AppCard class="bg-(--color-surface-subtle)">
+        <div class="flex items-center gap-3">
+          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-(--color-surface-card) text-(--color-text-muted)">
+            <AppIcon name="coupons" :size="18" />
+          </div>
+          <div class="min-w-0">
+            <p class="text-xs text-(--color-text-muted)">کارمزد پلتفرم ({{ earnings.commissionPercent }}٪)</p>
+            <p class="tnum break-words text-xl font-bold text-(--color-text-muted)">−{{ toman(earnings.commissionAmount) }}</p>
+          </div>
         </div>
       </AppCard>
 
-      <AppCard>
-        <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 sm:flex-col sm:items-start">
-          <p class="text-sm font-semibold text-(--color-text)">مبلغ قابل پرداخت</p>
-          <p class="tnum break-words text-xl font-bold text-(--tone-success-text)">{{ toman(earnings.netPayout) }}</p>
+      <AppCard class="bg-(--color-surface-subtle)">
+        <div class="flex items-center gap-3">
+          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-(--color-surface-card) text-(--tone-success-text)">
+            <AppIcon name="check" :size="18" />
+          </div>
+          <div class="min-w-0">
+            <p class="text-xs text-(--color-text-muted)">مبلغ قابل پرداخت</p>
+            <p class="tnum break-words text-xl font-bold text-(--tone-success-text)">{{ toman(earnings.netPayout) }}</p>
+          </div>
         </div>
       </AppCard>
     </div>

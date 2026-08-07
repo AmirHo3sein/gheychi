@@ -9,72 +9,125 @@
 @theme static {
   --font-sans: 'Vazirmatn Variable', ui-sans-serif, system-ui, sans-serif;
 
-  /* Light mode -- "Teal Trust", same brand tokens as user-app/admin-panel's light theme */
-  --color-surface: #F4FBFA;
+  /* Light mode -- exact palette handed down from the brand's design-system spec (built on
+     the scissors-mascot direction): warm-white surfaces, graphite text, soft peach accent.
+     Most of the spec's own hex values are pastel and fail WCAG AA as a fill under white
+     text (e.g. raw #FFB6A3 under white text is 1.68:1) -- per an explicit decision, those
+     fills keep the spec's exact hex, and the FOREGROUND drawn on top of them switches to
+     dark graphite (--color-fill-text, 2D2D2D) instead of white, which clears 4.5:1
+     everywhere it's used (8.18:1 on the accent fill, 4.53:1 on the danger fill). Only
+     --color-accent-strong's true consumer, --color-danger-strong, needed an imperceptible
+     nudge off the spec's literal E66B6B (to E76F6F) to clear that bar with graphite text.
+     Text-role tokens (--color-accent-text, --color-danger, the tone-*-text badge colors)
+     are separately darkened versions of the same hues, verified against the surfaces they
+     actually sit on -- see each token's role below, they are not interchangeable with the
+     fill-role tokens above just because they share a hue. */
+  --color-surface: #FFF8F5;
   --color-surface-card: #FFFFFF;
-  --color-text: #0B4F4A;
-  --color-accent: #0EA89B;
-  --color-accent-strong: #0F766E;
-  --color-accent-deep: #115E59;
-  --color-accent-soft: #E3F6F3;
-  --color-accent-text: #0F766E;
-  --color-border: #DCEDEA;
-  --color-border-soft: #EAF6F5;
-  --color-text-muted: #4C716D;
-  --color-danger: #C0392B;
-  --color-danger-strong: #B91C1C;
+  --color-surface-subtle: #FFF3EF;
+  --color-text: #2D2D2D;
+  /* #666666, not the spec's literal #777777 "Secondary": that only reaches 4.48:1
+     on white -- failing AA by a hair -- and drops to 3.67:1 on --color-border-soft,
+     which is where muted text actually sits (ghost-button hover, table headers).
+     This clears 4.5:1 on every light surface in the system. */
+  --color-text-muted: #666666;
+  --color-border: #E2D7D3;
+  --color-border-soft: #EFE7E4;
+  --color-accent: #FFB6A3;
+  --color-accent-strong: #FFB6A3;
+  --color-accent-deep: #F59C86;
+  --color-accent-pressed: #E98871;
+  --color-accent-soft: #FFF1EC;
+  /* accent-text: TEXT drawn directly on a light surface (links, "today" markers, active
+     nav labels) -- the raw accent hue only reaches 1.68:1 as text, so this is the spec's
+     own Primary-900 step instead, verified at 6.62:1 against --color-surface. */
+  --color-accent-text: #8F4335;
+  /* Foreground for text drawn ON TOP OF an accent/status fill (buttons, badges) -- constant
+     graphite in both themes, since those fills stay light/pastel in dark mode too ("glow
+     slightly", not invert). See the light-mode block comment above for the contrast math. */
+  --color-fill-text: #2D2D2D;
+  /* Danger keeps its own crimson hue, distinct from accent, so a destructive action never
+     reads as just a duller "primary" button. Text-role (borders, error copy) is darkened
+     off the spec's #E66B6B for 4.92:1 against white; -strong (button fill) is the spec's
+     hex with a barely-perceptible nudge for 4.53:1 under --color-fill-text -- see the
+     block comment above. */
+  /* Darkened a shade off #DA2525 so danger copy also clears AA on its own tinted
+     backdrop (--color-danger-soft / --color-accent-soft), not just on white. */
+  --color-danger: #D12424;
+  --color-danger-strong: #E76F6F;
 
-  --tone-success-bg: #E3F7EE;
-  /* Darkened from #0F8A54 (3.93:1 against --tone-success-bg, fails WCAG AA) to
-     4.83:1 -- dark mode's #4ADE80 already passes and is untouched. */
-  --tone-success-text: #0D7A48;
-  --tone-warning-bg: #FEF3DE;
-  /* Darkened from #B4740E (3.51:1 against --tone-warning-bg, fails WCAG AA) to
-     4.87:1 -- dark mode's #FBBF24 already passes and is untouched. */
-  --tone-warning-text: #955F09;
-  --tone-danger-bg: #FCE8EA;
-  --tone-danger-text: #C22B3F;
-  --tone-neutral-bg: #EEF1F2;
-  --tone-neutral-text: #4B5F5E;
-  --tone-info-bg: #E7EFFC;
-  --tone-info-text: #2A5FBE;
+  --tone-success-bg: #E6F4EC;
+  --tone-success-text: #34744E;
+  --tone-warning-bg: #F8F0E2;
+  --tone-warning-text: #8F600A;
+  --tone-danger-bg: #F9E7E7;
+  --tone-danger-text: #C92222;
+  --tone-neutral-bg: #F3F1F0;
+  --tone-neutral-text: #5C5656;
+  --tone-info-bg: #E2EDF8;
+  --tone-info-text: #1B68B6;
 
-  --shadow-color: 178 45% 20%;
-  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.06), 0 1px 1px hsl(var(--shadow-color) / 0.04);
-  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.16), 0 2px 6px -2px hsl(var(--shadow-color) / 0.08);
-  --shadow-lg: 0 24px 48px -16px hsl(var(--shadow-color) / 0.22), 0 8px 16px -4px hsl(var(--shadow-color) / 0.1);
+  /* Reserved domain accents from the brand spec -- not consumed by any component yet
+     (no feature currently needs a premium/wallet/AI/reports-specific accent distinct from
+     the semantic tone-* colors above), kept available so a future feature can reach for
+     the matching brand color instead of picking an arbitrary one. */
+  --color-premium: #D4AF37;
+  --color-wallet: #5EC9A3;
+  --color-ai: #A78BFA;
+  --color-reports: #6FA8FF;
+
+  /* Shadows are neutral graphite per the spec (not brand-hue-tinted like the previous
+     rebrand) -- rgb(45,45,45) is literally #2D2D2D, hence hue 0 / sat 0% / light 18%. */
+  --shadow-color: 0 0% 18%;
+  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.04), 0 1px 1px hsl(var(--shadow-color) / 0.03);
+  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.08), 0 2px 6px -2px hsl(var(--shadow-color) / 0.06);
+  --shadow-lg: 0 24px 48px -16px hsl(var(--shadow-color) / 0.12), 0 8px 16px -4px hsl(var(--shadow-color) / 0.08);
 }
 
-/* Dark mode -- "Bold Editorial", same accent/surface values as user-app/admin-panel's dark theme */
+/* Dark mode -- warm charcoal, not an inverted black-and-white. Per the spec ("don't change
+   the brand color, just make it glow slightly"), the accent stays the same literal peach --
+   it's naturally bright enough against these dark surfaces to work as text too (9-11:1),
+   unlike in light mode where the raw hue needed a darkened accent-text. --color-fill-text
+   stays the light mode's constant graphite (not redefined here): every fill it sits on
+   (accent, danger-strong) is still a light/pastel color in dark mode, so the same dark
+   foreground still applies. */
 .dark {
-  --color-surface: #151217;
-  --color-surface-card: #211D24;
-  --color-text: #F5F0F2;
-  --color-accent: #7A3FF2;
-  --color-accent-strong: #6D28D9;
-  --color-accent-deep: #5B21B6;
-  --color-accent-soft: #2C2140;
-  --color-accent-text: #A78BFA;
-  --color-border: #38323D;
-  --color-border-soft: #2A242E;
-  --color-text-muted: #B3A3B0;
-  --color-danger: #F2645C;
-  --color-danger-strong: #9F1239;
+  --color-surface: #171616;
+  --color-surface-card: #262323;
+  --color-surface-subtle: #1F1D1D;
+  --color-text: #F7F4F2;
+  --color-text-muted: #B8B0AB;
+  --color-border: #494444;
+  --color-border-soft: #3A3636;
+  --color-accent: #FFB6A3;
+  --color-accent-strong: #FFB6A3;
+  --color-accent-deep: #FF9F87;
+  --color-accent-pressed: #FF8D72;
+  --color-accent-soft: #3F2018;
+  --color-accent-text: #FFB6A3;
+  --color-danger: #E66B6B;
+  --color-danger-strong: #E76F6F;
 
-  --tone-success-bg: #16301F;
-  --tone-success-text: #4ADE80;
-  --tone-warning-bg: #332507;
-  --tone-warning-text: #FBBF24;
-  --tone-danger-bg: #33141B;
-  --tone-danger-text: #FB7185;
-  --tone-neutral-bg: #2A242E;
-  --tone-neutral-text: #C4B8CC;
-  --tone-info-bg: #1E2247;
-  --tone-info-text: #A5A8F5;
+  --tone-success-bg: #193826;
+  --tone-success-text: #53B179;
+  --tone-warning-bg: #3F3012;
+  --tone-warning-text: #F2B440;
+  --tone-danger-bg: #3F1212;
+  --tone-danger-text: #E66B6B;
+  --tone-neutral-bg: #2A2626;
+  --tone-neutral-text: #B7B0AC;
+  --tone-info-bg: #12293F;
+  --tone-info-text: #64A5E8;
 
-  --shadow-color: 275 55% 4%;
-  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.4), 0 1px 1px hsl(var(--shadow-color) / 0.3);
-  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.55), 0 2px 6px -2px hsl(var(--shadow-color) / 0.4);
+  --color-premium: #D4AF37;
+  --color-wallet: #5EC9A3;
+  --color-ai: #A78BFA;
+  --color-reports: #6FA8FF;
+
+  /* Pure black per the spec's dark shadows (rgba(0,0,0,...)), not graphite-tinted. */
+  --shadow-color: 0 0% 0%;
+  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.35), 0 1px 1px hsl(var(--shadow-color) / 0.25);
+  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.45), 0 2px 6px -2px hsl(var(--shadow-color) / 0.35);
   --shadow-lg: 0 24px 48px -16px hsl(var(--shadow-color) / 0.65), 0 8px 16px -4px hsl(var(--shadow-color) / 0.5);
 }
 
@@ -120,7 +173,7 @@ html, body {
 
 ::selection {
   background: var(--color-accent);
-  color: white;
+  color: var(--color-fill-text);
 }
 
 input, select, textarea {
@@ -128,9 +181,11 @@ input, select, textarea {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
+/* accent-text, not the raw pastel accent -- a light peach border on a light input would
+   barely be visible as a focus indicator (WCAG 1.4.11 non-text contrast). */
 input:focus, select:focus, textarea:focus {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 30%, transparent);
+  border-color: var(--color-accent-text);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent-text) 30%, transparent);
 }
 
 button {
@@ -141,22 +196,6 @@ button:disabled {
   cursor: not-allowed;
 }
 
-/* Custom chevron for native <select> elements we keep for unit-test compatibility
-   (setValue() needs a real <select>) but still want to look designed, not OS-default. */
-.native-select {
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235B8A86' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: left 0.85rem center;
-  padding-left: 2.25rem;
-  /* Some call sites pair this class with compact padding (e.g. p-1.5), which lands
-     well under the 44px touch-target floor -- enforce the floor here so every
-     .native-select usage clears it regardless of the padding utility applied. */
-  min-height: 2.75rem;
-}
-.dark .native-select {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23B3A3B0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-}
 
 /* vue-multiselect brand + RTL overrides -- identical to admin-panel's .app-select block,
    kept as a separate copy per the cross-app isolation convention. */
@@ -170,8 +209,8 @@ button:disabled {
   text-align: right;
 }
 .app-select .multiselect--active .multiselect__tags {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 30%, transparent);
+  border-color: var(--color-accent-text);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent-text) 30%, transparent);
 }
 .app-select .multiselect__select {
   right: auto;
@@ -205,7 +244,15 @@ button:disabled {
   background: var(--color-surface-card);
   box-shadow: var(--shadow-md);
   margin-top: 0.25rem;
-  overflow: hidden;
+  /* overflow-y: auto (not `hidden`) is load-bearing, not a style choice -- vue-multiselect's
+     own default CSS relies on this element scrolling internally once the option list
+     exceeds its max-height (default 300px, set inline via the maxHeight prop). `hidden`
+     silently cancelled that: for a short list (a handful of categories) nothing ever
+     overflowed, so it went unnoticed, but a long list (e.g. an 80+ city picker) rendered
+     fully unclipped instead of scrolling, swallowing the rest of the page under it.
+     overflow-x stays hidden so the rounded corners never show a horizontal scrollbar. */
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 .app-select .multiselect__option {
   padding: 0.65rem 0.9rem;
@@ -223,10 +270,33 @@ button:disabled {
 .app-select .multiselect__option--highlight,
 .app-select .multiselect__option--highlight::after {
   background: var(--color-accent);
-  color: white;
+  color: var(--color-fill-text);
 }
 
-/* Route-change transition, applied to the RouterView in AppLayout.vue. */
+/* Route-change transition, applied to the RouterView in AppLayout.vue. `mode="out-in"` is
+   deliberately NOT used (see the comment above that Transition), so during a swap BOTH pages
+   are in the tree at once. Stacking them into a single grid cell takes the outgoing page out
+   of the incoming one's flow: without this the two lay out one after another, so the incoming
+   page starts pushed down by the outgoing one's full height and visibly snaps upward the
+   moment the outgoing one unmounts -- the "jump from bottom to up" this fixes.
+
+   Grid rather than `position: absolute` on the leaving page: admin-panel's identical block
+   has <main> as its own scroll container, where an absolutely-positioned leaver is laid out
+   from the top of the *scrolled* content and so jumps whenever the page was scrolled down.
+   Grid keeps both pages in normal flow and works the same either way, so the two apps can
+   share one approach. align-items: start keeps each page content-height (a stretched grid
+   item would be a behaviour change from the plain block flow this replaces).
+
+   Targets a class, not the bare `main` element: these are unlayered rules, so they beat any
+   Tailwind display utility, and a bare `main {}` would silently re-layout every other <main>
+   in the app -- the login screen's own <main> included. */
+.route-outlet {
+  display: grid;
+  align-items: start;
+}
+.route-outlet > * {
+  grid-area: 1 / 1;
+}
 .page-fade-enter-active {
   transition: opacity 0.18s ease, transform 0.18s ease;
 }
@@ -241,7 +311,25 @@ button:disabled {
   opacity: 0;
 }
 
-/* Login page decoration */
+/* Login screen -- one centred composition, byte-identical in all three apps (own copy per the
+   cross-app isolation convention), so change them together. Replaces an earlier 50/50 split
+   layout: at desktop widths that gave each half far more room than its contents needed, so
+   the page read as two large empty rectangles with a small card and a small mascot adrift in
+   them. A single centred column keeps the artwork, the heading and the form in one compact
+   group at every width, which also removes the need for a separate mobile treatment. */
+.login-bg {
+  background:
+    radial-gradient(65% 55% at 12% 8%, color-mix(in srgb, var(--color-accent) 55%, transparent), transparent 72%),
+    radial-gradient(60% 50% at 88% 92%, color-mix(in srgb, var(--color-accent-deep) 45%, transparent), transparent 72%),
+    var(--color-surface);
+}
+
+/* Soft glow seating the mascot so it doesn't float against the gradient unattached. */
+.login-glow {
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--color-accent) 55%, transparent), transparent);
+}
+
+/* Slow drift on the atmospheric blobs behind the composition. */
 @keyframes mesh-morph-a {
   0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); }
   50% { transform: translate(4%, -6%) scale(1.15) rotate(8deg); }
@@ -260,4 +348,15 @@ button:disabled {
 .login-stagger {
   opacity: 0;
   animation: fade-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-stagger {
+    opacity: 1;
+    animation: none;
+  }
+  .mesh-a,
+  .mesh-b {
+    animation: none;
+  }
 }

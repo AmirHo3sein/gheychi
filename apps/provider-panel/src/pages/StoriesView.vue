@@ -5,6 +5,7 @@ import PhotoUploader from '@/components/photos/PhotoUploader.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
+import AppSelect, { type SelectOption } from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useApi } from '@/composables/useApi'
 import { formatRemainingTime } from '@/utils/remaining-time'
@@ -30,13 +31,23 @@ const loading = ref(true)
 const loadError = ref(false)
 const caption = ref('')
 const serviceId = ref('')
-const serviceSelectId = useId()
+// vue-multiselect's root is a role="combobox" div, not a labelable control, so the visible
+// label can't reach it with `for`. It carries this id instead and AppSelect gets it via
+// aria-labelledby (an undeclared Multiselect prop, so attrs fallthrough lands it on the root).
+const serviceLabelId = useId()
 const deletingId = ref<string | null>(null)
 
 // GET /salons/mine/stories only ever returns unexpired rows (the API's expiry read
 // filter is authoritative), and admin-removed rows still occupy their cap slot until
 // natural expiry -- so the cap meter's active count is simply the list length.
 const activeCount = computed(() => stories.value.length)
+
+// «بدون خدمت مرتبط» is a real, selectable option (empty serviceId), not a placeholder:
+// picking it is how an owner detaches a service they'd already chosen.
+const serviceOptions = computed<SelectOption[]>(() => [
+  { value: '', label: 'بدون خدمت مرتبط' },
+  ...services.value.map((s) => ({ value: s.id, label: s.name })),
+])
 
 const extraFields = computed<Record<string, string>>(() => {
   const fields: Record<string, string> = {}
@@ -94,17 +105,21 @@ function serviceName(id: string | null) {
 <template>
   <div class="mx-auto w-full max-w-6xl space-y-4 p-4 lg:p-6">
     <!-- flex-wrap: the cap meter pill is ~165px and the heading ~85px -- together they need
-         two rows once 320px loses its page padding. -->
-    <div class="flex flex-wrap items-center justify-between gap-2">
+         two rows once 320px loses its page padding. justify-center, not justify-between: the
+         composer form below is independently centered (mx-auto) within this wide container,
+         not stretched to fill it -- a justify-between header spanning the full container
+         read as visibly offset from that centered form. -->
+    <div class="flex flex-wrap items-center justify-center gap-2">
       <h1 class="text-lg font-bold text-(--color-text)">استوری‌ها</h1>
       <span data-testid="cap-meter" class="tnum rounded-full bg-(--tone-info-bg) px-3 py-1 text-xs font-semibold text-(--tone-info-text)">
         {{ activeCount.toLocaleString('fa-IR') }} از ۱۰ استوری فعال
       </span>
     </div>
 
-    <!-- Composer form: capped so its caption field stays a sane width on a laptop while the
-         story grid below still uses the full container. -->
-    <div class="max-w-2xl space-y-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 shadow-(--shadow-sm)">
+    <!-- Composer form: capped AND centered so its caption field stays a sane width on a
+         laptop (while the story grid below still uses the full container) without hugging
+         the RTL start (right) edge the way a cap-without-center would. -->
+    <div class="mx-auto max-w-2xl space-y-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 shadow-(--shadow-sm)">
       <div>
         <div class="mb-1.5 flex items-center justify-between">
           <label class="block text-sm font-semibold text-(--color-text)">توضیح استوری (اختیاری)</label>
@@ -113,16 +128,14 @@ function serviceName(id: string | null) {
         <AppInput v-model="caption" data-testid="story-caption" :maxlength="200" placeholder="توضیح کوتاه" />
       </div>
       <div>
-        <label :for="serviceSelectId" class="mb-1.5 block text-sm font-semibold text-(--color-text)">خدمت مرتبط (اختیاری)</label>
-        <select
-          :id="serviceSelectId"
-          v-model="serviceId"
+        <label :id="serviceLabelId" class="mb-1.5 block text-sm font-semibold text-(--color-text)">خدمت مرتبط (اختیاری)</label>
+        <AppSelect
+          :model-value="serviceId"
           data-testid="story-service"
-          class="native-select w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-3 text-sm"
-        >
-          <option value="">بدون خدمت مرتبط</option>
-          <option v-for="s in services" :key="s.id" :value="s.id">{{ s.name }}</option>
-        </select>
+          :options="serviceOptions"
+          :aria-labelledby="serviceLabelId"
+          @update:model-value="serviceId = String($event ?? '')"
+        />
       </div>
       <PhotoUploader v-if="activeCount < 10" endpoint="/salons/mine/stories" :extra-fields="extraFields" @uploaded="onUploaded" />
       <p

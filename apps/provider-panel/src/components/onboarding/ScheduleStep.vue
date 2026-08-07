@@ -1,18 +1,25 @@
 <!-- apps/provider-panel/src/components/onboarding/ScheduleStep.vue -->
 <script setup lang="ts">
-import { WEEKDAY_LABELS, type WorkingHourRow } from '@/utils/working-hours'
+import { computed } from 'vue'
+import { WEEKDAY_DISPLAY_ORDER, WEEKDAY_LABELS, type WorkingHourRow } from '@/utils/working-hours'
 
 const model = defineModel<WorkingHourRow[]>({
   required: true,
 })
 
 withDefaults(defineProps<{ invalidWeekdays?: number[] }>(), { invalidWeekdays: () => [] })
+
+// model[i].weekday === i always holds (both callers build it via Array.from({length:7}, (_,
+// weekday) => ({weekday, ...}))), so reindexing into Saturday-first order for RENDER ONLY is
+// just a lookup -- the array elements are the same reactive objects either way, so v-model
+// bindings below still mutate the real, weekday-int-keyed entries in `model`.
+const orderedDays = computed(() => WEEKDAY_DISPLAY_ORDER.map((weekday) => model.value[weekday]!))
 </script>
 
 <template>
   <div class="max-w-2xl space-y-2">
     <div
-      v-for="day in model"
+      v-for="day in orderedDays"
       :key="day.weekday"
       :data-testid="`day-${day.weekday}`"
       class="flex flex-col gap-2 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-3 transition-colors sm:flex-row sm:items-center sm:gap-3"

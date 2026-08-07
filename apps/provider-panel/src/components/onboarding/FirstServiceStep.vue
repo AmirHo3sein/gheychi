@@ -1,10 +1,12 @@
 <!-- apps/provider-panel/src/components/onboarding/FirstServiceStep.vue -->
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import AppInput from '../ui/AppInput.vue'
 import AppButton from '../ui/AppButton.vue'
 import AppIcon from '../ui/AppIcon.vue'
+import AppSelect from '../ui/AppSelect.vue'
+import type { SelectOption } from '../ui/AppSelect.vue'
 
 const model = defineModel<{ categoryId: number | null; name: string; price: number; durationMin: number }>({
   required: true,
@@ -27,6 +29,10 @@ async function loadCategories() {
   categories.value = data ?? []
   loading.value = false
 }
+
+// Option values stay real numbers (the category ids), so the picked value round-trips into
+// model.categoryId as a number -- the same thing the old <select>'s v-model.number did.
+const categoryOptions = computed<SelectOption[]>(() => categories.value.map((c) => ({ value: c.id, label: c.name })))
 
 onMounted(loadCategories)
 </script>
@@ -55,15 +61,18 @@ onMounted(loadCategories)
   </div>
   <div v-else class="space-y-4">
     <div>
+      <!-- AppSelect's root is vue-multiselect's combobox <div>, which a native <label for>
+           can't target, so the accessible name comes from aria-label instead. The old
+           disabled empty <option> was a placeholder, not a choice -- AppSelect's own
+           placeholder ('انتخاب کنید') covers it. -->
       <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">دسته‌بندی خدمت</label>
-      <select
-        v-model.number="model.categoryId"
+      <AppSelect
+        :model-value="model.categoryId"
         data-testid="service-category"
-        class="native-select w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-3 text-sm"
-      >
-        <option :value="null" disabled>انتخاب کنید</option>
-        <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
-      </select>
+        aria-label="دسته‌بندی خدمت"
+        :options="categoryOptions"
+        @update:model-value="model.categoryId = $event === null ? null : Number($event)"
+      />
     </div>
     <AppInput
       v-model="model.name"

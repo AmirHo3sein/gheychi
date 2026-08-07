@@ -1,5 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import PhotoUploader from '@/components/photos/PhotoUploader.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import { resetToast } from '@/composables/useToast'
 import StoriesView from './StoriesView.vue'
 
@@ -162,6 +164,28 @@ describe('StoriesView', () => {
     expect(wrapper.text()).not.toContain('افزودن تصویر جدید')
     wrapper.unmount()
   })
+  // The service dropdown is an AppSelect (vue-multiselect), so «بدون خدمت مرتبط» has to be a
+  // real entry in its options -- not the wrapper's placeholder -- or an owner could never
+  // detach a service they had already picked.
+  it('offers «no linked service» as a selectable option and attaches the choice to the upload', async () => {
+    const wrapper = await mountView()
+    const select = wrapper.findComponent(AppSelect)
+
+    expect(select.props('options')).toEqual([
+      { value: '', label: 'بدون خدمت مرتبط' },
+      { value: 'svc-1', label: 'کوتاهی مو' },
+    ])
+
+    select.vm.$emit('update:modelValue', 'svc-1')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findComponent(PhotoUploader).props('extraFields')).toEqual({ serviceId: 'svc-1' })
+
+    select.vm.$emit('update:modelValue', '')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findComponent(PhotoUploader).props('extraFields')).toEqual({})
+    wrapper.unmount()
+  })
+
   // Layout regression, same defect class as PhotosView. Delete used to sit beside the
   // «... مانده» countdown in the tile footer: ~85px of label plus a 47px button against the
   // ~122px a tile offers at 320px, inside an `overflow-hidden` tile -- so the button was

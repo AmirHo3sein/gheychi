@@ -21,9 +21,16 @@ const validSalon = {
   city: 'تهران',
   capacity: 2,
   location: { type: 'Point', coordinates: [51.4, 35.7] },
+  categories: [{ id: 1, name: 'کوتاهی مو', icon: 'scissors' }],
   tagline: 'شعار قدیمی',
   about: 'متن درباره سالن',
   instagramHandle: 'old.salon',
+}
+
+const CATEGORIES_RESPONSE = { data: [{ id: 1, name: 'کوتاهی مو', icon: 'scissors' }], error: null }
+const CITIES_RESPONSE = {
+  data: [{ name: 'تهران', lat: 35.6892, lng: 51.389 }, { name: 'مشهد', lat: 36.2605, lng: 59.6168 }],
+  error: null,
 }
 
 describe('SalonSettingsView', () => {
@@ -36,7 +43,9 @@ describe('SalonSettingsView', () => {
   })
 
   it('loads the current salon info and saves an edit', async () => {
-    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null })
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null }) // GET /salons/mine
+    fetchMock.mockResolvedValueOnce(CATEGORIES_RESPONSE) // GET /categories
+    fetchMock.mockResolvedValueOnce(CITIES_RESPONSE) // GET /cities
     const wrapper = mount(SalonSettingsView)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -62,7 +71,9 @@ describe('SalonSettingsView', () => {
   })
 
   it('shows a success toast after a successful save', async () => {
-    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null })
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null }) // GET /salons/mine
+    fetchMock.mockResolvedValueOnce(CATEGORIES_RESPONSE) // GET /categories
+    fetchMock.mockResolvedValueOnce(CITIES_RESPONSE) // GET /cities
     const wrapper = mount(SalonSettingsView)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -77,7 +88,9 @@ describe('SalonSettingsView', () => {
   })
 
   it('does not toast and does not call the API when saving is attempted with an invalid form', async () => {
-    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null })
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null }) // GET /salons/mine
+    fetchMock.mockResolvedValueOnce(CATEGORIES_RESPONSE) // GET /categories
+    fetchMock.mockResolvedValueOnce(CITIES_RESPONSE) // GET /cities
     const wrapper = mount(SalonSettingsView)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -97,7 +110,9 @@ describe('SalonSettingsView', () => {
   })
 
   it('shows a Persian inline error and disables save while the instagram handle is invalid', async () => {
-    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null })
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null }) // GET /salons/mine
+    fetchMock.mockResolvedValueOnce(CATEGORIES_RESPONSE) // GET /categories
+    fetchMock.mockResolvedValueOnce(CITIES_RESPONSE) // GET /cities
     const wrapper = mount(SalonSettingsView)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -114,7 +129,9 @@ describe('SalonSettingsView', () => {
   })
 
   it('sends the three profile fields in the PATCH body, with empty string as the clear signal', async () => {
-    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null })
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null }) // GET /salons/mine
+    fetchMock.mockResolvedValueOnce(CATEGORIES_RESPONSE) // GET /categories
+    fetchMock.mockResolvedValueOnce(CITIES_RESPONSE) // GET /cities
     const wrapper = mount(SalonSettingsView)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -140,7 +157,9 @@ describe('SalonSettingsView', () => {
   })
 
   it('previews tagline and a compact lead of about', async () => {
-    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null })
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null }) // GET /salons/mine
+    fetchMock.mockResolvedValueOnce(CATEGORIES_RESPONSE) // GET /categories
+    fetchMock.mockResolvedValueOnce(CITIES_RESPONSE) // GET /cities
     const wrapper = mount(SalonSettingsView)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -156,7 +175,9 @@ describe('SalonSettingsView', () => {
   })
 
   it('re-enables the save button once capacity is back in the 1-50 range', async () => {
-    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null })
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null }) // GET /salons/mine
+    fetchMock.mockResolvedValueOnce(CATEGORIES_RESPONSE) // GET /categories
+    fetchMock.mockResolvedValueOnce(CITIES_RESPONSE) // GET /cities
     const wrapper = mount(SalonSettingsView)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -172,7 +193,9 @@ describe('SalonSettingsView', () => {
   // guard fills exactly once per SPA session -- a rename used to toast "ذخیره شد" while the
   // header kept the old name until a hard reload.
   it('refreshes the useSalon singleton after a successful save so the header stops showing the old name', async () => {
-    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null })
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null }) // GET /salons/mine
+    fetchMock.mockResolvedValueOnce(CATEGORIES_RESPONSE) // GET /categories
+    fetchMock.mockResolvedValueOnce(CITIES_RESPONSE) // GET /cities
     const wrapper = mount(SalonSettingsView)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -190,7 +213,9 @@ describe('SalonSettingsView', () => {
   })
 
   it('does not refresh the salon singleton when the save fails', async () => {
-    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null })
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null }) // GET /salons/mine
+    fetchMock.mockResolvedValueOnce(CATEGORIES_RESPONSE) // GET /categories
+    fetchMock.mockResolvedValueOnce(CITIES_RESPONSE) // GET /cities
     const wrapper = mount(SalonSettingsView)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -204,14 +229,16 @@ describe('SalonSettingsView', () => {
     expect(useToast().toasts.value.some((t) => t.message === 'تغییرات ذخیره شد')).toBe(false)
   })
 
-  // UpdateSalonDto is @Length(5, 500) on address and @Length(2, 80) on city; a merely
-  // non-empty gate let a short value reach a green save button, and the API's English
-  // validator array was the provider's only feedback.
+  // UpdateSalonDto is @Length(5, 500) on address; a merely non-empty gate let a short
+  // value reach a green save button, and the API's English validator array was the
+  // provider's only feedback. City no longer has an equivalent case -- it's a select
+  // constrained to the backend's known-city list, so "too short" can't occur through the UI.
   it.each([
     ['address', 'خیا', 'آدرس باید حداقل ۵ حرف باشد.'],
-    ['city', 'ت', 'نام شهر باید حداقل ۲ حرف باشد.'],
   ])('blocks the save and shows a Persian inline error for a too-short %s', async (field, value, message) => {
-    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null })
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null }) // GET /salons/mine
+    fetchMock.mockResolvedValueOnce(CATEGORIES_RESPONSE) // GET /categories
+    fetchMock.mockResolvedValueOnce(CITIES_RESPONSE) // GET /cities
     const wrapper = mount(SalonSettingsView)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -228,7 +255,9 @@ describe('SalonSettingsView', () => {
   })
 
   it('shows a loading state, then a retry option instead of a blank form when the initial load fails', async () => {
-    fetchMock.mockResolvedValueOnce({ data: null, error: { status: 500, message: 'خطا' } })
+    fetchMock.mockResolvedValueOnce({ data: null, error: { status: 500, message: 'خطا' } }) // GET /salons/mine
+    fetchMock.mockResolvedValueOnce(CATEGORIES_RESPONSE) // GET /categories
+    fetchMock.mockResolvedValueOnce(CITIES_RESPONSE) // GET /cities
     const wrapper = mount(SalonSettingsView)
 
     // Before the fetch resolves: no blank default form, no error -- a loading state.
@@ -255,7 +284,9 @@ describe('SalonSettingsView', () => {
   // through that same keyboard-accessible path, round-trips correctly rather than the
   // pin silently resetting to a hardcoded default center.
   it('reflects the loaded pin in the lat/lng fallback inputs and saves a correction made through them', async () => {
-    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null })
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null }) // GET /salons/mine
+    fetchMock.mockResolvedValueOnce(CATEGORIES_RESPONSE) // GET /categories
+    fetchMock.mockResolvedValueOnce(CITIES_RESPONSE) // GET /cities
     const wrapper = mount(SalonSettingsView)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -280,7 +311,9 @@ describe('SalonSettingsView', () => {
   // minimum width that flex will not shrink past, so at 320px the field was pushed out of
   // the row and CLIPPED by the wrapper -- an unreachable control. min-w-0 is the fix.
   it('lets the instagram handle field shrink behind its prefix instead of being clipped', async () => {
-    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null })
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null }) // GET /salons/mine
+    fetchMock.mockResolvedValueOnce(CATEGORIES_RESPONSE) // GET /categories
+    fetchMock.mockResolvedValueOnce(CITIES_RESPONSE) // GET /cities
     const wrapper = mount(SalonSettingsView)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()

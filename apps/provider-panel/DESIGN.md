@@ -32,7 +32,7 @@ colors:
   danger-soft-dark: "#3A2229"
   success: "#1E9E6B"
   success-dark: "#3FC98A"
-  warning: "#B4740E"
+  warning: "#955F09"
   warning-dark: "#FBBF24"
   warning-soft: "#FEF3DE"
   warning-soft-dark: "#332507"
@@ -126,12 +126,13 @@ components:
 
 This is the same product, viewed from the salon owner's side of the counter, and PRODUCT.md says so explicitly: *"Whatever visual world is chosen for the platform should be shared/consistent across `user-app`, `provider-panel`, and `admin-panel` rather than decided independently per app, since they're one product from three different roles' viewpoints."* This document therefore does not invent a new identity — it canonizes `apps/user-app/DESIGN.md`'s "Verified Ledger" system (precise, quietly official, trust-legible-at-a-glance, two-mode teal/violet re-theme, Vazirmatn-only type, restrained shadow-as-signal) as this app's system too, and adapts it for **Operate mode**: a salon owner checking bookings between clients needs scanability and fast task completion, not persuasion. Read `apps/user-app/DESIGN.md` in full alongside this file — it is the parent document; this one records only what differs because the surface is Operate rather than a mixed Persuade/Operate app.
 
-**A token audit against `apps/user-app/app/assets/css/main.css` (2026-07-24) found the core palette already correctly shared** — `--color-accent` (`#0EA89B`/`#7A3FF2`), `--color-surface`, `--color-surface-card`, and `--color-text` are byte-identical between the two apps, and `main.css`'s own comments confirm this was deliberate. But the token layer is **incomplete relative to user-app**, and that incompleteness has real, visible consequences documented below. **This document canonizes the reconciled, complete token set** (frontmatter above) as the target — several values in it do not yet exist in `apps/provider-panel/src/assets/css/main.css` and are migration targets, not a description of current state:
+**A token audit against `apps/user-app/app/assets/css/main.css` (2026-07-24) found the core palette already correctly shared** — `--color-accent` (`#0EA89B`/`#7A3FF2`), `--color-surface`, `--color-surface-card`, and `--color-text` are byte-identical between the two apps, and `main.css`'s own comments confirm this was deliberate. **A follow-up reconciliation pass has since closed the rest of the gap this section used to describe** — the frontmatter above is no longer aspirational, it now matches `apps/provider-panel/src/assets/css/main.css` on every point below:
 
-- `--color-accent-strong`/`--color-accent-deep`/`--color-accent-soft`/`--color-accent-text` **do not exist yet** in provider-panel's `main.css`. This is the single largest gap: every primary button in the app hovers via `opacity-90` alone (13 occurrences across `LoginView.vue`, `OnboardingView.vue`, `HoursView.vue`, `ServicesView.vue`, `CouponsView.vue`, `TeamView.vue`, `PendingApprovalView.vue`, `SalonSettingsView.vue`) instead of the mandated shadow-depth-plus-color-shift pairing — the component-level bug (finding for the fix pass) traces directly to a token-level gap (finding for this document).
-- `--color-border`, `--color-muted`/`--color-text-muted`, the danger/success pair, and the elevation shadow hue are all present but **drifted** from user-app's values by a few RGB units to tens of RGB units — reads as independently-re-eyeballed rather than copied. The frontmatter above uses user-app's exact values as the single source of truth; provider-panel's `main.css` should be updated to match exactly rather than treated as an equally-valid alternative.
-- **`--color-muted`'s drift is not cosmetic — it is a live accessibility regression.** User-app's `text-muted` was deliberately darkened from `#5B8783` to `#4C716D` earlier this session after measuring it at ~4.0:1 (light mode), below WCAG AA's 4.5:1 floor. Provider-panel's `--color-muted` (`#5B8A86`) is effectively the pre-fix value and almost certainly carries the same failure — this pulls the already-verified fix forward rather than re-deriving it.
-- **Dark-mode shadows have lost their hue tint.** User-app's shadow system is driven by one `--shadow-color` HSL variable (a near-black violet in dark mode) specifically so a shadow still carries the mode's identity. Provider-panel's `--shadow-panel`/`--shadow-pop` hardcode literal `rgba(0,0,0,…)` in dark mode — pure black, not violet-tinted. This document's Elevation & Depth section below restates the hue-tinted rule as binding for this app too.
+- `--color-accent-strong`/`--color-accent-deep`/`--color-accent-soft`/`--color-accent-text` **now exist** in provider-panel's `main.css` (light and dark blocks), byte-identical to user-app. `AppButton.vue`'s primary variant already pairs them correctly on hover (`hover:bg-(--color-accent-deep) hover:shadow-(--shadow-md)`) — the token-level gap and the component-level bug it caused are both closed. One narrower remnant survives: `AppButton`'s `danger` variant still ships `hover:opacity-90` only, with no shadow/color-shift pairing (see Components → Buttons below).
+- `--color-border` and `--color-text-muted` are now byte-identical to user-app's values in both modes (`#DCEDEA`/`#38323D` and `#4C716D`/`#B3A3B0`) — the "drifted by a few RGB units" finding no longer holds for these tokens. One vestige remains: the light-mode `.native-select` chevron in `main.css` still hardcodes the pre-fix muted color into its inline SVG (`stroke='%235B8A86'`) instead of the corrected value — the dark-mode chevron (`%23B3A3B0`) already matches `--color-text-muted` dark exactly, so only the light SVG was missed when the token itself was fixed.
+- **The `--color-text-muted` accessibility fix has fully landed and needs no further action here.** User-app's `text-muted` was darkened from `#5B8783` to `#4C716D` after measuring ~4.0:1 (light mode), below WCAG AA's 4.5:1 floor; provider-panel's `--color-text-muted` already carries that exact corrected value in both files.
+- **Dark-mode shadows now carry the hue tint.** Provider-panel's shadow system was reconciled onto user-app's exact three-step model — one `--shadow-color` HSL variable (`178 45% 20%` light, `275 55% 4%` dark) drives `--shadow-sm`/`--shadow-md`/`--shadow-lg`, byte-identical between the two files. The old two-step `--shadow-panel`/`--shadow-pop` vocabulary with hardcoded `rgba(0,0,0,…)` dark-mode shadows no longer exists.
+- **A gap the original audit missed, still open today:** provider-panel has no flat `--color-success`/`--color-warning`/`--color-danger-soft` tokens at all — those roles are served by a separately-named, independently contrast-tuned `--tone-*-bg`/`--tone-*-text` pair per semantic color instead (see Colors → Semantic below). Separately, `--color-surface-subtle` is referenced three times in `EarningsView.vue` (`bg-(--color-surface-subtle)`) but is **not defined anywhere in `main.css`** — a real, currently-unnoticed token gap (see Colors → Neutral below).
 
 **New, legitimate additions this app needs that user-app doesn't**: a `warning` and `info` semantic (alongside the inherited `danger`/`success`), because Operate-mode booking/salon-status screens have states user-app's customer-facing surfaces don't (a pending booking awaiting confirmation, a salon in `pending`/`rejected`/`suspended` review status). These are documented as sanctioned system extensions below, not drift — and are the natural shared vocabulary `apps/admin-panel` should reach for too rather than inventing its own third set.
 
@@ -152,13 +153,13 @@ Same palette architecture as user-app (one accent per mode, warm-neutral surface
 - **Accent Soft** (`#E3F6F3` light / `#2C2140` dark): accent-tinted fill for badges and selected states.
 
 ### Neutral
-Identical to user-app: **Surface** (`#F4FBFA`/`#151217`), **Surface Card** (`#FFFFFF`/`#211D24`), **Surface Subtle** (`#EAF5F3`/`#2A2530`), **Text** (`#0B4F4A`/`#F5F0F2`), **Text Muted** (`#4C716D`/`#B3A3B0`), **Border** (`#DCEDEA`/`#38323D`).
+Identical to user-app: **Surface** (`#F4FBFA`/`#151217`), **Surface Card** (`#FFFFFF`/`#211D24`), **Text** (`#0B4F4A`/`#F5F0F2`), **Text Muted** (`#4C716D`/`#B3A3B0`, byte-identical, no drift), **Border** (`#DCEDEA`/`#38323D`, byte-identical, no drift). **Surface Subtle is a real, still-open gap**: `--color-surface-subtle` is referenced three times in `EarningsView.vue` (`bg-(--color-surface-subtle)`) but is not defined anywhere in provider-panel's `main.css` — it should be added with user-app's value (`#EAF5F3`/`#2A2530`) to match what the code already assumes exists.
 
 ### Semantic
-- **Danger** (`#C0392B` light / `#F2645C` dark) for text/borders, **Danger Strong** (`#B91C1C`/`#9F1239`) for white-text-on-fill use, **Danger Soft** (`#FCEAEA`/`#3A2229`) as tinted background — inherited from user-app verbatim.
-- **Success** (`#1E9E6B` light / `#3FC98A` dark): confirmation states — inherited verbatim.
-- **Warning** (`#B4740E` light / `#FBBF24` dark, `--color-warning-soft` `#FEF3DE`/`#332507`): a sanctioned new addition — pending/needs-attention states (a booking awaiting confirmation, a salon in `pending` review) that are neither an error nor a success.
-- **Info** (`#2A5FBE` light / `#A5A8F5` dark, `--color-info-soft` `#E7EFFC`/`#1E2247`): a sanctioned new addition — neutral informational states (e.g. a resubmission notice) that shouldn't read as urgent.
+- **Danger** (`--color-danger`, `#C0392B` light / `#F2645C` dark) for text/borders, **Danger Strong** (`--color-danger-strong`, `#B91C1C`/`#9F1239`) for white-text-on-fill use — both byte-identical to user-app. There is no standalone `--color-danger-soft` token, though: tinted-background danger states go through `--tone-danger-bg`/`--tone-danger-text` instead (`#FCE8EA`/`#C22B3F` light, `#33141B`/`#FB7185` dark) — close to but not identical with user-app's `--color-danger-soft` (`#FCEAEA`/`#3A2229`), because it was independently contrast-verified for text-on-tint rather than copied over.
+- **Success**: provider-panel has no flat `--color-success` token at all (user-app's is `#1E9E6B`/`#3FC98A`) — the role is served entirely by `--tone-success-bg`/`--tone-success-text` (`#E3F7EE`/`#0D7A48` light, `#16301F`/`#4ADE80` dark), the same fill/text-split pattern the Fill-Text Split Rule already describes for accent, just extended to every semantic color under a `tone-` prefix rather than separately named per color.
+- **Warning** (`--tone-warning-bg`/`--tone-warning-text`: `#FEF3DE`/`#955F09` light, `#332507`/`#FBBF24` dark): a sanctioned new addition — pending/needs-attention states (a booking awaiting confirmation, a salon in `pending` review) that are neither an error nor a success. The light-mode text value was darkened from an originally-planned `#B4740E` after it measured 3.51:1 against `--tone-warning-bg` (below WCAG AA) — the same class of fix `--color-text-muted` got.
+- **Info** (`--tone-info-bg`/`--tone-info-text`: `#E7EFFC`/`#2A5FBE` light, `#1E2247`/`#A5A8F5` dark): a sanctioned new addition — neutral informational states (e.g. a resubmission notice) that shouldn't read as urgent. No drift — matches this document's frontmatter exactly.
 
 ### Named Rules
 **The One Seal Rule** (inherited). On a dashboard/list screen, this typically means the ONE primary action in the page's header or the one row currently being acted on — not a decorative accent on every card.
@@ -185,57 +186,57 @@ On desktop/tablet — PRODUCT.md explicitly calls out longer focused setup/earni
 
 ## Elevation & Depth
 
-Same shadow philosophy as user-app: flat + bordered is the default resting state; a shadow marks genuine elevation (a card, a modal/dropdown overlay, the primary button). **Provider-panel's current two-step shadow vocabulary (`--shadow-panel`, `--shadow-pop`) should be reconciled onto user-app's three-step, hue-driven system** rather than kept as a separately-hardcoded `rgba()` pair — in particular, dark-mode shadows must carry the violet hue tint (`hsl(275 55% 4% / α)`), not pure black, to match the binding rule below.
+Same shadow philosophy as user-app: flat + bordered is the default resting state; a shadow marks genuine elevation (a card, a modal/dropdown overlay, the primary button). **This reconciliation is complete.** Provider-panel's `main.css` now uses the same three-step, hue-driven `--shadow-sm`/`--shadow-md`/`--shadow-lg` system as user-app, both driven by one `--shadow-color` HSL variable that is byte-identical between the two files in both modes — dark mode carries the violet hue tint (`hsl(275 55% 4% / α)`), not pure black. The old two-step `--shadow-panel`/`--shadow-pop` vocabulary no longer exists.
 
 ### Named Rules
 **The Elevation-Means-Something Rule** (inherited).
 
-**The Hue-Tinted Shadow Rule** (inherited, restated because provider-panel's dark mode currently violates it). A shadow is never neutral black — it carries the mode's accent hue (dark teal in light mode, near-black violet in dark mode) even at low opacity, so depth and brand identity are conveyed by the same signal.
+**The Hue-Tinted Shadow Rule** (inherited; provider-panel's dark mode now correctly follows it). A shadow is never neutral black — it carries the mode's accent hue (dark teal in light mode, near-black violet in dark mode) even at low opacity, so depth and brand identity are conveyed by the same signal.
 
 ## Shapes
 
-Identical three-step scale to user-app: `rounded.full` (pills, badges, avatars), `rounded.md`/12px (controls — buttons, inputs, selects), `rounded.lg`/16px (containers — cards, panels). Provider-panel's existing `AppCard.vue` (`rounded-2xl`) and hand-rolled buttons (`rounded-xl`) already land on the correct numeric values by coincidence of using the same Tailwind defaults user-app does — the fix pass should replace the ad hoc Tailwind classes with the same named-token references user-app uses, not change the actual radii.
+Identical three-step scale to user-app: `rounded.full` (pills, badges, avatars), `rounded.md`/12px (controls — buttons, inputs, selects), `rounded.lg`/16px (containers — cards, panels). `AppCard.vue` (`rounded-2xl`) and `AppButton.vue`/`AppInput.vue` (`rounded-xl`) land on the correct numeric values via plain Tailwind classes rather than named-token references — visually correct today; a later pass could still swap the literal Tailwind classes for token references for consistency's sake, but this is cosmetic, not a bug.
 
 ### Named Rules
 **The Container-Softer-Than-Control Rule** (inherited).
 
-**The No Physical-Direction Leak Rule** (inherited). `LoginView.vue`'s input icon (`absolute right-3.5`) is a confirmed violation — should be `end-3.5`, same defect class as user-app's now-fixed `BaseSelect.vue` chevron.
+**The No Physical-Direction Leak Rule** (inherited). `LoginView.vue`'s input icon leak is fixed: the page now uses `AppInput.vue`, whose icon is positioned with the logical `start-3.5` (not a physical `right-3.5`/`left-3.5`) — same defect class as user-app's now-fixed `BaseSelect.vue` chevron, now closed here too.
 
 ## Components
 
 ### Buttons
-Same shape/variant contract as user-app's `BaseButton`, with one addition:
-- **Shape:** `rounded.md` (12px).
-- **Primary:** accent background, white text, `shadow.sm` at rest → `shadow.md` + `accent-strong` background on hover — **currently missing app-wide** (every primary button here is `hover:opacity-90` only, with no resting shadow); this is the top fix-pass priority.
-- **Secondary:** `surface-subtle` background, `text` color.
-- **Danger:** `danger-strong` background (not plain `danger` — the fill-safe variant), white text.
-- **Ghost:** transparent, `text-muted`, hover to `surface-subtle` fill.
-- There is currently no `AppButton.vue` component at all — every button in the app hand-rolls its own class string (31 raw `<button>` elements across 15 files). Introducing one shared component is the single highest-leverage fix, since it is the reason the hover-state bug above is universal rather than isolated.
+`AppButton.vue` now exists (`src/components/ui/AppButton.vue`) and implements the shape/variant contract directly:
+- **Shape:** `rounded-xl` (12px, matches `rounded.md`).
+- **Primary:** `accent-strong` background, white text, `shadow.sm` at rest → `shadow.md` + `accent-deep` background on hover (`bg-(--color-accent-strong) shadow-(--shadow-sm) hover:bg-(--color-accent-deep) hover:shadow-(--shadow-md)`) — the shadow-depth-plus-color-shift pairing this document used to flag as missing app-wide is implemented here.
+- **Secondary:** `border-soft` background, `text` color, hover to `border` — uses `--color-border-soft`, not `--color-surface-subtle` (which isn't defined in provider-panel's `main.css` at all; see Colors → Neutral).
+- **Danger:** `danger-strong` background (not plain `danger` — the fill-safe variant), white text, but still **`hover:opacity-90` only, with no shadow/color-shift pairing** — the one variant where the bug this document used to describe app-wide is still live.
+- **Ghost:** transparent, `text-muted`, hover to `border-soft` fill and full `text` color.
+- Migration to `AppButton` is not complete but the remaining gap is small: 3 raw `<button>` elements across 2 files (`AppLayout.vue`'s theme-toggle and logout buttons, `OnboardingView.vue`'s logout button) — all square icon-only buttons outside `AppButton`'s label+icon contract, a defensible exception rather than unmigrated debt, not the 31-across-15-files gap previously documented.
 
 ### Status Badge (signature component — genuinely good, worth documenting as a pattern user-app should consider back-porting)
 `StatusBadge.vue` already exists and is on-token: `rounded.full`, `px-2.5 py-1`, a small leading dot, tone-mapped background/text pairs across success/warning/danger/neutral/info. This is exactly the shared status vocabulary a booking-status-heavy, salon-status-heavy app needs and user-app's `bookings/index.vue` currently re-implements ad hoc per status (`STATUS_META` inline classes) — a candidate for extraction into a shared pattern across all three apps in a later pass, not an action item for this document.
 
 ### Cards / Containers
 - **Corner Style:** `rounded.lg` (16px) — `AppCard.vue` already correct.
-- **Shadow Strategy:** `shadow.sm`-equivalent (`--shadow-panel`) at rest, static — already correct in spirit; needs the hue-tinted-in-dark-mode fix above.
+- **Shadow Strategy:** `--shadow-sm` at rest, static — correct, and (per Elevation & Depth above) already hue-tinted in dark mode.
 - **Border:** 1px `border`, always present alongside the shadow — already correct.
 
 ### Inputs / Fields
-Same contract as user-app: `rounded.md`, `surface-card` background, accent border + 30%-opacity ring on focus, `danger` border + caption error on validation failure. There is currently no `AppInput.vue` — 34 raw `<input>` elements hand-roll this per-page; same fix priority as buttons.
+`AppInput.vue` now exists (`src/components/ui/AppInput.vue`) and implements the contract: `rounded-xl` (12px), `surface-card` background, accent border + 30%-opacity focus ring, `danger` border + caption error (with a warning icon) on validation failure, plus an optional leading icon positioned with the logical `start-3.5`/`ps-11` (see the No Physical-Direction Leak Rule above). Migration is partial: 13 raw `<input>` elements remain across 7 files (`ScheduleStep.vue`, `SalonPinPicker.vue`, `PhotoUploader.vue`, `ServicesView.vue`, `HoursView.vue`, `SalonSettingsView.vue`, `TeamView.vue`) — down from the 34-elements gap previously documented, but still a real, open migration item.
 
 ### Dropdowns / Selects
-`AppSelect.vue` wraps `vue-multiselect` rather than user-app's native-`<select>`-plus-chevron approach — an acceptable implementation difference (different tech, same visual contract) as long as radius (`0.75rem`/12px, already correct) and elevation stay on-token. One gap: the dropdown panel currently uses `--shadow-panel` (a resting-card shadow) rather than a more elevated tier — a floating overlay should read as more elevated than a static card, matching `shadow.md`/`shadow.lg`'s intended role once the shadow system above is reconciled.
+`AppSelect.vue` wraps `vue-multiselect` rather than user-app's native-`<select>`-plus-chevron approach — an acceptable implementation difference (different tech, same visual contract) as long as radius (`0.75rem`/12px, already correct) and elevation stay on-token. The dropdown-panel elevation gap this document used to flag is fixed: `.app-select .multiselect__content-wrapper` now uses `--shadow-md`, a genuinely more-elevated tier than the resting-card shadow, matching a floating overlay's intended role.
 
 ## Do's and Don'ts
 
 ### Do:
 - **Do** treat this document as inheriting from, not replacing, `apps/user-app/DESIGN.md` — when in doubt about a rule not restated here, the parent document governs.
-- **Do** compose a shared `AppButton`/`AppInput` (to be built) rather than hand-rolling button/input markup per page — the current per-page duplication is why the hover-state and radius rules drifted independently across 15+ files.
-- **Do** pair a shadow-depth change with a color change on the primary button's hover state (currently missing app-wide).
-- **Do** use logical CSS properties (`start-`/`end-`) for positioned elements — `LoginView.vue`'s input icon is a confirmed violation to fix.
+- **Do** finish migrating the remaining hand-rolled `<button>`/`<input>` elements onto `AppButton`/`AppInput` (both now exist) — 3 raw buttons and 13 raw inputs remain, down from the original 31/34, but full migration is still the right end state.
+- **Do** pair a shadow-depth change with a color change on hover for every button variant — already done for `primary`; `danger` still needs it (currently `hover:opacity-90` only).
+- **Do** use logical CSS properties (`start-`/`end-`) for positioned elements — `AppInput.vue`'s icon already does this (`start-3.5`); keep it that way as new components are added.
 - **Do** keep the `warning`/`info` semantic additions — they are a legitimate Operate-mode need, not drift.
 
 ### Don't:
-- **Don't** treat provider-panel's current `--color-border`/`--color-muted`/`--tone-danger-text`/`--tone-success-text` hex values as an equally-valid alternative to user-app's — they are unintentional drift (a few RGB units off, re-eyeballed rather than copied) and should be corrected to match exactly.
-- **Don't** use pure black (`rgba(0,0,0,…)`) for a dark-mode shadow — it must carry the violet hue tint per the Hue-Tinted Shadow Rule.
+- **Don't** assume `--color-border`/`--color-text-muted` need reconciling — they're already byte-identical to user-app's values; the one remaining vestige is the hardcoded pre-fix stroke color in `main.css`'s light-mode `.native-select` chevron SVG. `--tone-danger-text`/`--tone-success-text` aren't comparable to user-app 1:1 — user-app has no equivalent tone-pair system, so these are provider-panel's own independently-contrast-verified tokens, not drift.
+- **Don't** use pure black (`rgba(0,0,0,…)`) for a dark-mode shadow — already avoided; `--shadow-color`'s violet HSL tint per the Hue-Tinted Shadow Rule is in place in both files.
 - **Don't** add a third, independently-invented status-tone vocabulary in `apps/admin-panel` later — this document's `warning`/`info` additions are the reference for what admin-panel should reach for too.

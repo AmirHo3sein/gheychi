@@ -91,7 +91,11 @@ onBeforeUnmount(() => {
       next button fall below the fold), but it wastes a desktop setup session where placing
       the pin accurately is the whole point -- so it grows with the viewport instead.
     -->
-    <div ref="mapEl" class="h-64 w-full rounded-xl border border-(--color-border) sm:h-80 lg:h-96" />
+    <!-- isolate: Leaflet's own panes/controls use z-index up to 1000, and .leaflet-container
+         never sets a z-index of its own -- without a stacking context here, those values leak
+         out and beat any same-page dropdown with a lower z-index (e.g. AppMultiSelect's
+         vue-multiselect panel at z-index:50), regardless of DOM order. -->
+    <div ref="mapEl" class="isolate h-64 w-full rounded-xl border border-(--color-border) sm:h-80 lg:h-96" />
     <div class="grid grid-cols-2 gap-3">
       <div>
         <label :for="latId" class="mb-1 block text-xs font-medium text-(--color-text-muted)">عرض جغرافیایی (Lat)</label>

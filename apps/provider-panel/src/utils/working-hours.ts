@@ -1,5 +1,13 @@
-// Weekday 0 = یکشنبه, matching the API's `working_hours.weekday` numbering.
+// Weekday 0 = یکشنبه, matching the API's `working_hours.weekday` numbering (JS Date.getDay()
+// convention) -- a lookup table by stored int, NOT a display/render order. Never reorder this
+// array itself (every WEEKDAY_LABELS[w] lookup across the app assumes this exact indexing).
 export const WEEKDAY_LABELS = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه']
+
+// Iran's week starts Saturday, not Sunday -- this is the separate, display-only ordering
+// (a list of weekday ints in the order they should be RENDERED), kept apart from
+// WEEKDAY_LABELS so the stored 0=Sunday numbering (and everything keyed off it: the
+// `working_hours.weekday` column, booking/availability logic) never has to change.
+export const WEEKDAY_DISPLAY_ORDER = [6, 0, 1, 2, 3, 4, 5]
 
 export interface WorkingHourRow {
   weekday: number

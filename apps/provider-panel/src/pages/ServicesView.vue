@@ -15,6 +15,7 @@ interface Service {
   id: string
   categoryId: number
   name: string
+  description: string | null
   price: number
   durationMin: number
   isActive: boolean
@@ -31,10 +32,15 @@ const createError = ref('')
 const newService = reactive({
   categoryId: null as number | null,
   name: '',
+  description: '',
   price: 0,
   durationMin: 30,
   discountPercent: null as number | null,
 })
+
+// Server-side DTO validation only checks @IsString() with no length cap (the column is a
+// plain Postgres `text`) -- this is a client-side sanity bound, not a mirrored API rule.
+const DESCRIPTION_MAX_LENGTH = 300
 
 const categoryOptions = computed<SelectOption[]>(() => categories.value.map((c) => ({ value: c.id, label: c.name })))
 
@@ -56,6 +62,10 @@ const priceDrafts = reactive<Record<string, string>>({})
 // and the invalid text would stay in the field.
 const discountDrafts = reactive<Record<string, string>>({})
 
+// Same draft treatment again -- free text a provider uses to flag that the listed
+// duration is a minimum and the real time can run longer (e.g. a complex color job).
+const descriptionDrafts = reactive<Record<string, string>>({})
+
 async function load() {
   loading.value = true
   loadError.value = false
@@ -75,6 +85,7 @@ async function load() {
   for (const s of services.value) {
     priceDrafts[s.id] = String(s.price)
     discountDrafts[s.id] = s.discountPercent === null ? '' : String(s.discountPercent)
+    descriptionDrafts[s.id] = s.description ?? ''
   }
   categories.value = categoriesRes.data ?? []
   loading.value = false
@@ -121,11 +132,13 @@ async function addService() {
     durationMin: newService.durationMin,
   }
   if (newService.discountPercent) body.discountPercent = Number(newService.discountPercent)
+  if (newService.description.trim()) body.description = newService.description.trim()
   const { error } = await apiFetch('/salons/mine/services', { method: 'POST', body })
   if (error) return
 
   newService.categoryId = null
   newService.name = ''
+  newService.description = ''
   newService.price = 0
   newService.durationMin = 30
   newService.discountPercent = null
@@ -214,10 +227,35 @@ async function updateDiscount(service: Service) {
   discountDrafts[service.id] = discountPercent === null ? '' : String(discountPercent)
   pushToast('تخفیف به‌روزرسانی شد')
 }
+
+// Commits on blur, like price/discount above. An empty draft clears the note (sent as
+// null, mirroring how updateDiscount clears its field) rather than sending ''.
+async function updateDescription(service: Service) {
+  const raw = descriptionDrafts[service.id] ?? ''
+  const description = raw.trim() === '' ? null : raw.trim()
+  if (description === service.description) return
+
+  const { error } = await apiFetch(`/salons/mine/services/${service.id}`, {
+    method: 'PATCH',
+    body: { description },
+  })
+  if (error) {
+    descriptionDrafts[service.id] = service.description ?? ''
+    return
+  }
+  service.description = description
+  descriptionDrafts[service.id] = description ?? ''
+  pushToast('توضیحات به‌روزرسانی شد')
+}
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-5xl space-y-4 p-4 lg:p-6">
+  <!-- max-w-2xl on the PAGE container, not just on the cards inside it -- capping only the
+     cards while the container (and so the heading, which fills it) stayed max-w-5xl left the
+     h1 aligned to a wider box than the content below it, reading as "the title is still on
+     the right" even after the cards themselves were centered. The services list is a single
+     column now (see below), so nothing on this page actually needs more width than the form. -->
+  <div class="mx-auto w-full max-w-2xl space-y-4 p-4 lg:p-6">
     <h1 class="text-lg font-bold text-(--color-text)">خدمات و قیمت‌ها</h1>
 
     <div v-if="loadError" class="space-y-3 rounded-xl border border-dashed border-(--color-border) p-4 text-center">
@@ -235,9 +273,11 @@ async function updateDiscount(service: Service) {
       <template v-else>
         <EmptyState v-if="services.length === 0" icon="services" message="هنوز خدمتی ثبت نشده است." />
 
-        <!-- Two columns from lg: more of the catalogue visible in one pricing pass instead
-             of one very wide row per service. -->
-        <div v-else class="grid items-start gap-4 lg:grid-cols-2">
+        <!-- Single column, matching the page container's own width (now max-w-2xl -- see the
+             top-level div) -- a 2-column grid here used to leave a lone/odd card at half the
+             container's width, hugging the RTL start (right) edge with visibly empty space
+             on the other side. -->
+        <div v-else class="space-y-4">
           <AppCard v-for="s in services" :key="s.id" :padded="false" class="space-y-3 p-4">
             <!--
               flex-wrap + min-w-0: the name, its discount badge and the ~140px
@@ -278,14 +318,24 @@ async function updateDiscount(service: Service) {
                 @change="updateDiscount(s)"
               />
             </div>
+            <div>
+              <label class="mb-1 block text-xs font-medium text-(--color-text-muted)">توضیحات خدمت (اختیاری)</label>
+              <textarea
+                v-model="descriptionDrafts[s.id]"
+                rows="2"
+                :maxlength="DESCRIPTION_MAX_LENGTH"
+                placeholder="مثلاً: این زمان تقریبی است و ممکن است بیشتر طول بکشد"
+                class="w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-2 text-sm"
+                data-testid="service-description"
+                @change="updateDescription(s)"
+              />
+            </div>
           </AppCard>
         </div>
       </template>
     </template>
 
-    <!-- A single-column form: capped so its inputs stay a readable width on a laptop
-         instead of spanning the whole container. -->
-    <AppCard class="max-w-2xl space-y-3">
+    <AppCard class="space-y-3">
       <h2 class="font-bold text-(--color-text)">افزودن خدمت جدید</h2>
       <AppSelect v-model="newService.categoryId" :options="categoryOptions" placeholder="دسته‌بندی" />
       <AppInput v-model="newService.name" placeholder="نام خدمت" />
@@ -306,6 +356,19 @@ async function updateDiscount(service: Service) {
           class="tnum"
           @update:model-value="(v) => (newService.durationMin = Number(v))"
         />
+      </div>
+      <div>
+        <label class="mb-1.5 block text-sm font-medium text-(--color-text)">توضیحات خدمت (اختیاری)</label>
+        <textarea
+          v-model="newService.description"
+          rows="2"
+          :maxlength="DESCRIPTION_MAX_LENGTH"
+          placeholder="مثلاً: این زمان تقریبی است و ممکن است بسته به شرایط بیشتر طول بکشد"
+          class="w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-3 text-sm"
+        />
+        <p class="mt-1 text-xs text-(--color-text-muted)">
+          اگر مدت زمان انجام این خدمت می‌تواند بیشتر از عدد بالا طول بکشد، همین‌جا به مشتری توضیح دهید.
+        </p>
       </div>
       <AppInput
         :model-value="newService.discountPercent != null ? String(newService.discountPercent) : ''"

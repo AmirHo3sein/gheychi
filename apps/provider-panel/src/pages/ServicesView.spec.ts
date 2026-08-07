@@ -11,6 +11,7 @@ const SERVICE = {
   id: 'svc-1',
   categoryId: 1,
   name: 'کوتاهی مو',
+  description: null,
   price: 100000,
   durationMin: 30,
   isActive: true,
@@ -314,6 +315,59 @@ describe('ServicesView', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     expect(JSON.parse(fetchMock.mock.calls[3]![1].body)).toEqual({ discountPercent: null })
+  })
+
+  it('saves an existing service description, and clears it back to null', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({ ...SERVICE }) }) // PATCHes
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(ServicesView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    const noteField = wrapper.get('[data-testid="service-description"]')
+    await noteField.setValue('این زمان تقریبی است و ممکن است بیشتر طول بکشد')
+    await noteField.trigger('change')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(JSON.parse(fetchMock.mock.calls[2]![1].body)).toEqual({
+      description: 'این زمان تقریبی است و ممکن است بیشتر طول بکشد',
+    })
+    expect(useToast().toasts.value.some((t) => t.message === 'توضیحات به‌روزرسانی شد')).toBe(true)
+
+    // Emptying the field is the clear path -- null, not ''.
+    await noteField.setValue('')
+    await noteField.trigger('change')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(JSON.parse(fetchMock.mock.calls[3]![1].body)).toEqual({ description: null })
+  })
+
+  it('sends the duration note when adding a new service, and omits it when left blank', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ ...SERVICE }) }) // POST
+      .mockResolvedValue({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // reload
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(ServicesView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    await wrapper.findComponent(AppSelect).vm.$emit('update:modelValue', 1)
+    await wrapper.find('input[placeholder="نام خدمت"]').setValue('کوتاهی مو')
+    await wrapper.find('textarea').setValue('این خدمت گاهی بیشتر از حد معمول طول می‌کشد')
+    await wrapper.findAll('input[type="number"]')[0]!.setValue('100000')
+    const addButton = wrapper.findAll('button').find((b) => b.text() === 'افزودن')!
+    await addButton.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    const postCall = fetchMock.mock.calls.find((c) => (c[1] as { method?: string })?.method === 'POST')!
+    expect(JSON.parse((postCall[1] as { body: string }).body)).toMatchObject({
+      description: 'این خدمت گاهی بیشتر از حد معمول طول می‌کشد',
+    })
   })
 
   it('shows an inline error and skips the request when adding a service without a category', async () => {

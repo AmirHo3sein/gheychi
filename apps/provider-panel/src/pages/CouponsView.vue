@@ -6,6 +6,7 @@ import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
+import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useApi } from '@/composables/useApi'
 import type { Tone } from '@/utils/labels'
@@ -166,11 +167,16 @@ async function deactivate(coupon: Coupon) {
 
 <template>
   <div class="mx-auto w-full max-w-5xl space-y-4 p-4 lg:p-6">
-    <h1 class="text-lg font-bold text-(--color-text)">کدهای تخفیف</h1>
+    <!-- text-center, not just start-aligned: the content below (the add-form, the coupon
+         grid) is independently centered within this wide container, not stretched to fill
+         it -- a start-aligned heading above centered content reads as visibly offset from
+         it ("the title is on the right"). -->
+    <h1 class="text-center text-lg font-bold text-(--color-text)">کدهای تخفیف</h1>
 
-    <!-- Capped independently of the page container: a single-column form whose inputs span
-         1024px reads as broken, while the coupon list below genuinely wants the width. -->
-    <AppCard class="max-w-2xl space-y-3">
+    <!-- Capped AND centered independently of the page container: a single-column form whose
+         inputs span 1024px reads as broken, and capping without centering hugs the RTL start
+         (right) edge with visibly empty space on the other side. -->
+    <AppCard class="mx-auto max-w-2xl space-y-3">
       <h2 class="font-bold text-(--color-text)">افزودن کد تخفیف جدید</h2>
       <div>
         <AppInput v-model="newCoupon.code" label="کد تخفیف" placeholder="مثلاً SUMMER20" class="uppercase" />
@@ -195,7 +201,10 @@ async function deactivate(coupon: Coupon) {
           class="tnum"
         />
       </div>
-      <AppInput v-model="newCoupon.expiresAt" label="تاریخ انقضا (اختیاری)" type="date" class="tnum" />
+      <div>
+        <label class="mb-1.5 block text-sm font-medium text-(--color-text)">تاریخ انقضا (اختیاری)</label>
+        <JalaliDatePicker v-model="newCoupon.expiresAt" placeholder="بدون انقضا" />
+      </div>
       <p v-if="createError" class="flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)">
         {{ createError }}
       </p>
@@ -215,7 +224,11 @@ async function deactivate(coupon: Coupon) {
       <template v-else>
         <EmptyState v-if="coupons.length === 0" icon="coupons" message="هنوز کد تخفیفی ثبت نشده است." />
 
-        <div v-else class="grid items-start gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <!-- auto-fit + justify-center, not a fixed md:/xl: column count: a lone or odd
+             trailing card in a fixed grid strands in the RTL start (right) column with
+             visibly empty space beside it. This still lays out multi-column once there are
+             enough coupons to fill a row, but centers the populated tracks when there aren't. -->
+        <div v-else class="grid items-start justify-center gap-3 [grid-template-columns:repeat(auto-fit,minmax(280px,340px))]">
           <AppCard v-for="c in coupons" :key="c.id" :padded="false" class="space-y-2 p-4">
             <!--
               The code is owner-supplied and has no break opportunities («SUMMERSPECIAL2026»),

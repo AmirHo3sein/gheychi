@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import AppMultiSelect from '@/components/ui/AppMultiSelect.vue'
 import { resetToast, useToast } from '@/composables/useToast'
 import TeamView from './TeamView.vue'
 
@@ -62,14 +63,14 @@ describe('TeamView referral code reveal', () => {
     await toggle.trigger('click')
     await new Promise((r) => setTimeout(r, 0))
     await wrapper.vm.$nextTick()
-    expect(fetchMock).toHaveBeenCalledTimes(2) // initial list + referral-code fetch
+    expect(fetchMock).toHaveBeenCalledTimes(3) // initial list + initial services + referral-code fetch
 
     await toggle.trigger('click') // hide
     expect(wrapper.find('[data-testid="referral-code-panel"]').exists()).toBe(false)
 
     await toggle.trigger('click') // show again -- no new fetch
     await new Promise((r) => setTimeout(r, 0))
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(wrapper.get('[data-testid="referral-code-value"]').text()).toBe('REF-XYZ789')
 
     wrapper.unmount()
@@ -174,6 +175,71 @@ describe('TeamView referral code reveal', () => {
   })
 })
 
+describe('TeamView per-worker service restriction', () => {
+  const workersWithServices = [
+    { id: 'w1', name: 'سارا', active: true, ratingAvg: '4.50', ratingCount: 2, createdAt: '2026-07-01T00:00:00.000Z', serviceIds: [] },
+    { id: 'w2', name: 'مریم', active: true, ratingAvg: '0.00', ratingCount: 0, createdAt: '2026-07-02T00:00:00.000Z', serviceIds: ['svc-1'] },
+  ]
+  const salonServices = [
+    { id: 'svc-1', name: 'کوتاهی مو' },
+    { id: 'svc-2', name: 'رنگ مو' },
+  ]
+
+  beforeEach(() => {
+    fetchMock.mockReset()
+    resetToast()
+    fetchMock.mockImplementation((path: string) => {
+      if (path === '/salons/mine/workers') return Promise.resolve({ data: structuredClone(workersWithServices), error: null })
+      if (path === '/salons/mine/services') return Promise.resolve({ data: structuredClone(salonServices), error: null })
+      return Promise.resolve({ data: null, error: null })
+    })
+  })
+
+  it('shows the unrestricted hint for a worker with no serviceIds, and the restricted hint for one with some', async () => {
+    const wrapper = await mountView()
+
+    const cards = wrapper.findAll('[data-testid="worker-services-select"]')
+    expect(cards).toHaveLength(2)
+    expect(wrapper.text()).toContain('این عضو می‌تواند همه خدمات سالن را انجام دهد.')
+    expect(wrapper.text()).toContain('این عضو فقط خدمات انتخاب‌شده را انجام می‌دهد.')
+
+    wrapper.unmount()
+  })
+
+  it('PATCHes the worker services endpoint and updates local state when the selection changes', async () => {
+    const wrapper = await mountView()
+    fetchMock.mockImplementationOnce(() =>
+      Promise.resolve({ data: { id: 'w1', serviceIds: ['svc-2'] }, error: null }),
+    )
+
+    const select = wrapper.findAllComponents(AppMultiSelect)[0]!
+    await select.vm.$emit('update:modelValue', ['svc-2'])
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(fetchMock).toHaveBeenCalledWith('/salons/mine/workers/w1/services', {
+      method: 'PATCH',
+      body: { serviceIds: ['svc-2'] },
+    })
+    expect(wrapper.text()).toContain('این عضو فقط خدمات انتخاب‌شده را انجام می‌دهد.')
+
+    wrapper.unmount()
+  })
+
+  it('does not render the services picker at all when the salon has no services yet', async () => {
+    fetchMock.mockImplementation((path: string) => {
+      if (path === '/salons/mine/workers') return Promise.resolve({ data: structuredClone(workersWithServices), error: null })
+      if (path === '/salons/mine/services') return Promise.resolve({ data: [], error: null })
+      return Promise.resolve({ data: null, error: null })
+    })
+    const wrapper = await mountView()
+
+    expect(wrapper.find('[data-testid="worker-services-select"]').exists()).toBe(false)
+
+    wrapper.unmount()
+  })
+})
+
 describe('TeamView loading state', () => {
   beforeEach(() => {
     fetchMock.mockReset()
@@ -181,10 +247,14 @@ describe('TeamView loading state', () => {
   })
 
   it('shows a loading spinner distinct from the empty state while the initial fetch is pending', async () => {
-    let resolveFetch!: (v: { data: typeof workers; error: null }) => void
-    fetchMock.mockImplementation(
-      () => new Promise((resolve) => { resolveFetch = resolve }),
-    )
+    // load() fires both the workers and services fetches in a Promise.all -- each needs
+    // its own resolver, not one shared variable a second call would silently overwrite.
+    let resolveWorkers!: (v: { data: typeof workers; error: null }) => void
+    let resolveServices!: (v: { data: unknown[]; error: null }) => void
+    fetchMock.mockImplementation((path: string) => {
+      if (path === '/salons/mine/workers') return new Promise((resolve) => { resolveWorkers = resolve })
+      return new Promise((resolve) => { resolveServices = resolve })
+    })
 
     const wrapper = mount(TeamView)
     await wrapper.vm.$nextTick()
@@ -193,13 +263,40 @@ describe('TeamView loading state', () => {
     // Empty state must not render while still loading.
     expect(wrapper.text()).not.toContain('هنوز عضوی به تیم اضافه نشده است')
 
-    resolveFetch({ data: [], error: null })
+    resolveWorkers({ data: [], error: null })
+    resolveServices({ data: [], error: null })
     await new Promise((r) => setTimeout(r, 0))
     await wrapper.vm.$nextTick()
 
     expect(wrapper.text()).toContain('هنوز عضوی به تیم اضافه نشده است')
 
     wrapper.unmount()
+  })
+})
+
+describe('TeamView load error', () => {
+  beforeEach(() => {
+    fetchMock.mockReset()
+    resetToast()
+  })
+
+  it('shows a distinct error state (not the empty state) when either fetch fails, and retry reloads', async () => {
+    fetchMock.mockImplementation(() => Promise.resolve({ data: null, error: { status: 500, message: 'Something went wrong' } }))
+    const wrapper = await mountView()
+
+    expect(wrapper.find('[data-testid="load-error"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('هنوز عضوی به تیم اضافه نشده است')
+
+    fetchMock.mockImplementation((path: string) => {
+      if (path === '/salons/mine/workers') return Promise.resolve({ data: structuredClone(workers), error: null })
+      return Promise.resolve({ data: [], error: null })
+    })
+    await wrapper.get('[data-testid="retry-load"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="load-error"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('سارا')
   })
 })
 
@@ -221,7 +318,7 @@ describe('TeamView add-member form', () => {
 
     expect(wrapper.text()).toContain('نام و شماره موبایل الزامی است')
     // No API call was made for the empty submit itself.
-    expect(fetchMock).toHaveBeenCalledTimes(1) // only the initial list load
+    expect(fetchMock).toHaveBeenCalledTimes(2) // only the initial list + services load
   })
 
   it('maps a non-409 server error (e.g. phone-format validation) to a fixed Persian message, never the raw server string', async () => {

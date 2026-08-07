@@ -1,13 +1,16 @@
 <!-- apps/provider-panel/src/pages/TeamView.vue -->
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
+import AppMultiSelect from '@/components/ui/AppMultiSelect.vue'
+import type { SelectOption } from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
+import { toEnglishDigits } from '@/utils/digits'
 
 interface Worker {
   id: string
@@ -17,6 +20,14 @@ interface Worker {
   ratingAvg: string
   ratingCount: number
   createdAt: string
+  // Empty means unrestricted -- eligible for every one of the salon's services. See
+  // worker-service.entity.ts on the API side for the full semantics.
+  serviceIds: string[]
+}
+
+interface SalonServiceOption {
+  id: string
+  name: string
 }
 
 interface ReferralCode {
@@ -29,8 +40,17 @@ const { apiFetch } = useApi()
 const { push: pushToast } = useToast()
 const workers = ref<Worker[]>([])
 const loading = ref(true)
+// A fetch failure must not be silently repainted as an empty state -- see
+// ServicesView.vue's identical loadError pattern.
+const loadError = ref(false)
 const createError = ref('')
 const newWorker = reactive({ name: '', phone: '' })
+
+const salonServices = ref<SalonServiceOption[]>([])
+const serviceOptions = computed<SelectOption[]>(() => salonServices.value.map((s) => ({ value: s.id, label: s.name })))
+// Per-worker save-in-flight flag, keyed by worker id -- mirrors the referral-code
+// state pattern above (separate reactive record, not a field on Worker).
+const savingServices = reactive<Record<string, boolean>>({})
 
 // Per-worker referral-code reveal state, keyed by worker id. Kept separate from the
 // Worker list itself (rather than a field on Worker) since the code is fetched lazily,
@@ -41,12 +61,38 @@ const referralError = reactive<Record<string, string>>({})
 const referralCodes = reactive<Record<string, ReferralCode>>({})
 
 async function load() {
-  const { data } = await apiFetch<Worker[]>('/salons/mine/workers', { silent: true })
-  workers.value = data ?? []
+  loading.value = true
+  loadError.value = false
+  const [workersRes, servicesRes] = await Promise.all([
+    apiFetch<Worker[]>('/salons/mine/workers', { silent: true }),
+    apiFetch<SalonServiceOption[]>('/salons/mine/services', { silent: true }),
+  ])
+  if (workersRes.error || servicesRes.error) {
+    loadError.value = true
+    loading.value = false
+    return
+  }
+  workers.value = workersRes.data ?? []
+  salonServices.value = servicesRes.data ?? []
   loading.value = false
 }
 
 onMounted(load)
+
+async function updateWorkerServices(worker: Worker, serviceIds: Array<string | number>) {
+  const ids = serviceIds.map(String)
+  savingServices[worker.id] = true
+  const { data, error } = await apiFetch<{ id: string; serviceIds: string[] }>(
+    `/salons/mine/workers/${worker.id}/services`,
+    { method: 'PATCH', body: { serviceIds: ids } },
+  )
+  savingServices[worker.id] = false
+  if (data) {
+    worker.serviceIds = data.serviceIds
+  }
+  // On error, useApi's own toast already surfaced the failure; the multiselect's
+  // v-model reverts on the next render since worker.serviceIds was never mutated.
+}
 
 function ratingText(w: Worker): string {
   if (w.ratingCount === 0) return 'بدون امتیاز'
@@ -68,7 +114,9 @@ async function addWorker() {
   // screen. Mirrors LoginView.vue's pattern.
   const { data, error } = await apiFetch<Worker>('/salons/mine/workers', {
     method: 'POST',
-    body: { name: newWorker.name.trim(), phone: newWorker.phone.trim() },
+    // Iranian keyboards/IMEs commonly default to Persian numerals -- a phone typed that way
+    // looks right on screen but fails the API's /^09\d{9}$/ check, since \d is ASCII-only.
+    body: { name: newWorker.name.trim(), phone: toEnglishDigits(newWorker.phone.trim()) },
   })
   if (error) {
     createError.value = error.status === 409
@@ -126,11 +174,17 @@ async function copyReferralCode(code: string) {
 
 <template>
   <div class="mx-auto w-full max-w-5xl space-y-4 p-4 lg:p-6">
-    <h1 class="text-lg font-bold text-(--color-text)">تیم</h1>
+    <!-- text-center, not just start-aligned: the content below (the add-form, the roster
+         grid) is independently centered within this wide container via its own mx-auto/
+         justify-center, not stretched to fill it -- a start-aligned heading above centered
+         content reads as visibly offset from it ("the title is on the right"). Centering the
+         heading text keeps it aligned with whatever's centered below, at any content width. -->
+    <h1 class="text-center text-lg font-bold text-(--color-text)">تیم</h1>
 
-    <!-- Capped independently of the page container so the two short fields don't stretch
-         across a laptop while the roster below still uses the full width. -->
-    <AppCard class="max-w-2xl space-y-3">
+    <!-- Capped AND centered independently of the page container -- the two short fields
+         shouldn't stretch across a laptop, and centering (not just capping) keeps this from
+         hugging the RTL start (right) edge with visibly empty space on the other side. -->
+    <AppCard class="mx-auto max-w-2xl space-y-3">
       <h2 class="font-bold text-(--color-text)">افزودن عضو جدید</h2>
       <AppInput v-model="newWorker.name" placeholder="نام" />
       <AppInput v-model="newWorker.phone" type="tel" inputmode="tel" placeholder="شماره موبایل" class="tnum" />
@@ -140,14 +194,25 @@ async function copyReferralCode(code: string) {
       <AppButton type="button" variant="primary" block data-testid="submit-add-worker" @click="addWorker">افزودن</AppButton>
     </AppCard>
 
-    <div v-if="loading" data-testid="loading-spinner" class="flex items-center justify-center py-8 text-(--color-text-muted)">
-      <AppIcon name="spinner" :size="20" class="animate-spin" />
+    <div v-if="loadError" data-testid="load-error" class="space-y-3 rounded-xl border border-dashed border-(--color-border) p-4 text-center">
+      <p class="text-sm text-(--tone-danger-text)">تیم بارگذاری نشد.</p>
+      <AppButton variant="secondary" data-testid="retry-load" @click="load">
+        تلاش دوباره
+      </AppButton>
     </div>
-    <EmptyState v-else-if="workers.length === 0" icon="team" message="هنوز عضوی به تیم اضافه نشده است." />
 
-    <!-- Roster in columns from md: more of the team visible per screen rather than one very
-         wide row per member. -->
-    <div v-else class="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
+    <template v-else>
+      <div v-if="loading" data-testid="loading-spinner" class="flex items-center justify-center py-8 text-(--color-text-muted)">
+        <AppIcon name="spinner" :size="20" class="animate-spin" />
+      </div>
+      <EmptyState v-else-if="workers.length === 0" icon="team" message="هنوز عضوی به تیم اضافه نشده است." />
+
+    <!-- auto-fit + justify-center, not a fixed md:/xl: column count: with a fixed grid, a
+         lone (or odd) card at the tail lands in the RTL start (right) column and strands
+         empty space beside it -- the exact "not centered" mismatch this was fixed for. This
+         still lays out into a multi-column grid once there are enough members to fill a row,
+         but centers the actual populated tracks as a group when there aren't. -->
+    <div v-else class="grid items-start justify-center gap-4 [grid-template-columns:repeat(auto-fit,minmax(280px,320px))]">
       <AppCard v-for="w in workers" :key="w.id" :padded="false" class="space-y-3 p-4">
         <div class="flex items-center justify-between gap-2">
           <div class="min-w-0">
@@ -161,6 +226,21 @@ async function copyReferralCode(code: string) {
             <input type="checkbox" class="h-4 w-4 accent-(--color-accent)" :checked="w.active" @change="toggleActive(w, $event)" />
             فعال
           </label>
+        </div>
+
+        <div v-if="salonServices.length > 0" class="space-y-1">
+          <label class="text-sm font-medium text-(--color-text)">خدمات قابل انجام</label>
+          <AppMultiSelect
+            :model-value="w.serviceIds"
+            :options="serviceOptions"
+            :disabled="savingServices[w.id]"
+            placeholder="همه خدمات (بدون محدودیت)"
+            data-testid="worker-services-select"
+            @update:model-value="updateWorkerServices(w, $event)"
+          />
+          <p class="text-xs text-(--color-text-muted)">
+            {{ w.serviceIds.length === 0 ? 'این عضو می‌تواند همه خدمات سالن را انجام دهد.' : 'این عضو فقط خدمات انتخاب‌شده را انجام می‌دهد.' }}
+          </p>
         </div>
 
         <div>
@@ -203,5 +283,6 @@ async function copyReferralCode(code: string) {
         </div>
       </AppCard>
     </div>
+    </template>
   </div>
 </template>

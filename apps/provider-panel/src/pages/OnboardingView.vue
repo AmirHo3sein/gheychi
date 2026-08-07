@@ -1,6 +1,6 @@
 <!-- apps/provider-panel/src/pages/OnboardingView.vue -->
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, useTemplateRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import SalonInfoStep from '@/components/onboarding/SalonInfoStep.vue'
 import ScheduleStep from '@/components/onboarding/ScheduleStep.vue'
@@ -8,7 +8,9 @@ import FirstServiceStep from '@/components/onboarding/FirstServiceStep.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { useApi } from '@/composables/useApi'
+import { useCities } from '@/composables/useCities'
 import { useSalon } from '@/composables/useSalon'
+import { useServiceCategories } from '@/composables/useServiceCategories'
 import { useSessionStore } from '@/stores/session'
 import { validateWorkingHours } from '@/utils/working-hours'
 
@@ -18,6 +20,10 @@ const router = useRouter()
 const { apiFetch } = useApi()
 const { refetch } = useSalon()
 const session = useSessionStore()
+const { categoryOptions, loading: categoriesLoading, error: categoriesError, load: loadCategories } = useServiceCategories()
+const { cityOptions, loading: citiesLoading, error: citiesError, load: loadCities } = useCities()
+onMounted(loadCategories)
+onMounted(loadCities)
 
 const step = ref(1)
 const submitting = ref(false)
@@ -48,6 +54,7 @@ const form = reactive({
     capacity: 1,
     lat: null as number | null,
     lng: null as number | null,
+    categoryIds: [] as number[],
   },
   hours: Array.from({ length: 7 }, (_, weekday) => ({
     weekday,
@@ -75,7 +82,8 @@ const isSalonInfoValid = computed(
     form.salonInfo.capacity >= 1 &&
     form.salonInfo.capacity <= 50 &&
     form.salonInfo.lat !== null &&
-    form.salonInfo.lng !== null,
+    form.salonInfo.lng !== null &&
+    form.salonInfo.categoryIds.length >= 1,
 )
 
 // Same rule HoursView.vue saves against (utils/working-hours.ts). Step 2 has to enforce it
@@ -108,7 +116,7 @@ const canGoNext = computed(() => {
 // dead end.
 const disabledHint = computed(() => {
   if (step.value === 1 && !isSalonInfoValid.value) {
-    return 'برای ادامه، نام (حداقل ۲ حرف)، مخاطب، شهر (حداقل ۲ حرف)، آدرس (حداقل ۵ حرف)، ظرفیت (۱ تا ۵۰) و موقعیت روی نقشه را کامل کنید.'
+    return 'برای ادامه، نام (حداقل ۲ حرف)، مخاطب، شهر (حداقل ۲ حرف)، آدرس (حداقل ۵ حرف)، ظرفیت (۱ تا ۵۰)، حداقل یک دسته‌بندی و موقعیت روی نقشه را کامل کنید.'
   }
   if (step.value === 2 && !isHoursValid.value) {
     return hoursValidation.value.message || 'حداقل یک روز کاری را فعال کنید تا آرایشگاه قابل رزرو باشد.'
@@ -152,6 +160,7 @@ async function submit() {
         capacity: form.salonInfo.capacity,
         lat: form.salonInfo.lat,
         lng: form.salonInfo.lng,
+        categoryIds: form.salonInfo.categoryIds,
       },
       silent: true,
     })
@@ -201,9 +210,7 @@ async function submit() {
       <!-- Mirrors the logout button's footprint so the title stays optically centred. -->
       <div class="w-11 shrink-0" />
       <div class="flex min-w-0 flex-col items-center text-center">
-        <div class="mb-2 flex h-11 w-11 items-center justify-center rounded-2xl bg-(--color-accent) text-lg font-black text-white shadow-(--shadow-sm)">
-          آ
-        </div>
+        <img src="/brand-icon.png" alt="" class="mb-2 h-11 w-11 shrink-0 rounded-2xl shadow-(--shadow-sm)" />
         <h1 class="text-lg font-bold text-(--color-text)">ثبت‌نام آرایشگاه</h1>
       </div>
       <button
@@ -226,7 +233,7 @@ async function submit() {
             class="flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition-colors"
             :class="
               i + 1 < step
-                ? 'bg-(--color-accent-strong) text-white'
+                ? 'bg-(--color-accent-strong) text-(--color-fill-text)'
                 : i + 1 === step
                   ? 'border-2 border-(--color-accent) text-(--color-accent-text)'
                   : 'border border-(--color-border) text-(--color-text-muted)'
@@ -246,7 +253,18 @@ async function submit() {
       tabindex="-1"
       class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 shadow-(--shadow-sm) focus:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 sm:p-5"
     >
-      <SalonInfoStep v-if="step === 1" v-model="form.salonInfo" />
+      <SalonInfoStep
+        v-if="step === 1"
+        v-model="form.salonInfo"
+        :category-options="categoryOptions"
+        :categories-loading="categoriesLoading"
+        :categories-error="categoriesError"
+        :city-options="cityOptions"
+        :cities-loading="citiesLoading"
+        :cities-error="citiesError"
+        @retry-categories="loadCategories"
+        @retry-cities="loadCities"
+      />
       <ScheduleStep v-else-if="step === 2" v-model="form.hours" :invalid-weekdays="hoursValidation.invalid" />
       <FirstServiceStep v-else v-model="form.service" />
     </div>

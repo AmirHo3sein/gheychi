@@ -2,7 +2,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, useId } from 'vue'
 import { useApi } from '@/composables/useApi'
+import { useCities } from '@/composables/useCities'
 import { useSalon } from '@/composables/useSalon'
+import { useServiceCategories } from '@/composables/useServiceCategories'
 import { useToast } from '@/composables/useToast'
 import SalonInfoStep from '@/components/onboarding/SalonInfoStep.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -12,6 +14,8 @@ import AppInput from '@/components/ui/AppInput.vue'
 const { apiFetch } = useApi()
 const { refetch } = useSalon()
 const { push: pushToast } = useToast()
+const { categoryOptions, loading: categoriesLoading, error: categoriesError, load: loadCategories } = useServiceCategories()
+const { cityOptions, loading: citiesLoading, error: citiesError, load: loadCities } = useCities()
 const loading = ref(true)
 const loadError = ref(false)
 const saving = ref(false)
@@ -27,6 +31,7 @@ const form = reactive({
   capacity: 1,
   lat: null as number | null,
   lng: null as number | null,
+  categoryIds: [] as number[],
   tagline: '',
   about: '',
   instagramHandle: '',
@@ -52,6 +57,7 @@ const isFormValid = computed(
     form.capacity <= 50 &&
     form.lat !== null &&
     form.lng !== null &&
+    form.categoryIds.length >= 1 &&
     form.tagline.length <= 120 &&
     form.about.length <= 2000 &&
     instagramHandleValid.value,
@@ -72,11 +78,12 @@ const aboutExcerpt = computed(() => {
 // geography column, `location: { type: 'Point', coordinates: [lng, lat] }` -- there is
 // no top-level lat/lng field. Note the coordinate order (lng first), matching
 // apps/user-app's geoJsonToLatLng (app/utils/geo.ts).
-interface SalonResponse extends Omit<typeof form, 'lat' | 'lng' | 'tagline' | 'about' | 'instagramHandle'> {
+interface SalonResponse extends Omit<typeof form, 'lat' | 'lng' | 'tagline' | 'about' | 'instagramHandle' | 'categoryIds'> {
   location: { type: 'Point'; coordinates: [number, number] }
   tagline: string | null
   about: string | null
   instagramHandle: string | null
+  categories: { id: number; name: string; icon: string }[]
 }
 
 async function load() {
@@ -88,13 +95,14 @@ async function load() {
     loading.value = false
     return
   }
-  const { location, tagline, about, instagramHandle, ...rest } = data
+  const { location, tagline, about, instagramHandle, categories, ...rest } = data
   Object.assign(form, rest)
   form.lng = location.coordinates[0]
   form.lat = location.coordinates[1]
   form.tagline = tagline ?? ''
   form.about = about ?? ''
   form.instagramHandle = instagramHandle ?? ''
+  form.categoryIds = categories.map((c) => c.id)
   loading.value = false
 }
 
@@ -112,6 +120,7 @@ async function save() {
       capacity: form.capacity,
       lat: form.lat ?? undefined,
       lng: form.lng ?? undefined,
+      categoryIds: form.categoryIds,
       // Empty strings deliberately go through as-is: the API @Transforms '' -> null so a
       // previously-set showcase field can be cleared (`|| undefined` would make clearing
       // impossible by omitting the key).
@@ -133,6 +142,8 @@ async function save() {
 }
 
 onMounted(load)
+onMounted(loadCategories)
+onMounted(loadCities)
 </script>
 
 <template>
@@ -154,7 +165,17 @@ onMounted(load)
 
     <template v-else>
       <div class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-5 shadow-(--shadow-sm)">
-        <SalonInfoStep v-model="form" />
+        <SalonInfoStep
+          v-model="form"
+          :category-options="categoryOptions"
+          :categories-loading="categoriesLoading"
+          :categories-error="categoriesError"
+          :city-options="cityOptions"
+          :cities-loading="citiesLoading"
+          :cities-error="citiesError"
+          @retry-categories="loadCategories"
+          @retry-cities="loadCities"
+        />
       </div>
 
       <div class="space-y-4 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-5 shadow-(--shadow-sm)">

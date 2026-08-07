@@ -17,6 +17,13 @@ interface Review {
   createdAt: string
 }
 
+interface SalonReviewsPage {
+  items: Review[]
+  total: number
+  page: number
+  pageSize: number
+}
+
 const { apiFetch } = useApi()
 const { salon } = useSalon()
 const reviews = ref<Review[]>([])
@@ -59,13 +66,13 @@ async function load() {
   if (!salon.value) return
   loading.value = true
   loadError.value = false
-  const { data, error } = await apiFetch<Review[]>(`/salons/${salon.value.id}/reviews`, { silent: true })
+  const { data, error } = await apiFetch<SalonReviewsPage>(`/salons/${salon.value.id}/reviews`, { silent: true })
   if (error) {
     loadError.value = true
     loading.value = false
     return
   }
-  reviews.value = data ?? []
+  reviews.value = data?.items ?? []
   for (const r of reviews.value) drafts[r.id] = r.salonReply ?? ''
   loading.value = false
 }

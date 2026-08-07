@@ -7,13 +7,22 @@ import AppInput from '@/components/ui/AppInput.vue'
 import { useApi } from '@/composables/useApi'
 import { useSessionStore, type SessionUser } from '@/stores/session'
 import { CODE_EXPIRED_MESSAGE, CODE_REJECTED_MESSAGE, describeAuthError, formatCountdown } from '@/utils/auth-errors'
+import { toEnglishDigits } from '@/utils/digits'
 
 const router = useRouter()
 const { apiFetch } = useApi()
 const session = useSessionStore()
 
 const step = ref<'phone' | 'code'>('phone')
-const phone = ref('')
+// Iranian keyboards/IMEs commonly default to Persian numerals -- typing them into a plain
+// ref would look correct on screen but fail the API's ASCII-only /^09\d{9}$/ check.
+// Normalizing on write means every read (the request body, the OTP-step confirmation label)
+// sees plain ASCII regardless of which numeral set was actually typed.
+const phoneRaw = ref('')
+const phone = computed({
+  get: () => phoneRaw.value,
+  set: (v: string) => { phoneRaw.value = toEnglishDigits(v) },
+})
 const code = ref('')
 const submitting = ref(false)
 const formError = ref('')
@@ -78,81 +87,109 @@ async function verifyOtp() {
 </script>
 
 <template>
-  <div class="relative flex min-h-dvh items-center justify-center overflow-hidden bg-(--color-surface) p-4 sm:p-6">
-    <div class="mesh-a pointer-events-none absolute -top-20 -start-10 h-72 w-72 rounded-full bg-(--color-accent) opacity-20 blur-[90px]" />
-    <div class="mesh-b pointer-events-none absolute -bottom-24 -end-10 h-72 w-72 rounded-full bg-(--tone-warning-text) opacity-20 blur-[90px]" />
-
-    <div class="relative w-full max-w-sm">
-      <div class="login-stagger flex flex-col items-center text-center" style="animation-delay: 0s">
-        <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-(--color-accent) text-xl font-black text-white shadow-(--shadow-sm)">
-          ق
-        </div>
-        <h1 class="text-xl font-bold text-(--color-text)">ورود به پنل مدیریت</h1>
-        <p class="mt-1 text-sm text-(--color-text-muted)">مدیریت نوبت‌ها، خدمات و درآمد آرایشگاه شما</p>
-      </div>
-
-      <div class="login-stagger mt-8 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-6 shadow-(--shadow-sm)" style="animation-delay: 0.12s">
-        <form v-if="step === 'phone'" data-testid="phone-form" class="space-y-4" @submit.prevent="requestOtp">
-          <AppInput
-            data-testid="phone-input"
-            v-model="phone"
-            type="tel"
-            dir="ltr"
-            icon="phone"
-            label="شماره موبایل"
-            placeholder="شماره موبایل"
-          />
-          <p v-if="formError" role="alert" aria-live="polite" class="flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)">
-            <AppIcon name="warning" :size="16" class="shrink-0" />
-            {{ formError }}
-          </p>
-          <AppButton type="submit" data-testid="submit-phone" :loading="submitting" size="lg" block>
-            {{ submitting ? 'در حال ارسال…' : 'دریافت کد تایید' }}
-          </AppButton>
-        </form>
-
-        <form v-else data-testid="code-form" class="space-y-4" @submit.prevent="verifyOtp">
-          <AppInput
-            data-testid="code-input"
-            v-model="code"
-            type="text"
-            inputmode="numeric"
-            dir="ltr"
-            align="center"
-            icon="lock"
-            class="tnum"
-            :label="`کد تایید ارسال‌شده به ${phone}`"
-            placeholder="------"
-          />
-          <!-- The code's real remaining life, so a timed-out code isn't mistaken for a typo. -->
-          <p
-            v-if="codeTtlKnown && !codeExpired"
-            data-testid="code-expiry"
-            aria-live="polite"
-            class="tnum text-center text-sm text-(--color-text-muted)"
-          >
-            اعتبار کد: {{ formatCountdown(codeExpiresIn) }}
-          </p>
-          <p
-            v-else-if="codeExpired"
-            data-testid="code-expired"
-            role="alert"
-            class="text-center text-sm font-semibold text-(--tone-danger-text)"
-          >
-            {{ CODE_EXPIRED_MESSAGE }}
-          </p>
-          <p v-if="formError" role="alert" aria-live="polite" class="flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)">
-            <AppIcon name="warning" :size="16" class="shrink-0" />
-            {{ formError }}
-          </p>
-          <AppButton type="submit" data-testid="submit-code" :loading="submitting" size="lg" block>
-            {{ submitting ? 'در حال بررسی…' : 'ورود' }}
-          </AppButton>
-          <AppButton type="button" variant="ghost" block @click="step = 'phone'">
-            ویرایش شماره موبایل
-          </AppButton>
-        </form>
-      </div>
+  <!-- One centred composition, identical in structure across all three apps (user-app and
+       admin-panel carry the same markup with their own copy) -- login is the one screen
+       every product shares, so it is the one that should read the same. -->
+  <main class="login-bg relative flex min-h-dvh items-center justify-center p-6">
+    <!-- Decoration lives in its own absolutely-positioned, clipped layer: putting
+         `overflow-hidden` on the scrolling parent instead would clip the card itself on a
+         short viewport, where the composition needs to scroll rather than be cut off. -->
+    <div class="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+      <div class="mesh-a absolute -top-32 -start-24 h-96 w-96 rounded-full bg-(--color-accent) opacity-40 blur-3xl" />
+      <div class="mesh-b absolute -bottom-32 -end-24 h-96 w-96 rounded-full bg-(--color-accent-deep) opacity-30 blur-3xl" />
     </div>
-  </div>
+
+    <div class="relative w-full max-w-md">
+      <!-- The mascot stands BEHIND the card: it is earlier in the DOM and unpositioned, while
+           the card below is `relative z-10` with an opaque background, so the negative margin
+           tucks the character's legs neatly behind the card's top edge instead of leaving it
+           floating in its own empty band. -->
+      <div class="login-stagger relative -mb-20 flex justify-center" style="animation-delay: 0s">
+        <div class="login-glow pointer-events-none absolute bottom-4 h-40 w-56 opacity-70" aria-hidden="true" />
+        <img src="/mascot-full.png" alt="" class="relative h-60 w-auto" />
+      </div>
+
+      <div
+        class="login-stagger relative z-10 rounded-3xl border border-(--color-border) bg-(--color-surface-card) p-7 shadow-(--shadow-lg) sm:p-8"
+        style="animation-delay: 0.1s"
+      >
+        <div class="flex items-center justify-center gap-2.5">
+          <img src="/brand-icon.png" alt="" class="h-9 w-9 shrink-0 rounded-xl" />
+          <span class="text-base font-bold text-(--color-text)">پنل آرایشگاه قیچی</span>
+        </div>
+
+        <div class="mt-5 text-center">
+          <h1 class="text-2xl font-bold text-(--color-text)">خوش آمدید</h1>
+          <p class="mt-1.5 text-sm text-(--color-text-muted)">برای ورود به پنل آرایشگاه، شماره موبایل خود را وارد کنید.</p>
+        </div>
+
+        <div class="mt-6">
+          <form v-if="step === 'phone'" data-testid="phone-form" class="space-y-4" @submit.prevent="requestOtp">
+            <AppInput
+              data-testid="phone-input"
+              v-model="phone"
+              type="tel"
+              dir="ltr"
+              icon="phone"
+              label="شماره موبایل"
+              placeholder="شماره موبایل"
+            />
+            <p v-if="formError" role="alert" aria-live="polite" class="flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)">
+              <AppIcon name="warning" :size="16" class="shrink-0" />
+              {{ formError }}
+            </p>
+            <AppButton type="submit" data-testid="submit-phone" :loading="submitting" size="lg" block>
+              {{ submitting ? 'در حال ارسال…' : 'دریافت کد تایید' }}
+            </AppButton>
+          </form>
+
+          <form v-else data-testid="code-form" class="space-y-4" @submit.prevent="verifyOtp">
+            <AppInput
+              data-testid="code-input"
+              v-model="code"
+              type="text"
+              inputmode="numeric"
+              dir="ltr"
+              align="center"
+              icon="lock"
+              class="tnum"
+              :label="`کد تایید ارسال‌شده به ${phone}`"
+              placeholder="------"
+            />
+            <!-- The code's real remaining life, so a timed-out code isn't mistaken for a typo. -->
+            <p
+              v-if="codeTtlKnown && !codeExpired"
+              data-testid="code-expiry"
+              aria-live="polite"
+              class="tnum text-center text-sm text-(--color-text-muted)"
+            >
+              اعتبار کد: {{ formatCountdown(codeExpiresIn) }}
+            </p>
+            <p
+              v-else-if="codeExpired"
+              data-testid="code-expired"
+              role="alert"
+              class="text-center text-sm font-semibold text-(--tone-danger-text)"
+            >
+              {{ CODE_EXPIRED_MESSAGE }}
+            </p>
+            <p v-if="formError" role="alert" aria-live="polite" class="flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)">
+              <AppIcon name="warning" :size="16" class="shrink-0" />
+              {{ formError }}
+            </p>
+            <AppButton type="submit" data-testid="submit-code" :loading="submitting" size="lg" block>
+              {{ submitting ? 'در حال بررسی…' : 'ورود' }}
+            </AppButton>
+            <AppButton type="button" variant="ghost" block @click="step = 'phone'">
+              ویرایش شماره موبایل
+            </AppButton>
+          </form>
+        </div>
+      </div>
+
+      <p class="login-stagger mt-6 text-center text-xs text-(--color-text-muted)" style="animation-delay: 0.2s">
+        © {{ new Date().getFullYear() }} قیچی
+      </p>
+    </div>
+  </main>
 </template>

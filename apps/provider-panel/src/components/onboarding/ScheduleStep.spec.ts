@@ -57,4 +57,12 @@ describe('ScheduleStep', () => {
       expect(input.classes()).toContain('min-h-11')
     }
   })
+
+  // Iran's week starts شنبه (Saturday), not یکشنبه (Sunday) -- rendering rows in stored-int
+  // order (0=Sunday first) read as a foreign week to every Iranian user of this screen.
+  it('renders the week starting from Saturday, ending on Friday', () => {
+    const rows = mountStep().findAll('[data-testid^="day-"]')
+    const renderedWeekdays = rows.map((r) => Number(r.attributes('data-testid')!.replace('day-', '')))
+    expect(renderedWeekdays).toEqual([6, 0, 1, 2, 3, 4, 5])
+  })
 })
