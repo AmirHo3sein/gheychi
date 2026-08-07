@@ -16,7 +16,7 @@ ARG VITE_API_BASE=http://localhost:3002/api
 ENV VITE_API_BASE=$VITE_API_BASE
 RUN pnpm turbo run build --filter=@gheychi/provider-panel
 
-FROM nginx:1.27-alpine AS runner
+FROM nginx:1.31-alpine AS runner
 COPY docker/nginx-spa.conf /etc/nginx/conf.d/default.conf
 COPY --from=installer /app/apps/provider-panel/dist /usr/share/nginx/html
 EXPOSE 80
