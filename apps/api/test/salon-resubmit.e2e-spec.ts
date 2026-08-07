@@ -12,12 +12,16 @@ describe('Salon resubmit after rejection (e2e)', () => {
   let ownerCookie: string;
   let adminCookie: string;
   let salonId: string;
+  let categoryId: number;
 
   beforeAll(async () => {
     await resetDatabase();
     app = await createTestApp();
     adminCookie = await loginAsAdmin(app, '09122250001');
     ownerCookie = await loginAs(app, '09122250002');
+
+    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+    categoryId = categoriesRes.body[0].id;
 
     const createRes = await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerCookie).send({
       name: 'Resubmit Test Salon',
@@ -26,6 +30,7 @@ describe('Salon resubmit after rejection (e2e)', () => {
       city: 'Tehran',
       lat: 35.7,
       lng: 51.4,
+      categoryIds: [categoryId],
     });
     salonId = createRes.body.id;
 
@@ -49,6 +54,7 @@ describe('Salon resubmit after rejection (e2e)', () => {
       city: 'Tehran',
       lat: 35.7,
       lng: 51.4,
+      categoryIds: [categoryId],
     });
     await request(app.getHttpServer())
       .post('/api/salons/mine/resubmit')
@@ -60,7 +66,7 @@ describe('Salon resubmit after rejection (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post('/api/salons/mine/resubmit')
       .set('Cookie', ownerCookie)
-      .expect(201);
+      .expect(200);
     expect(res.body.status).toBe('pending');
     expect(res.body.rejectionReason).toBeNull();
   });
@@ -77,6 +83,7 @@ describe('Salon resubmit after rejection (e2e)', () => {
       city: 'Tehran',
       lat: 35.7,
       lng: 51.4,
+      categoryIds: [categoryId],
     });
     const raceSalonId = createRes.body.id;
     await request(app.getHttpServer())
@@ -87,22 +94,30 @@ describe('Salon resubmit after rejection (e2e)', () => {
 
     // A real concurrent admin action only sometimes lands in the exact window between
     // resubmitMine's read (findOneBy) and its conditioned update, so it can't be relied
-    // on to reproduce deterministically. Instead, intercept the very next findOneBy call
-    // on the Salon repository -- which is the one resubmitMine makes to read the salon's
-    // current status -- and have an admin approve the salon from inside that intercept,
-    // i.e. after the read but before resubmitMine's own update runs. That's exactly the
-    // lost-update race resubmitMine's conditioned update is meant to catch.
+    // on to reproduce deterministically. Instead, intercept the findOneBy call that reads
+    // the salon by id -- SalonOwnerGuard's own findOneBy({ownerId}) lookup runs first (to
+    // resolve req.salonId) and must pass through untouched; resubmitMine's own
+    // findOneBy({id}) status read is the one whose read/update window this test needs to
+    // race -- and have an admin approve the salon from inside that intercept, i.e. after
+    // the read but before resubmitMine's own update runs. That's exactly the lost-update
+    // race resubmitMine's conditioned update is meant to catch.
     const salonRepo = app.get<Repository<Salon>>(getRepositoryToken(Salon));
     const originalFindOneBy = salonRepo.findOneBy.bind(salonRepo);
-    jest.spyOn(salonRepo, 'findOneBy').mockImplementationOnce(async (...args: Parameters<typeof salonRepo.findOneBy>) => {
-      const salon = await originalFindOneBy(...args);
-      await request(app.getHttpServer())
-        .patch(`/api/admin/salons/${raceSalonId}/status`)
-        .set('Cookie', adminCookie)
-        .send({ status: 'approved' })
-        .expect(200);
-      return salon;
-    });
+    const findOneBySpy = jest.spyOn(salonRepo, 'findOneBy').mockImplementation(
+      async (...args: Parameters<typeof salonRepo.findOneBy>) => {
+        const salon = await originalFindOneBy(...args);
+        const where = args[0] as Record<string, unknown>;
+        if ('id' in where) {
+          findOneBySpy.mockRestore();
+          await request(app.getHttpServer())
+            .patch(`/api/admin/salons/${raceSalonId}/status`)
+            .set('Cookie', adminCookie)
+            .send({ status: 'approved' })
+            .expect(200);
+        }
+        return salon;
+      },
+    );
 
     await request(app.getHttpServer())
       .post('/api/salons/mine/resubmit')

@@ -1,13 +1,14 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { WorkerRatingsQueryDto } from './dto/worker.dto';
+import { ListWorkersQueryDto, WorkerRatingsQueryDto } from './dto/worker.dto';
 import { PortfolioItem } from './portfolio-item.entity';
 import { SalonService } from './salon-service.entity';
 import { SalonPhoto } from './salon-photo.entity';
 import { SalonStory } from './salon-story.entity';
 import { SalonsService } from './salons.service';
 import { Worker } from './worker.entity';
+import { WorkerEligibilityService } from './worker-eligibility.service';
 import { WorkerRating } from '../reviews/worker-rating.entity';
 import { WorkingHour } from './working-hour.entity';
 
@@ -15,6 +16,7 @@ import { WorkingHour } from './working-hour.entity';
 export class PublicSalonContentController {
   constructor(
     private readonly salonsService: SalonsService,
+    private readonly workerEligibility: WorkerEligibilityService,
     @InjectRepository(SalonService) private readonly services: Repository<SalonService>,
     @InjectRepository(WorkingHour) private readonly hours: Repository<WorkingHour>,
     @InjectRepository(SalonPhoto) private readonly photos: Repository<SalonPhoto>,
@@ -75,9 +77,17 @@ export class PublicSalonContentController {
   }
 
   @Get('workers')
-  async listWorkers(@Param('slug') slug: string) {
+  async listWorkers(@Param('slug') slug: string, @Query() query: ListWorkersQueryDto) {
     const salonId = await this.requireSalonId(slug);
-    const rows = await this.workers.find({ where: { salonId, active: true }, order: { createdAt: 'ASC' } });
+    const qb = this.workers
+      .createQueryBuilder('worker')
+      .where('worker.salon_id = :salonId', { salonId })
+      .andWhere('worker.active = true')
+      .orderBy('worker.created_at', 'ASC');
+    if (query.serviceId) {
+      this.workerEligibility.applyEligibilityFilter(qb, query.serviceId);
+    }
+    const rows = await qb.getMany();
     return rows.map(({ id, name, ratingAvg, ratingCount, createdAt }) => ({
       id, name, ratingAvg: Number(ratingAvg), ratingCount, createdAt,
     }));

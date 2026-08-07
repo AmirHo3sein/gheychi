@@ -22,6 +22,7 @@ import { AuditInterceptor } from '../audit/audit.interceptor';
 import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { ALLOWED_IMAGE_MIME_TYPE_PATTERN } from '../common/trusted-image-upload';
 import { ContentService } from './content.service';
 import {
   AdminBlogPostQueryDto,
@@ -62,6 +63,7 @@ export class AdminBlogController {
   }
 
   @Post('posts/:id/publish')
+  @HttpCode(200)
   @UseInterceptors(AuditInterceptor)
   @AuditAction('post.publish', 'post')
   publish(@Param('id', ParseUUIDPipe) id: string) {
@@ -69,6 +71,7 @@ export class AdminBlogController {
   }
 
   @Post('posts/:id/unpublish')
+  @HttpCode(200)
   @UseInterceptors(AuditInterceptor)
   @AuditAction('post.unpublish', 'post')
   unpublish(@Param('id', ParseUUIDPipe) id: string) {
@@ -85,7 +88,7 @@ export class AdminBlogController {
 
   @Post('posts/:id/cover')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }), AuditInterceptor)
-  @AuditAction('post.cover.set', 'post')
+  @AuditAction('post.cover.upload', 'post')
   uploadCover(
     @Param('id', ParseUUIDPipe) id: string,
     @UploadedFile(
@@ -93,7 +96,8 @@ export class AdminBlogController {
         // Real magic-number content-sniffing (via the `file-type` package), with no
         // mimetype-trusting fallback -- identical validator to salon photo uploads:
         // only actual file bytes matching a real image signature pass (422 otherwise).
-        .addFileTypeValidator({ fileType: /^image\/(jpeg|png|webp)$/ })
+        // file.mimetype itself is separately verified in ContentService.setCover().
+        .addFileTypeValidator({ fileType: ALLOWED_IMAGE_MIME_TYPE_PATTERN })
         .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY }),
     )
     file: Express.Multer.File,
@@ -104,7 +108,7 @@ export class AdminBlogController {
   @Delete('posts/:id/cover')
   @HttpCode(204)
   @UseInterceptors(AuditInterceptor)
-  @AuditAction('post.cover.set', 'post')
+  @AuditAction('post.cover.remove', 'post')
   removeCover(@Param('id', ParseUUIDPipe) id: string) {
     return this.content.clearCover(id);
   }

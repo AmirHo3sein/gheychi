@@ -1,5 +1,6 @@
-import { Body, ConflictException, Controller, Delete, HttpCode, NotFoundException, Param, ParseIntPipe, Patch, Post, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, ConflictException, Controller, Delete, HttpCode, Inject, NotFoundException, Param, ParseIntPipe, Patch, Post, UseGuards, UseInterceptors } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import Redis from 'ioredis';
 import { Repository } from 'typeorm';
 import { AuditAction } from '../audit/audit.decorator';
 import { AuditInterceptor } from '../audit/audit.interceptor';
@@ -7,6 +8,8 @@ import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { isForeignKeyViolation, isUniqueViolation } from '../common/postgres-error-codes';
+import { REDIS } from '../redis/redis.module';
+import { CATEGORIES_CACHE_KEY } from './categories-cache.util';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
 import { ServiceCategory } from './service-category.entity';
 
@@ -14,14 +17,19 @@ import { ServiceCategory } from './service-category.entity';
 @UseGuards(AuthGuard, RolesGuard)
 @Roles('admin')
 export class AdminCategoriesController {
-  constructor(@InjectRepository(ServiceCategory) private readonly categories: Repository<ServiceCategory>) {}
+  constructor(
+    @InjectRepository(ServiceCategory) private readonly categories: Repository<ServiceCategory>,
+    @Inject(REDIS) private readonly redis: Redis,
+  ) {}
 
   @Post()
   @UseInterceptors(AuditInterceptor)
   @AuditAction('category.create', 'category')
   async create(@Body() dto: CreateCategoryDto) {
     try {
-      return await this.categories.save(this.categories.create(dto));
+      const created = await this.categories.save(this.categories.create(dto));
+      await this.redis.del(CATEGORIES_CACHE_KEY);
+      return created;
     } catch (err) {
       // Persian: this message is surfaced verbatim by the admin panel's toast, same as the
       // in-use message on delete below.
@@ -44,6 +52,7 @@ export class AdminCategoriesController {
       throw err;
     }
     if (!result.affected) throw new NotFoundException();
+    await this.redis.del(CATEGORIES_CACHE_KEY);
     return this.categories.findOneBy({ id });
   }
 
@@ -64,5 +73,6 @@ export class AdminCategoriesController {
       throw err;
     }
     if (!result.affected) throw new NotFoundException();
+    await this.redis.del(CATEGORIES_CACHE_KEY);
   }
 }

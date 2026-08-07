@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AlertsModule } from '../alerts/alerts.module';
 import { AuditModule } from '../audit/audit.module';
 import { AuthModule } from '../auth/auth.module';
 import { PlatformConfigModule } from '../platform-config/platform-config.module';
@@ -22,6 +23,7 @@ import { SalonInvoicesController } from './salon-invoices.controller';
     SalonsModule,
     AuthModule,
     AuditModule,
+    AlertsModule,
   ],
   controllers: [AdminInvoicesController, SalonInvoicesController],
   providers: [InvoicingService, MonthlyInvoiceGenerationJob],

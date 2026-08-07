@@ -7,6 +7,7 @@ import { Request } from 'express';
 import { DataSource, Repository } from 'typeorm';
 import { AuthGuard } from '../auth/auth.guard';
 import { CreateExceptionDto, ReplaceHoursDto } from './dto/schedule.dto';
+import { findOverlappingHourRanges } from './schedule-hours.util';
 import { SalonOwnerGuard } from './salon-owner.guard';
 import { ScheduleException } from './schedule-exception.entity';
 import { WorkingHour } from './working-hour.entity';
@@ -26,6 +27,13 @@ export class ScheduleController {
       if (h.openTime >= h.closeTime) {
         throw new BadRequestException(`openTime must be before closeTime (weekday ${h.weekday})`);
       }
+    }
+    const overlap = findOverlappingHourRanges(dto.hours);
+    if (overlap) {
+      const [a, b] = overlap;
+      throw new BadRequestException(
+        `Overlapping working hours on weekday ${a.weekday}: ${a.openTime}-${a.closeTime} and ${b.openTime}-${b.closeTime}`,
+      );
     }
     const salonId = req.salonId!;
     return this.dataSource.transaction(async (em) => {

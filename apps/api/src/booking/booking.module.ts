@@ -25,6 +25,7 @@ import { Payment } from './payment.entity';
 import { PaymentReconciliationJob } from './payment-reconciliation.job';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
+import { ReferralExpiryJob } from './referral-expiry.job';
 import { ReferralGrantJob } from './referral-grant.job';
 import { RefundRetryJob } from './refund-retry.job';
 import { SalonBookingsController } from './salon-bookings.controller';
@@ -65,6 +66,7 @@ import { ZarinpalGateway } from './zarinpal-payment.gateway';
     PaymentReconciliationJob,
     RefundRetryJob,
     ReferralGrantJob,
+    ReferralExpiryJob,
     {
       provide: PAYMENT_GATEWAY,
       inject: [ConfigService],

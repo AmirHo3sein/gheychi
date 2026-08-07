@@ -42,4 +42,33 @@ describe('LocalDiskStorageProvider', () => {
   it('does not throw when deleting a key that was never uploaded', async () => {
     await expect(provider.delete('salons/never/uploaded.jpg')).resolves.toBeUndefined();
   });
+
+  describe('exists', () => {
+    it('is true for an uploaded key and false for one that was never written', async () => {
+      await provider.upload(Buffer.from('x'), 'salons/abc/photo.jpg', 'image/jpeg');
+      await expect(provider.exists('salons/abc/photo.jpg')).resolves.toBe(true);
+      await expect(provider.exists('salons/never/uploaded.jpg')).resolves.toBe(false);
+    });
+  });
+
+  describe('list', () => {
+    it('recursively lists every object under a prefix, with each key relative to the root', async () => {
+      await provider.upload(Buffer.from('x'), 'salons/a/photo.jpg', 'image/jpeg');
+      await provider.upload(Buffer.from('x'), 'salons/a/stories/story.jpg', 'image/jpeg');
+      await provider.upload(Buffer.from('x'), 'blog/post-1/cover.jpg', 'image/jpeg');
+
+      const salonObjects = await provider.list('salons/');
+
+      expect(salonObjects.map((o) => o.key).sort()).toEqual(['salons/a/photo.jpg', 'salons/a/stories/story.jpg']);
+      // Not toBeInstanceOf(Date): fs.Stats.mtime can come back from a different Date
+      // realm than this test file's under ts-jest, which fails a strict instanceof
+      // check despite being a genuine, valid Date value.
+      expect(Object.prototype.toString.call(salonObjects[0]!.lastModified)).toBe('[object Date]');
+      expect(salonObjects[0]!.lastModified.getTime()).toBeGreaterThan(0);
+    });
+
+    it('returns an empty array for a prefix with no objects yet, instead of throwing', async () => {
+      await expect(provider.list('salons/')).resolves.toEqual([]);
+    });
+  });
 });

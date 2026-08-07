@@ -1,6 +1,6 @@
 import { IsIn, IsNotEmpty, IsString, MaxLength, ValidateIf } from 'class-validator';
 
-export class AdminSalonStatusDto {
+export class UpdateSalonStatusDto {
   @IsIn(['approved', 'rejected', 'suspended'])
   status: 'approved' | 'rejected' | 'suspended';
 
@@ -9,7 +9,7 @@ export class AdminSalonStatusDto {
    * When status is 'approved', @ValidateIf skips the whole chain, so undefined,
    * '', and null all pass -- a reason simply isn't required on approve.
    */
-  @ValidateIf((o: AdminSalonStatusDto) => o.status === 'rejected' || o.status === 'suspended')
+  @ValidateIf((o: UpdateSalonStatusDto) => o.status === 'rejected' || o.status === 'suspended')
   @IsString()
   @IsNotEmpty()
   @MaxLength(500)

@@ -18,18 +18,70 @@ export interface SearchResult {
   coverPhoto: string | null;
   isFeatured: boolean;
   hasActiveStory: boolean;
+  categories: Array<{ id: number; name: string; icon: string }>;
+}
+
+export interface SearchPage {
+  items: SearchResult[];
+  nextCursor: string | null;
+  hasMore: boolean;
 }
 
 const FEATURED_CAP = 2;
+const DEFAULT_PAGE_SIZE = 50;
+// Hard ceiling on how many rows a single cursor walk will ever fetch from Postgres --
+// pagination works by re-fetching `page * pageSize` rows and slicing (see search()
+// below), so without a ceiling a client that just keeps requesting "more" could walk
+// this all the way up to the full catalog. Once hit, hasMore is forced false.
+const MAX_FETCH_ROWS = 1000;
+
+interface SearchCursor {
+  page: number;
+}
+
+function decodeCursor(cursor: string | undefined): number {
+  if (!cursor) return 1;
+  try {
+    const parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as SearchCursor;
+    return Number.isInteger(parsed.page) && parsed.page >= 1 ? parsed.page : 1;
+  } catch {
+    // A malformed/tampered cursor just restarts pagination from page 1 rather than
+    // erroring -- it's an opaque continuation token, not a client-facing contract.
+    return 1;
+  }
+}
+
+function encodeCursor(page: number): string {
+  return Buffer.from(JSON.stringify({ page } satisfies SearchCursor)).toString('base64url');
+}
 
 @Injectable()
 export class SearchService {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
 
-  async search(q: SearchQueryDto): Promise<SearchResult[]> {
-    const radiusMeters = (q.radiusKm ?? 5) * 1000;
+  async search(q: SearchQueryDto): Promise<SearchPage> {
+    // 5km silently excluded any salon in the same city whose pin wasn't within easy walking
+    // distance of the exact searched point -- a real salon 11-12km from a city's canonical
+    // center (a completely normal distance within a metro like Tehran, which spans ~30km)
+    // just vanished from results with no explanation. 15km comfortably covers a typical
+    // city's built-up area without reaching into a neighboring city for most searches.
+    const radiusMeters = (q.radiusKm ?? 15) * 1000;
     const sortByRating = q.sort === 'rating';
     const secondarySort = sortByRating ? 's.rating_avg DESC, distance_km ASC' : 'distance_km ASC';
+
+    const pageSize = q.pageSize ?? DEFAULT_PAGE_SIZE;
+    const page = decodeCursor(q.cursor);
+    // The featured-boost reordering below runs in application code over the whole
+    // fetched set (it must never bypass the SQL filters/sort, only re-rank within
+    // them) -- so a page beyond the first can't be fetched with a SQL OFFSET alone
+    // without risking a different featured-cap outcome than a single unpaginated
+    // fetch would have produced. Instead each request re-fetches every row up to and
+    // including this page (bounded by MAX_FETCH_ROWS) and re-derives the full
+    // display order from scratch, then slices out just this page's window -- more
+    // work per request than a true seek, but identical results to today's single-page
+    // behavior on page 1, and correctness (never misplacing the featured cap) over
+    // efficiency for what stays a modest, capped row count.
+    const fetchLimit = Math.min(page * pageSize, MAX_FETCH_ROWS);
 
     const rows = await this.dataSource.query(
       `
@@ -57,20 +109,27 @@ export class SearchService {
         (SELECT sp.url FROM salon_photos sp
            WHERE sp.salon_id = s.id ORDER BY sp.is_cover DESC, sp.sort_order ASC LIMIT 1) AS cover_photo,
         EXISTS (SELECT 1 FROM salon_stories st
-           WHERE st.salon_id = s.id AND st.status = 'published' AND st.expires_at > now()) AS has_active_story
+           WHERE st.salon_id = s.id AND st.status = 'published' AND st.expires_at > now()) AS has_active_story,
+        -- The card's category badges -- deliberate owner-set tags (salon_categories),
+        -- not derived from whatever services happen to be listed. COALESCE keeps an
+        -- untagged salon's categories as [] rather than a JSON null the frontend would
+        -- have to guard against.
+        COALESCE((
+          SELECT json_agg(json_build_object('id', sc.id, 'name', sc.name, 'icon', sc.icon) ORDER BY sc.name)
+          FROM salon_categories salc JOIN service_categories sc ON sc.id = salc.category_id
+          WHERE salc.salon_id = s.id
+        ), '[]'::json) AS categories
       FROM salons s
       WHERE s.status = 'approved'
         AND s.gender_target = $3
         AND ST_DWithin(s.location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $4)
         AND ($5::int IS NULL OR EXISTS (
-          SELECT 1 FROM salon_services ss2
-          WHERE ss2.salon_id = s.id AND ss2.category_id = $5 AND ss2.is_active))
+          SELECT 1 FROM salon_categories sc2
+          WHERE sc2.salon_id = s.id AND sc2.category_id = $5))
       ORDER BY is_featured DESC, ${secondarySort}
-      LIMIT 50
-      -- MVP cap, no pagination yet. Revisit if a single search radius
-      -- can plausibly exceed 50 approved salons.
+      LIMIT $6
       `,
-      [q.lng, q.lat, q.gender, radiusMeters, q.categoryId ?? null],
+      [q.lng, q.lat, q.gender, radiusMeters, q.categoryId ?? null, fetchLimit],
     );
 
     const mapped = rows.map((r: Record<string, unknown>) => ({
@@ -86,6 +145,7 @@ export class SearchService {
       coverPhoto: (r.cover_photo as string) ?? null,
       isFeatured: r.is_featured as boolean,
       hasActiveStory: r.has_active_story as boolean,
+      categories: r.categories as Array<{ id: number; name: string; icon: string }>,
     }));
 
     // The query already orders featured salons first (each group internally sorted by
@@ -127,6 +187,18 @@ export class SearchService {
     while (i < overflow.length) merged.push(overflow[i++]);
     while (j < nonFeatured.length) merged.push(nonFeatured[j++]);
 
-    return [...featuredKept, ...merged];
+    const allFetched = [...featuredKept, ...merged];
+    const start = (page - 1) * pageSize;
+    const items = allFetched.slice(start, start + pageSize);
+
+    // rows.length < fetchLimit means Postgres genuinely ran out of matching salons --
+    // there is nothing beyond what was fetched, regardless of how this page's slice
+    // landed. Otherwise (we got exactly fetchLimit rows back) there MIGHT be more
+    // beyond it, unless the abuse ceiling is what stopped us from asking for more.
+    const reachedEndOfData = rows.length < fetchLimit;
+    const moreWithinFetched = start + pageSize < allFetched.length;
+    const hasMore = moreWithinFetched || (!reachedEndOfData && fetchLimit < MAX_FETCH_ROWS);
+
+    return { items, nextCursor: hasMore ? encodeCursor(page + 1) : null, hasMore };
   }
 }

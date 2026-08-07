@@ -5,7 +5,7 @@ import { DataSource } from 'typeorm';
 import { REDIS } from '../src/redis/redis.module';
 import { ReferralsService } from '../src/referrals/referrals.service';
 import { WalletService } from '../src/wallet/wallet.service';
-import { loginAs, loginAsAdmin, verifyOtpAndLogin } from './utils/auth-helper';
+import { clearOtpIpRateLimit, loginAs, loginAsAdmin, verifyOtpAndLogin } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
 
@@ -50,6 +50,7 @@ describe('Referral reward granting -- race-safety and reversal-shortfall (e2e)',
       lat: 35.7,
       lng: 51.4,
       capacity: 5,
+      categoryIds: [categoryId],
     });
     salonId = salonRes.body.id;
     const serviceRes = await request(app.getHttpServer())
@@ -488,6 +489,11 @@ describe('Referral reward granting -- race-safety and reversal-shortfall (e2e)',
 
       const phones = Array.from({ length: 8 }, (_, i) => `091510009${i}0`);
       const otps: string[] = [];
+      // A single clear before the burst, not per-iteration: this loop makes 8 real
+      // request-otp calls for 8 distinct phones in quick succession, well within the
+      // per-phone limit each but easily enough to trip the per-IP limit (otp.service.ts)
+      // on top of whatever the shared test-suite IP counter already sat at.
+      await clearOtpIpRateLimit(redis);
       for (const phone of phones) {
         await redis.del(`otp:rl:${phone}`);
         await request(app.getHttpServer()).post('/api/auth/request-otp').send({ phone }).expect(201);

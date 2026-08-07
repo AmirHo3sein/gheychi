@@ -1,4 +1,4 @@
-import { Body, ConflictException, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Patch, Query, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Patch, Query, UseGuards, UseInterceptors } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuditAction } from '../audit/audit.decorator';
@@ -6,13 +6,13 @@ import { AuditInterceptor } from '../audit/audit.interceptor';
 import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
-import { UsersService } from '../users/users.service';
 import { AdminSalonQueryDto } from './dto/admin-salon-query.dto';
-import { AdminSalonStatusDto } from './dto/admin-salon-status.dto';
+import { UpdateSalonStatusDto } from './dto/admin-salon-status.dto';
 import { SetFeaturedDto } from './dto/admin-salon.dto';
 import { PortfolioItem } from './portfolio-item.entity';
 import { SalonStory } from './salon-story.entity';
 import { Salon } from './salon.entity';
+import { SalonsService } from './salons.service';
 
 @Controller('admin/salons')
 @UseGuards(AuthGuard, RolesGuard)
@@ -22,7 +22,7 @@ export class AdminSalonsController {
     @InjectRepository(Salon) private readonly salons: Repository<Salon>,
     @InjectRepository(SalonStory) private readonly stories: Repository<SalonStory>,
     @InjectRepository(PortfolioItem) private readonly portfolioItems: Repository<PortfolioItem>,
-    private readonly users: UsersService,
+    private readonly salonsService: SalonsService,
   ) {}
 
   @Get()
@@ -69,46 +69,20 @@ export class AdminSalonsController {
     return this.portfolioItems.find({ where: { salonId: id }, order: { sortOrder: 'ASC', createdAt: 'ASC' } });
   }
 
+  // Business logic (validation, transitions, the owner-suspended approval guard) lives in
+  // SalonsService — this handler's only job is to receive the request and delegate.
   @Patch(':id/status')
   @UseInterceptors(AuditInterceptor)
   @AuditAction('salon.status.set', 'salon')
-  async setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AdminSalonStatusDto) {
-    if (dto.status === 'approved') {
-      const salon = await this.salons.findOneBy({ id });
-      if (!salon) throw new NotFoundException();
-      const owner = await this.users.findById(salon.ownerId);
-      if (owner?.status === 'suspended') {
-        // Persian: this message is surfaced verbatim by the admin panel's toast.
-        throw new ConflictException('تایید این آرایشگاه ممکن نیست؛ حساب مالک آن معلق است');
-      }
-    }
-    const patch: Partial<Salon> = {
-      status: dto.status,
-      rejectionReason: dto.status === 'approved' ? null : (dto.reason ?? null),
-    };
-    // suspended_cause bookkeeping (Plan 7 spec 3.5): a direct admin suspension is marked
-    // 'admin' so a later owner reactivation will NOT auto-restore this salon; approving
-    // (from any prior state) clears the cause. Rejection leaves it untouched — so a
-    // rejected/pending salon may carry a stale 'owner_suspended' cause until its next
-    // approve/suspend scrubs it. Harmless: the reactivation cascade also requires
-    // status='suspended', so a stale cause on any other status can never trigger a restore.
-    if (dto.status === 'suspended') patch.suspendedCause = 'admin';
-    if (dto.status === 'approved') patch.suspendedCause = null;
-    const result = await this.salons.update({ id }, patch);
-    if (!result.affected) throw new NotFoundException();
-    return this.salons.findOneBy({ id });
+  setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateSalonStatusDto) {
+    return this.salonsService.setStatus(id, dto);
   }
 
   @Patch(':id/featured')
   @UseInterceptors(AuditInterceptor)
   @AuditAction('salon.featured.set', 'salon')
-  async setFeatured(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SetFeaturedDto) {
-    const result = await this.salons.update(
-      { id },
-      { isFeatured: dto.isFeatured, featuredUntil: dto.featuredUntil ? new Date(dto.featuredUntil) : null },
-    );
-    if (!result.affected) throw new NotFoundException();
-    return this.salons.findOneBy({ id });
+  setFeatured(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SetFeaturedDto) {
+    return this.salonsService.setFeatured(id, dto);
   }
 
   private async requireSalon(id: string): Promise<void> {

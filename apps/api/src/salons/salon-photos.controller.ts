@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import {
-  Body, Controller, Delete, Get, HttpCode, HttpStatus, Inject, Logger, NotFoundException, Param,
+  Body, ConflictException, Controller, Delete, Get, HttpCode, HttpStatus, Inject, Logger, NotFoundException, Param,
   ParseFilePipeBuilder, ParseUUIDPipe, Patch, Post, Req, UploadedFile, UseGuards, UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -8,16 +8,21 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
 import { DataSource, Repository } from 'typeorm';
 import { AuthGuard } from '../auth/auth.guard';
+import {
+  ALLOWED_IMAGE_MIME_TYPE_PATTERN, assertTrustedImageMimeType, EXTENSION_BY_IMAGE_MIME_TYPE,
+} from '../common/trusted-image-upload';
 import { STORAGE_PROVIDER, StorageProvider } from '../storage/storage.provider';
 import { UpdateSalonPhotoDto } from './dto/salon-photo.dto';
 import { SalonOwnerGuard } from './salon-owner.guard';
 import { SalonPhoto } from './salon-photo.entity';
 
-const EXTENSION_BY_MIME_TYPE: Record<string, string> = {
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
-};
+// Unlike PortfolioItem (PORTFOLIO_CAP) and SalonStory (ACTIVE_STORY_CAP + natural
+// expiry), this list previously had no ceiling at all -- both of growth (unbounded
+// uploads) and of the list query itself (no `take`). Adding the cap alone is enough:
+// once uploads can never exceed it, list() is bounded by construction, matching how
+// the two sibling controllers rely solely on their own upload cap too (neither adds a
+// separate `take` to its own list query).
+const PHOTO_CAP = 30;
 
 @Controller('salons/mine/photos')
 @UseGuards(AuthGuard, SalonOwnerGuard)
@@ -41,21 +46,30 @@ export class SalonPhotosController {
     @Req() req: Request,
     @UploadedFile(
       new ParseFilePipeBuilder()
-        // Real magic-number content-sniffing (via the `file-type` package), with no
-        // mimetype-trusting fallback. The client-declared Content-Type header is never
-        // trusted on its own; only actual file bytes matching a real image signature pass.
-        .addFileTypeValidator({ fileType: /^image\/(jpeg|png|webp)$/ })
+        // Real magic-number content-sniffing (via the `file-type` package) -- rejects
+        // anything whose actual bytes aren't a real image, regardless of what Content-Type
+        // the client declared. Does NOT by itself make file.mimetype trustworthy (see
+        // assertTrustedImageMimeType below) -- it validates the file's real content, not
+        // the separate, still-client-controlled file.mimetype field.
+        .addFileTypeValidator({ fileType: ALLOWED_IMAGE_MIME_TYPE_PATTERN })
         .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY }),
     )
     file: Express.Multer.File,
   ) {
+    // file.mimetype is the client-declared Content-Type header, independent of the
+    // magic-number check above -- must be checked separately before it's trusted for
+    // the storage Content-Type below (S3StorageProvider persists it verbatim).
+    assertTrustedImageMimeType(file.mimetype);
     const salonId = req.salonId!;
     const count = await this.photos.count({ where: { salonId } });
+    if (count >= PHOTO_CAP) {
+      throw new ConflictException('حداکثر ۳۰ عکس مجاز است');
+    }
     // Deliberately NOT using file.originalname in the key -- it's client-controlled and
-    // could contain path-traversal sequences (e.g. `../../etc/x`). The mimetype was already
-    // restricted to image/jpeg|png|webp by the validator above, so deriving the extension
-    // from it (rather than from the client's filename) keeps the key fully server-controlled.
-    const extension = EXTENSION_BY_MIME_TYPE[file.mimetype] ?? 'bin';
+    // could contain path-traversal sequences (e.g. `../../etc/x`). file.mimetype is now
+    // verified-trusted (above), so deriving the extension from it keeps the key fully
+    // server-controlled.
+    const extension = EXTENSION_BY_IMAGE_MIME_TYPE[file.mimetype] ?? 'bin';
     const key = `salons/${salonId}/${randomUUID()}.${extension}`;
     const url = await this.storage.upload(file.buffer, key, file.mimetype);
     return this.photos.save(

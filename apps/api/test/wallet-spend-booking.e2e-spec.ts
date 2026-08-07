@@ -47,6 +47,7 @@ describe('Wallet spend at checkout (e2e)', () => {
       lat: 35.7,
       lng: 51.4,
       capacity: 5,
+      categoryIds: [categoriesRes.body[0].id],
     });
     salonId = salonRes.body.id;
 
@@ -127,7 +128,7 @@ describe('Wallet spend at checkout (e2e)', () => {
     await request(app.getHttpServer())
       .post(`/api/bookings/${created.body.booking.id}/cancel`)
       .set('Cookie', customerCookie)
-      .expect(201);
+      .expect(200);
 
     const wallet = await request(app.getHttpServer()).get('/api/wallet/mine').set('Cookie', customerCookie).expect(200);
     expect(wallet.body.balances.find((b: { currency: string }) => b.currency === 'toman').balance).toBe(50_000);

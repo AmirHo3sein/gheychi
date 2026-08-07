@@ -14,6 +14,9 @@ describe('Admin salon list filters (e2e)', () => {
     app = await createTestApp();
     adminCookie = await loginAsAdmin(app, '09122230001');
 
+    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+    const categoryId = categoriesRes.body[0].id;
+
     const ownerCookie = await loginAs(app, '09122230002');
     const tehranRes = await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerCookie).send({
       name: 'Pending Salon Tehran',
@@ -22,6 +25,7 @@ describe('Admin salon list filters (e2e)', () => {
       city: 'Tehran',
       lat: 35.7,
       lng: 51.4,
+      categoryIds: [categoryId],
     });
     tehranSalonId = tehranRes.body.id;
 
@@ -33,6 +37,7 @@ describe('Admin salon list filters (e2e)', () => {
       city: 'Shiraz',
       lat: 29.6,
       lng: 52.5,
+      categoryIds: [categoryId],
     });
   });
 

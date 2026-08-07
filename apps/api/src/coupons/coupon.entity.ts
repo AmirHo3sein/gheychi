@@ -1,9 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
-
-const nullableBigintToNumber = {
-  to: (v: number | null) => v,
-  from: (v: string | null) => (v === null ? null : Number(v)),
-};
+import { nullableBigintToNumber } from '../common/numeric-transformers';
 
 @Entity('coupons')
 export class Coupon {

@@ -8,11 +8,14 @@ describe('Admin salon status transitions (e2e)', () => {
   let app: INestApplication;
   let adminCookie: string;
   let salonId: string;
+  let categoryId: number;
 
   beforeAll(async () => {
     await resetDatabase();
     app = await createTestApp();
     adminCookie = await loginAsAdmin(app, '09122240001');
+    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+    categoryId = categoriesRes.body[0].id;
   });
 
   afterAll(async () => {
@@ -29,6 +32,7 @@ describe('Admin salon status transitions (e2e)', () => {
       city: 'Tehran',
       lat: 35.7,
       lng: 51.4,
+      categoryIds: [categoryId],
     });
     salonId = createRes.body.id;
   });
@@ -132,6 +136,7 @@ describe('Admin salon status transitions (e2e)', () => {
       city: 'Tehran',
       lat: 35.7,
       lng: 51.4,
+      categoryIds: [categoryId],
     });
     const suspendedSalonId = createRes.body.id;
 

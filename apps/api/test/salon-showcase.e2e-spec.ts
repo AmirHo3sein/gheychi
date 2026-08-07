@@ -30,6 +30,8 @@ describe('Salon showcase: stories, portfolio, profile (e2e)', () => {
     ownerCookie = await loginAs(app, '09166600001');
     adminCookie = await loginAsAdmin(app, '09166600002');
 
+    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+
     const salonRes = await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerCookie).send({
       name: 'Showcase Test Salon',
       genderTarget: 'women',
@@ -37,11 +39,11 @@ describe('Salon showcase: stories, portfolio, profile (e2e)', () => {
       city: 'Tehran',
       lat: 35.7,
       lng: 51.4,
+      categoryIds: [categoriesRes.body[0].id],
     });
     salonId = salonRes.body.id;
     slug = salonRes.body.slug;
 
-    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
     const serviceRes = await request(app.getHttpServer())
       .post('/api/salons/mine/services')
       .set('Cookie', ownerCookie)
@@ -96,6 +98,17 @@ describe('Salon showcase: stories, portfolio, profile (e2e)', () => {
       .set('Cookie', ownerCookie)
       .attach('file', Buffer.from('not an image'), { filename: 'a.txt', contentType: 'text/plain' })
       .expect(422));
+
+  it('rejects real image bytes declared under a spoofed, disallowed Content-Type (stored-XSS guard)', () =>
+    // The magic-number validator alone would PASS this (the bytes really are a PNG) --
+    // exactly the gap that let a crafted upload get persisted with an attacker-chosen S3
+    // Content-Type despite carrying real image content. file.mimetype must independently
+    // match the allowed set too.
+    request(app.getHttpServer())
+      .post('/api/salons/mine/stories')
+      .set('Cookie', ownerCookie)
+      .attach('file', MINIMAL_PNG, { filename: 'a.png', contentType: 'text/html' })
+      .expect(400));
 
   it('rejects an over-length multipart caption with 400 (DTO validation reaches multipart text fields)', () =>
     uploadStory({ caption: 'ن'.repeat(201) }).expect(400));
@@ -223,6 +236,17 @@ describe('Salon showcase: stories, portfolio, profile (e2e)', () => {
 
   it('rejects a portfolio serviceId that does not belong to the caller salon', () =>
     uploadPortfolioItem({ serviceId: '3f8a72fe-0000-4000-8000-000000000009' }).expect(400));
+
+  it('rejects real image bytes declared under a spoofed, disallowed Content-Type (stored-XSS guard)', () =>
+    // The magic-number validator alone would PASS this (the bytes really are a PNG) --
+    // exactly the gap that let a crafted upload get persisted with an attacker-chosen S3
+    // Content-Type despite carrying real image content. file.mimetype must independently
+    // match the allowed set too.
+    request(app.getHttpServer())
+      .post('/api/salons/mine/portfolio')
+      .set('Cookie', ownerCookie)
+      .attach('file', MINIMAL_PNG, { filename: 'a.png', contentType: 'text/html' })
+      .expect(400));
 
   it('exposes published portfolio items publicly in sort order (exact field shape)', async () => {
     const res = await request(app.getHttpServer()).get(`/api/salons/${slug}/portfolio`).expect(200);

@@ -1,9 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
-
-const bigintToNumber = {
-  to: (v: number) => v,
-  from: (v: string) => Number(v),
-};
+import { bigintToNumber } from '../common/numeric-transformers';
 
 @Entity('salon_services')
 export class SalonService {

@@ -1,11 +1,7 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { bigintToNumber } from '../common/numeric-transformers';
 
 export type InvoiceStatus = 'issued' | 'partially_paid' | 'paid' | 'void';
-
-const bigintToNumber = {
-  to: (v: number) => v,
-  from: (v: string) => Number(v),
-};
 
 /**
  * A monthly per-salon settlement statement -- the one mutable row in the invoicing

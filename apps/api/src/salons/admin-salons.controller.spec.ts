@@ -1,99 +1,52 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
-import { UsersService } from '../users/users.service';
 import { AdminSalonsController } from './admin-salons.controller';
 import { PortfolioItem } from './portfolio-item.entity';
 import { SalonStory } from './salon-story.entity';
 import { Salon } from './salon.entity';
+import { SalonsService } from './salons.service';
 
-describe('AdminSalonsController.setStatus suspended_cause handling', () => {
+// AdminSalonsController.setStatus/setFeatured are pure delegation to SalonsService --
+// the actual business rules (owner-suspended approval guard, suspended_cause bookkeeping,
+// state transitions) are unit-tested against the service directly in salons.service.spec.ts.
+// This spec only proves the controller wires the request through unchanged.
+describe('AdminSalonsController (delegates to SalonsService)', () => {
   let controller: AdminSalonsController;
-  let repo: { update: jest.Mock; findOneBy: jest.Mock };
-  let users: { findById: jest.Mock };
+  let salonsService: { setStatus: jest.Mock; setFeatured: jest.Mock };
 
   beforeEach(() => {
-    repo = {
-      update: jest.fn().mockResolvedValue({ affected: 1 }),
-      findOneBy: jest.fn().mockResolvedValue({ id: 's1' }),
-    };
-    users = {
-      findById: jest.fn().mockResolvedValue({ id: 'owner-1', status: 'active' }),
+    salonsService = {
+      setStatus: jest.fn().mockResolvedValue({ id: 's1', status: 'approved' }),
+      setFeatured: jest.fn().mockResolvedValue({ id: 's1', isFeatured: true }),
     };
     controller = new AdminSalonsController(
-      repo as unknown as Repository<Salon>,
-      { find: jest.fn() } as unknown as Repository<SalonStory>,
-      { find: jest.fn() } as unknown as Repository<PortfolioItem>,
-      users as unknown as UsersService,
+      {} as unknown as Repository<Salon>,
+      {} as unknown as Repository<SalonStory>,
+      {} as unknown as Repository<PortfolioItem>,
+      salonsService as unknown as SalonsService,
     );
   });
 
-  it('records suspended_cause=admin on a direct suspension', async () => {
-    await controller.setStatus('s1', { status: 'suspended', reason: 'تخلف از قوانین پلتفرم' });
-    expect(repo.update).toHaveBeenCalledWith(
-      { id: 's1' },
-      { status: 'suspended', rejectionReason: 'تخلف از قوانین پلتفرم', suspendedCause: 'admin' },
-    );
+  it('setStatus passes the id and dto through to SalonsService.setStatus and returns its result', async () => {
+    const dto = { status: 'rejected' as const, reason: 'مدارک ناقص است' };
+    const result = await controller.setStatus('s1', dto);
+
+    expect(salonsService.setStatus).toHaveBeenCalledWith('s1', dto);
+    expect(result).toEqual({ id: 's1', status: 'approved' });
   });
 
-  it('clears suspended_cause on approval', async () => {
-    await controller.setStatus('s1', { status: 'approved' });
-    expect(repo.update).toHaveBeenCalledWith(
-      { id: 's1' },
-      { status: 'approved', rejectionReason: null, suspendedCause: null },
-    );
+  it('setFeatured passes the id and dto through to SalonsService.setFeatured and returns its result', async () => {
+    const dto = { isFeatured: true, featuredUntil: '2026-09-01T00:00:00.000Z' };
+    const result = await controller.setFeatured('s1', dto);
+
+    expect(salonsService.setFeatured).toHaveBeenCalledWith('s1', dto);
+    expect(result).toEqual({ id: 's1', isFeatured: true });
   });
 
-  it('leaves suspended_cause untouched on rejection', async () => {
-    await controller.setStatus('s1', { status: 'rejected', reason: 'مدارک ناقص است' });
-    expect(repo.update).toHaveBeenCalledWith(
-      { id: 's1' },
-      { status: 'rejected', rejectionReason: 'مدارک ناقص است' },
-    );
-  });
-
-  it('404s when the salon does not exist', async () => {
-    repo.update.mockResolvedValueOnce({ affected: 0 });
-    await expect(controller.setStatus('missing', { status: 'approved' })).rejects.toBeInstanceOf(NotFoundException);
-  });
-
-  it('admin intent wins: a direct suspension overwrites a prior cascade cause of owner_suspended', async () => {
-    // Simulates the scenario from Task 14's cascade: the salon is already suspended
-    // because its owner was suspended (suspended_cause='owner_suspended'). An admin
-    // then suspends it directly for an unrelated reason. The update must be sent
-    // unconditionally with suspendedCause: 'admin' -- NOT skipped or merged based on
-    // the current value, and NOT read-before-write -- so that reactivating the owner
-    // afterward does NOT auto-restore this salon (only the cascade in Task 14 checks
-    // for suspended_cause='owner_suspended' before restoring).
-    repo.findOneBy.mockResolvedValueOnce({ id: 's1', status: 'suspended', suspendedCause: 'admin' });
-
-    const result = await controller.setStatus('s1', { status: 'suspended', reason: 'تخلف مجدد' });
-
-    // The controller never reads the salon's current suspendedCause before writing --
-    // it unconditionally sends 'admin', which is what makes the overwrite guaranteed
-    // regardless of whatever the prior cause was.
-    expect(repo.findOneBy).not.toHaveBeenCalledWith({ id: 's1', suspendedCause: 'owner_suspended' });
-    expect(repo.update).toHaveBeenCalledWith(
-      { id: 's1' },
-      { status: 'suspended', rejectionReason: 'تخلف مجدد', suspendedCause: 'admin' },
-    );
-    expect(result).toEqual({ id: 's1', status: 'suspended', suspendedCause: 'admin' });
-  });
-
-  it('refuses to approve a pending salon whose owner account is suspended', async () => {
-    repo.findOneBy.mockResolvedValueOnce({ id: 's1', ownerId: 'owner-1', status: 'pending' });
-    users.findById.mockResolvedValueOnce({ id: 'owner-1', status: 'suspended' });
-
-    await expect(controller.setStatus('s1', { status: 'approved' })).rejects.toBeInstanceOf(ConflictException);
-    expect(repo.update).not.toHaveBeenCalled();
-  });
-
-  // The admin panel toasts this message verbatim into a fully Persian RTL screen.
-  it('rejects that approval with a Persian message', async () => {
-    repo.findOneBy.mockResolvedValueOnce({ id: 's1', ownerId: 'owner-1', status: 'pending' });
-    users.findById.mockResolvedValueOnce({ id: 'owner-1', status: 'suspended' });
-
-    await expect(controller.setStatus('s1', { status: 'approved' })).rejects.toThrow(
-      'تایید این آرایشگاه ممکن نیست؛ حساب مالک آن معلق است',
+  it('propagates a NotFoundException from the service unchanged', async () => {
+    salonsService.setStatus.mockRejectedValueOnce(new NotFoundException());
+    await expect(controller.setStatus('missing', { status: 'approved' })).rejects.toBeInstanceOf(
+      NotFoundException,
     );
   });
 });

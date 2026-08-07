@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
+import { resolveNamesById } from '../common/resolve-names-by-id';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
 import { Salon } from '../salons/salon.entity';
 import { RecordInvoicePaymentDto, AdminInvoiceQueryDto } from './dto/invoice.dto';
@@ -52,7 +53,7 @@ export class InvoicingService {
       // Entity type is string (matches Worker.ratingAvg/Salon.ratingAvg's numeric-
       // column convention -- pg always returns numeric as a string, so the entity is
       // typed for what reads back, and writes must match).
-      commissionRate: commissionPercent.toFixed(2),
+      commissionPercent: commissionPercent.toFixed(2),
       commissionAmount,
       netAmount,
       correctionOfId: null,
@@ -130,8 +131,7 @@ export class InvoicingService {
   private async attachSalonNames<T extends { salonId: string }>(rows: T[]): Promise<Array<T & { salonName: string }>> {
     if (rows.length === 0) return [];
     const salonIds = [...new Set(rows.map((r) => r.salonId))];
-    const salonRows = await this.salons.find({ where: { id: In(salonIds) } });
-    const nameById = new Map(salonRows.map((s) => [s.id, s.name]));
+    const nameById = await resolveNamesById(this.salons, salonIds);
     return rows.map((r) => ({ ...r, salonName: nameById.get(r.salonId) ?? 'Unknown salon' }));
   }
 }

@@ -50,7 +50,7 @@ describe('InvoicingService.recordCommission', () => {
         salonId: 'salon-1',
         type: 'commission_accrued',
         grossAmount: 100_000,
-        commissionRate: '10.00',
+        commissionPercent: '10.00',
         commissionAmount: 10_000,
         netAmount: 90_000,
         correctionOfId: null,

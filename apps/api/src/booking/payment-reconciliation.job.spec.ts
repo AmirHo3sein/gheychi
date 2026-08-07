@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
+import { CronJobRunner } from '../common/cron-job-runner.service';
 import { Booking } from './booking.entity';
 import { CouponRedemption } from '../coupons/coupon-redemption.entity';
 import { WalletService } from '../wallet/wallet.service';
@@ -56,6 +57,7 @@ describe('PaymentReconciliationJob', () => {
         { provide: PAYMENT_GATEWAY, useValue: { verifyPayment } },
         { provide: AlertsService, useValue: { raise } },
         { provide: WalletService, useValue: { debit: jest.fn(), credit: jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' }) } },
+        { provide: CronJobRunner, useValue: { run: jest.fn((_name: string, fn: () => Promise<void>) => fn()) } },
       ],
     }).compile();
 

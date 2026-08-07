@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { CronJobRunner } from '../common/cron-job-runner.service';
 import { STORAGE_PROVIDER, StorageProvider } from '../storage/storage.provider';
 import { SalonStory } from './salon-story.entity';
 
@@ -21,11 +22,14 @@ export class StoryCleanupJob {
   constructor(
     @InjectRepository(SalonStory) private readonly stories: Repository<SalonStory>,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+    private readonly jobRunner: CronJobRunner,
   ) {}
 
   @Cron('0 * * * *')
   async handleCron(): Promise<void> {
-    await this.run();
+    await this.jobRunner.run('story-cleanup', async () => {
+      await this.run();
+    });
   }
 
   async run(): Promise<number> {

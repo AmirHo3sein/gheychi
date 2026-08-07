@@ -8,7 +8,7 @@ import { AuditInterceptor } from '../audit/audit.interceptor';
 import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
-import { AdminShowcaseStatusDto } from './dto/admin-showcase-status.dto';
+import { UpdateShowcaseStatusDto } from './dto/admin-showcase-status.dto';
 import { PortfolioItem } from './portfolio-item.entity';
 import { SalonStory } from './salon-story.entity';
 
@@ -31,7 +31,7 @@ export class AdminShowcaseController {
   @Patch('stories/:id/status')
   @UseInterceptors(AuditInterceptor)
   @AuditAction('salon.story.status.set', 'story')
-  async setStoryStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AdminShowcaseStatusDto) {
+  async setStoryStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateShowcaseStatusDto) {
     const story = await this.stories.findOneBy({ id });
     if (!story) throw new NotFoundException();
     // Conditional update on the opposite status — the same lost-race guard as
@@ -46,7 +46,7 @@ export class AdminShowcaseController {
   @Patch('portfolio/:id/status')
   @UseInterceptors(AuditInterceptor)
   @AuditAction('salon.portfolio.status.set', 'portfolioitem')
-  async setPortfolioStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AdminShowcaseStatusDto) {
+  async setPortfolioStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateShowcaseStatusDto) {
     const item = await this.portfolioItems.findOneBy({ id });
     if (!item) throw new NotFoundException();
     // Same conditional-update race guard as setStoryStatus above.

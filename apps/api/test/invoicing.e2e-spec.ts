@@ -38,6 +38,7 @@ describe('Commission ledger + monthly invoicing (e2e)', () => {
       lat: 35.7,
       lng: 51.4,
       capacity: 5,
+      categoryIds: [categoriesRes.body[0].id],
     });
     salonId = salonRes.body.id;
 

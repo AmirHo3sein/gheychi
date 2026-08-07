@@ -22,6 +22,7 @@ describe('Salon services (e2e)', () => {
       city: 'Tehran',
       lat: 35.7,
       lng: 51.4,
+      categoryIds: [categoryId],
     });
   });
 
@@ -57,6 +58,21 @@ describe('Salon services (e2e)', () => {
       .send({ price: 900000 })
       .expect(200);
     expect(res.body.price).toBe(900000);
+  });
+
+  it('rejects a description over the 1000-char cap, on both create and update', async () => {
+    const tooLong = 'a'.repeat(1001);
+    await request(app.getHttpServer())
+      .patch(`/api/salons/mine/services/${serviceId}`)
+      .set('Cookie', cookie)
+      .send({ description: tooLong })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post('/api/salons/mine/services')
+      .set('Cookie', cookie)
+      .send({ categoryId, name: 'Over-long Description Service', price: 100000, durationMin: 30, description: tooLong })
+      .expect(400);
   });
 
   it('archives on delete (disappears from list)', async () => {

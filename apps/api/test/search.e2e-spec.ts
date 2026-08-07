@@ -57,6 +57,18 @@ describe('Search (e2e)', () => {
         ('10000000-0000-4000-8000-000000000002', $2, 'Manicure', 300000, 60)`,
       [firstCategoryId, secondCategoryId],
     );
+
+    // A salon's own deliberate category tags -- independent of which services it
+    // happens to list (search.service.ts's category filter reads THIS table, not
+    // salon_services). Near is tagged only for the first category here; a later test
+    // ("scopes the discounted minimum...") tags it into the second category too, to
+    // exercise a salon matching more than one filter.
+    await ds.query(
+      `INSERT INTO salon_categories (salon_id, category_id) VALUES
+        ('10000000-0000-4000-8000-000000000001', $1),
+        ('10000000-0000-4000-8000-000000000002', $2)`,
+      [firstCategoryId, secondCategoryId],
+    );
   });
 
   afterAll(async () => {
@@ -69,11 +81,11 @@ describe('Search (e2e)', () => {
       .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women' })
       .expect(200);
 
-    expect(res.body.map((s: { slug: string }) => s.slug)).toEqual(['near-salon', 'far-salon']);
-    expect(res.body[0].distanceKm).toBeLessThan(0.1);
-    expect(res.body[1].distanceKm).toBeGreaterThan(1.5);
-    expect(res.body[0].minPrice).toBe(500000);
-    expect(res.body[0].hasActiveStory).toBe(false);
+    expect(res.body.items.map((s: { slug: string }) => s.slug)).toEqual(['near-salon', 'far-salon']);
+    expect(res.body.items[0].distanceKm).toBeLessThan(0.1);
+    expect(res.body.items[1].distanceKm).toBeGreaterThan(1.5);
+    expect(res.body.items[0].minPrice).toBe(500000);
+    expect(res.body.items[0].hasActiveStory).toBe(false);
   });
 
   it('respects the radius', async () => {
@@ -81,7 +93,7 @@ describe('Search (e2e)', () => {
       .get('/api/search')
       .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', radiusKm: 1 })
       .expect(200);
-    expect(res.body.map((s: { slug: string }) => s.slug)).toEqual(['near-salon']);
+    expect(res.body.items.map((s: { slug: string }) => s.slug)).toEqual(['near-salon']);
   });
 
   it('filters by category', async () => {
@@ -89,7 +101,7 @@ describe('Search (e2e)', () => {
       .get('/api/search')
       .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', categoryId: secondCategoryId })
       .expect(200);
-    expect(res.body.map((s: { slug: string }) => s.slug)).toEqual(['far-salon']);
+    expect(res.body.items.map((s: { slug: string }) => s.slug)).toEqual(['far-salon']);
   });
 
   it('filters men salons for gender=men', async () => {
@@ -97,7 +109,7 @@ describe('Search (e2e)', () => {
       .get('/api/search')
       .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'men' })
       .expect(200);
-    expect(res.body.map((s: { slug: string }) => s.slug)).toEqual(['mens-salon']);
+    expect(res.body.items.map((s: { slug: string }) => s.slug)).toEqual(['mens-salon']);
   });
 
   it('sorts by rating when requested', async () => {
@@ -109,7 +121,7 @@ describe('Search (e2e)', () => {
       .get('/api/search')
       .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', sort: 'rating' })
       .expect(200);
-    expect(res.body[0].slug).toBe('far-salon');
+    expect(res.body.items[0].slug).toBe('far-salon');
   });
 
   it('defaults to distance ordering when sort is omitted, even if rating would reorder', async () => {
@@ -120,7 +132,7 @@ describe('Search (e2e)', () => {
       .get('/api/search')
       .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women' })
       .expect(200);
-    expect(res.body.map((s: { slug: string }) => s.slug)).toEqual(['near-salon', 'far-salon']);
+    expect(res.body.items.map((s: { slug: string }) => s.slug)).toEqual(['near-salon', 'far-salon']);
   });
 
   it('returns an empty array when no salon has the requested category', async () => {
@@ -128,7 +140,48 @@ describe('Search (e2e)', () => {
       .get('/api/search')
       .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', categoryId: unusedCategoryId })
       .expect(200);
-    expect(res.body).toEqual([]);
+    expect(res.body.items).toEqual([]);
+  });
+
+  it('does NOT match a category filter merely because a salon has a service in it -- only an explicit salon_categories tag counts', async () => {
+    const ds = app.get(DataSource);
+    // A brand-new category with a service on near-salon, but deliberately no
+    // salon_categories row for it -- the old derived-from-services behavior would
+    // have matched near-salon here; the tag-based filter must not.
+    const [{ id: untaggedCategoryId }] = await ds.query(
+      `INSERT INTO service_categories (name, icon) VALUES ('Untagged Category', 'x') RETURNING id`,
+    );
+    // Priced absurdly high, deliberately: this service is permanent fixture pollution
+    // for the rest of the file (never deactivated/removed), and the later minPrice
+    // tests in this file compute MIN() over ALL of near-salon's active services with
+    // no category filter -- a cheap price here would silently win those MIN()s and
+    // break assertions written against the original, curated fixture set.
+    await ds.query(
+      `INSERT INTO salon_services (salon_id, category_id, name, price, duration_min) VALUES
+        ('10000000-0000-4000-8000-000000000001', $1, 'Has service, no tag', 999000000, 30)`,
+      [untaggedCategoryId],
+    );
+
+    const res = await request(app.getHttpServer())
+      .get('/api/search')
+      .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', categoryId: untaggedCategoryId })
+      .expect(200);
+    expect(res.body.items).toEqual([]);
+  });
+
+  it("includes each salon's own tagged categories (id/name/icon) on every result row", async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/search')
+      .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women' })
+      .expect(200);
+
+    const near = res.body.items.find((s: { slug: string }) => s.slug === 'near-salon');
+    // Near was tagged with firstCategoryId in beforeAll (and, by the time this runs
+    // depending on test order, possibly secondCategoryId too from an earlier test --
+    // assert the baseline tag is present rather than the exact full set).
+    expect(near.categories.some((c: { id: number }) => c.id === firstCategoryId)).toBe(true);
+    expect(near.categories[0]).toHaveProperty('name');
+    expect(near.categories[0]).toHaveProperty('icon');
   });
 
   it('rejects a missing gender param', () =>
@@ -154,7 +207,7 @@ describe('Search (e2e)', () => {
       .get('/api/search')
       .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women' })
       .expect(200);
-    const bySlug = Object.fromEntries(res.body.map((s: { slug: string; hasActiveStory: boolean }) => [s.slug, s.hasActiveStory]));
+    const bySlug = Object.fromEntries(res.body.items.map((s: { slug: string; hasActiveStory: boolean }) => [s.slug, s.hasActiveStory]));
     expect(bySlug['near-salon']).toBe(true);
     expect(bySlug['far-salon']).toBe(false);
   });
@@ -168,7 +221,7 @@ describe('Search (e2e)', () => {
       .get('/api/search')
       .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', ...query })
       .expect(200);
-    return Object.fromEntries(res.body.map((s: { slug: string; minPrice: number | null }) => [s.slug, s.minPrice]));
+    return Object.fromEntries(res.body.items.map((s: { slug: string; minPrice: number | null }) => [s.slug, s.minPrice]));
   };
 
   it('quotes the cheapest discounted price, not the discount applied to the cheapest raw price', async () => {
@@ -208,10 +261,16 @@ describe('Search (e2e)', () => {
     const ds = app.get(DataSource);
     // Near's 200,000 bargain sits in the FIRST category; when the customer filters by the
     // second one, the quote has to come from the services they can actually see there.
+    // Near also has to be explicitly TAGGED into the second category now (a salon can be
+    // tagged into more than one) -- the filter itself no longer derives from services.
     await ds.query(
       `INSERT INTO salon_services (salon_id, category_id, name, price, duration_min) VALUES
         ('10000000-0000-4000-8000-000000000001', $1, 'Nails', 350000, 60)`,
       [secondCategoryId],
+    );
+    await ds.query(
+      `INSERT INTO salon_categories (salon_id, category_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      ['10000000-0000-4000-8000-000000000001', secondCategoryId],
     );
 
     const bySlug = await minPriceBySlug({ categoryId: secondCategoryId });
@@ -229,5 +288,78 @@ describe('Search (e2e)', () => {
 
     const bySlug = await minPriceBySlug({});
     expect(bySlug['near-salon']).toBe(200000);
+  });
+
+  // --- cursor pagination -------------------------------------------------------------
+
+  it('responds with the {items, nextCursor, hasMore} shape, hasMore=false and nextCursor=null on a single page', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/search')
+      .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women' })
+      .expect(200);
+
+    expect(Array.isArray(res.body.items)).toBe(true);
+    expect(res.body.hasMore).toBe(false);
+    expect(res.body.nextCursor).toBeNull();
+  });
+
+  describe('walking multiple pages', () => {
+    const PAGE_SALON_COUNT = 5;
+    const PAGE_SIZE = 2;
+
+    beforeAll(async () => {
+      const ds = app.get(DataSource);
+      const ownerRows = Array.from({ length: PAGE_SALON_COUNT }, (_, i) => `('00000000-0000-4000-9000-00000000000${i}', '0913000000${i}', 'provider')`).join(',');
+      await ds.query(`INSERT INTO users (id, phone, role) VALUES ${ownerRows}`);
+
+      // Spread east from the anchor in small, strictly-increasing steps so distance
+      // ordering is deterministic and every salon lands inside the default 15km radius.
+      const salonRows = Array.from({ length: PAGE_SALON_COUNT }, (_, i) => {
+        const lng = ANCHOR.lng + (i + 1) * 0.01;
+        return `('20000000-0000-4000-9000-00000000000${i}', '00000000-0000-4000-9000-00000000000${i}', 'Page Salon ${i}', 'page-salon-${i}', 'women', 'approved', 'Addr ${i}', 'Tehran', ST_SetSRID(ST_MakePoint(${lng}, ${ANCHOR.lat}), 4326)::geography)`;
+      }).join(',');
+      await ds.query(`
+        INSERT INTO salons (id, owner_id, name, slug, gender_target, status, address, city, location)
+        VALUES ${salonRows}`);
+    });
+
+    it('walks every page via nextCursor with no gaps or duplicates, ending on hasMore=false', async () => {
+      const seenSlugs: string[] = [];
+      let cursor: string | undefined;
+      let guard = 0;
+      while (guard++ < 20) {
+        const res = await request(app.getHttpServer())
+          .get('/api/search')
+          .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', pageSize: PAGE_SIZE, ...(cursor ? { cursor } : {}) })
+          .expect(200);
+
+        const slugs = res.body.items.filter((s: { slug: string }) => s.slug.startsWith('page-salon-')).map((s: { slug: string }) => s.slug);
+        seenSlugs.push(...slugs);
+        expect(res.body.items.length).toBeLessThanOrEqual(PAGE_SIZE);
+
+        if (!res.body.hasMore) {
+          expect(res.body.nextCursor).toBeNull();
+          break;
+        }
+        expect(res.body.nextCursor).toEqual(expect.any(String));
+        cursor = res.body.nextCursor;
+      }
+
+      // near-salon/far-salon (and mens-salon, gender-filtered out) from the outer
+      // fixture are mixed in too, but every page-salon-N must show up exactly once.
+      expect(new Set(seenSlugs).size).toBe(seenSlugs.length);
+      for (let i = 0; i < PAGE_SALON_COUNT; i++) {
+        expect(seenSlugs).toContain(`page-salon-${i}`);
+      }
+    });
+
+    it('an unrecognized/malformed cursor restarts from page 1 instead of erroring', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', pageSize: PAGE_SIZE, cursor: 'not-a-real-cursor' })
+        .expect(200);
+
+      expect(res.body.items.length).toBeLessThanOrEqual(PAGE_SIZE);
+    });
   });
 });

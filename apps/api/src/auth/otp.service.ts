@@ -6,6 +6,14 @@ import { REDIS } from '../redis/redis.module';
 export const OTP_TTL_SEC = 120;
 export const RATE_LIMIT_MAX = 3;
 export const RATE_WINDOW_SEC = 3600;
+// The phone-keyed limit above only bounds how many codes ONE phone number can receive --
+// it does nothing to stop a single caller from cycling through many DIFFERENT phone
+// numbers, each getting up to RATE_LIMIT_MAX real SMS sends at the business's expense
+// (SMS-bombing arbitrary third parties, or just running up the provider bill). Higher than
+// the per-phone limit so ordinary shared-IP cases (a household on one wifi, each member
+// requesting a code for their own phone) aren't penalized -- it targets one attacker
+// working through many numbers, not a few genuine users behind one NAT.
+export const IP_RATE_LIMIT_MAX = 10;
 const MAX_VERIFY_ATTEMPTS = 5;
 
 export interface IssuedOtp {
@@ -30,7 +38,17 @@ export interface IssuedOtp {
 export class OtpService {
   constructor(@Inject(REDIS) private readonly redis: Redis) {}
 
-  async issue(phone: string): Promise<IssuedOtp> {
+  async issue(phone: string, ip: string): Promise<IssuedOtp> {
+    // Checked (and its counter incremented) BEFORE the per-phone counter below, so a
+    // request an abusive IP was going to be rejected for never burns any of that phone
+    // number's own, unrelated resend quota.
+    const ipKey = `otp:rl:ip:${ip}`;
+    const ipCount = await this.redis.incr(ipKey);
+    if (ipCount === 1) await this.redis.expire(ipKey, RATE_WINDOW_SEC);
+    if (ipCount > IP_RATE_LIMIT_MAX) {
+      throw new HttpException('Too many OTP requests', HttpStatus.TOO_MANY_REQUESTS);
+    }
+
     const rlKey = `otp:rl:${phone}`;
     const count = await this.redis.incr(rlKey);
     if (count === 1) await this.redis.expire(rlKey, RATE_WINDOW_SEC);

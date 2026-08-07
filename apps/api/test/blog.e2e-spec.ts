@@ -138,7 +138,7 @@ describe('Blog CMS — lifecycle (e2e)', () => {
     await request(app.getHttpServer())
       .post(`/api/admin/blog/posts/${postId}/publish`)
       .set('Cookie', adminCookie)
-      .expect(201);
+      .expect(200);
 
     const detail = await request(app.getHttpServer())
       .get(`/api/admin/blog/posts/${postId}`)
@@ -197,6 +197,17 @@ describe('Blog CMS — lifecycle (e2e)', () => {
     expect(list.body.items[0].coverImageUrl).toContain('/uploads/');
     firstCoverUrl = list.body.items[0].coverImageUrl;
   });
+
+  it('rejects real image bytes declared under a spoofed, disallowed Content-Type (stored-XSS guard)', () =>
+    // The magic-number validator alone would PASS this (the bytes really are a PNG) --
+    // exactly the gap that let a crafted upload get persisted with an attacker-chosen S3
+    // Content-Type despite carrying real image content. file.mimetype must independently
+    // match the allowed set too.
+    request(app.getHttpServer())
+      .post(`/api/admin/blog/posts/${postId}/cover`)
+      .set('Cookie', adminCookie)
+      .attach('file', MINIMAL_PNG, { filename: 'cover.png', contentType: 'text/html' })
+      .expect(400));
 
   it('returns the full article by slug, body and SEO fields included', async () => {
     const res = await request(app.getHttpServer()).get(`/api/blog/posts/${postSlug}`).expect(200);
@@ -257,13 +268,13 @@ describe('Blog CMS — lifecycle (e2e)', () => {
     await request(app.getHttpServer())
       .post(`/api/admin/blog/posts/${postId}/unpublish`)
       .set('Cookie', adminCookie)
-      .expect(201);
+      .expect(200);
     await request(app.getHttpServer()).get(`/api/blog/posts/${postSlug}`).expect(404);
 
     await request(app.getHttpServer())
       .post(`/api/admin/blog/posts/${postId}/publish`)
       .set('Cookie', adminCookie)
-      .expect(201);
+      .expect(200);
 
     const detail = await request(app.getHttpServer())
       .get(`/api/admin/blog/posts/${postId}`)
@@ -278,7 +289,7 @@ describe('Blog CMS — lifecycle (e2e)', () => {
     await request(app.getHttpServer())
       .post(`/api/admin/blog/posts/${postId}/unpublish`)
       .set('Cookie', adminCookie)
-      .expect(201);
+      .expect(200);
 
     const list = await request(app.getHttpServer()).get('/api/blog/posts').expect(200);
     expect(list.body.total).toBe(0);
@@ -342,9 +353,10 @@ describe('Blog CMS — lifecycle (e2e)', () => {
         'post.publish|true', // first publish
         'post.publish|false', // publish-again lost race (409)
         'post.publish|true', // republish after unpublish
-        'post.cover.set|true', // first cover upload
-        'post.cover.set|true', // cover replace (second upload)
-        'post.cover.set|true', // cover delete — the DELETE handler carries the same action string (spec §3.3)
+        'post.cover.upload|true', // first cover upload
+        'post.cover.upload|false', // spoofed Content-Type upload rejected (stored-XSS guard)
+        'post.cover.upload|true', // cover replace (second upload)
+        'post.cover.remove|true', // cover delete — its own distinct action string, not shared with upload
         'post.unpublish|true', // first unpublish
         'post.unpublish|true', // final unpublish
         'post.unpublish|false', // unpublish-a-draft lost race (409)

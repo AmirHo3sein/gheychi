@@ -28,6 +28,7 @@ describe('Salon-side booking management (e2e)', () => {
       lat: 35.7,
       lng: 51.4,
       capacity: 1,
+      categoryIds: [categoryId],
     });
     salonId = salonRes.body.id;
 

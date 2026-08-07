@@ -53,12 +53,12 @@ describe('Search — featured salon boost (e2e)', () => {
       .query({ lat, lng, gender: 'women', radiusKm: 5 })
       .expect(200);
 
-    const featuredCount = res.body.filter((r: { isFeatured: boolean }) => r.isFeatured).length;
+    const featuredCount = res.body.items.filter((r: { isFeatured: boolean }) => r.isFeatured).length;
     expect(featuredCount).toBe(2);
-    expect(res.body[0].isFeatured).toBe(true);
-    expect(res.body[1].isFeatured).toBe(true);
-    expect([featured1, featured2]).toContain(res.body[0].id);
-    expect([featured1, featured2]).toContain(res.body[1].id);
+    expect(res.body.items[0].isFeatured).toBe(true);
+    expect(res.body.items[1].isFeatured).toBe(true);
+    expect([featured1, featured2]).toContain(res.body.items[0].id);
+    expect([featured1, featured2]).toContain(res.body.items[1].id);
   });
 
   it('never surfaces a featured salon that does not match the gender filter', async () => {
@@ -82,7 +82,7 @@ describe('Search — featured salon boost (e2e)', () => {
       .query({ lat, lng, gender: 'women', radiusKm: 1 })
       .expect(200);
 
-    expect(res.body.find((r: { name: string }) => r.name === 'Mens Featured')).toBeUndefined();
+    expect(res.body.items.find((r: { name: string }) => r.name === 'Mens Featured')).toBeUndefined();
   });
 
   it('does not boost or badge a featured salon whose featured_until has already passed', async () => {
@@ -96,12 +96,12 @@ describe('Search — featured salon boost (e2e)', () => {
       .query({ lat, lng, gender: 'women', radiusKm: 5 })
       .expect(200);
 
-    const expired = res.body.find((r: { id: string }) => r.id === expiredFeatured);
+    const expired = res.body.items.find((r: { id: string }) => r.id === expiredFeatured);
     expect(expired).toBeDefined();
     expect(expired.isFeatured).toBe(false);
 
-    const nonFeaturedIdx = res.body.findIndex((r: { id: string }) => r.id === closerNonFeatured);
-    const expiredIdx = res.body.findIndex((r: { id: string }) => r.id === expiredFeatured);
+    const nonFeaturedIdx = res.body.items.findIndex((r: { id: string }) => r.id === closerNonFeatured);
+    const expiredIdx = res.body.items.findIndex((r: { id: string }) => r.id === expiredFeatured);
     // with the boost gone, plain distance ordering applies: the closer salon comes first
     expect(nonFeaturedIdx).toBeLessThan(expiredIdx);
   });
@@ -118,13 +118,13 @@ describe('Search — featured salon boost (e2e)', () => {
       .query({ lat, lng, gender: 'women', radiusKm: 5 })
       .expect(200);
 
-    const overCapEntry = res.body.find((r: { id: string }) => r.id === overCapFeatured);
+    const overCapEntry = res.body.items.find((r: { id: string }) => r.id === overCapFeatured);
     expect(overCapEntry.isFeatured).toBe(false);
 
-    const closestIdx = res.body.findIndex((r: { id: string }) => r.id === closestNonFeatured);
-    const overCapIdx = res.body.findIndex((r: { id: string }) => r.id === overCapFeatured);
-    const featured1Idx = res.body.findIndex((r: { id: string }) => r.id === featured1);
-    const featured2Idx = res.body.findIndex((r: { id: string }) => r.id === featured2);
+    const closestIdx = res.body.items.findIndex((r: { id: string }) => r.id === closestNonFeatured);
+    const overCapIdx = res.body.items.findIndex((r: { id: string }) => r.id === overCapFeatured);
+    const featured1Idx = res.body.items.findIndex((r: { id: string }) => r.id === featured1);
+    const featured2Idx = res.body.items.findIndex((r: { id: string }) => r.id === featured2);
 
     // the two capped-featured salons keep their boosted top spots...
     expect(featured1Idx).toBeLessThan(closestIdx);

@@ -143,10 +143,20 @@ describe('ContentService.createPost', () => {
     expect(post.id).toBe('post-1');
   });
 
-  it('falls back to a post-prefixed random slug for a Persian title', async () => {
+  it('transliterates a Persian title into a readable slug instead of an opaque hash', async () => {
     const { service, mocks } = await setup();
 
     await service.createPost({ title: 'راهنمای رنگ مو', bodyMarkdown: '# متن' });
+
+    expect(mocks.postsRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ slug: expect.stringMatching(/^rahnmay-rng-mv-[0-9a-f]{4}$/) }),
+    );
+  });
+
+  it('still falls back to a post-prefixed random slug when the title has nothing translatable/latin/digit in it', async () => {
+    const { service, mocks } = await setup();
+
+    await service.createPost({ title: '!!!', bodyMarkdown: '# متن' });
 
     expect(mocks.postsRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({ slug: expect.stringMatching(/^post-[0-9a-f]{8}$/) }),

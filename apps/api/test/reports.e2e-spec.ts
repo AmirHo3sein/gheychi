@@ -31,6 +31,7 @@ describe('Reports — lifecycle (e2e)', () => {
       lat: 35.7,
       lng: 51.4,
       capacity: 5,
+      categoryIds: [categoryId],
     });
     salonId = salonRes.body.id;
     salonSlug = salonRes.body.slug;

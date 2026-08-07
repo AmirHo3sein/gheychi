@@ -20,6 +20,62 @@ function makeService(overrides?: {
   return { service, logs, users };
 }
 
+describe('AuditService.record', () => {
+  const ENTRY = {
+    actorId: 'admin-1',
+    action: 'salon.status.set',
+    targetType: 'salon',
+    targetId: 'salon-1',
+    payload: { status: 'approved' },
+    success: true,
+  };
+
+  it('inserts the row and never throws on success', async () => {
+    const { service, logs } = makeService();
+    logs.insert.mockResolvedValue(undefined);
+
+    await expect(service.record(ENTRY)).resolves.toBeUndefined();
+    expect(logs.insert).toHaveBeenCalledWith(expect.objectContaining({ action: 'salon.status.set' }));
+  });
+
+  it('swallows an insert failure instead of throwing (an audit outage must never fail the admin request)', async () => {
+    const { service, logs } = makeService();
+    logs.insert.mockRejectedValue(new Error('connection refused'));
+
+    await expect(service.record(ENTRY)).resolves.toBeUndefined();
+  });
+
+  it('logs both an error (with stack) and a distinct, greppable warning on write failure', async () => {
+    const { service, logs } = makeService();
+    logs.insert.mockRejectedValue(new Error('connection refused'));
+    const errorSpy = jest.spyOn((service as unknown as { logger: { error: (...a: unknown[]) => void } }).logger, 'error');
+    const warnSpy = jest.spyOn((service as unknown as { logger: { warn: (...a: unknown[]) => void } }).logger, 'warn');
+
+    await service.record(ENTRY);
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to write audit row for salon.status.set'),
+      expect.any(String),
+    );
+    // Fixed AUDIT_WRITE_FAILED prefix -- lets an external log-based monitor alert on
+    // audit-write failures without parsing the free-form error message, since there is
+    // no in-app alerting (AlertsService) wired up for this yet.
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/^AUDIT_WRITE_FAILED action=salon\.status\.set targetType=salon targetId=salon-1 actorId=admin-1$/),
+    );
+  });
+
+  it('renders a null targetId as the literal string "null" in the warning line, not a blank', async () => {
+    const { service, logs } = makeService();
+    logs.insert.mockRejectedValue(new Error('connection refused'));
+    const warnSpy = jest.spyOn((service as unknown as { logger: { warn: (...a: unknown[]) => void } }).logger, 'warn');
+
+    await service.record({ ...ENTRY, targetId: null });
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('targetId=null'));
+  });
+});
+
 describe('AuditService.listForAdmin', () => {
   it('defaults to page 1 / pageSize 20, newest first, with no filters', async () => {
     const { service, logs, users } = makeService();

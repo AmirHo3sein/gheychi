@@ -28,6 +28,7 @@ describe('Booking cancellation policy (e2e)', () => {
       lat: 35.7,
       lng: 51.4,
       capacity: 5,
+      categoryIds: [categoryId],
     });
     salonId = salonRes.body.id;
 
@@ -70,7 +71,7 @@ describe('Booking cancellation policy (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post(`/api/bookings/${bookingId}/cancel`)
       .set('Cookie', customerCookie)
-      .expect(201);
+      .expect(200);
     expect(res.body.status).toBe('cancelled_by_user');
 
     const ds = app.get(DataSource);
@@ -90,7 +91,7 @@ describe('Booking cancellation policy (e2e)', () => {
     await request(app.getHttpServer())
       .post(`/api/bookings/${bookingId}/cancel`)
       .set('Cookie', customerCookie)
-      .expect(201);
+      .expect(200);
 
     const ds = app.get(DataSource);
     const [payment] = await ds.query('SELECT status FROM payments WHERE id = $1', [paymentId]);
@@ -108,7 +109,7 @@ describe('Booking cancellation policy (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post(`/api/bookings/${bookingId}/cancel`)
       .set('Cookie', ownerCookie)
-      .expect(201);
+      .expect(200);
     expect(res.body.status).toBe('cancelled_by_salon');
 
     const ds = app.get(DataSource);
@@ -128,7 +129,7 @@ describe('Booking cancellation policy (e2e)', () => {
 
   it('rejects cancelling an already-cancelled booking', async () => {
     const { bookingId } = await bookAndConfirm(48);
-    await request(app.getHttpServer()).post(`/api/bookings/${bookingId}/cancel`).set('Cookie', customerCookie).expect(201);
+    await request(app.getHttpServer()).post(`/api/bookings/${bookingId}/cancel`).set('Cookie', customerCookie).expect(200);
     await request(app.getHttpServer()).post(`/api/bookings/${bookingId}/cancel`).set('Cookie', customerCookie).expect(400);
   });
 
@@ -142,7 +143,7 @@ describe('Booking cancellation policy (e2e)', () => {
     await request(app.getHttpServer())
       .post(`/api/bookings/${created.body.booking.id}/cancel`)
       .set('Cookie', customerCookie)
-      .expect(201);
+      .expect(200);
 
     const ds = app.get(DataSource);
     const [payment] = await ds.query('SELECT status FROM payments WHERE booking_id = $1', [created.body.booking.id]);
@@ -159,7 +160,7 @@ describe('Booking cancellation policy (e2e)', () => {
     await request(app.getHttpServer())
       .post(`/api/bookings/${bookingId}/cancel`)
       .set('Cookie', customerCookie)
-      .expect(201);
+      .expect(200);
 
     const [payment] = await ds.query('SELECT status, refund_ref_id FROM payments WHERE id = $1', [paymentId]);
     expect(payment.status).toBe('refund_pending'); // owed, not yet issued -- RefundRetryJob picks it up
@@ -177,7 +178,7 @@ describe('Booking cancellation policy (e2e)', () => {
     const ds = app.get(DataSource);
     // First make the refund fail inline...
     await ds.query(`UPDATE payments SET authority = 'MOCK-REFUND-FAIL-' || authority WHERE id = $1`, [paymentId]);
-    await request(app.getHttpServer()).post(`/api/bookings/${bookingId}/cancel`).set('Cookie', customerCookie).expect(201);
+    await request(app.getHttpServer()).post(`/api/bookings/${bookingId}/cancel`).set('Cookie', customerCookie).expect(200);
     let [payment] = await ds.query('SELECT status FROM payments WHERE id = $1', [paymentId]);
     expect(payment.status).toBe('refund_pending');
 

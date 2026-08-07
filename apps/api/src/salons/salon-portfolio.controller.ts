@@ -9,17 +9,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
 import { Repository } from 'typeorm';
 import { AuthGuard } from '../auth/auth.guard';
+import {
+  ALLOWED_IMAGE_MIME_TYPE_PATTERN, assertTrustedImageMimeType, EXTENSION_BY_IMAGE_MIME_TYPE,
+} from '../common/trusted-image-upload';
 import { STORAGE_PROVIDER, StorageProvider } from '../storage/storage.provider';
 import { CreatePortfolioItemDto, UpdatePortfolioItemDto } from './dto/portfolio-item.dto';
 import { PortfolioItem } from './portfolio-item.entity';
 import { SalonOwnerGuard } from './salon-owner.guard';
 import { SalonService } from './salon-service.entity';
-
-const EXTENSION_BY_MIME_TYPE: Record<string, string> = {
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
-};
 
 const PORTFOLIO_CAP = 40;
 
@@ -49,15 +46,21 @@ export class SalonPortfolioController {
     @Req() req: Request,
     @UploadedFile(
       new ParseFilePipeBuilder()
-        // Real magic-number content-sniffing (via the `file-type` package), with no
-        // mimetype-trusting fallback. The client-declared Content-Type header is never
-        // trusted on its own; only actual file bytes matching a real image signature pass.
-        .addFileTypeValidator({ fileType: /^image\/(jpeg|png|webp)$/ })
+        // Real magic-number content-sniffing (via the `file-type` package) -- rejects
+        // anything whose actual bytes aren't a real image, regardless of what Content-Type
+        // the client declared. Does NOT by itself make file.mimetype trustworthy (see
+        // assertTrustedImageMimeType below) -- it validates the file's real content, not
+        // the separate, still-client-controlled file.mimetype field.
+        .addFileTypeValidator({ fileType: ALLOWED_IMAGE_MIME_TYPE_PATTERN })
         .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY }),
     )
     file: Express.Multer.File,
     @Body() dto: CreatePortfolioItemDto,
   ) {
+    // file.mimetype is the client-declared Content-Type header, independent of the
+    // magic-number check above -- must be checked separately before it's trusted for
+    // the storage Content-Type below (S3StorageProvider persists it verbatim).
+    assertTrustedImageMimeType(file.mimetype);
     const salonId = req.salonId!;
     const count = await this.items.count({ where: { salonId } });
     if (count >= PORTFOLIO_CAP) {
@@ -70,10 +73,10 @@ export class SalonPortfolioController {
     // no-op for the tied pair (swapping 2 and 2 changes nothing).
     const maxSortOrder = await this.items.maximum('sortOrder', { salonId });
     // Deliberately NOT using file.originalname in the key -- it's client-controlled and
-    // could contain path-traversal sequences (e.g. `../../etc/x`). The mimetype was already
-    // restricted to image/jpeg|png|webp by the validator above, so deriving the extension
-    // from it (rather than from the client's filename) keeps the key fully server-controlled.
-    const extension = EXTENSION_BY_MIME_TYPE[file.mimetype] ?? 'bin';
+    // could contain path-traversal sequences (e.g. `../../etc/x`). file.mimetype is now
+    // verified-trusted (above), so deriving the extension from it keeps the key fully
+    // server-controlled.
+    const extension = EXTENSION_BY_IMAGE_MIME_TYPE[file.mimetype] ?? 'bin';
     const key = `salons/${salonId}/portfolio/${randomUUID()}.${extension}`;
     const url = await this.storage.upload(file.buffer, key, file.mimetype);
     return this.items.save(

@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, IsString, IsUUID, Length, Matches, Max, Min } from 'class-validator';
-import { IRAN_MOBILE } from '../../auth/dto/auth.dto';
+import { ArrayUnique, IsArray, IsBoolean, IsInt, IsOptional, IsString, IsUUID, Length, Matches, Max, Min } from 'class-validator';
+import { IRAN_MOBILE } from '../../common/validators';
 
 export class CreateWorkerDto {
   @IsString()
@@ -25,6 +25,25 @@ export class UpdateWorkerDto {
 export class AssignWorkerDto {
   @IsUUID()
   workerId: string;
+}
+
+// An empty array is a valid, meaningful value here (not rejected like categoryIds'
+// @ArrayMinSize(1)) -- it's how an owner clears a worker back to "unrestricted, eligible
+// for every service", not an error.
+export class UpdateWorkerServicesDto {
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @ArrayUnique()
+  serviceIds: string[];
+}
+
+// Optional: with no serviceId, every active worker is listed (unchanged from before this
+// feature existed) -- only a caller that actually knows which service it's booking (the
+// customer booking page) narrows the list to workers eligible for it.
+export class ListWorkersQueryDto {
+  @IsOptional()
+  @IsUUID()
+  serviceId?: string;
 }
 
 export class WorkerRatingsQueryDto {

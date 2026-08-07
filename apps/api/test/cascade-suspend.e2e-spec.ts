@@ -21,7 +21,7 @@ describe('Cascade suspend/reactivate (e2e)', () => {
       .get('/api/search')
       .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women' })
       .expect(200);
-    return res.body.map((s: { slug: string }) => s.slug);
+    return res.body.items.map((s: { slug: string }) => s.slug);
   };
 
   const setUserStatus = (userId: string, status: 'active' | 'suspended') =>

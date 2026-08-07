@@ -1,14 +1,10 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { bigintToNumber } from '../common/numeric-transformers';
 
 // commission_reversed exists only for a manual admin correction of an already-written
 // row (see InvoicingService.correctCommission) -- normal operation only ever writes
 // commission_accrued, once per booking, from BookingsService.updateStatus.
 export type FinancialTransactionType = 'commission_accrued' | 'commission_reversed';
-
-const bigintToNumber = {
-  to: (v: number) => v,
-  from: (v: string) => Number(v),
-};
 
 /**
  * Append-only commission ledger. Rows are never UPDATEd -- a correction is a new
@@ -21,7 +17,7 @@ const bigintToNumber = {
  * against -- the remaining ~80% is cash paid customer-to-salon, entirely invisible to
  * this system.
  *
- * commissionRate/commissionAmount are FROZEN at write time (read once from
+ * commissionPercent/commissionAmount are FROZEN at write time (read once from
  * PlatformConfigService.getCommissionPercent() inside the same transaction as the
  * booking-status write that triggers this row) and never recomputed -- a later change to
  * the platform's commission_percent config can never retroactively alter a past booking's
@@ -50,7 +46,7 @@ export class FinancialTransaction {
   // numeric(5,2) -- TypeORM returns Postgres numeric columns as strings by default
   // (matches Worker.ratingAvg/Salon.ratingAvg's exact handling).
   @Column({ name: 'commission_rate', type: 'numeric', precision: 5, scale: 2 })
-  commissionRate: string;
+  commissionPercent: string;
 
   @Column({ name: 'commission_amount', type: 'bigint', transformer: bigintToNumber })
   commissionAmount: number;

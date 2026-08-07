@@ -47,6 +47,7 @@ describe('Fixed-amount discount support (e2e, Slice 6)', () => {
       lat: 35.7,
       lng: 51.4,
       capacity: 5,
+      categoryIds: [categoryId],
     });
     salonId = salonRes.body.id;
 

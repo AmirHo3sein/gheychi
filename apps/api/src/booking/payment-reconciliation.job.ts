@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, LessThan, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
+import { CronJobRunner } from '../common/cron-job-runner.service';
 import { WalletService } from '../wallet/wallet.service';
 import { Booking } from './booking.entity';
 import { releaseBookingHold } from './booking-hold-release.util';
@@ -10,6 +11,12 @@ import { PAYMENT_GATEWAY, PaymentGateway } from './payment-gateway';
 import { Payment } from './payment.entity';
 
 const STALE_AFTER_MINUTES = 20;
+// Bounds one run's work per tick -- each stale payment can involve a real network round
+// trip to the payment gateway (per authority, possibly several), so an unbounded batch
+// here is the single riskiest "expensive loop" among this codebase's cron jobs. Leftover
+// payments are picked up on the next 5-minute tick; still 'initiated' in the meantime,
+// exactly as before this cap existed.
+const BATCH_SIZE = 200;
 
 @Injectable()
 export class PaymentReconciliationJob {
@@ -21,17 +28,21 @@ export class PaymentReconciliationJob {
     @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
     private readonly alerts: AlertsService,
     private readonly walletService: WalletService,
+    private readonly jobRunner: CronJobRunner,
   ) {}
 
   @Cron('*/5 * * * *')
   async handleCron(): Promise<void> {
-    await this.run();
+    await this.jobRunner.run('payment-reconciliation', async () => {
+      await this.run();
+    });
   }
 
   async run(): Promise<number> {
     const cutoff = new Date(Date.now() - STALE_AFTER_MINUTES * 60_000);
     const stale = await this.payments.find({
       where: { status: 'initiated', createdAt: LessThan(cutoff) },
+      take: BATCH_SIZE,
     });
 
     let reconciled = 0;

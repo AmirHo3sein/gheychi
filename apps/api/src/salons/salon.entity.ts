@@ -53,6 +53,13 @@ export class Salon {
   @Column()
   city: string;
 
+  // Nullable, best-effort link to cities.id -- resolved by SalonsService from `city` on
+  // create/update via an exact name match. `city` (above) stays the display/source of
+  // truth; this is a purely additive enrichment, NULL for any salon whose city isn't one
+  // of the curated canonical names (see the 1754300000000-cities-table migration).
+  @Column({ name: 'city_id', type: 'int', nullable: true })
+  cityId: number | null;
+
   @Column({ type: 'geography', spatialFeatureType: 'Point', srid: 4326 })
   location: GeoPoint;
 

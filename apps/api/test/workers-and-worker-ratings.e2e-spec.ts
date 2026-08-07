@@ -12,6 +12,7 @@ describe('Workers + worker ratings (e2e)', () => {
   let salonId: string;
   let salonSlug: string;
   let serviceId: string;
+  let categoryId: number;
 
   beforeAll(async () => {
     await resetDatabase();
@@ -19,7 +20,7 @@ describe('Workers + worker ratings (e2e)', () => {
 
     ownerCookie = await loginAs(app, '09151110001');
     const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
-    const categoryId = categoriesRes.body[0].id;
+    categoryId = categoriesRes.body[0].id;
     const salonRes = await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerCookie).send({
       name: 'Worker Test Salon',
       genderTarget: 'women',
@@ -28,6 +29,7 @@ describe('Workers + worker ratings (e2e)', () => {
       lat: 35.7,
       lng: 51.4,
       capacity: 5,
+      categoryIds: [categoryId],
     });
     salonId = salonRes.body.id;
     salonSlug = salonRes.body.slug;
@@ -121,6 +123,7 @@ describe('Workers + worker ratings (e2e)', () => {
         lat: 35.7,
         lng: 51.4,
         capacity: 5,
+        categoryIds: [categoryId],
       });
 
       const listRes = await request(app.getHttpServer())
@@ -171,6 +174,7 @@ describe('Workers + worker ratings (e2e)', () => {
         lat: 35.7,
         lng: 51.4,
         capacity: 5,
+        categoryIds: [categoryId],
       });
 
       await request(app.getHttpServer())
@@ -238,7 +242,7 @@ describe('Workers + worker ratings (e2e)', () => {
       await request(app.getHttpServer()).delete(`/api/reviews/${reviewId}`).set('Cookie', customerCookie).expect(204);
 
       const salonReviewsRes = await request(app.getHttpServer()).get(`/api/salons/${salonId}/reviews`).expect(200);
-      expect(salonReviewsRes.body).toHaveLength(0);
+      expect(salonReviewsRes.body.items).toHaveLength(0);
 
       const workersRes = await request(app.getHttpServer()).get(`/api/salons/${salonSlug}/workers`).expect(200);
       const worker = workersRes.body.find((w: { id: string }) => w.id === workerId);

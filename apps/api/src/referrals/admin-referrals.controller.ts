@@ -1,4 +1,6 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Query, UseGuards, UseInterceptors } from '@nestjs/common';
+import {
+  Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards, UseInterceptors,
+} from '@nestjs/common';
 import { AuditAction } from '../audit/audit.decorator';
 import { AuditInterceptor } from '../audit/audit.interceptor';
 import { AuthGuard } from '../auth/auth.guard';
@@ -21,7 +23,7 @@ export class AdminReferralRewardTypesController {
 
   @Patch(':type')
   @UseInterceptors(AuditInterceptor)
-  @AuditAction('referral-reward-type.update', 'referral-reward-type')
+  @AuditAction('referral-reward-type.update', 'referral-reward-type', 'type')
   update(@Param('type') type: ReferralType, @Body() dto: UpdateReferralRewardTypeDto) {
     return this.referrals.updateRewardType(type, dto);
   }
@@ -50,7 +52,11 @@ export class AdminReferralsController {
     return this.referrals.getRewardsForAdmin(id);
   }
 
-  @Patch(':id/cancel')
+  // POST, not PATCH -- matches this codebase's action-endpoint convention
+  // (POST /{resource}/:id/{action}, see BookingsController.cancel) rather than the
+  // partial-update semantics PATCH implies elsewhere in this file (updateRewardType).
+  @Post(':id/cancel')
+  @HttpCode(200)
   @UseInterceptors(AuditInterceptor)
   @AuditAction('referral.cancel', 'referral')
   cancel(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CancelReferralDto) {

@@ -2,12 +2,18 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, LessThanOrEqual, Repository } from 'typeorm';
+import { AlertsService } from '../alerts/alerts.service';
+import { CronJobRunner } from '../common/cron-job-runner.service';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
 import { PushService } from '../push/push.service';
 import { SalonsService } from '../salons/salons.service';
 import { SMS_PROVIDER, SmsProvider } from '../sms/sms.provider';
 import { UsersService } from '../users/users.service';
 import { Booking } from './booking.entity';
+
+// Bounds one run's work per tick; anything left over is picked up on the next 5-minute
+// tick -- same shape as ReferralGrantJob/StoryCleanupJob's own batch caps.
+const BATCH_SIZE = 500;
 
 @Injectable()
 export class BookingReminderJob {
@@ -20,11 +26,15 @@ export class BookingReminderJob {
     private readonly usersService: UsersService,
     @Inject(SMS_PROVIDER) private readonly sms: SmsProvider,
     private readonly push: PushService,
+    private readonly alerts: AlertsService,
+    private readonly jobRunner: CronJobRunner,
   ) {}
 
   @Cron('*/5 * * * *')
   async handleCron(): Promise<void> {
-    await this.run();
+    await this.jobRunner.run('booking-reminder', async () => {
+      await this.run();
+    });
   }
 
   async run(): Promise<number> {
@@ -34,6 +44,7 @@ export class BookingReminderJob {
 
     const due = await this.bookings.find({
       where: { status: 'confirmed', remindedAt: IsNull(), startsAt: LessThanOrEqual(cutoff) },
+      take: BATCH_SIZE,
     });
 
     let remindedCount = 0;
@@ -62,22 +73,51 @@ export class BookingReminderJob {
         }
 
         const when = booking.startsAt.toISOString();
-        await this.sms
-          .send(customer.phone, `Reminder: your appointment at ${salon.name} is at ${when}. Address: ${salon.address}`)
-          .catch(() => {});
+        // PushService.sendToUser is a documented best-effort no-throw call (it swallows
+        // every per-subscription failure internally, and "no subscriptions" also looks
+        // like success) -- it can never report a real delivery failure back to us, so it
+        // is fired without gating the claim on it. sms.send() is the one channel here
+        // that genuinely throws on failure, so it's the only reliable delivery signal:
+        // before this fix, an SMS failure was swallowed via a blind `.catch(() => {})`
+        // with zero logging or alerting, while the booking was still permanently marked
+        // reminded (see the claim above) -- silently losing the reminder for good.
         await this.push
-          .sendToUser(customer.id, {
-            title: 'Upcoming appointment',
-            body: `${salon.name} — ${when}`,
-          })
+          .sendToUser(customer.id, { title: 'Upcoming appointment', body: `${salon.name} — ${when}` })
           .catch(() => {});
+
+        const smsOk = await this.sms
+          .send(customer.phone, `Reminder: your appointment at ${salon.name} is at ${when}. Address: ${salon.address}`)
+          .then(() => true)
+          .catch((err) => {
+            this.logger.error(
+              `Reminder SMS failed for booking ${booking.id}: ${err instanceof Error ? err.message : String(err)}`,
+            );
+            return false;
+          });
+
+        if (!smsOk) {
+          // Release the claim (CAS-guarded on the exact timestamp we set it to, so this
+          // can never clobber a claim some other run took afterward) so the booking is
+          // picked up again next tick. Naturally bounded: once startsAt passes, the
+          // top-of-loop guard stops retrying it.
+          await this.bookings.update({ id: booking.id, remindedAt: now }, { remindedAt: null });
+          await this.alerts.raise({
+            key: `reminder-failed:${booking.id}`,
+            severity: 'warning',
+            title: 'ارسال یادآوری رزرو ناموفق بود',
+            body: `ارسال پیامک یادآوری برای رزرو ${booking.id} ناموفق بود؛ در اجرای بعدی دوباره تلاش می‌شود.`,
+          });
+          continue;
+        }
+
         remindedCount += 1;
       } catch (err) {
-        // A single booking's lookup/notification failing (transient DB error, etc.) must not
-        // abort processing of the rest of this tick's batch -- same reasoning as
+        // A single booking's lookup failing (transient DB error, etc.) must not abort
+        // processing of the rest of this tick's batch -- same reasoning as
         // PaymentReconciliationJob's per-item try/catch. The booking was already claimed
-        // (remindedAt set) above, so it won't be retried on the next tick; log loudly so an
-        // operator can follow up manually.
+        // (remindedAt set) above; unlike a delivery failure this is a lookup-layer error
+        // with no clear single retry point, so it's logged loudly for manual follow-up
+        // rather than auto-reverted.
         this.logger.error(
           `Failed to send reminder for booking ${booking.id}: ${err instanceof Error ? err.message : String(err)}`,
         );

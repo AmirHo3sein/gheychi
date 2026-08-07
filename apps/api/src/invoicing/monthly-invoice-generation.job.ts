@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { DataSource } from 'typeorm';
+import { AlertsService } from '../alerts/alerts.service';
+import { CronJobRunner } from '../common/cron-job-runner.service';
 import { isJalaliMonthClosed, jalaliMonthBounds, jalaliMonthOf, JalaliMonth } from './jalali-period.util';
 
 interface UnlinkedTransactionRow {
@@ -25,11 +27,21 @@ interface UnlinkedTransactionRow {
 export class MonthlyInvoiceGenerationJob {
   private readonly logger = new Logger(MonthlyInvoiceGenerationJob.name);
 
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly jobRunner: CronJobRunner,
+    private readonly alerts: AlertsService,
+  ) {}
 
   @Cron('0 3 * * *')
   async handleCron(): Promise<void> {
-    await this.run();
+    await this.jobRunner.run(
+      'monthly-invoice-generation',
+      async () => {
+        await this.run();
+      },
+      { warnAfterMs: 180_000 },
+    );
   }
 
   async run(): Promise<{ invoicesTouched: number; itemsCreated: number }> {
@@ -115,10 +127,19 @@ export class MonthlyInvoiceGenerationJob {
       } catch (err) {
         // One salon's month failing (a transient DB error) must not block every other
         // group in this run -- log and move on. Its financial_transactions rows stay
-        // unlinked and are picked up again on tomorrow's run.
+        // unlinked and are picked up again on tomorrow's run. Still money-adjacent (an
+        // invoice silently understated for a day), so this pages same as every other
+        // money-critical failure path, not just a log line -- raise() never throws.
+        const message = err instanceof Error ? err.message : String(err);
         this.logger.error(
-          `Failed to generate/update the ${group.month.year}/${group.month.month} invoice for salon ${group.salonId}: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to generate/update the ${group.month.year}/${group.month.month} invoice for salon ${group.salonId}: ${message}`,
         );
+        await this.alerts.raise({
+          key: `invoice-generation-failed:${group.salonId}:${group.month.year}-${group.month.month}`,
+          severity: 'warning',
+          title: 'خطا در تولید فاکتور ماهانه',
+          body: `تولید/به‌روزرسانی فاکتور ${group.month.year}/${group.month.month} برای سالن ${group.salonId} با خطا مواجه شد: ${message}`,
+        });
       }
     }
 

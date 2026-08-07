@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { LocalDiskStorageProvider } from './local-disk-storage.provider';
 import { S3StorageProvider } from './s3-storage.provider';
 import { STORAGE_PROVIDER } from './storage.provider';
+import { StorageReconciliationJob } from './storage-reconciliation.job';
 
 @Module({
   providers: [
@@ -21,6 +22,7 @@ import { STORAGE_PROVIDER } from './storage.provider';
             )
           : new LocalDiskStorageProvider(config.get('APP_BASE_URL', 'http://localhost:3002')),
     },
+    StorageReconciliationJob,
   ],
   exports: [STORAGE_PROVIDER],
 })

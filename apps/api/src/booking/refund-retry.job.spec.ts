@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { LessThan } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
+import { CronJobRunner } from '../common/cron-job-runner.service';
 import { Payment } from './payment.entity';
 import { PaymentsService } from './payments.service';
 import { RefundRetryJob } from './refund-retry.job';
@@ -23,6 +24,7 @@ describe('RefundRetryJob', () => {
         { provide: getRepositoryToken(Payment), useValue: { find: paymentsFind } },
         { provide: PaymentsService, useValue: { attemptRefund } },
         { provide: AlertsService, useValue: { raise } },
+        { provide: CronJobRunner, useValue: { run: jest.fn((_name: string, fn: () => Promise<void>) => fn()) } },
       ],
     }).compile();
 

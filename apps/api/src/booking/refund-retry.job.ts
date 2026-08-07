@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
+import { CronJobRunner } from '../common/cron-job-runner.service';
 import { Payment } from './payment.entity';
 import { PaymentsService } from './payments.service';
 
@@ -13,6 +14,9 @@ const RETRY_GRACE_MINUTES = 2;
 // A refund the gateway has refused/failed for a full day won't fix itself -- an operator
 // needs to look at it (Zarinpal wallet balance, revoked access token, etc.).
 const ESCALATE_AFTER_HOURS = 24;
+// Bounds one run's work per tick -- each pending refund is a real gateway call. Leftover
+// payments stay 'refund_pending' and are retried on the next 5-minute tick.
+const BATCH_SIZE = 200;
 
 @Injectable()
 export class RefundRetryJob {
@@ -22,17 +26,21 @@ export class RefundRetryJob {
     @InjectRepository(Payment) private readonly payments: Repository<Payment>,
     private readonly paymentsService: PaymentsService,
     private readonly alerts: AlertsService,
+    private readonly jobRunner: CronJobRunner,
   ) {}
 
   @Cron('*/5 * * * *')
   async handleCron(): Promise<void> {
-    await this.run();
+    await this.jobRunner.run('refund-retry', async () => {
+      await this.run();
+    });
   }
 
   async run(): Promise<number> {
     const graceCutoff = new Date(Date.now() - RETRY_GRACE_MINUTES * 60_000);
     const pending = await this.payments.find({
       where: { status: 'refund_pending', refundRequestedAt: LessThan(graceCutoff) },
+      take: BATCH_SIZE,
     });
 
     let refunded = 0;

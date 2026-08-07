@@ -105,4 +105,26 @@ describe('Booking reminder job (e2e)', () => {
     expect(remindedCount).toBe(0);
     expect(pushSpy).not.toHaveBeenCalled();
   });
+
+  it('releases the reminded_at claim on an SMS failure so the booking is retried on the next run, instead of losing the reminder silently', async () => {
+    const job = app.get(BookingReminderJob);
+    const sms = app.get<SmsProvider>(SMS_PROVIDER);
+    const { bookingId } = await seedConfirmedBooking(2);
+
+    const smsSpy = jest.spyOn(sms, 'send').mockRejectedValueOnce(new Error('simulated gateway outage'));
+    const firstRun = await job.run();
+    expect(firstRun).toBe(0);
+
+    const ds = testDataSource();
+    await ds.initialize();
+    const [afterFailure] = await ds.query(`SELECT reminded_at FROM bookings WHERE id = $1`, [bookingId]);
+    await ds.destroy();
+    // The claim was reverted -- this is the fix: before it, a failed SMS still
+    // permanently marked the booking reminded, with no log and no retry.
+    expect(afterFailure.reminded_at).toBeNull();
+
+    smsSpy.mockRestore();
+    const secondRun = await job.run();
+    expect(secondRun).toBe(1);
+  });
 });

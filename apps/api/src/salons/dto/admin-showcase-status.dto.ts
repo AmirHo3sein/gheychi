@@ -1,6 +1,6 @@
 import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
-export class AdminShowcaseStatusDto {
+export class UpdateShowcaseStatusDto {
   @IsIn(['published', 'removed'])
   status: 'published' | 'removed';
 

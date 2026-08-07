@@ -81,6 +81,23 @@ describe('Admin platform config (e2e)', () => {
       .expect(400);
   });
 
+  it('a value change is reflected immediately on the public read path, not just after the cache TTL (write-through invalidation)', async () => {
+    // GET /platform-config/booking-terms is the actual cached, public read path
+    // (PlatformConfigService.getNumber()) -- distinct from GET /admin/config above, which
+    // always reads straight from Postgres (listAll() is never cached).
+    const before = await request(app.getHttpServer()).get('/api/platform-config/booking-terms').expect(200);
+    const newDepositPercent = before.body.depositPercent === 30 ? 35 : 30;
+
+    await request(app.getHttpServer())
+      .patch('/api/admin/config')
+      .set('Cookie', adminCookie)
+      .send({ updates: [{ key: 'deposit_percent', value: newDepositPercent }] })
+      .expect(200);
+
+    const after = await request(app.getHttpServer()).get('/api/platform-config/booking-terms').expect(200);
+    expect(after.body.depositPercent).toBe(newDepositPercent);
+  });
+
   it('rejects a non-admin caller', async () => {
     const customerCookie = await loginAs(app, '09122310099');
     await request(app.getHttpServer()).get('/api/admin/config').set('Cookie', customerCookie).expect(403);

@@ -38,7 +38,7 @@ export class AdminUserQueryDto {
   joinedTo?: string;
 }
 
-export class AdminUserStatusDto {
+export class UpdateUserStatusDto {
   @IsIn(['active', 'suspended'])
   status: 'active' | 'suspended';
 }

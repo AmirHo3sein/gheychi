@@ -26,6 +26,7 @@ describe('Admin reviews list (e2e)', () => {
       city: 'Tehran',
       lat: 35.7,
       lng: 51.4,
+      categoryIds: [categoryId],
     });
     salonId = salonRes.body.id;
     await request(app.getHttpServer())

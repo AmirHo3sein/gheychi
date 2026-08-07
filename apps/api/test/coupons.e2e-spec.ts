@@ -11,6 +11,7 @@ describe('Coupons (e2e)', () => {
   let customerCookie: string;
   let salonId: string;
   let serviceId: string;
+  let categoryId: number;
 
   beforeAll(async () => {
     await resetDatabase();
@@ -18,7 +19,7 @@ describe('Coupons (e2e)', () => {
 
     ownerCookie = await loginAs(app, '09125551001');
     const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
-    const categoryId = categoriesRes.body[0].id;
+    categoryId = categoriesRes.body[0].id;
     const salonRes = await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerCookie).send({
       name: 'Coupon Test Salon',
       genderTarget: 'women',
@@ -27,6 +28,7 @@ describe('Coupons (e2e)', () => {
       lat: 35.7,
       lng: 51.4,
       capacity: 5,
+      categoryIds: [categoryId],
     });
     salonId = salonRes.body.id;
 
@@ -178,6 +180,7 @@ describe('Coupons (e2e)', () => {
         city: 'Tehran',
         lat: 35.71,
         lng: 51.41,
+        categoryIds: [categoryId],
       });
       const otherCouponRes = await request(app.getHttpServer())
         .post('/api/salons/mine/coupons')

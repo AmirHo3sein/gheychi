@@ -18,11 +18,14 @@ const salonPayload = {
 describe('Salons (e2e)', () => {
   let app: INestApplication;
   let cookie: string;
+  let categoryId: number;
 
   beforeAll(async () => {
     await resetDatabase();
     app = await createTestApp();
     cookie = await loginAs(app, '09121110000');
+    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+    categoryId = categoriesRes.body[0].id;
   });
 
   afterAll(async () => {
@@ -33,7 +36,7 @@ describe('Salons (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post('/api/salons')
       .set('Cookie', cookie)
-      .send(salonPayload)
+      .send({ ...salonPayload, categoryIds: [categoryId] })
       .expect(201);
     expect(res.body.status).toBe('pending');
     expect(res.body.slug).toMatch(/^rose-beauty-[0-9a-f]{4}$/);
@@ -43,7 +46,7 @@ describe('Salons (e2e)', () => {
   });
 
   it('rejects a second salon for the same owner', () =>
-    request(app.getHttpServer()).post('/api/salons').set('Cookie', cookie).send(salonPayload).expect(409));
+    request(app.getHttpServer()).post('/api/salons').set('Cookie', cookie).send({ ...salonPayload, categoryIds: [categoryId] }).expect(409));
 
   it('returns my salon and updates it', async () => {
     const mine = await request(app.getHttpServer()).get('/api/salons/mine').set('Cookie', cookie).expect(200);
@@ -57,6 +60,21 @@ describe('Salons (e2e)', () => {
     expect(upd.body.capacity).toBe(3);
   });
 
+  it('rejects a description over the 2000-char cap, on both create and update', async () => {
+    const tooLong = 'a'.repeat(2001);
+    await request(app.getHttpServer())
+      .patch('/api/salons/mine')
+      .set('Cookie', cookie)
+      .send({ description: tooLong })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post('/api/salons')
+      .set('Cookie', await loginAs(app, '09121110099'))
+      .send({ ...salonPayload, categoryIds: [categoryId], description: tooLong })
+      .expect(400);
+  });
+
   it('hides pending salons from the public route, shows approved ones', async () => {
     const mine = await request(app.getHttpServer()).get('/api/salons/mine').set('Cookie', cookie).expect(200);
     await request(app.getHttpServer()).get(`/api/salons/${mine.body.slug}`).expect(404);
@@ -68,5 +86,5 @@ describe('Salons (e2e)', () => {
   });
 
   it('requires auth to create', () =>
-    request(app.getHttpServer()).post('/api/salons').send(salonPayload).expect(401));
+    request(app.getHttpServer()).post('/api/salons').send({ ...salonPayload, categoryIds: [categoryId] }).expect(401));
 });

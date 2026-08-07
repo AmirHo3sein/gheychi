@@ -4,15 +4,17 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import Redis from 'ioredis';
-import { DataSource, In, LessThan, MoreThan, Repository } from 'typeorm';
+import { DataSource, In, LessThan, MoreThan, Not, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { isUniqueViolation } from '../common/postgres-error-codes';
+import { resolveNamesById } from '../common/resolve-names-by-id';
 import { CouponRedemption } from '../coupons/coupon-redemption.entity';
 import { CouponsService } from '../coupons/coupons.service';
 import { REDIS } from '../redis/redis.module';
 import { SalonService } from '../salons/salon-service.entity';
 import { Salon } from '../salons/salon.entity';
 import { Worker } from '../salons/worker.entity';
+import { WorkerEligibilityService } from '../salons/worker-eligibility.service';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
 import { InvoicingService } from '../invoicing/invoicing.service';
 import { ReferralsService } from '../referrals/referrals.service';
@@ -28,6 +30,11 @@ import { Payment } from './payment.entity';
 import { PaymentsService } from './payments.service';
 
 const LOCK_TTL_MS = 5000;
+// See listForSalon()'s own comment -- a defensive ceiling, not a UX pagination feature.
+const MAX_SALON_BOOKINGS_LISTED = 1000;
+// Same rationale as MAX_SALON_BOOKINGS_LISTED, scaled down: one customer's own booking
+// history is inherently smaller than a whole salon's aggregate across every customer.
+const MAX_MY_BOOKINGS_LISTED = 500;
 
 @Injectable()
 export class BookingsService {
@@ -40,6 +47,7 @@ export class BookingsService {
     @InjectRepository(SalonService) private readonly services: Repository<SalonService>,
     @InjectRepository(Worker) private readonly workers: Repository<Worker>,
     private readonly dataSource: DataSource,
+    private readonly workerEligibility: WorkerEligibilityService,
     private readonly config: PlatformConfigService,
     private readonly nestConfig: ConfigService,
     @Inject(REDIS) private readonly redis: Redis,
@@ -56,10 +64,14 @@ export class BookingsService {
     userId: string,
     dto: CreateBookingDto,
   ): Promise<{ booking: Booking; paymentUrl: string; couponApplied: boolean; paymentRequired: boolean }> {
-    const salon = await this.salons.findOneBy({ id: dto.salonId, status: 'approved' });
+    // Independent, indexed single-row lookups -- run concurrently rather than
+    // sequentially on this hot write path. Error precedence (salon checked before
+    // service) is preserved below even though both queries have already completed.
+    const [salon, service] = await Promise.all([
+      this.salons.findOneBy({ id: dto.salonId, status: 'approved' }),
+      this.services.findOneBy({ id: dto.serviceId, salonId: dto.salonId, isActive: true }),
+    ]);
     if (!salon) throw new NotFoundException('Salon not found');
-
-    const service = await this.services.findOneBy({ id: dto.serviceId, salonId: dto.salonId, isActive: true });
     if (!service) throw new NotFoundException('Service not found');
 
     const startsAt = new Date(dto.startsAt);
@@ -107,6 +119,9 @@ export class BookingsService {
           const worker = await this.workers.findOneBy({ id: dto.workerId, salonId: dto.salonId });
           if (!worker) throw new NotFoundException('Worker not found');
           if (!worker.active) throw new BadRequestException('این کارمند غیرفعال است');
+
+          const eligible = await this.workerEligibility.isWorkerEligibleForService(dto.workerId, dto.serviceId, em);
+          if (!eligible) throw new BadRequestException('این کارمند این خدمت را انجام نمی‌دهد');
 
           const workerOverlapping = await em.count(Booking, {
             where: {
@@ -398,7 +413,11 @@ export class BookingsService {
   async listMine(
     userId: string,
   ): Promise<Array<Booking & { salonName: string; serviceName: string; workerName: string | null }>> {
-    const bookings = await this.bookings.find({ where: { userId }, order: { startsAt: 'DESC' } });
+    const bookings = await this.bookings.find({
+      where: { userId },
+      order: { startsAt: 'DESC' },
+      take: MAX_MY_BOOKINGS_LISTED,
+    });
     return this.attachNames(bookings);
   }
 
@@ -505,14 +524,11 @@ export class BookingsService {
     const salonIds = [...new Set(bookings.map((b) => b.salonId))];
     const serviceIds = [...new Set(bookings.map((b) => b.serviceId))];
     const workerIds = [...new Set(bookings.map((b) => b.workerId).filter((id): id is string => id !== null))];
-    const [salonRows, serviceRows, workerRows] = await Promise.all([
-      this.salons.find({ where: { id: In(salonIds) } }),
-      this.services.find({ where: { id: In(serviceIds) } }),
-      workerIds.length ? this.workers.find({ where: { id: In(workerIds) } }) : Promise.resolve([]),
+    const [salonNameById, serviceNameById, workerNameById] = await Promise.all([
+      resolveNamesById(this.salons, salonIds),
+      resolveNamesById(this.services, serviceIds),
+      resolveNamesById(this.workers, workerIds),
     ]);
-    const salonNameById = new Map(salonRows.map((s) => [s.id, s.name]));
-    const serviceNameById = new Map(serviceRows.map((s) => [s.id, s.name]));
-    const workerNameById = new Map(workerRows.map((w) => [w.id, w.name]));
     return bookings.map((b) => ({
       ...b,
       salonName: salonNameById.get(b.salonId) ?? 'Unknown salon',
@@ -522,7 +538,17 @@ export class BookingsService {
   }
 
   async listForSalon(salonId: string): Promise<Array<Booking & { salonName: string; serviceName: string; workerName: string | null }>> {
-    const bookings = await this.bookings.find({ where: { salonId }, order: { startsAt: 'DESC' } });
+    // No pagination UI exists downstream today (the provider panel's bookings screen
+    // loads this once and filters/sorts client-side over the full list) -- rather than
+    // change the response shape and force a frontend rework, this is a generous but
+    // real ceiling: invisible for any realistically-scaled salon today (thousands of
+    // bookings would mean years of steady daily activity), while bounding the
+    // previously-completely-unbounded worst case.
+    const bookings = await this.bookings.find({
+      where: { salonId },
+      order: { startsAt: 'DESC' },
+      take: MAX_SALON_BOOKINGS_LISTED,
+    });
     return this.attachNames(bookings);
   }
 
@@ -531,14 +557,51 @@ export class BookingsService {
     bookingId: string,
     workerId: string,
   ): Promise<Booking & { salonName: string; serviceName: string; workerName: string | null }> {
-    const worker = await this.workers.findOneBy({ id: workerId, salonId });
-    if (!worker) throw new NotFoundException('Worker not found');
-    if (!worker.active) throw new BadRequestException('این کارمند غیرفعال است');
+    // Same per-salon lock createHold's own worker-overlap check relies on -- a worker can
+    // never belong to two salons, so serializing on salonId already serializes every
+    // request (a new hold, or another assignment) that could conflict on this worker too.
+    // Without this, two concurrent assign-worker calls (or one racing a createHold) could
+    // both pass the overlap count below before either commits its UPDATE.
+    const lockKey = `lock:booking:${salonId}`;
+    const acquired = await this.redis.set(lockKey, '1', 'PX', LOCK_TTL_MS, 'NX');
+    if (!acquired) {
+      throw new ConflictException('این عملیات توسط درخواست دیگری در حال انجام است، دوباره تلاش کنید');
+    }
 
-    const booking = await this.bookings.findOneBy({ id: bookingId, salonId });
-    if (!booking) throw new NotFoundException('Booking not found');
+    try {
+      await this.dataSource.transaction(async (em) => {
+        const worker = await em.findOneBy(Worker, { id: workerId, salonId });
+        if (!worker) throw new NotFoundException('Worker not found');
+        if (!worker.active) throw new BadRequestException('این کارمند غیرفعال است');
 
-    await this.bookings.update({ id: bookingId }, { workerId });
+        const booking = await em.findOneBy(Booking, { id: bookingId, salonId });
+        if (!booking) throw new NotFoundException('Booking not found');
+
+        const eligible = await this.workerEligibility.isWorkerEligibleForService(workerId, booking.serviceId, em);
+        if (!eligible) throw new BadRequestException('این کارمند این خدمت را انجام نمی‌دهد');
+
+        // Same overlap logic createHold uses for its own worker-double-booking check: a
+        // worker can only be in one place at a time regardless of how many chairs the
+        // salon has free. Excludes this booking's own row -- re-assigning the same worker,
+        // or moving a different worker onto a booking that already had one, must never
+        // conflict with itself.
+        const workerOverlapping = await em.count(Booking, {
+          where: {
+            id: Not(bookingId),
+            workerId,
+            status: In(['pending_payment', 'confirmed']),
+            startsAt: LessThan(booking.endsAt),
+            endsAt: MoreThan(booking.startsAt),
+          },
+        });
+        if (workerOverlapping > 0) throw new ConflictException('این کارمند در این زمان نوبت دیگری دارد');
+
+        await em.update(Booking, { id: bookingId }, { workerId });
+      });
+    } finally {
+      await this.redis.del(lockKey);
+    }
+
     const updated = (await this.bookings.findOneBy({ id: bookingId }))!;
     const [withNames] = await this.attachNames([updated]);
     return withNames;
@@ -550,21 +613,38 @@ export class BookingsService {
     commissionAmount: number;
     netPayout: number;
   }> {
-    const bookings = await this.bookings.find({ where: { salonId }, select: ['id'] });
-    const bookingIds = bookings.map((b) => b.id);
-    const paidPayments = bookingIds.length
-      ? await this.payments.find({ where: { bookingId: In(bookingIds), status: 'paid' } })
-      : [];
+    // Reads the SAME append-only ledger InvoicingService.recordCommission() writes (one
+    // row per booking, the instant it reaches completed/no_show -- see
+    // financial-transaction.entity.ts) and monthly-invoice-generation.job.ts sums for the
+    // real invoice, rather than independently recomputing from payments + the CURRENT
+    // live commission rate. That recomputation used to silently disagree with the actual
+    // invoice after any commission-rate change (financial_transactions.commission_amount
+    // is deliberately frozen at write time; this was live-recalculating it), and also
+    // counted deposits from merely-confirmed bookings that haven't earned commission yet
+    // at all (no ledger row exists for them until completion/no-show).
+    const [row]: Array<{ total_collected: string; commission_amount: string; net_payout: string }> =
+      await this.dataSource.query(
+        `
+        SELECT
+          COALESCE(SUM(gross_amount), 0) AS total_collected,
+          COALESCE(SUM(commission_amount), 0) AS commission_amount,
+          COALESCE(SUM(net_amount), 0) AS net_payout
+        FROM financial_transactions
+        WHERE salon_id = $1
+        `,
+        [salonId],
+      );
 
-    const totalCollected = paidPayments.reduce((sum, p) => sum + p.amount, 0);
+    // The platform's current rate -- a purely informational "this is what applies going
+    // forward" figure, deliberately independent of the ledger totals above (which can
+    // reflect a mix of historical rates if the platform rate ever changed).
     const commissionPercent = await this.config.getCommissionPercent();
-    const commissionAmount = Math.round((totalCollected * commissionPercent) / 100);
 
     return {
-      totalCollected,
+      totalCollected: Number(row!.total_collected),
       commissionPercent,
-      commissionAmount,
-      netPayout: totalCollected - commissionAmount,
+      commissionAmount: Number(row!.commission_amount),
+      netPayout: Number(row!.net_payout),
     };
   }
 

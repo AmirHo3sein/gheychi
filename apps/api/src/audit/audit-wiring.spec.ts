@@ -1,10 +1,13 @@
 import 'reflect-metadata';
 import { AdminCategoriesController } from '../catalog/admin-categories.controller';
 import { AdminBlogController } from '../content/admin-blog.controller';
+import { AdminCouponsController } from '../coupons/admin-coupons.controller';
+import { AdminInvoicesController } from '../invoicing/admin-invoices.controller';
 import { AdminConfigController } from '../platform-config/admin-config.controller';
 import { AdminReferralRewardTypesController, AdminReferralsController } from '../referrals/admin-referrals.controller';
 import { AdminReportsController } from '../reports/admin-reports.controller';
 import { AdminReviewsController } from '../reviews/admin-reviews.controller';
+import { AdminWorkerRatingsController } from '../reviews/admin-worker-ratings.controller';
 import { AdminSalonsController } from '../salons/admin-salons.controller';
 import { AdminShowcaseController } from '../salons/admin-showcase.controller';
 import { AdminUsersController } from '../users/admin-users.controller';
@@ -132,9 +135,15 @@ describe('admin mutation audit wiring', () => {
       targetType: 'blogcategory',
     },
     {
-      label: 'blog post cover set',
+      label: 'blog post cover upload',
       handler: AdminBlogController.prototype.uploadCover,
-      action: 'post.cover.set',
+      action: 'post.cover.upload',
+      targetType: 'post',
+    },
+    {
+      label: 'blog post cover remove',
+      handler: AdminBlogController.prototype.removeCover,
+      action: 'post.cover.remove',
       targetType: 'post',
     },
     {
@@ -148,6 +157,9 @@ describe('admin mutation audit wiring', () => {
       handler: AdminReferralRewardTypesController.prototype.update,
       action: 'referral-reward-type.update',
       targetType: 'referral-reward-type',
+      // Route is @Patch(':type'), not @Patch(':id') -- without this override the
+      // recorded audit row's targetId would silently be null on every call.
+      targetIdParam: 'type',
     },
     {
       label: 'referral cancel',
@@ -155,11 +167,41 @@ describe('admin mutation audit wiring', () => {
       action: 'referral.cancel',
       targetType: 'referral',
     },
+    {
+      label: 'coupon create',
+      handler: AdminCouponsController.prototype.create,
+      action: 'coupon.create',
+      targetType: 'coupon',
+    },
+    {
+      label: 'coupon update',
+      handler: AdminCouponsController.prototype.update,
+      action: 'coupon.update',
+      targetType: 'coupon',
+    },
+    {
+      label: 'coupon delete',
+      handler: AdminCouponsController.prototype.remove,
+      action: 'coupon.delete',
+      targetType: 'coupon',
+    },
+    {
+      label: 'invoice payment record',
+      handler: AdminInvoicesController.prototype.recordPayment,
+      action: 'invoice.payment.record',
+      targetType: 'invoice',
+    },
+    {
+      label: 'worker rating moderate',
+      handler: AdminWorkerRatingsController.prototype.moderate,
+      action: 'worker-rating.moderate',
+      targetType: 'worker-rating',
+    },
   ];
 
-  for (const { label, handler, action, targetType } of cases) {
-    it(`${label} handler carries @AuditAction('${action}', '${targetType}')`, () => {
-      expect(Reflect.getMetadata(AUDIT_ACTION, handler)).toEqual({ action, targetType });
+  for (const { label, handler, action, targetType, targetIdParam = 'id' } of cases) {
+    it(`${label} handler carries @AuditAction('${action}', '${targetType}', '${targetIdParam}')`, () => {
+      expect(Reflect.getMetadata(AUDIT_ACTION, handler)).toEqual({ action, targetType, targetIdParam });
     });
 
     it(`${label} handler runs through AuditInterceptor`, () => {

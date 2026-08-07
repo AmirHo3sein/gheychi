@@ -148,7 +148,7 @@ describe('Referral codes + tracking (e2e)', () => {
     it('a non-admin cannot list or cancel referrals', async () => {
       await request(app.getHttpServer()).get('/api/admin/referrals').set('Cookie', referrerCookie).expect(403);
       await request(app.getHttpServer())
-        .patch(`/api/admin/referrals/${cancellableId}/cancel`)
+        .post(`/api/admin/referrals/${cancellableId}/cancel`)
         .set('Cookie', referrerCookie)
         .send({ reason: 'nope' })
         .expect(403);
@@ -156,7 +156,7 @@ describe('Referral codes + tracking (e2e)', () => {
 
     it('cancels a referral still awaiting its qualifying event', async () => {
       const res = await request(app.getHttpServer())
-        .patch(`/api/admin/referrals/${cancellableId}/cancel`)
+        .post(`/api/admin/referrals/${cancellableId}/cancel`)
         .set('Cookie', adminCookie)
         .send({ reason: 'fraud suspected' })
         .expect(200);
@@ -166,7 +166,7 @@ describe('Referral codes + tracking (e2e)', () => {
 
     it('a second cancel attempt on the same row gets 409', async () => {
       await request(app.getHttpServer())
-        .patch(`/api/admin/referrals/${cancellableId}/cancel`)
+        .post(`/api/admin/referrals/${cancellableId}/cancel`)
         .set('Cookie', adminCookie)
         .send({ reason: 'already cancelled' })
         .expect(409);
@@ -174,7 +174,7 @@ describe('Referral codes + tracking (e2e)', () => {
 
     it('404s cancelling a referral that does not exist', async () => {
       await request(app.getHttpServer())
-        .patch('/api/admin/referrals/00000000-0000-0000-0000-000000000000/cancel')
+        .post('/api/admin/referrals/00000000-0000-0000-0000-000000000000/cancel')
         .set('Cookie', adminCookie)
         .send({ reason: 'nope' })
         .expect(404);
@@ -184,6 +184,8 @@ describe('Referral codes + tracking (e2e)', () => {
   describe("worker's own lifetime code, relayed by the salon owner", () => {
     it('the owner can fetch a worker referral code out of band', async () => {
       const ownerCookie = await loginAs(app, '09131000010');
+      const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+      const categoryId = categoriesRes.body[0].id;
       await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerCookie).send({
         name: 'Referral Test Salon',
         genderTarget: 'women',
@@ -192,6 +194,7 @@ describe('Referral codes + tracking (e2e)', () => {
         lat: 35.7,
         lng: 51.4,
         capacity: 5,
+        categoryIds: [categoryId],
       });
 
       const workerRes = await request(app.getHttpServer())
@@ -210,6 +213,8 @@ describe('Referral codes + tracking (e2e)', () => {
 
     it("404s fetching another owner's worker referral code", async () => {
       const strangerCookie = await loginAs(app, '09131000012');
+      const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+      const categoryId = categoriesRes.body[0].id;
       await request(app.getHttpServer()).post('/api/salons').set('Cookie', strangerCookie).send({
         name: 'Stranger Salon',
         genderTarget: 'women',
@@ -218,6 +223,7 @@ describe('Referral codes + tracking (e2e)', () => {
         lat: 35.7,
         lng: 51.4,
         capacity: 5,
+        categoryIds: [categoryId],
       });
 
       const ownerCookie = await loginAs(app, '09131000010'); // already created above
@@ -283,7 +289,7 @@ describe('Referral codes + tracking (e2e)', () => {
       capReferralAId = mine.body.items[0].id;
 
       await request(app.getHttpServer())
-        .patch(`/api/admin/referrals/${capReferralAId}/cancel`)
+        .post(`/api/admin/referrals/${capReferralAId}/cancel`)
         .set('Cookie', adminCookie)
         .send({ reason: 'freeing a slot for the R10 e2e test' })
         .expect(200);

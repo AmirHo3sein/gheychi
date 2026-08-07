@@ -35,7 +35,7 @@ export class AuditInterceptor implements NestInterceptor {
       actorId: req.user.id,
       action: meta.action,
       targetType: meta.targetType,
-      targetId: req.params?.id ?? null,
+      targetId: req.params?.[meta.targetIdParam] ?? null,
       // req.body is the raw parsed body: the global ValidationPipe whitelists the
       // handler's DTO argument, not req.body itself. Acceptable per spec §3.1 for
       // an admin-only, body-parser-bounded surface.

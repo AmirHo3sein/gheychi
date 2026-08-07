@@ -1,5 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
+import { AlertsService } from '../alerts/alerts.service';
+import { CronJobRunner } from '../common/cron-job-runner.service';
 import { MonthlyInvoiceGenerationJob } from './monthly-invoice-generation.job';
 
 // Safely in the past relative to any real "now" this suite runs under -- a fully
@@ -22,15 +24,19 @@ describe('MonthlyInvoiceGenerationJob', () => {
   let job: MonthlyInvoiceGenerationJob;
   let dataSourceQuery: jest.Mock;
   let dataSourceTransaction: jest.Mock;
+  let alertsRaise: jest.Mock;
 
   beforeEach(async () => {
     dataSourceQuery = jest.fn();
     dataSourceTransaction = jest.fn();
+    alertsRaise = jest.fn().mockResolvedValue(undefined);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         MonthlyInvoiceGenerationJob,
         { provide: DataSource, useValue: { query: dataSourceQuery, transaction: dataSourceTransaction } },
+        { provide: CronJobRunner, useValue: { run: jest.fn((_name: string, fn: () => Promise<void>) => fn()) } },
+        { provide: AlertsService, useValue: { raise: alertsRaise } },
       ],
     }).compile();
 
@@ -148,6 +154,12 @@ describe('MonthlyInvoiceGenerationJob', () => {
     const result = await job.run();
 
     expect(result).toEqual({ invoicesTouched: 1, itemsCreated: 1 });
+    // The failed group (salon-1) still pages an operator -- a silently understated
+    // invoice is money-adjacent even though tomorrow's rerun will self-heal it.
+    expect(alertsRaise).toHaveBeenCalledTimes(1);
+    expect(alertsRaise).toHaveBeenCalledWith(
+      expect.objectContaining({ key: expect.stringContaining('salon-1'), severity: 'warning' }),
+    );
   });
 
   it('passes the raw bigint-as-string amounts straight through to the invoice_items insert', async () => {

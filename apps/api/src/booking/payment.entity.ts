@@ -1,11 +1,7 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { bigintToNumber } from '../common/numeric-transformers';
 
 export type PaymentStatus = 'initiated' | 'paid' | 'refund_pending' | 'refunded' | 'failed';
-
-const bigintToNumber = {
-  to: (v: number) => v,
-  from: (v: string) => Number(v),
-};
 
 @Entity('payments')
 export class Payment {

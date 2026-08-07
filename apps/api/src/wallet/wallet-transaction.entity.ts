@@ -1,4 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { bigintToNumber } from '../common/numeric-transformers';
 import { WalletCurrency } from './wallet-balance.entity';
 
 // booking_spend/booking_spend_reversal are written by BookingsService.createHold
@@ -12,11 +13,6 @@ export type WalletTransactionType =
   | 'admin_adjustment'
   | 'booking_spend'
   | 'booking_spend_reversal';
-
-const bigintToNumber = {
-  to: (v: number) => v,
-  from: (v: string) => Number(v),
-};
 
 @Entity('wallet_transactions')
 export class WalletTransaction {

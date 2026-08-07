@@ -1,11 +1,13 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Request } from 'express';
-import { QueryFailedError, Repository } from 'typeorm';
+import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { ReferralsService } from '../referrals/referrals.service';
 import { User } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
+import { SalonService } from './salon-service.entity';
 import { SalonWorkersController } from './salon-workers.controller';
 import { Worker } from './worker.entity';
+import { WorkerService } from './worker-service.entity';
 
 // Same shape used by content.service.spec.ts / reports.service.spec.ts: a TypeORM
 // QueryFailedError carrying the pg driver's code, which isUniqueViolation() reads.
@@ -17,6 +19,9 @@ function uniqueViolation(): QueryFailedError {
 describe('SalonWorkersController', () => {
   let controller: SalonWorkersController;
   let workers: { save: jest.Mock; create: jest.Mock; find: jest.Mock; findOneBy: jest.Mock };
+  let workerServices: { find: jest.Mock };
+  let salonServices: { count: jest.Mock };
+  let dataSource: { transaction: jest.Mock };
   let usersService: { findOrCreateByPhone: jest.Mock };
   let referralsService: { getOrCreateMyCode: jest.Mock };
   const OWNER_REQ = { salonId: 'salon-1', user: { id: 'owner-1' } as User } as unknown as Request;
@@ -28,10 +33,16 @@ describe('SalonWorkersController', () => {
       find: jest.fn().mockResolvedValue([]),
       findOneBy: jest.fn().mockResolvedValue(null),
     };
+    workerServices = { find: jest.fn().mockResolvedValue([]) };
+    salonServices = { count: jest.fn().mockResolvedValue(0) };
+    dataSource = { transaction: jest.fn().mockImplementation((fn) => fn({ delete: jest.fn(), insert: jest.fn() })) };
     usersService = { findOrCreateByPhone: jest.fn() };
     referralsService = { getOrCreateMyCode: jest.fn() };
     controller = new SalonWorkersController(
       workers as unknown as Repository<Worker>,
+      workerServices as unknown as Repository<WorkerService>,
+      salonServices as unknown as Repository<SalonService>,
+      dataSource as unknown as DataSource,
       usersService as unknown as UsersService,
       referralsService as unknown as ReferralsService,
     );
@@ -97,6 +108,54 @@ describe('SalonWorkersController', () => {
 
       expect(saved.active).toBe(false);
       expect(workers.save).toHaveBeenCalled();
+    });
+  });
+
+  describe('updateServices', () => {
+    it('404s for a worker belonging to a different salon', async () => {
+      workers.findOneBy.mockResolvedValue(null);
+
+      await expect(controller.updateServices(OWNER_REQ, 'worker-9', { serviceIds: [] })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+    });
+
+    it('rejects a serviceId that does not belong to the caller salon', async () => {
+      workers.findOneBy.mockResolvedValue({ id: 'worker-1', salonId: 'salon-1' });
+      salonServices.count.mockResolvedValue(1);
+
+      await expect(
+        controller.updateServices(OWNER_REQ, 'worker-1', { serviceIds: ['svc-1', 'svc-2'] }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+    });
+
+    it('replaces the worker service set inside a transaction', async () => {
+      workers.findOneBy.mockResolvedValue({ id: 'worker-1', salonId: 'salon-1' });
+      salonServices.count.mockResolvedValue(2);
+      const em = { delete: jest.fn(), insert: jest.fn() };
+      dataSource.transaction.mockImplementation((fn) => fn(em));
+
+      const result = await controller.updateServices(OWNER_REQ, 'worker-1', { serviceIds: ['svc-1', 'svc-2'] });
+
+      expect(em.delete).toHaveBeenCalledWith(WorkerService, { workerId: 'worker-1' });
+      expect(em.insert).toHaveBeenCalledWith(WorkerService, [
+        { workerId: 'worker-1', serviceId: 'svc-1' },
+        { workerId: 'worker-1', serviceId: 'svc-2' },
+      ]);
+      expect(result).toEqual({ id: 'worker-1', serviceIds: ['svc-1', 'svc-2'] });
+    });
+
+    it('clears a worker back to unrestricted with an empty array, skipping the insert', async () => {
+      workers.findOneBy.mockResolvedValue({ id: 'worker-1', salonId: 'salon-1' });
+      const em = { delete: jest.fn(), insert: jest.fn() };
+      dataSource.transaction.mockImplementation((fn) => fn(em));
+
+      await controller.updateServices(OWNER_REQ, 'worker-1', { serviceIds: [] });
+
+      expect(em.delete).toHaveBeenCalledWith(WorkerService, { workerId: 'worker-1' });
+      expect(em.insert).not.toHaveBeenCalled();
     });
   });
 

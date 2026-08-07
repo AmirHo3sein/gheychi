@@ -13,6 +13,7 @@ function pgError(code: string): QueryFailedError {
 describe('AdminCategoriesController', () => {
   let controller: AdminCategoriesController;
   let repo: { create: jest.Mock; save: jest.Mock; update: jest.Mock; delete: jest.Mock; findOneBy: jest.Mock };
+  let redis: { del: jest.Mock };
 
   beforeEach(() => {
     repo = {
@@ -22,7 +23,17 @@ describe('AdminCategoriesController', () => {
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
       findOneBy: jest.fn().mockResolvedValue({ id: 1, name: 'کوتاهی مو' }),
     };
-    controller = new AdminCategoriesController(repo as unknown as Repository<ServiceCategory>);
+    redis = { del: jest.fn().mockResolvedValue(1) };
+    controller = new AdminCategoriesController(repo as unknown as Repository<ServiceCategory>, redis as never);
+  });
+
+  it('invalidates the categories cache after a successful create/update/delete', async () => {
+    await controller.create({ name: 'کوتاهی مو', icon: 'scissors' });
+    await controller.update(1, { name: 'کوتاهی مو' });
+    await controller.remove(1);
+
+    expect(redis.del).toHaveBeenCalledTimes(3);
+    expect(redis.del).toHaveBeenCalledWith('categories:list');
   });
 
   // These messages reach the admin panel's toast verbatim -- an English string would land

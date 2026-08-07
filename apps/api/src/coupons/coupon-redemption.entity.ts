@@ -1,9 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
-
-const bigintToNumber = {
-  to: (v: number) => v,
-  from: (v: string) => Number(v),
-};
+import { bigintToNumber } from '../common/numeric-transformers';
 
 /**
  * One row per successful redemption. UNIQUE(coupon_id, user_id) at the DB level

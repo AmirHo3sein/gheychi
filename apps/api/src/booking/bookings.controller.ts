@@ -26,6 +26,7 @@ export class BookingsController {
   }
 
   @Post(':id/cancel')
+  @HttpCode(200)
   cancel(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
     return this.bookings.cancel(id, (req.user as User).id);
   }

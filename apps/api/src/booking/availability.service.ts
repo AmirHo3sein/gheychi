@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, LessThan, MoreThan, Repository } from 'typeorm';
 import { SalonService } from '../salons/salon-service.entity';
 import { ScheduleException } from '../salons/schedule-exception.entity';
+import { WorkerEligibilityService } from '../salons/worker-eligibility.service';
 import { WorkingHour } from '../salons/working-hour.entity';
 import { Salon } from '../salons/salon.entity';
 import { Booking } from './booking.entity';
@@ -18,6 +19,7 @@ export class AvailabilityService {
     @InjectRepository(WorkingHour) private readonly hours: Repository<WorkingHour>,
     @InjectRepository(ScheduleException) private readonly exceptions: Repository<ScheduleException>,
     @InjectRepository(Booking) private readonly bookings: Repository<Booking>,
+    private readonly workerEligibility: WorkerEligibilityService,
   ) {}
 
   async computeFor(
@@ -31,6 +33,14 @@ export class AvailabilityService {
 
     const service = await this.services.findOneBy({ id: serviceId, salonId, isActive: true });
     if (!service) throw new NotFoundException('Service not found');
+
+    if (workerId) {
+      // A worker ineligible for this service can never actually be booked into it (see
+      // createHold's own check) -- surfacing slots here that would just fail at hold time
+      // would be misleading, so this preview short-circuits to "no availability" instead.
+      const eligible = await this.workerEligibility.isWorkerEligibleForService(workerId, serviceId);
+      if (!eligible) return [];
+    }
 
     const windowEnd = new Date(now.getTime() + AVAILABILITY_WINDOW_DAYS * 24 * 60 * 60_000);
 

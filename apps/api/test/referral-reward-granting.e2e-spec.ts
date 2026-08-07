@@ -36,6 +36,7 @@ describe('Referral reward granting + reversal (e2e, Slice 4)', () => {
       lat: 35.7,
       lng: 51.4,
       capacity: 5,
+      categoryIds: [categoryId],
     });
     salonId = salonRes.body.id;
     const serviceRes = await request(app.getHttpServer())
@@ -284,7 +285,7 @@ describe('Referral reward granting + reversal (e2e, Slice 4)', () => {
       const res = await request(app.getHttpServer())
         .post(`/api/bookings/${bookingId}/cancel`)
         .set('Cookie', referredCookie)
-        .expect(201);
+        .expect(200);
       expect(res.body.status).toBe('cancelled_by_user');
 
       const [payment] = await ds.query('SELECT status FROM payments WHERE booking_id = $1', [bookingId]);

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { DataSource } from 'typeorm';
+import { CronJobRunner } from '../common/cron-job-runner.service';
 import { ReferralsService } from '../referrals/referrals.service';
 
 // Bounds one run's work per bucket; anything left over is picked up on the next
@@ -28,11 +29,14 @@ export class ReferralGrantJob {
   constructor(
     private readonly dataSource: DataSource,
     private readonly referrals: ReferralsService,
+    private readonly jobRunner: CronJobRunner,
   ) {}
 
   @Cron('0 * * * *')
   async handleCron(): Promise<void> {
-    await this.run();
+    await this.jobRunner.run('referral-grant', async () => {
+      await this.run();
+    });
   }
 
   async run(): Promise<number> {
@@ -94,14 +98,16 @@ export class ReferralGrantJob {
   }
 
   /**
-   * Referrals with one side already granted, the other side's kind not yet
-   * supported. Retried unconditionally every tick (cheap -- tryGrantReward's own
-   * idempotency means an unchanged config just re-skips the unsupported side), so
-   * this self-heals the moment slice 5 ships discount-kind granting or an admin
-   * reconfigures the unsupported side to a wallet kind, with no separate migration
-   * or backfill needed. The triggering booking is already known
-   * (qualifying_booking_id was set at the first, partial grant) -- no need to
-   * re-resolve it.
+   * Referrals stuck 'partially_granted' -- one side already has a referral_rewards row,
+   * the other side's grant attempt hasn't succeeded yet (as of Slice 6 this is only
+   * defense-in-depth: an older partial grant from before all five kinds were supported,
+   * or a future reward kind added without matching grant logic -- see
+   * ReferralsService.tryGrantReward's own doc comment). Retried unconditionally every
+   * tick (cheap -- tryGrantReward's own idempotency means an already-granted side just
+   * re-skips), so this self-heals the moment whatever blocked the missing side is
+   * resolved, with no separate migration or backfill needed. The triggering booking is
+   * already known (qualifying_booking_id was set at the first, partial grant) -- no need
+   * to re-resolve it.
    */
   private async sweepPartiallyGranted(): Promise<number> {
     const candidates: Array<{ referred_user_id: string; qualifying_booking_id: string; qualifying_event: string }> =

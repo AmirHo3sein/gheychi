@@ -1,5 +1,5 @@
 import { toGregorian, toJalaali } from 'jalaali-js';
-import { IRAN_UTC_OFFSET_MIN } from '../booking/availability.util';
+import { iranWallClockToInstant, shiftToIranLocal } from '../common/iran-time.util';
 
 export interface JalaliMonth {
   year: number;
@@ -7,12 +7,12 @@ export interface JalaliMonth {
 }
 
 /**
- * The Iran-local Jalali (year, month) an instant falls in -- same IRAN_UTC_OFFSET_MIN
- * shift availability.util.ts uses to bucket a booking slot under its Iran-local
- * calendar date, applied here to bucket a commission row under its Iran-local month.
+ * The Iran-local Jalali (year, month) an instant falls in -- same Iran-local shift
+ * common/iran-time.util.ts uses to bucket a booking slot under its Iran-local calendar
+ * date, applied here to bucket a commission row under its Iran-local month.
  */
 export function jalaliMonthOf(instant: Date): JalaliMonth {
-  const iranLocal = new Date(instant.getTime() + IRAN_UTC_OFFSET_MIN * 60_000);
+  const iranLocal = shiftToIranLocal(instant);
   const { jy, jm } = toJalaali(iranLocal.getUTCFullYear(), iranLocal.getUTCMonth() + 1, iranLocal.getUTCDate());
   return { year: jy, month: jm };
 }
@@ -24,7 +24,7 @@ function nextJalaliMonth({ year, month }: JalaliMonth): JalaliMonth {
 /** Iran-local midnight of the given Gregorian calendar date, as a real UTC instant. */
 function iranMidnightToInstant(gy: number, gm: number, gd: number): Date {
   const dateStr = `${gy}-${String(gm).padStart(2, '0')}-${String(gd).padStart(2, '0')}`;
-  return new Date(new Date(`${dateStr}T00:00:00.000Z`).getTime() - IRAN_UTC_OFFSET_MIN * 60_000);
+  return iranWallClockToInstant(dateStr, 0);
 }
 
 /**

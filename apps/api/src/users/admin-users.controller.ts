@@ -19,7 +19,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { AdminUsersService } from './admin-users.service';
-import { AdminUserQueryDto, AdminUserStatusDto } from './dto/admin-user.dto';
+import { AdminUserQueryDto, UpdateUserStatusDto } from './dto/admin-user.dto';
 import { User } from './user.entity';
 
 @Controller('admin/users')
@@ -55,7 +55,7 @@ export class AdminUsersController {
   @Patch(':id/status')
   @UseInterceptors(AuditInterceptor)
   @AuditAction('user.status.set', 'user')
-  setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AdminUserStatusDto, @Req() req: Request) {
+  setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateUserStatusDto, @Req() req: Request) {
     return this.adminUsers.setStatus((req.user as User).id, id, dto.status);
   }
 }

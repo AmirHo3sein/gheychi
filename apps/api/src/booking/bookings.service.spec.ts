@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, In, LessThan, MoreThan, Not } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { CouponRedemption } from '../coupons/coupon-redemption.entity';
 import { CouponsService } from '../coupons/coupons.service';
@@ -20,26 +20,23 @@ import { PaymentsService } from './payments.service';
 import { Salon } from '../salons/salon.entity';
 import { SalonService } from '../salons/salon-service.entity';
 import { Worker } from '../salons/worker.entity';
+import { WorkerEligibilityService } from '../salons/worker-eligibility.service';
 
 describe('BookingsService.getEarnings', () => {
   let service: BookingsService;
-  let paymentsFind: jest.Mock;
+  let dataSourceQuery: jest.Mock;
 
   beforeEach(async () => {
-    paymentsFind = jest.fn();
+    dataSourceQuery = jest.fn();
     const moduleRef = await Test.createTestingModule({
       providers: [
         BookingsService,
-        // getEarnings() first lists the salon's booking ids (Payment has no ORM relation to
-        // Booking, just a raw bookingId column) before filtering payments by those ids, so the
-        // Booking repo mock needs a `find` stub too -- an empty `{}` mock throws
-        // "this.bookings.find is not a function" once getEarnings() is implemented.
-        { provide: getRepositoryToken(Booking), useValue: { find: jest.fn().mockResolvedValue([{ id: 'booking-1' }, { id: 'booking-2' }]) } },
-        { provide: getRepositoryToken(Payment), useValue: { find: paymentsFind } },
+        { provide: getRepositoryToken(Booking), useValue: {} },
+        { provide: getRepositoryToken(Payment), useValue: {} },
         { provide: getRepositoryToken(Salon), useValue: {} },
         { provide: getRepositoryToken(SalonService), useValue: {} },
         { provide: getRepositoryToken(Worker), useValue: {} },
-        { provide: DataSource, useValue: {} },
+        { provide: DataSource, useValue: { query: dataSourceQuery } },
         { provide: PlatformConfigService, useValue: { getCommissionPercent: jest.fn().mockResolvedValue(10) } },
         { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
         { provide: REDIS, useValue: {} },
@@ -56,16 +53,16 @@ describe('BookingsService.getEarnings', () => {
           },
         },
         { provide: InvoicingService, useValue: { recordCommission: jest.fn().mockResolvedValue(undefined) } },
+        { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService: jest.fn().mockResolvedValue(true) } },
       ],
     }).compile();
 
     service = moduleRef.get(BookingsService);
   });
 
-  it('sums paid payments for the salon and deducts commission', async () => {
-    paymentsFind.mockResolvedValue([
-      { amount: 100_000, status: 'paid' },
-      { amount: 200_000, status: 'paid' },
+  it('sums the frozen financial_transactions ledger for the salon, not a live payments+rate recomputation', async () => {
+    dataSourceQuery.mockResolvedValue([
+      { total_collected: '300000', commission_amount: '30000', net_payout: '270000' },
     ]);
 
     const result = await service.getEarnings('salon-1');
@@ -74,10 +71,13 @@ describe('BookingsService.getEarnings', () => {
     expect(result.commissionPercent).toBe(10);
     expect(result.commissionAmount).toBe(30_000);
     expect(result.netPayout).toBe(270_000);
+    expect(dataSourceQuery).toHaveBeenCalledWith(expect.stringContaining('FROM financial_transactions'), ['salon-1']);
   });
 
-  it('returns zeros when there are no paid payments yet', async () => {
-    paymentsFind.mockResolvedValue([]);
+  it('returns zeros when the salon has no ledger rows yet (e.g. every booking still confirmed, none completed)', async () => {
+    dataSourceQuery.mockResolvedValue([
+      { total_collected: '0', commission_amount: '0', net_payout: '0' },
+    ]);
 
     const result = await service.getEarnings('salon-1');
 
@@ -88,6 +88,51 @@ describe('BookingsService.getEarnings', () => {
       netPayout: 0,
     });
   });
+
+  it('reports the CURRENT live commission rate as commissionPercent even though the ledger totals reflect an older, frozen rate', async () => {
+    // The whole point of the fix: ledger totals are historically frozen and must never
+    // be recomputed against the live rate. Here the ledger accrued commission at an old
+    // 10% rate (10,000 on 100,000), but the platform's live rate has since moved to 15%
+    // -- commissionAmount must stay exactly what was frozen, not silently become 15,000.
+    dataSourceQuery.mockResolvedValue([
+      { total_collected: '100000', commission_amount: '10000', net_payout: '90000' },
+    ]);
+    const config = { getCommissionPercent: jest.fn().mockResolvedValue(15) };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        BookingsService,
+        { provide: getRepositoryToken(Booking), useValue: {} },
+        { provide: getRepositoryToken(Payment), useValue: {} },
+        { provide: getRepositoryToken(Salon), useValue: {} },
+        { provide: getRepositoryToken(SalonService), useValue: {} },
+        { provide: getRepositoryToken(Worker), useValue: {} },
+        { provide: DataSource, useValue: { query: dataSourceQuery } },
+        { provide: PlatformConfigService, useValue: config },
+        { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
+        { provide: REDIS, useValue: {} },
+        { provide: PAYMENT_GATEWAY, useValue: {} },
+        { provide: PaymentsService, useValue: { attemptRefund: jest.fn() } },
+        { provide: AlertsService, useValue: { raise: jest.fn() } },
+        { provide: CouponsService, useValue: { resolveAndValidate: jest.fn() } },
+        { provide: ReferralsService, useValue: { tryGrantReward: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: WalletService,
+          useValue: {
+            debit: jest.fn().mockResolvedValue({ debited: 0, shortfall: 0, balanceAfter: 0, transactionId: null }),
+            credit: jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' }),
+          },
+        },
+        { provide: InvoicingService, useValue: { recordCommission: jest.fn().mockResolvedValue(undefined) } },
+        { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService: jest.fn().mockResolvedValue(true) } },
+      ],
+    }).compile();
+    const serviceWithNewRate = moduleRef.get(BookingsService);
+
+    const result = await serviceWithNewRate.getEarnings('salon-1');
+
+    expect(result.commissionAmount).toBe(10_000); // untouched by the live rate change
+    expect(result.commissionPercent).toBe(15); // the NEW live rate, reported as-is
+  });
 });
 
 describe('BookingsService.createHold -- deposit is capped at the price being charged', () => {
@@ -95,6 +140,7 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
   let emCount: jest.Mock;
   let emSave: jest.Mock;
   let emUpdate: jest.Mock;
+  let emQuery: jest.Mock;
   let requestPayment: jest.Mock;
   let notifyConfirmed: jest.Mock;
   let resolveAndValidate: jest.Mock;
@@ -130,6 +176,9 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
     redisSet = jest.fn().mockResolvedValue('OK');
     redisDel = jest.fn().mockResolvedValue(1);
     emUpdate = jest.fn();
+    // Only used by createPaymentSession's payment_authorities insert now -- worker
+    // eligibility is checked via the WorkerEligibilityService mock below instead.
+    emQuery = jest.fn().mockResolvedValue(undefined);
     // Default: wallet balance is never applied unless a test opts in via
     // applyWalletBalance and overrides this to actually debit something.
     walletDebit = jest.fn().mockResolvedValue({ debited: 0, shortfall: 0, balanceAfter: 0, transactionId: null });
@@ -151,7 +200,13 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
           useValue: {
             // Serves both the createHold transaction and createPaymentSession's own.
             transaction: jest.fn((cb: (em: unknown) => unknown) =>
-              cb({ count: emCount, create: (_e: unknown, obj: unknown) => obj, save: emSave, update: emUpdate, query: jest.fn() }),
+              cb({
+                count: emCount,
+                create: (_e: unknown, obj: unknown) => obj,
+                save: emSave,
+                update: emUpdate,
+                query: emQuery,
+              }),
             ),
           },
         },
@@ -183,6 +238,7 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
           },
         },
         { provide: InvoicingService, useValue: { recordCommission: jest.fn().mockResolvedValue(undefined) } },
+        { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService: jest.fn().mockResolvedValue(true) } },
       ],
     }).compile();
 
@@ -397,6 +453,7 @@ describe('BookingsService.cancel', () => {
           },
         },
         { provide: InvoicingService, useValue: { recordCommission: jest.fn().mockResolvedValue(undefined) } },
+        { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService: jest.fn().mockResolvedValue(true) } },
       ],
     }).compile();
 
@@ -523,6 +580,7 @@ describe('BookingsService.retryPayment authority persist failure', () => {
           },
         },
         { provide: InvoicingService, useValue: { recordCommission: jest.fn().mockResolvedValue(undefined) } },
+        { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService: jest.fn().mockResolvedValue(true) } },
       ],
     }).compile();
 
@@ -540,33 +598,59 @@ describe('BookingsService.retryPayment authority persist failure', () => {
 
 describe('BookingsService.assignWorker', () => {
   let service: BookingsService;
-  let workersFindOneBy: jest.Mock;
   let workersFind: jest.Mock;
   let bookingsFindOneBy: jest.Mock;
-  let bookingsUpdate: jest.Mock;
+  let emFindOneBy: jest.Mock;
+  let emCount: jest.Mock;
+  let emUpdate: jest.Mock;
+  let dataSourceTransaction: jest.Mock;
+  let redisSet: jest.Mock;
+  let redisDel: jest.Mock;
+  let isWorkerEligibleForService: jest.Mock;
+
+  const BOOKING = {
+    id: 'booking-1',
+    salonId: 'salon-1',
+    serviceId: 'service-1',
+    startsAt: new Date('2026-08-10T09:00:00.000Z'),
+    endsAt: new Date('2026-08-10T09:30:00.000Z'),
+  };
+  const ACTIVE_WORKER = { id: 'worker-1', salonId: 'salon-1', active: true };
 
   beforeEach(async () => {
-    workersFindOneBy = jest.fn();
     // attachNames() enriches the returned booking with workerName -- see
-    // BookingsService.assignWorker, which now mirrors listMine/findMine's
-    // enrichment so the provider-panel's assign-worker response actually carries
-    // the name it expects.
+    // BookingsService.assignWorker, which mirrors listMine/findMine's enrichment so the
+    // provider-panel's assign-worker response actually carries the name it expects.
     workersFind = jest.fn().mockResolvedValue([{ id: 'worker-1', name: 'Sara' }]);
-    bookingsFindOneBy = jest.fn();
-    bookingsUpdate = jest.fn().mockResolvedValue({ affected: 1 });
+    bookingsFindOneBy = jest.fn().mockResolvedValue({ ...BOOKING, workerId: 'worker-1' });
+
+    emFindOneBy = jest.fn((entity: unknown) => {
+      if (entity === Worker) return Promise.resolve(ACTIVE_WORKER);
+      return Promise.resolve(BOOKING);
+    });
+    emCount = jest.fn().mockResolvedValue(0); // default: no overlapping booking for the worker
+    emUpdate = jest.fn().mockResolvedValue({ affected: 1 });
+    // Default: the worker is unrestricted (eligible for every service) unless a test
+    // opts in to simulate a worker_services row via mockResolvedValueOnce.
+    isWorkerEligibleForService = jest.fn().mockResolvedValue(true);
+    dataSourceTransaction = jest.fn((cb: (em: unknown) => unknown) =>
+      cb({ findOneBy: emFindOneBy, count: emCount, update: emUpdate }),
+    );
+    redisSet = jest.fn().mockResolvedValue('OK');
+    redisDel = jest.fn().mockResolvedValue(1);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         BookingsService,
-        { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy, update: bookingsUpdate } },
+        { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy } },
         { provide: getRepositoryToken(Payment), useValue: {} },
         { provide: getRepositoryToken(Salon), useValue: { find: jest.fn().mockResolvedValue([]) } },
         { provide: getRepositoryToken(SalonService), useValue: { find: jest.fn().mockResolvedValue([]) } },
-        { provide: getRepositoryToken(Worker), useValue: { findOneBy: workersFindOneBy, find: workersFind } },
-        { provide: DataSource, useValue: {} },
+        { provide: getRepositoryToken(Worker), useValue: { find: workersFind } },
+        { provide: DataSource, useValue: { transaction: dataSourceTransaction } },
         { provide: PlatformConfigService, useValue: {} },
         { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
-        { provide: REDIS, useValue: {} },
+        { provide: REDIS, useValue: { set: redisSet, del: redisDel } },
         { provide: PAYMENT_GATEWAY, useValue: {} },
         { provide: PaymentsService, useValue: { attemptRefund: jest.fn() } },
         { provide: AlertsService, useValue: { raise: jest.fn() } },
@@ -580,49 +664,134 @@ describe('BookingsService.assignWorker', () => {
           },
         },
         { provide: InvoicingService, useValue: { recordCommission: jest.fn().mockResolvedValue(undefined) } },
+        { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService } },
       ],
     }).compile();
 
     service = moduleRef.get(BookingsService);
   });
 
+  it('409s immediately, without opening a transaction, when the per-salon lock is already held', async () => {
+    redisSet.mockResolvedValueOnce(null); // NX failed -- someone else holds the lock
+
+    await expect(service.assignWorker('salon-1', 'booking-1', 'worker-1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(dataSourceTransaction).not.toHaveBeenCalled();
+  });
+
+  it('always releases the per-salon lock, even when the transaction throws', async () => {
+    emFindOneBy.mockImplementation((entity: unknown) => Promise.resolve(entity === Worker ? null : BOOKING));
+
+    await expect(service.assignWorker('salon-1', 'booking-1', 'worker-9')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(redisSet).toHaveBeenCalledWith('lock:booking:salon-1', '1', 'PX', expect.any(Number), 'NX');
+    expect(redisDel).toHaveBeenCalledWith('lock:booking:salon-1');
+  });
+
   it('404s when the worker does not belong to the caller salon', async () => {
-    workersFindOneBy.mockResolvedValue(null);
+    emFindOneBy.mockImplementation((entity: unknown) => Promise.resolve(entity === Worker ? null : BOOKING));
 
     await expect(service.assignWorker('salon-1', 'booking-1', 'worker-9')).rejects.toBeInstanceOf(NotFoundException);
-    expect(workersFindOneBy).toHaveBeenCalledWith({ id: 'worker-9', salonId: 'salon-1' });
-    expect(bookingsFindOneBy).not.toHaveBeenCalled();
-    expect(bookingsUpdate).not.toHaveBeenCalled();
+    expect(emUpdate).not.toHaveBeenCalled();
   });
 
   it('400s when the worker belongs to the salon but is inactive', async () => {
-    workersFindOneBy.mockResolvedValue({ id: 'worker-1', salonId: 'salon-1', active: false });
+    emFindOneBy.mockImplementation((entity: unknown) =>
+      Promise.resolve(entity === Worker ? { ...ACTIVE_WORKER, active: false } : BOOKING),
+    );
 
     await expect(service.assignWorker('salon-1', 'booking-1', 'worker-1')).rejects.toBeInstanceOf(
       BadRequestException,
     );
-    expect(bookingsUpdate).not.toHaveBeenCalled();
+    expect(emUpdate).not.toHaveBeenCalled();
   });
 
   it('404s when the booking does not belong to the caller salon', async () => {
-    workersFindOneBy.mockResolvedValue({ id: 'worker-1', salonId: 'salon-1', active: true });
-    bookingsFindOneBy.mockResolvedValueOnce(null);
+    emFindOneBy.mockImplementation((entity: unknown) => Promise.resolve(entity === Worker ? ACTIVE_WORKER : null));
 
     await expect(service.assignWorker('salon-1', 'booking-9', 'worker-1')).rejects.toBeInstanceOf(NotFoundException);
-    expect(bookingsUpdate).not.toHaveBeenCalled();
+    expect(emUpdate).not.toHaveBeenCalled();
   });
 
-  it('assigns the worker to the booking when both belong to the caller salon and the worker is active', async () => {
-    workersFindOneBy.mockResolvedValue({ id: 'worker-1', salonId: 'salon-1', active: true });
-    bookingsFindOneBy
-      .mockResolvedValueOnce({ id: 'booking-1', salonId: 'salon-1' })
-      .mockResolvedValueOnce({ id: 'booking-1', salonId: 'salon-1', workerId: 'worker-1' });
+  it('400s when the worker is restricted away from the booking service', async () => {
+    isWorkerEligibleForService.mockResolvedValueOnce(false);
 
+    await expect(service.assignWorker('salon-1', 'booking-1', 'worker-1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(emUpdate).not.toHaveBeenCalled();
+  });
+
+  it('checks eligibility against the booking service, inside the same transaction (via the em manager)', async () => {
+    await service.assignWorker('salon-1', 'booking-1', 'worker-1');
+
+    expect(isWorkerEligibleForService).toHaveBeenCalledWith('worker-1', 'service-1', expect.anything());
+  });
+
+  // The bug this whole describe block's newest cases exist to close: assignWorker used to
+  // write workerId with no availability check at all, so a provider could double-book a
+  // worker across two overlapping appointments just by assigning them from the bookings list.
+  it('409s when the worker already has another overlapping confirmed/pending booking at that time', async () => {
+    emCount.mockResolvedValueOnce(1);
+
+    await expect(service.assignWorker('salon-1', 'booking-1', 'worker-1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(emUpdate).not.toHaveBeenCalled();
+  });
+
+  it('checks the overlap using the exact same interval/status predicate as createHold, excluding the booking being assigned itself', async () => {
+    await service.assignWorker('salon-1', 'booking-1', 'worker-1');
+
+    expect(emCount).toHaveBeenCalledWith(Booking, {
+      where: {
+        id: Not('booking-1'),
+        workerId: 'worker-1',
+        status: In(['pending_payment', 'confirmed']),
+        startsAt: LessThan(BOOKING.endsAt),
+        endsAt: MoreThan(BOOKING.startsAt),
+      },
+    });
+  });
+
+  it('assigns the worker to the booking when both belong to the caller salon, the worker is active, eligible, and free', async () => {
     const result = await service.assignWorker('salon-1', 'booking-1', 'worker-1');
 
-    expect(bookingsUpdate).toHaveBeenCalledWith({ id: 'booking-1' }, { workerId: 'worker-1' });
+    expect(emUpdate).toHaveBeenCalledWith(Booking, { id: 'booking-1' }, { workerId: 'worker-1' });
+    expect(redisDel).toHaveBeenCalledWith('lock:booking:salon-1');
     expect(result.workerId).toBe('worker-1');
     expect(result.workerName).toBe('Sara');
+  });
+
+  describe('concurrency', () => {
+    it('serializes two concurrent assignments of the same worker to overlapping bookings -- exactly one succeeds', async () => {
+      // Simulates two nearly-simultaneous PATCH .../assign-worker calls for the same
+      // salon by making the SECOND redis.set (i.e. the second caller to actually reach
+      // Redis) fail its NX acquisition, exactly like two real concurrent requests would.
+      let lockHeld = false;
+      redisSet.mockImplementation(async () => {
+        if (lockHeld) return null;
+        lockHeld = true;
+        return 'OK';
+      });
+      redisDel.mockImplementation(async () => {
+        lockHeld = false;
+        return 1;
+      });
+
+      const [first, second] = await Promise.allSettled([
+        service.assignWorker('salon-1', 'booking-1', 'worker-1'),
+        service.assignWorker('salon-1', 'booking-2', 'worker-1'),
+      ]);
+
+      const outcomes = [first, second];
+      expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
+      expect(outcomes.filter((o) => o.status === 'rejected')).toHaveLength(1);
+      const rejected = outcomes.find((o) => o.status === 'rejected') as PromiseRejectedResult;
+      expect(rejected.reason).toBeInstanceOf(ConflictException);
+    });
   });
 });
 
@@ -668,6 +837,7 @@ describe('BookingsService.listMine / findMine -- workerName enrichment', () => {
           },
         },
         { provide: InvoicingService, useValue: { recordCommission: jest.fn().mockResolvedValue(undefined) } },
+        { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService: jest.fn().mockResolvedValue(true) } },
       ],
     }).compile();
 
@@ -683,6 +853,30 @@ describe('BookingsService.listMine / findMine -- workerName enrichment', () => {
 
     expect(workersFind).toHaveBeenCalled();
     expect(result.workerName).toBe('Sara');
+  });
+
+  it('listForSalon bounds the query with a defensive take cap, since no pagination UI consumes this yet', async () => {
+    bookingsFind.mockResolvedValue([]);
+
+    await service.listForSalon('salon-1');
+
+    expect(bookingsFind).toHaveBeenCalledWith({
+      where: { salonId: 'salon-1' },
+      order: { startsAt: 'DESC' },
+      take: 1000,
+    });
+  });
+
+  it('listMine bounds the query with its own (smaller) defensive take cap', async () => {
+    bookingsFind.mockResolvedValue([]);
+
+    await service.listMine('customer-1');
+
+    expect(bookingsFind).toHaveBeenCalledWith({
+      where: { userId: 'customer-1' },
+      order: { startsAt: 'DESC' },
+      take: 500,
+    });
   });
 
   it('leaves workerName null and skips the worker lookup entirely for a booking with no worker', async () => {
@@ -744,6 +938,7 @@ describe('BookingsService.updateStatus -- first-completed-booking referral trigg
           },
         },
         { provide: InvoicingService, useValue: { recordCommission } },
+        { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService: jest.fn().mockResolvedValue(true) } },
       ],
     }).compile();
 

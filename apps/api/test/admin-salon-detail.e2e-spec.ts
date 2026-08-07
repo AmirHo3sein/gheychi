@@ -14,6 +14,8 @@ describe('Admin salon detail (e2e)', () => {
     app = await createTestApp();
     adminCookie = await loginAsAdmin(app, '09122260001');
     const ownerCookie = await loginAs(app, '09122260002');
+    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+    const categoryId = categoriesRes.body[0].id;
     const createRes = await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerCookie).send({
       name: 'Detail Test Salon',
       description: 'یک آرایشگاه نمونه',
@@ -23,6 +25,7 @@ describe('Admin salon detail (e2e)', () => {
       lat: 35.7,
       lng: 51.4,
       capacity: 3,
+      categoryIds: [categoryId],
     });
     salonId = createRes.body.id;
   });

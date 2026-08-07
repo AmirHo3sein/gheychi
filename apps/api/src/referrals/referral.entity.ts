@@ -1,26 +1,19 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { nullableNumericToNumber, numericToNumber } from '../common/numeric-transformers';
 import { QualifyingEvent, ReferralType, RewardKind } from './referral-reward-type.entity';
 
-// 'partially_granted' (slice 4): one beneficiary side (referrer/referred) has a
-// referral_rewards row, the other side's reward_kind isn't grantable yet (a
-// discount-kind reward, not supported until slice 5) -- see
-// ReferralsService.tryGrantReward's status-transition logic.
+// 'partially_granted': one beneficiary side (referrer/referred) has a referral_rewards
+// row, the other doesn't yet. As of Slice 6 all five reward kinds are grantable, so this
+// is now defense-in-depth (a future reward kind added without matching grant logic, or
+// re-visiting a referral partially granted by an older build) rather than the expected
+// steady-state -- see ReferralsService.tryGrantReward's status-transition logic.
 export type ReferralStatus = 'awaiting_qualifying_event' | 'partially_granted' | 'reward_granted' | 'expired' | 'cancelled';
-
-const numericToNumber = {
-  to: (v: number) => v,
-  from: (v: string) => Number(v),
-};
-const nullableNumericToNumber = {
-  to: (v: number | null) => v,
-  from: (v: string | null) => (v === null ? null : Number(v)),
-};
 
 // Reward terms, qualifying event, and grant hold-back are all SNAPSHOTTED from
 // referral_reward_types at redemption time (R5) and never re-read live again -- an
 // admin changing config only affects referrals created after the change.
-// 'reward_granted'/'partially_granted' are produced by ReferralsService.tryGrantReward
-// (slice 4); 'expired' is still unreachable until a future expiry cron ships.
+// 'reward_granted'/'partially_granted' are produced by ReferralsService.tryGrantReward;
+// 'expired' is produced by ReferralExpiryJob's hourly sweep.
 @Entity('referrals')
 export class Referral {
   @PrimaryGeneratedColumn('uuid')

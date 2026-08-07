@@ -10,18 +10,18 @@ import { Review } from './review.entity';
 import { ReviewsService } from './reviews.service';
 import { WorkerRating } from './worker-rating.entity';
 
-describe('ReviewsService.findForSalon', () => {
+describe('ReviewsService.listForSalon', () => {
   let service: ReviewsService;
-  let reviewsFind: jest.Mock;
+  let reviewsFindAndCount: jest.Mock;
   let salonFindOneBy: jest.Mock;
 
   beforeEach(async () => {
-    reviewsFind = jest.fn();
+    reviewsFindAndCount = jest.fn().mockResolvedValue([[], 0]);
     salonFindOneBy = jest.fn();
     const moduleRef = await Test.createTestingModule({
       providers: [
         ReviewsService,
-        { provide: getRepositoryToken(Review), useValue: { find: reviewsFind } },
+        { provide: getRepositoryToken(Review), useValue: { findAndCount: reviewsFindAndCount } },
         { provide: getRepositoryToken(Booking), useValue: {} },
         { provide: getRepositoryToken(Salon), useValue: { findOneBy: salonFindOneBy } },
         { provide: getRepositoryToken(Worker), useValue: {} },
@@ -35,41 +35,59 @@ describe('ReviewsService.findForSalon', () => {
 
   it('404s when the salon does not exist, without touching the reviews table', async () => {
     salonFindOneBy.mockResolvedValue(null);
-    await expect(service.findForSalon('missing')).rejects.toBeInstanceOf(NotFoundException);
-    expect(reviewsFind).not.toHaveBeenCalled();
+    await expect(service.listForSalon('missing')).rejects.toBeInstanceOf(NotFoundException);
+    expect(reviewsFindAndCount).not.toHaveBeenCalled();
   });
 
   it('404s for a non-approved salon (the lookup itself is scoped to status=approved)', async () => {
     salonFindOneBy.mockResolvedValue(null);
-    await expect(service.findForSalon('suspended-salon')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.listForSalon('suspended-salon')).rejects.toBeInstanceOf(NotFoundException);
     expect(salonFindOneBy).toHaveBeenCalledWith({ id: 'suspended-salon', status: 'approved' });
   });
 
-  it('returns published reviews newest-first for an approved salon', async () => {
+  it('returns published reviews newest-first for an approved salon, in a {items, total, page, pageSize} envelope', async () => {
     salonFindOneBy.mockResolvedValue({ id: 's1', status: 'approved' });
     const replyAt = new Date('2026-07-02T00:00:00Z');
     const createdAt = new Date('2026-07-01T00:00:00Z');
-    reviewsFind.mockResolvedValue([
-      {
-        id: 'r1',
-        bookingId: 'b1',
-        salonId: 's1',
-        userId: 'u1',
-        rating: 4,
-        comment: 'Good',
-        status: 'published',
-        salonReply: 'Thanks!',
-        salonReplyAt: replyAt,
-        createdAt,
-      },
+    reviewsFindAndCount.mockResolvedValue([
+      [
+        {
+          id: 'r1',
+          bookingId: 'b1',
+          salonId: 's1',
+          userId: 'u1',
+          rating: 4,
+          comment: 'Good',
+          status: 'published',
+          salonReply: 'Thanks!',
+          salonReplyAt: replyAt,
+          createdAt,
+        },
+      ],
+      1,
     ]);
-    await expect(service.findForSalon('s1')).resolves.toEqual([
-      { id: 'r1', rating: 4, comment: 'Good', salonReply: 'Thanks!', salonReplyAt: replyAt, createdAt },
-    ]);
-    expect(reviewsFind).toHaveBeenCalledWith({
+    await expect(service.listForSalon('s1')).resolves.toEqual({
+      items: [{ id: 'r1', rating: 4, comment: 'Good', salonReply: 'Thanks!', salonReplyAt: replyAt, createdAt }],
+      total: 1,
+      page: 1,
+      pageSize: 50,
+    });
+    expect(reviewsFindAndCount).toHaveBeenCalledWith({
       where: { salonId: 's1', status: 'published' },
       order: { createdAt: 'DESC' },
+      skip: 0,
+      take: 50,
     });
+  });
+
+  it('applies the given page/pageSize as a skip/take offset', async () => {
+    salonFindOneBy.mockResolvedValue({ id: 's1', status: 'approved' });
+
+    await service.listForSalon('s1', 3, 10);
+
+    expect(reviewsFindAndCount).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 20, take: 10 }),
+    );
   });
 
   // This endpoint is unauthenticated, so the projection is a privacy boundary, not a
@@ -77,22 +95,25 @@ describe('ReviewsService.findForSalon', () => {
   // fields) so a future `find()`/entity change can't silently re-widen the payload.
   it('never exposes reviewer identity or the source booking on the public payload', async () => {
     salonFindOneBy.mockResolvedValue({ id: 's1', status: 'approved' });
-    reviewsFind.mockResolvedValue([
-      {
-        id: 'r1',
-        bookingId: 'b1',
-        salonId: 's1',
-        userId: 'u1',
-        rating: 5,
-        comment: null,
-        status: 'published',
-        salonReply: null,
-        salonReplyAt: null,
-        createdAt: new Date('2026-07-01T00:00:00Z'),
-      },
+    reviewsFindAndCount.mockResolvedValue([
+      [
+        {
+          id: 'r1',
+          bookingId: 'b1',
+          salonId: 's1',
+          userId: 'u1',
+          rating: 5,
+          comment: null,
+          status: 'published',
+          salonReply: null,
+          salonReplyAt: null,
+          createdAt: new Date('2026-07-01T00:00:00Z'),
+        },
+      ],
+      1,
     ]);
-    const [review] = await service.findForSalon('s1');
-    expect(Object.keys(review).sort()).toEqual(
+    const { items } = await service.listForSalon('s1');
+    expect(Object.keys(items[0]!).sort()).toEqual(
       ['comment', 'createdAt', 'id', 'rating', 'salonReply', 'salonReplyAt'],
     );
   });
@@ -433,6 +454,12 @@ describe('ReviewsService.listMine -- the customer-side read path for one\'s own 
     await service.listMine('user-1');
 
     expect(reviewsFind).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: 'user-1' } }));
+  });
+
+  it('bounds the query with a defensive take cap, same rationale as BookingsService.listMine', async () => {
+    await service.listMine('user-1');
+
+    expect(reviewsFind).toHaveBeenCalledWith(expect.objectContaining({ take: 500 }));
   });
 
   it('reports a fresh review as editable, with the linked worker rating attached', async () => {

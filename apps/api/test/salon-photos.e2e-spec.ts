@@ -20,6 +20,8 @@ describe('Salon photos (e2e)', () => {
     await resetDatabase();
     app = await createTestApp();
     cookie = await loginAs(app, '09122220001');
+    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+    const categoryId = categoriesRes.body[0].id;
     await request(app.getHttpServer()).post('/api/salons').set('Cookie', cookie).send({
       name: 'Photo Test Salon',
       genderTarget: 'women',
@@ -27,6 +29,7 @@ describe('Salon photos (e2e)', () => {
       city: 'Tehran',
       lat: 35.7,
       lng: 51.4,
+      categoryIds: [categoryId],
     });
   });
 
@@ -47,12 +50,31 @@ describe('Salon photos (e2e)', () => {
     expect(res.body.url).toContain('/uploads/');
   });
 
+  it('serves the uploaded file back with X-Content-Type-Options: nosniff (defense-in-depth for /uploads)', async () => {
+    const listRes = await request(app.getHttpServer()).get('/api/salons/mine/photos').set('Cookie', cookie).expect(200);
+    const path = new URL(listRes.body[0].url).pathname;
+
+    const fileRes = await request(app.getHttpServer()).get(path).expect(200);
+    expect(fileRes.headers['x-content-type-options']).toBe('nosniff');
+  });
+
   it('rejects a non-image upload', () =>
     request(app.getHttpServer())
       .post('/api/salons/mine/photos')
       .set('Cookie', cookie)
       .attach('file', Buffer.from('not an image'), { filename: 'a.txt', contentType: 'text/plain' })
       .expect(422));
+
+  it('rejects real image bytes declared under a spoofed, disallowed Content-Type (stored-XSS guard)', () =>
+    // The magic-number validator alone would PASS this (the bytes really are a PNG) --
+    // this is exactly the gap that let a crafted upload get persisted with an
+    // attacker-chosen S3 Content-Type (e.g. text/html) despite carrying real image
+    // content. file.mimetype must independently match the allowed set too.
+    request(app.getHttpServer())
+      .post('/api/salons/mine/photos')
+      .set('Cookie', cookie)
+      .attach('file', MINIMAL_PNG, { filename: 'a.png', contentType: 'text/html' })
+      .expect(400));
 
   it('lists photos for the caller salon', async () => {
     const res = await request(app.getHttpServer())
@@ -117,5 +139,22 @@ describe('Salon photos (e2e)', () => {
     const second = listRes.body.find((p: { id: string }) => p.id === secondId);
     expect(first.isCover).toBe(false);
     expect(second.isCover).toBe(true);
+  });
+
+  it('enforces the 30-photo cap', async () => {
+    const before = await request(app.getHttpServer()).get('/api/salons/mine/photos').set('Cookie', cookie).expect(200);
+    for (let i = before.body.length; i < 30; i++) {
+      await request(app.getHttpServer())
+        .post('/api/salons/mine/photos')
+        .set('Cookie', cookie)
+        .attach('file', MINIMAL_PNG, { filename: `cap-${i}.jpg`, contentType: 'image/jpeg' })
+        .expect(201);
+    }
+    const res = await request(app.getHttpServer())
+      .post('/api/salons/mine/photos')
+      .set('Cookie', cookie)
+      .attach('file', MINIMAL_PNG, { filename: 'over-cap.jpg', contentType: 'image/jpeg' })
+      .expect(409);
+    expect(res.body.message).toBe('حداکثر ۳۰ عکس مجاز است');
   });
 });

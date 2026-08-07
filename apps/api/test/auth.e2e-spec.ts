@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import Redis from 'ioredis';
 import request from 'supertest';
 import { REDIS } from '../src/redis/redis.module';
+import { clearOtpIpRateLimit } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
 
@@ -24,6 +25,7 @@ describe('Auth (e2e)', () => {
     request(app.getHttpServer()).post('/api/auth/request-otp').send({ phone: '12345' }).expect(400));
 
   it('issues an OTP', async () => {
+    await clearOtpIpRateLimit(redis);
     await request(app.getHttpServer()).post('/api/auth/request-otp').send({ phone }).expect(201);
     expect(await redis.get(`otp:${phone}`)).toMatch(/^\d{6}$/);
   });
@@ -35,6 +37,7 @@ describe('Auth (e2e)', () => {
     // so the contract is asserted here rather than only in the service unit test.
     const fresh = '09121230099';
     await redis.del(`otp:rl:${fresh}`);
+    await clearOtpIpRateLimit(redis);
 
     const first = await request(app.getHttpServer())
       .post('/api/auth/request-otp')
@@ -90,6 +93,7 @@ describe('Auth (e2e)', () => {
 
   it('completes the profile (name + gender)', async () => {
     await redis.del(`otp:rl:${phone}`);
+    await clearOtpIpRateLimit(redis);
     const { loginAs } = await import('./utils/auth-helper');
     const cookie = await loginAs(app, phone);
     const res = await request(app.getHttpServer())
@@ -106,6 +110,7 @@ describe('Auth (e2e)', () => {
 
   it('logout clears the cookie', async () => {
     await redis.del(`otp:rl:${phone}`);
+    await clearOtpIpRateLimit(redis);
     const { loginAs } = await import('./utils/auth-helper');
     const cookie = await loginAs(app, phone);
     const res = await request(app.getHttpServer())

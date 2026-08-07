@@ -1,9 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
-
-const bigintToNumber = {
-  to: (v: number) => v,
-  from: (v: string) => Number(v),
-};
+import { bigintToNumber } from '../common/numeric-transformers';
 
 /**
  * One row per financial_transactions row an invoice pulled in. The UNIQUE constraint on

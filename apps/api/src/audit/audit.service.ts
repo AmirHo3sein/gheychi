@@ -53,11 +53,18 @@ export class AuditService {
         success: entry.success,
       });
     } catch (err) {
-      // No alerting exists on audit failures (explicit MVP scope cut), so the log
-      // line is the only trace -- include the stack to make it actionable.
-      this.logger.error(
-        `Failed to write audit row for ${entry.action}: ${(err as Error).message}`,
-        (err as Error).stack,
+      // No alerting (e.g. AlertsService/SMS paging) exists on audit failures -- wiring
+      // that in here would pull AlertsModule's dependency chain back through
+      // AuthModule -> AuditModule, a real module cycle, not just a refactor. Until that's
+      // untangled, this pair of log lines is the only trace of a failed write, so both
+      // are load-bearing: the ERROR line carries the full stack for debugging, and the
+      // separate WARN line uses a fixed, greppable prefix specifically so an external
+      // log-based monitor/alert rule (that watches for AUDIT_WRITE_FAILED, independent of
+      // this app's own alerting) can page on it without parsing the free-form message.
+      const message = (err as Error).message;
+      this.logger.error(`Failed to write audit row for ${entry.action}: ${message}`, (err as Error).stack);
+      this.logger.warn(
+        `AUDIT_WRITE_FAILED action=${entry.action} targetType=${entry.targetType} targetId=${entry.targetId ?? 'null'} actorId=${entry.actorId}`,
       );
     }
   }

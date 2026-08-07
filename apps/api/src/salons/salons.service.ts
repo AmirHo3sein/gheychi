@@ -1,11 +1,22 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { AdminNotificationsService } from '../admin-notifications/admin-notifications.service';
+import { ServiceCategory } from '../catalog/service-category.entity';
+import { CitiesService } from '../cities/cities.service';
 import { UsersService } from '../users/users.service';
+import { UpdateSalonStatusDto } from './dto/admin-salon-status.dto';
+import { SetFeaturedDto } from './dto/admin-salon.dto';
 import { CreateSalonDto, UpdateSalonDto } from './dto/salon.dto';
+import { SalonCategory } from './salon-category.entity';
 import { Salon } from './salon.entity';
 import { makeSlug } from '../common/slug.util';
+
+export interface SalonCategoryTag {
+  id: number;
+  name: string;
+  icon: string;
+}
 
 @Injectable()
 export class SalonsService {
@@ -13,40 +24,68 @@ export class SalonsService {
 
   constructor(
     @InjectRepository(Salon) private readonly repo: Repository<Salon>,
+    @InjectRepository(SalonCategory) private readonly salonCategories: Repository<SalonCategory>,
+    @InjectRepository(ServiceCategory) private readonly serviceCategories: Repository<ServiceCategory>,
+    @InjectDataSource() private readonly dataSource: DataSource,
     private readonly users: UsersService,
     private readonly adminNotifications: AdminNotificationsService,
+    private readonly cities: CitiesService,
   ) {}
+
+  /** Throws BadRequestException (not a raw FK-violation 500) for an id that doesn't exist. */
+  private async requireValidCategoryIds(categoryIds: number[]): Promise<void> {
+    const found = await this.serviceCategories.count({ where: { id: In(categoryIds) } });
+    if (found !== categoryIds.length) {
+      throw new BadRequestException('یک یا چند دسته‌بندی انتخاب‌شده معتبر نیست');
+    }
+  }
 
   async createForOwner(ownerId: string, dto: CreateSalonDto): Promise<Salon> {
     const existing = await this.repo.findOneBy({ ownerId });
     if (existing) throw new ConflictException('You already have a salon');
+    await this.requireValidCategoryIds(dto.categoryIds);
+    // Best-effort enrichment, never a validation gate -- a city not in the canonical
+    // list (a small town) still creates the salon fine, just with cityId left null.
+    const cityId = await this.cities.findIdByName(dto.city);
 
-    const salon = await this.repo.save(
-      this.repo.create({
-        ownerId,
-        name: dto.name,
-        slug: makeSlug(dto.name),
-        description: dto.description ?? null,
-        genderTarget: dto.genderTarget,
-        address: dto.address,
-        city: dto.city,
-        capacity: dto.capacity ?? 1,
-        location: { type: 'Point', coordinates: [dto.lng, dto.lat] },
-      }),
-    );
-    await this.users.promoteToProvider(ownerId);
-    return salon;
+    return this.dataSource.transaction(async (em) => {
+      const salon = await em.save(
+        Salon,
+        em.create(Salon, {
+          ownerId,
+          name: dto.name,
+          slug: makeSlug(dto.name),
+          description: dto.description ?? null,
+          genderTarget: dto.genderTarget,
+          address: dto.address,
+          city: dto.city,
+          cityId,
+          capacity: dto.capacity ?? 1,
+          location: { type: 'Point', coordinates: [dto.lng, dto.lat] },
+        }),
+      );
+      await em.insert(
+        SalonCategory,
+        dto.categoryIds.map((categoryId) => ({ salonId: salon.id, categoryId })),
+      );
+      await this.users.promoteToProvider(ownerId);
+      return salon;
+    });
   }
 
-  async findMine(ownerId: string): Promise<Salon> {
+  async findMine(ownerId: string): Promise<Salon & { categories: SalonCategoryTag[] }> {
     const salon = await this.repo.findOneBy({ ownerId });
     if (!salon) throw new NotFoundException('No salon for this account');
-    return salon;
+    const [withCategories] = await this.attachCategories([salon]);
+    return withCategories;
   }
 
-  async updateMine(ownerId: string, dto: UpdateSalonDto): Promise<Salon> {
-    const salon = await this.findMine(ownerId);
-    const { lat, lng, ...rest } = dto;
+  async updateMine(salonId: string, dto: UpdateSalonDto): Promise<Salon & { categories: SalonCategoryTag[] }> {
+    const salon = await this.repo.findOneBy({ id: salonId });
+    if (!salon) throw new NotFoundException('No salon for this account');
+    if (dto.categoryIds) await this.requireValidCategoryIds(dto.categoryIds);
+
+    const { lat, lng, categoryIds, ...rest } = dto;
     // The validation pipe's plainToInstance defines EVERY dto field as an own property
     // (undefined when the client omitted it, ES2022 class-field semantics). Assigning
     // those undefineds onto the loaded entity makes repo.save() report null for columns
@@ -56,11 +95,34 @@ export class SalonsService {
     if (lat !== undefined && lng !== undefined) {
       salon.location = { type: 'Point', coordinates: [lng, lat] };
     }
-    return this.repo.save(salon);
+    // Re-resolve cityId only when city itself is actually being changed -- re-running
+    // this on every unrelated field update would be wasted work, and would also risk
+    // clobbering a previously-resolved cityId with null if the (unchanged) city string
+    // ever stopped matching due to a future rename of the canonical city list.
+    if (dto.city !== undefined) {
+      salon.cityId = await this.cities.findIdByName(dto.city);
+    }
+
+    await this.dataSource.transaction(async (em) => {
+      await em.save(Salon, salon);
+      // Delete-all-then-reinsert, not a diff -- this table is small (a handful of rows
+      // per salon) and resolving to the caller's submitted set as the source of truth
+      // is simpler and less error-prone than computing an add/remove delta.
+      if (categoryIds) {
+        await em.delete(SalonCategory, { salonId: salon.id });
+        await em.insert(
+          SalonCategory,
+          categoryIds.map((categoryId) => ({ salonId: salon.id, categoryId })),
+        );
+      }
+    });
+
+    const [withCategories] = await this.attachCategories([salon]);
+    return withCategories;
   }
 
-  async resubmitMine(ownerId: string): Promise<Salon> {
-    const salon = await this.repo.findOneBy({ ownerId });
+  async resubmitMine(salonId: string): Promise<Salon> {
+    const salon = await this.repo.findOneBy({ id: salonId });
     if (!salon) throw new NotFoundException('Salon not found');
     if (salon.status !== 'rejected') {
       throw new BadRequestException('Only a rejected salon can be resubmitted');
@@ -101,13 +163,89 @@ export class SalonsService {
     return updated;
   }
 
-  async findPublicBySlug(slug: string): Promise<Salon> {
+  async findPublicBySlug(slug: string): Promise<Salon & { categories: SalonCategoryTag[] }> {
     const salon = await this.repo.findOneBy({ slug, status: 'approved' });
     if (!salon) throw new NotFoundException();
-    return salon;
+    const [withCategories] = await this.attachCategories([salon]);
+    return withCategories;
   }
 
   findById(id: string): Promise<Salon | null> {
     return this.repo.findOneBy({ id });
+  }
+
+  // --- Admin moderation (moved out of AdminSalonsController, which previously ran these
+  // as raw repository calls directly in the handler -- every other salon mutation in this
+  // service already goes through validation/transaction structure here, and admin actions
+  // are no different: the "can't approve a suspended owner's salon" rule belongs next to
+  // the rest of this aggregate's business rules, not embedded in an HTTP controller.
+
+  async setStatus(id: string, dto: UpdateSalonStatusDto): Promise<Salon> {
+    if (dto.status === 'approved') {
+      const salon = await this.repo.findOneBy({ id });
+      if (!salon) throw new NotFoundException();
+      const owner = await this.users.findById(salon.ownerId);
+      if (owner?.status === 'suspended') {
+        // Persian: this message is surfaced verbatim by the admin panel's toast.
+        throw new ConflictException('تایید این آرایشگاه ممکن نیست؛ حساب مالک آن معلق است');
+      }
+    }
+    const patch: Partial<Salon> = {
+      status: dto.status,
+      rejectionReason: dto.status === 'approved' ? null : (dto.reason ?? null),
+    };
+    // suspended_cause bookkeeping (Plan 7 spec 3.5): a direct admin suspension is marked
+    // 'admin' so a later owner reactivation will NOT auto-restore this salon; approving
+    // (from any prior state) clears the cause. Rejection leaves it untouched -- so a
+    // rejected/pending salon may carry a stale 'owner_suspended' cause until its next
+    // approve/suspend scrubs it. Harmless: the reactivation cascade also requires
+    // status='suspended', so a stale cause on any other status can never trigger a restore.
+    if (dto.status === 'suspended') patch.suspendedCause = 'admin';
+    if (dto.status === 'approved') patch.suspendedCause = null;
+    const result = await this.repo.update({ id }, patch);
+    if (!result.affected) throw new NotFoundException();
+    return (await this.repo.findOneBy({ id }))!;
+  }
+
+  async setFeatured(id: string, dto: SetFeaturedDto): Promise<Salon> {
+    const result = await this.repo.update(
+      { id },
+      { isFeatured: dto.isFeatured, featuredUntil: dto.featuredUntil ? new Date(dto.featuredUntil) : null },
+    );
+    if (!result.affected) throw new NotFoundException();
+    return (await this.repo.findOneBy({ id }))!;
+  }
+
+  // Manual join, not an ORM relation -- matches this codebase's existing repo
+  // convention (see BookingsService.attachNames). Batches all salons in one query
+  // regardless of caller size, though every current caller passes a single salon.
+  private async attachCategories<T extends { id: string }>(
+    salons: T[],
+  ): Promise<Array<T & { categories: SalonCategoryTag[] }>> {
+    if (salons.length === 0) return [];
+    const salonIds = salons.map((s) => s.id);
+    const rows = await this.salonCategories
+      .createQueryBuilder('sc')
+      .innerJoin(ServiceCategory, 'cat', 'cat.id = sc.category_id')
+      .where('sc.salon_id IN (:...salonIds)', { salonIds })
+      .select(['sc.salonId AS salon_id', 'cat.id AS id', 'cat.name AS name', 'cat.icon AS icon'])
+      // Matches search.service.ts's own category-tags ordering (ORDER BY sc.name via
+      // json_agg) -- these two independently-implemented reads of the same
+      // salon_categories/service_categories join previously disagreed on order (this one
+      // had none at all, so it fell out however Postgres happened to return the join),
+      // an unintentional inconsistency between a salon's search-result badges and its own
+      // detail/create/update response, not a deliberate design choice.
+      .orderBy('cat.name', 'ASC')
+      .getRawMany<{ salon_id: string; id: number; name: string; icon: string }>();
+
+    const bySalonId = new Map<string, SalonCategoryTag[]>();
+    for (const row of rows) {
+      const tag: SalonCategoryTag = { id: row.id, name: row.name, icon: row.icon };
+      const existing = bySalonId.get(row.salon_id);
+      if (existing) existing.push(tag);
+      else bySalonId.set(row.salon_id, [tag]);
+    }
+
+    return salons.map((s) => ({ ...s, categories: bySalonId.get(s.id) ?? [] }));
   }
 }

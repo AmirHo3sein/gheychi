@@ -7,6 +7,8 @@ import { AlertsModule } from './alerts/alerts.module';
 import { AuthModule } from './auth/auth.module';
 import { BookingModule } from './booking/booking.module';
 import { CatalogModule } from './catalog/catalog.module';
+import { CitiesModule } from './cities/cities.module';
+import { CommonModule } from './common/common.module';
 import { ContentModule } from './content/content.module';
 import { CouponsModule } from './coupons/coupons.module';
 import { FavoritesModule } from './favorites/favorites.module';
@@ -20,6 +22,7 @@ import { ReportsModule } from './reports/reports.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { SalonsModule } from './salons/salons.module';
 import { SearchModule } from './search/search.module';
+import { StorageModule } from './storage/storage.module';
 import { WalletModule } from './wallet/wallet.module';
 
 @Module({
@@ -43,10 +46,12 @@ import { WalletModule } from './wallet/wallet.module';
     }),
     ScheduleModule.forRoot(),
     RedisModule,
+    CommonModule,
     PlatformConfigModule,
     AlertsModule,
     AuthModule,
     CatalogModule,
+    CitiesModule,
     SalonsModule,
     BookingModule,
     CouponsModule,
@@ -60,6 +65,7 @@ import { WalletModule } from './wallet/wallet.module';
     WalletModule,
     ReferralsModule,
     InvoicingModule,
+    StorageModule,
   ],
   controllers: [HealthController],
 })

@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, ILike, In, Repository } from 'typeorm';
 import { isForeignKeyViolation, isUniqueViolation } from '../common/postgres-error-codes';
 import { makeSlug } from '../common/slug.util';
+import { assertTrustedImageMimeType, EXTENSION_BY_IMAGE_MIME_TYPE } from '../common/trusted-image-upload';
 import { STORAGE_PROVIDER, StorageProvider } from '../storage/storage.provider';
 import { BlogCategory } from './blog-category.entity';
 import { BlogPost, BlogPostStatus } from './blog-post.entity';
@@ -50,12 +51,6 @@ const CATEGORY_IN_USE = 'این دسته‌بندی دارای مطلب است �
 // Carry-forward from Task 3's review: createPost/updatePost translate a nonexistent
 // categoryId (23503) into a 400 instead of letting it fall through as a raw 500.
 const CATEGORY_NOT_FOUND = 'دسته‌بندی انتخاب‌شده وجود ندارد';
-
-const EXTENSION_BY_MIME_TYPE: Record<string, string> = {
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
-};
 
 @Injectable()
 export class ContentService {
@@ -215,13 +210,18 @@ export class ContentService {
   }
 
   async setCover(id: string, file: Express.Multer.File): Promise<BlogPost & { coverImageUrl: string }> {
+    // file.mimetype is the client-declared Content-Type header -- independent of the
+    // controller's magic-number content validator -- and must be checked separately
+    // before it's trusted for the storage Content-Type below (S3StorageProvider persists
+    // it verbatim; see trusted-image-upload.ts for the full reasoning).
+    assertTrustedImageMimeType(file.mimetype);
     const post = await this.posts.findOneBy({ id });
     if (!post) throw new NotFoundException('Post not found');
     // Deliberately NOT using file.originalname in the key -- it's client-controlled and
-    // could contain path-traversal sequences. The mimetype was already restricted to
-    // image/jpeg|png|webp by the controller's validator, so deriving the extension from
-    // it keeps the key fully server-controlled (same reasoning as salon photo uploads).
-    const extension = EXTENSION_BY_MIME_TYPE[file.mimetype] ?? 'bin';
+    // could contain path-traversal sequences. file.mimetype is now verified-trusted
+    // (above), so deriving the extension from it keeps the key fully server-controlled
+    // (same reasoning as salon photo uploads).
+    const extension = EXTENSION_BY_IMAGE_MIME_TYPE[file.mimetype] ?? 'bin';
     const key = `blog/${id}/${randomUUID()}.${extension}`;
     // If the save below fails after this upload succeeds, the fresh object is orphaned in
     // storage with no row pointing at it -- accepted (same harmless-orphan class as the

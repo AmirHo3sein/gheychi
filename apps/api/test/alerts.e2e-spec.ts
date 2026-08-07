@@ -38,6 +38,7 @@ describe('Money-critical alerting (e2e)', () => {
       lat: 35.7,
       lng: 51.4,
       capacity: 5,
+      categoryIds: [categoriesRes.body[0].id],
     });
     salonId = salonRes.body.id;
     const serviceRes = await request(app.getHttpServer())
@@ -82,7 +83,7 @@ describe('Money-critical alerting (e2e)', () => {
     await request(app.getHttpServer())
       .post(`/api/bookings/${created.body.booking.id}/cancel`)
       .set('Cookie', customerCookie)
-      .expect(201);
+      .expect(200);
 
     // The refused refund must now be visible to the admin.
     const list = await request(app.getHttpServer())

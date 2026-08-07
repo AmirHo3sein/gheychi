@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsLatitude, IsLongitude, IsOptional, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsLatitude, IsLongitude, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class SearchQueryDto {
   @Type(() => Number)
@@ -27,4 +27,17 @@ export class SearchQueryDto {
   @IsOptional()
   @IsIn(['distance', 'rating'])
   sort?: 'distance' | 'rating';
+
+  // Opaque, server-issued continuation token (SearchService.encodeCursor) -- never
+  // constructed by the client, only round-tripped from a prior response's nextCursor.
+  @IsOptional()
+  @IsString()
+  cursor?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  pageSize?: number;
 }

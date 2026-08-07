@@ -35,6 +35,7 @@ describe('Referral discount-kind (percent_discount) rewards via literal coupon r
       lat: 35.7,
       lng: 51.4,
       capacity: 5,
+      categoryIds: [categoryId],
     });
     salonId = salonRes.body.id;
     const serviceRes = await request(app.getHttpServer())
@@ -320,7 +321,7 @@ describe('Referral discount-kind (percent_discount) rewards via literal coupon r
     });
 
     it('cancelling + refunding the qualifying booking voids the still-unredeemed coupon', async () => {
-      await request(app.getHttpServer()).post(`/api/bookings/${bookingId}/cancel`).set('Cookie', referredCookie).expect(201);
+      await request(app.getHttpServer()).post(`/api/bookings/${bookingId}/cancel`).set('Cookie', referredCookie).expect(200);
 
       const [payment] = await ds.query('SELECT status FROM payments WHERE booking_id = $1', [bookingId]);
       expect(payment.status).toBe('refunded');
@@ -416,7 +417,7 @@ describe('Referral discount-kind (percent_discount) rewards via literal coupon r
       const [{ count: before }] = await ds.query(`SELECT COUNT(*)::int AS count FROM admin_notifications`);
       notificationCountBefore = Number(before);
 
-      await request(app.getHttpServer()).post(`/api/bookings/${bookingId}/cancel`).set('Cookie', referredCookie).expect(201);
+      await request(app.getHttpServer()).post(`/api/bookings/${bookingId}/cancel`).set('Cookie', referredCookie).expect(200);
 
       const [payment] = await ds.query('SELECT status FROM payments WHERE booking_id = $1', [bookingId]);
       expect(payment.status).toBe('refunded');

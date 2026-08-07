@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, ILike, In, Repository } from 'typeorm';
 import { Booking } from '../booking/booking.entity';
 import { isUniqueViolation } from '../common/postgres-error-codes';
+import { resolveNamesById } from '../common/resolve-names-by-id';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
 import { Salon } from '../salons/salon.entity';
 import { Worker } from '../salons/worker.entity';
@@ -16,6 +17,17 @@ import { WorkerRating } from './worker-rating.entity';
 // salonReplyAt is the salon's own reply timestamp, safe to publish alongside the reply
 // itself; no consumer renders it yet, but it's the natural companion to salonReply.
 export type PublicReview = Pick<Review, 'id' | 'rating' | 'comment' | 'salonReply' | 'salonReplyAt' | 'createdAt'>;
+
+// A well-reviewed, long-lived salon can accumulate hundreds/thousands of published
+// reviews; this public, unauthenticated endpoint previously returned every one of them
+// in a single response. 50 is generous enough to be invisible for the overwhelming
+// majority of salons today while bounding the worst case.
+const DEFAULT_SALON_REVIEWS_PAGE_SIZE = 50;
+
+// Same defensive-ceiling rationale as BookingsService's MAX_MY_BOOKINGS_LISTED -- one
+// customer's own review history is inherently bounded by their own booking count, but
+// this was still the one "mine" list left with no documented cap at all.
+const MAX_MY_REVIEWS_LISTED = 500;
 
 // A review as shown back to the person who wrote it (GET /api/reviews/mine). Carries
 // the linked worker rating's score and the edit-window verdict, so a client can pick
@@ -193,6 +205,7 @@ export class ReviewsService {
     const rows = await this.reviews.find({
       where: bookingId ? { userId, bookingId } : { userId },
       order: { createdAt: 'DESC' },
+      take: MAX_MY_REVIEWS_LISTED,
     });
     if (rows.length === 0) return [];
 
@@ -262,14 +275,23 @@ export class ReviewsService {
     return new Date(createdAt.getTime() + windowHours * 60 * 60_000);
   }
 
-  async findForSalon(salonId: string): Promise<PublicReview[]> {
+  async listForSalon(
+    salonId: string,
+    page = 1,
+    pageSize = DEFAULT_SALON_REVIEWS_PAGE_SIZE,
+  ): Promise<{ items: PublicReview[]; total: number; page: number; pageSize: number }> {
     // Public sub-resources of a salon 404 when the salon is not approved -- the same
     // policy PublicSalonContentController.requireSalonId() applies to the public
     // services/hours/photos listings via SalonsService.findPublicBySlug(). Without
     // this check, reviews of pending/suspended salons were publicly listable by id.
     const salon = await this.salons.findOneBy({ id: salonId, status: 'approved' });
     if (!salon) throw new NotFoundException();
-    const rows = await this.reviews.find({ where: { salonId, status: 'published' }, order: { createdAt: 'DESC' } });
+    const [rows, total] = await this.reviews.findAndCount({
+      where: { salonId, status: 'published' },
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    });
     // Projected, never the raw entity: this endpoint is unauthenticated
     // (SalonReviewsController has no AuthGuard), and a Review row carries userId and
     // bookingId. Returning those would let anyone scrape the platform and correlate a
@@ -277,9 +299,10 @@ export class ReviewsService {
     // review to a specific booking. Same shape as the other public sub-resource
     // listings in PublicSalonContentController -- an explicit field subset, so adding
     // a column to the entity can never silently widen the public payload.
-    return rows.map(({ id, rating, comment, salonReply, salonReplyAt, createdAt }) => ({
+    const items = rows.map(({ id, rating, comment, salonReply, salonReplyAt, createdAt }) => ({
       id, rating, comment, salonReply, salonReplyAt, createdAt,
     }));
+    return { items, total, page, pageSize };
   }
 
   async listForAdmin(query: {
@@ -333,13 +356,11 @@ export class ReviewsService {
     const reviewIds = items.map((r) => r.id);
     const ratings = reviewIds.length ? await this.workerRatings.find({ where: { reviewId: In(reviewIds) } }) : [];
     const workerIds = [...new Set(ratings.map((r) => r.workerId))];
-    const workerRows = workerIds.length ? await this.workers.find({ where: { id: In(workerIds) } }) : [];
-    const workerNameById = new Map(workerRows.map((w) => [w.id, w.name]));
+    const workerNameById = await resolveNamesById(this.workers, workerIds);
     const ratingByReviewId = new Map(ratings.map((r) => [r.reviewId, r]));
 
     const salonIds = [...new Set(items.map((r) => r.salonId))];
-    const salonRows = salonIds.length ? await this.salons.find({ where: { id: In(salonIds) } }) : [];
-    const salonNameById = new Map(salonRows.map((s) => [s.id, s.name]));
+    const salonNameById = await resolveNamesById(this.salons, salonIds);
 
     return {
       items: items.map((review) => {
@@ -387,13 +408,11 @@ export class ReviewsService {
     const workerIds = [...new Set(items.map((r) => r.workerId))];
     const salonIds = [...new Set(items.map((r) => r.salonId))];
     const reviewIds = [...new Set(items.map((r) => r.reviewId))];
-    const [workerRows, salonRows, reviewRows] = await Promise.all([
-      workerIds.length ? this.workers.find({ where: { id: In(workerIds) } }) : Promise.resolve([]),
-      salonIds.length ? this.salons.find({ where: { id: In(salonIds) } }) : Promise.resolve([]),
+    const [workerNameById, salonNameById, reviewRows] = await Promise.all([
+      resolveNamesById(this.workers, workerIds),
+      resolveNamesById(this.salons, salonIds),
       reviewIds.length ? this.reviews.find({ where: { id: In(reviewIds) } }) : Promise.resolve([]),
     ]);
-    const workerNameById = new Map(workerRows.map((w) => [w.id, w.name]));
-    const salonNameById = new Map(salonRows.map((s) => [s.id, s.name]));
     const reviewStatusById = new Map(reviewRows.map((r) => [r.id, r.status]));
 
     return {

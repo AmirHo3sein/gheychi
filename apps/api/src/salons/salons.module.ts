@@ -3,6 +3,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminNotificationsModule } from '../admin-notifications/admin-notifications.module';
 import { AuditModule } from '../audit/audit.module';
 import { AuthModule } from '../auth/auth.module';
+import { CatalogModule } from '../catalog/catalog.module';
+import { CitiesModule } from '../cities/cities.module';
 import { ReferralsModule } from '../referrals/referrals.module';
 import { WorkerRating } from '../reviews/worker-rating.entity';
 import { StorageModule } from '../storage/storage.module';
@@ -11,6 +13,7 @@ import { AdminSalonsController } from './admin-salons.controller';
 import { AdminShowcaseController } from './admin-showcase.controller';
 import { PortfolioItem } from './portfolio-item.entity';
 import { PublicSalonContentController } from './public-salon-content.controller';
+import { SalonCategory } from './salon-category.entity';
 import { SalonOwnerGuard } from './salon-owner.guard';
 import { SalonPhoto } from './salon-photo.entity';
 import { SalonPhotosController } from './salon-photos.controller';
@@ -28,12 +31,15 @@ import { ScheduleException } from './schedule-exception.entity';
 import { SitemapSalonsController } from './sitemap-salons.controller';
 import { StoryCleanupJob } from './story-cleanup.job';
 import { Worker } from './worker.entity';
+import { WorkerEligibilityService } from './worker-eligibility.service';
+import { WorkerService } from './worker-service.entity';
 import { WorkingHour } from './working-hour.entity';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([
       Salon, SalonService, WorkingHour, ScheduleException, SalonPhoto, SalonStory, PortfolioItem, Worker,
+      SalonCategory, WorkerService,
       // WorkerRating is "owned" by ReviewsModule (created/recomputed inside
       // ReviewsService.create()) but is registered here too, purely for
       // PublicSalonContentController's read-only ratings sub-resource -- ReviewsModule
@@ -47,10 +53,17 @@ import { WorkingHour } from './working-hour.entity';
     AuditModule,
     AdminNotificationsModule,
     UsersModule,
+    // For the ServiceCategory repo -- salons.service.ts attaches {id,name,icon} to a
+    // salon's tagged categories. CatalogModule has no dependency back on SalonsModule,
+    // plain one-directional import.
+    CatalogModule,
     // For SalonWorkersController's GET :id/referral-code -- ReferralsModule does NOT
     // import SalonsModule back (it registers Salon/Worker directly, see the comment
     // in referrals.module.ts), so this is a plain one-directional import, no cycle.
     ReferralsModule,
+    // For SalonsService.createForOwner/updateMine's best-effort city_id resolution.
+    // CitiesModule has no dependency back on SalonsModule, plain one-directional import.
+    CitiesModule,
   ],
   controllers: [
     SalonServicesController,
@@ -70,7 +83,7 @@ import { WorkingHour } from './working-hour.entity';
     // SalonPortfolioController, SalonWorkersController) or it will silently shadow them.
     PublicSalonContentController,
   ],
-  providers: [SalonsService, SalonOwnerGuard, StoryCleanupJob],
-  exports: [SalonsService, SalonOwnerGuard, TypeOrmModule],
+  providers: [SalonsService, SalonOwnerGuard, StoryCleanupJob, WorkerEligibilityService],
+  exports: [SalonsService, SalonOwnerGuard, TypeOrmModule, WorkerEligibilityService],
 })
 export class SalonsModule {}

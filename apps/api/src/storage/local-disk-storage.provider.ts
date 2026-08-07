@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { promises as fs } from 'fs';
-import { dirname, join } from 'path';
-import { StorageProvider } from './storage.provider';
+import { dirname, join, relative } from 'path';
+import { StorageObjectInfo, StorageProvider } from './storage.provider';
 
 @Injectable()
 export class LocalDiskStorageProvider implements StorageProvider {
@@ -23,5 +23,39 @@ export class LocalDiskStorageProvider implements StorageProvider {
 
   async delete(key: string): Promise<void> {
     await fs.rm(join(this.root, key), { force: true });
+  }
+
+  async exists(key: string): Promise<boolean> {
+    try {
+      await fs.stat(join(this.root, key));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async list(prefix: string): Promise<StorageObjectInfo[]> {
+    const dir = join(this.root, prefix);
+    const results: StorageObjectInfo[] = [];
+    await this.walk(dir, results);
+    return results;
+  }
+
+  private async walk(dir: string, results: StorageObjectInfo[]): Promise<void> {
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return; // prefix directory doesn't exist yet -- nothing to list
+    }
+    for (const entry of entries) {
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await this.walk(fullPath, results);
+      } else {
+        const stat = await fs.stat(fullPath);
+        results.push({ key: relative(this.root, fullPath).split('\\').join('/'), lastModified: stat.mtime });
+      }
+    }
   }
 }

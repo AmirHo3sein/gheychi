@@ -27,6 +27,7 @@ describe('Reviews — creation (e2e)', () => {
       lat: 35.7,
       lng: 51.4,
       capacity: 5,
+      categoryIds: [categoryId],
     });
     salonId = salonRes.body.id;
 
@@ -172,6 +173,7 @@ describe('Reviews — public listing (e2e)', () => {
       lat: 35.7,
       lng: 51.4,
       capacity: 5,
+      categoryIds: [categoryId],
     });
     salonId = salonRes.body.id;
 
@@ -212,9 +214,9 @@ describe('Reviews — public listing (e2e)', () => {
     return created.body.booking.id;
   }
 
-  it('returns an empty array for a salon with no reviews', async () => {
+  it('returns an empty array (in the paginated envelope) for a salon with no reviews', async () => {
     const res = await request(app.getHttpServer()).get(`/api/salons/${salonId}/reviews`).expect(200);
-    expect(res.body).toEqual([]);
+    expect(res.body).toEqual({ items: [], total: 0, page: 1, pageSize: 50 });
   });
 
   it('lists published reviews without requiring auth', async () => {
@@ -226,14 +228,15 @@ describe('Reviews — public listing (e2e)', () => {
       .expect(201);
 
     const res = await request(app.getHttpServer()).get(`/api/salons/${salonId}/reviews`).expect(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].rating).toBe(4);
-    expect(res.body[0].comment).toBe('Good');
+    expect(res.body.total).toBe(1);
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0].rating).toBe(4);
+    expect(res.body.items[0].comment).toBe('Good');
 
     // The listing is unauthenticated, so the payload must never carry reviewer
     // identity or the booking it came from -- asserted on the wire (not just at the
     // service boundary) since that's what an anonymous scraper actually sees.
-    expect(Object.keys(res.body[0]).sort()).toEqual(
+    expect(Object.keys(res.body.items[0]).sort()).toEqual(
       ['comment', 'createdAt', 'id', 'rating', 'salonReply', 'salonReplyAt'],
     );
   });
@@ -262,6 +265,7 @@ describe('Reviews — salon owner reply (e2e)', () => {
       lat: 35.7,
       lng: 51.4,
       capacity: 5,
+      categoryIds: [categoryId],
     });
     salonId = salonRes.body.id;
 
@@ -323,7 +327,7 @@ describe('Reviews — salon owner reply (e2e)', () => {
       .expect(200);
 
     const res = await request(app.getHttpServer()).get(`/api/salons/${salonId}/reviews`).expect(200);
-    expect(res.body[0].salonReply).toBe('Updated reply');
+    expect(res.body.items[0].salonReply).toBe('Updated reply');
   });
 
   it('rejects a reply from someone who does not own a salon', async () => {
@@ -341,6 +345,8 @@ describe('Reviews — salon owner reply (e2e)', () => {
     // actual authorization boundary this task exists to enforce, not just
     // SalonOwnerGuard's separate "caller has zero salons" 404 path.
     const otherOwnerCookie = await loginAs(app, '09149990010');
+    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+    const categoryId = categoriesRes.body[0].id;
     await request(app.getHttpServer()).post('/api/salons').set('Cookie', otherOwnerCookie).send({
       name: 'Other Owner Salon',
       genderTarget: 'women',
@@ -349,6 +355,7 @@ describe('Reviews — salon owner reply (e2e)', () => {
       lat: 35.7,
       lng: 51.4,
       capacity: 5,
+      categoryIds: [categoryId],
     });
 
     await request(app.getHttpServer())
@@ -391,6 +398,7 @@ describe('Reviews — admin moderation (e2e)', () => {
       lat: 35.7,
       lng: 51.4,
       capacity: 5,
+      categoryIds: [categoryId],
     });
     salonId = salonRes.body.id;
 
@@ -458,7 +466,7 @@ describe('Reviews — admin moderation (e2e)', () => {
     expect(salon.rating_count).toBe(0);
 
     const listRes = await request(app.getHttpServer()).get(`/api/salons/${salonId}/reviews`).expect(200);
-    expect(listRes.body).toEqual([]);
+    expect(listRes.body.items).toEqual([]);
   });
 
   it('lets an admin reverse a rejection back to published', async () => {
@@ -501,6 +509,6 @@ describe('Reviews — admin moderation (e2e)', () => {
       .expect(200);
 
     const res = await request(app.getHttpServer()).get(`/api/salons/${salonId}/reviews`).expect(200);
-    expect(res.body[0].salonReply).toBe('Thanks for the feedback!');
+    expect(res.body.items[0].salonReply).toBe('Thanks for the feedback!');
   });
 });

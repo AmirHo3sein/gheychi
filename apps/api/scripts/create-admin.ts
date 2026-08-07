@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
-import { IRAN_MOBILE } from '../src/auth/dto/auth.dto';
+import { IRAN_MOBILE } from '../src/common/validators';
 import { User } from '../src/users/user.entity';
 
 export type CreateAdminResult = 'created' | 'promoted' | 'already-admin';

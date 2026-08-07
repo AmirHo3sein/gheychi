@@ -1,4 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { bigintToNumber } from '../common/numeric-transformers';
 
 // bank_transfer/cash/other are the only methods anything writes today (admin manually
 // recording a settlement). automatic_payout/wallet_credit are listed per the DB CHECK
@@ -6,11 +7,6 @@ import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeor
 // become a second *writer* of this same table (inserting its own rows), not a schema
 // change.
 export type InvoicePaymentMethod = 'bank_transfer' | 'cash' | 'other' | 'automatic_payout' | 'wallet_credit';
-
-const bigintToNumber = {
-  to: (v: number) => v,
-  from: (v: string) => Number(v),
-};
 
 /**
  * Named InvoicePayment, not Payment, to avoid colliding with the existing booking

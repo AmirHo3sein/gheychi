@@ -44,6 +44,7 @@ describe('Admin category delete (e2e)', () => {
         city: 'Tehran',
         lat: 35.7,
         lng: 51.4,
+        categoryIds: [usedCategoryId],
       })
       .expect(201);
 

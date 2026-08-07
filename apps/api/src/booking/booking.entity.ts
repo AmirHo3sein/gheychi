@@ -1,4 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { bigintToNumber, nullableBigintToNumber } from '../common/numeric-transformers';
 
 export type BookingStatus =
   | 'pending_payment'
@@ -8,19 +9,6 @@ export type BookingStatus =
   | 'cancelled_by_salon'
   | 'expired'
   | 'no_show';
-
-const bigintToNumber = {
-  to: (v: number) => v,
-  from: (v: string) => Number(v),
-};
-
-// Same as bigintToNumber, but null-safe -- originalPriceSnapshot is only populated
-// when a discount actually applied, so unlike priceSnapshot/depositAmount its `from`
-// must pass a null straight through rather than coercing it to 0 via Number(null).
-const nullableBigintToNumber = {
-  to: (v: number | null) => v,
-  from: (v: string | null) => (v === null ? null : Number(v)),
-};
 
 @Entity('bookings')
 export class Booking {

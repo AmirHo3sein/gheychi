@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { CronJobRunner } from '../common/cron-job-runner.service';
 import { STORAGE_PROVIDER } from '../storage/storage.provider';
 import { SalonStory } from './salon-story.entity';
 import { StoryCleanupJob } from './story-cleanup.job';
@@ -50,6 +51,7 @@ describe('StoryCleanupJob', () => {
           useValue: { createQueryBuilder: jest.fn(() => qb), delete: rowDelete },
         },
         { provide: STORAGE_PROVIDER, useValue: { delete: storageDelete } },
+        { provide: CronJobRunner, useValue: { run: jest.fn((_name: string, fn: () => Promise<void>) => fn()) } },
       ],
     }).compile();
 

@@ -21,6 +21,8 @@ describe('Admin audit log (e2e)', () => {
     adminId = me.body.id;
 
     const ownerCookie = await loginAs(app, '09127770002');
+    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+    const categoryId = categoriesRes.body[0].id;
     const createRes = await request(app.getHttpServer())
       .post('/api/salons')
       .set('Cookie', ownerCookie)
@@ -31,6 +33,7 @@ describe('Admin audit log (e2e)', () => {
         city: 'Tehran',
         lat: 35.7,
         lng: 51.4,
+        categoryIds: [categoryId],
       })
       .expect(201);
     salonId = createRes.body.id;

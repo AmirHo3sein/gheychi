@@ -28,6 +28,21 @@ describe('AuditAction decorator', () => {
     expect(Reflect.getMetadata(AUDIT_ACTION, Dummy.prototype.handler)).toEqual({
       action: 'salon.status.set',
       targetType: 'salon',
+      targetIdParam: 'id',
+    });
+  });
+
+  it('stores a custom targetIdParam when the route param is not named :id', () => {
+    class Dummy {
+      @AuditAction('referral-reward-type.update', 'referral-reward-type', 'type')
+      handler() {
+        return 1;
+      }
+    }
+    expect(Reflect.getMetadata(AUDIT_ACTION, Dummy.prototype.handler)).toEqual({
+      action: 'referral-reward-type.update',
+      targetType: 'referral-reward-type',
+      targetIdParam: 'type',
     });
   });
 });
@@ -58,7 +73,7 @@ describe('AuditInterceptor', () => {
 
   it('records a success row with actor, target and payload after the handler resolves', async () => {
     const interceptor = new AuditInterceptor(
-      reflectorReturning({ action: 'salon.status.set', targetType: 'salon' }),
+      reflectorReturning({ action: 'salon.status.set', targetType: 'salon', targetIdParam: 'id' }),
       audit,
     );
     const req = { user: { id: 'admin-1' }, params: { id: 'salon-9' }, body: { status: 'approved' } };
@@ -81,7 +96,7 @@ describe('AuditInterceptor', () => {
 
   it('records success: false and rethrows the original error when the handler rejects', async () => {
     const interceptor = new AuditInterceptor(
-      reflectorReturning({ action: 'salon.status.set', targetType: 'salon' }),
+      reflectorReturning({ action: 'salon.status.set', targetType: 'salon', targetIdParam: 'id' }),
       audit,
     );
     const req = { user: { id: 'admin-1' }, params: { id: 'missing' }, body: { status: 'approved' } };
@@ -103,9 +118,23 @@ describe('AuditInterceptor', () => {
     });
   });
 
+  it('reads targetId off a custom targetIdParam for a route whose param is not named :id', async () => {
+    const interceptor = new AuditInterceptor(
+      reflectorReturning({ action: 'referral-reward-type.update', targetType: 'referral-reward-type', targetIdParam: 'type' }),
+      audit,
+    );
+    const req = { user: { id: 'admin-1' }, params: { type: 'salon_owner' }, body: { enabled: true } };
+
+    await lastValueFrom(interceptor.intercept(mockContext(req), { handle: () => of({}) }));
+
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({ targetId: 'salon_owner' }),
+    );
+  });
+
   it('records targetId: null and the raw body as payload for routes without an :id param', async () => {
     const interceptor = new AuditInterceptor(
-      reflectorReturning({ action: 'config.update', targetType: 'config' }),
+      reflectorReturning({ action: 'config.update', targetType: 'config', targetIdParam: 'id' }),
       audit,
     );
     const req = {
@@ -138,7 +167,7 @@ describe('AuditInterceptor', () => {
         }),
     );
     const interceptor = new AuditInterceptor(
-      reflectorReturning({ action: 'salon.status.set', targetType: 'salon' }),
+      reflectorReturning({ action: 'salon.status.set', targetType: 'salon', targetIdParam: 'id' }),
       audit,
     );
     const req = { user: { id: 'admin-1' }, params: { id: 'salon-9' }, body: { status: 'approved' } };
@@ -171,7 +200,7 @@ describe('AuditInterceptor', () => {
         }),
     );
     const interceptor = new AuditInterceptor(
-      reflectorReturning({ action: 'salon.status.set', targetType: 'salon' }),
+      reflectorReturning({ action: 'salon.status.set', targetType: 'salon', targetIdParam: 'id' }),
       audit,
     );
     const req = { user: { id: 'admin-1' }, params: { id: 'missing' }, body: { status: 'approved' } };

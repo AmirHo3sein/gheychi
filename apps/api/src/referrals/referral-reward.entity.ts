@@ -1,27 +1,17 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { nullableNumericToNumber, numericToNumber } from '../common/numeric-transformers';
 import { RewardKind } from './referral-reward-type.entity';
 
 export type RewardBeneficiaryRole = 'referrer' | 'referred';
 export type ReferralRewardStatus = 'granted' | 'reversed';
 
-// numeric(12,2) columns -- see referral.entity.ts's identical convention comment.
-const numericToNumber = {
-  to: (v: number) => v,
-  from: (v: string) => Number(v),
-};
-const nullableNumericToNumber = {
-  to: (v: number | null) => v,
-  from: (v: string | null) => (v === null ? null : Number(v)),
-};
-
 // One row per (referral, beneficiary_role) -- UNIQUE(referral_id, beneficiary_role)
 // (referral_rewards_referral_role_uidx) is the DB-enforced exactly-once backstop
 // tryGrantReward relies on (spec section 7). Doubles as the payout record: exactly
 // one of wallet_transaction_id (wallet_credit/cashback/loyalty_points) or coupon_id
-// (percent_discount/fixed_discount, slice 5+) is set once a row exists. Slice 4 only
-// ever produces wallet_transaction_id rows -- discount-kind sides are skipped
-// entirely (not yet supported), so a referral can have 0, 1, or 2 of these rows
-// depending on which side(s)' reward_kind is currently grantable (see
+// (percent_discount/fixed_discount) is set once a row exists. As of Slice 6 all five
+// reward kinds are grantable, so a referral normally ends up with both rows at once;
+// 0 or 1 rows only happens transiently, or if a grant attempt failed for one side (see
 // referrals.status's 'partially_granted' state).
 @Entity('referral_rewards')
 export class ReferralReward {
