@@ -17,7 +17,7 @@ const fetchStub = Object.assign((...args: unknown[]) => fetchMock(...args), {
 mockNuxtImport('useRoute', () => () => ({ params: { slug: 'test-salon', serviceId: 'svc-1' } }))
 
 const SALON = { id: 'salon-1', name: 'Test Salon', address: 'Somewhere St' }
-const SERVICE = { id: 'svc-1', name: 'Haircut', price: 300_000, durationMin: 30 }
+const SERVICE = { id: 'svc-1', name: 'Haircut', description: null as string | null, price: 300_000, durationMin: 30 }
 const TERMS = { depositPercent: 20, depositMinToman: 200_000, cancellationWindowHours: 24 }
 const SLOT_ISO = '2026-07-10T09:00:00.000Z'
 
@@ -106,6 +106,25 @@ describe('booking confirm page', () => {
     expect(wrapper.text()).toContain(expectedDeposit.toLocaleString('fa-IR'))
   })
 
+  it('shows the listed duration, and a provider-authored note when the duration may run longer', async () => {
+    stubPageLoad('success', undefined, {
+      ...SERVICE,
+      description: 'این زمان تقریبی است و ممکن است بیشتر طول بکشد',
+    })
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    expect(wrapper.text()).toContain(SERVICE.durationMin.toLocaleString('fa-IR'))
+    expect(wrapper.text()).toContain('این زمان تقریبی است و ممکن است بیشتر طول بکشد')
+  })
+
+  it('omits the duration note when the provider did not set one', async () => {
+    stubPageLoad('success')
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    expect(wrapper.text()).toContain(SERVICE.durationMin.toLocaleString('fa-IR'))
+    expect(wrapper.text()).not.toContain('تقریبی')
+  })
+
   // The fixture price (300,000) sits above depositMinToman, so the case above never
   // exercises the cap. calculateDeposit() caps the deposit at the price -- the minimum is a
   // floor on a normal price, not a licence to quote more than the service costs -- and this
@@ -166,6 +185,14 @@ describe('booking confirm page', () => {
 
     const bookingCall = fetchMock.mock.calls.find(([path]) => path === '/bookings')
     expect(bookingCall?.[1]).toMatchObject({ body: expect.objectContaining({ applyWalletBalance: undefined }) })
+  })
+
+  it('requests the worker roster scoped to this service, so a restricted worker never appears for an ineligible service', async () => {
+    stubPageLoad('success', undefined, SERVICE, 0, [{ id: 'w1', name: 'Sara', ratingAvg: 4.5, ratingCount: 10 }])
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    const workersCall = fetchMock.mock.calls.find(([path]) => path === '/salons/test-salon/workers')
+    expect(workersCall?.[1]).toMatchObject({ query: { serviceId: 'svc-1' } })
   })
 
   it('does not render a worker picker when the salon has no workers', async () => {

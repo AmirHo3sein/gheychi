@@ -113,7 +113,7 @@ const publishedDate = new Date(post.value.publishedAt).toLocaleDateString('fa-IR
       <NuxtLink
         v-if="post.categorySlug"
         :to="{ path: '/blog', query: { category: post.categorySlug } }"
-        class="inline-block rounded-full bg-(--color-surface-card) px-3 py-1 text-xs text-(--color-accent-strong)"
+        class="inline-block rounded-full bg-(--color-surface-card) px-3 py-1 text-xs text-(--color-accent-text)"
       >
         {{ post.categoryName }}
       </NuxtLink>

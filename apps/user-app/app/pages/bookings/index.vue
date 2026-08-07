@@ -149,7 +149,7 @@ const { titleId: cancelTitleId } = useDialog(cancelDialogRoot, { onClose: closeC
 </script>
 
 <template>
-  <div class="p-4 space-y-4">
+  <div class="mx-auto max-w-2xl space-y-4 p-4">
     <h1 class="text-xl font-bold text-(--color-text)">نوبت‌های من</h1>
 
     <p v-if="loading" class="flex items-center justify-center gap-2 py-8 text-sm text-(--color-text-muted)">
@@ -234,7 +234,7 @@ const { titleId: cancelTitleId } = useDialog(cancelDialogRoot, { onClose: closeC
         <NuxtLink
           :to="`/bookings/${booking.id}`"
           data-testid="booking-detail-link"
-          class="ms-auto inline-flex items-center gap-1 text-(--color-accent) hover:underline"
+          class="ms-auto inline-flex items-center gap-1 text-(--color-accent-text) hover:underline"
         >
           جزئیات
           <BaseIcon name="chevron-back" :size="14" />

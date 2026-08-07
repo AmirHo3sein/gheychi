@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
 import { flushPromises } from '@vue/test-utils'
+import Multiselect from 'vue-multiselect'
 import ProfilePage from '../../app/pages/profile.vue'
 import { useSessionStore } from '../../app/stores/session'
 
@@ -16,13 +17,13 @@ mockNuxtImport('navigateTo', () => navigateToMock)
 
 const USER = { id: 'u1', phone: '09120000000', name: 'Existing Name', gender: 'male' as const, role: 'customer' as const }
 
-// Dispatch by URL -- the page fetches /favorites on mount, and hits /auth/profile /
-// /auth/logout from user actions. /push/subscribe only shows up once a test opts into a
-// push-capable browser: refreshStatus rebinds the endpoint to the current user (POST) and
-// logout unbinds it (DELETE).
+// Dispatch by URL -- the page hits /auth/profile / /auth/logout from user actions.
+// /push/subscribe only shows up once a test opts into a push-capable browser:
+// refreshStatus rebinds the endpoint to the current user (POST) and logout unbinds it
+// (DELETE). Saved salons are no longer fetched here at all -- see the "links out to
+// /account/favorites" test below -- so there is no /favorites branch to stub.
 function stub(overrides: Record<string, unknown> = {}) {
   fetchMock.mockImplementation(async (path: string) => {
-    if (path === '/favorites') return []
     if (path === '/auth/profile') return { ...USER, ...overrides }
     if (path === '/auth/logout') return undefined
     if (path === '/push/subscribe') return { ok: true }
@@ -66,7 +67,7 @@ describe('profile page', () => {
     delete navigator.serviceWorker
   })
 
-  it('renders the name and gender fields with real accessible labels via BaseInput/BaseSelect', async () => {
+  it('renders the name and gender fields with real accessible labels via BaseInput/AppSelect', async () => {
     stub()
     const wrapper = await mountSuspended(ProfilePage)
     await flushPromises()
@@ -76,10 +77,12 @@ describe('profile page', () => {
     expect(nameLabel).toBeTruthy()
     expect(nameLabel!.attributes('for')).toBe(nameInput.attributes('id'))
 
-    const genderSelect = wrapper.find('select')
+    // AppSelect's root is vue-multiselect's role="combobox" div, which a native <label for>
+    // cannot target, so the association is aria-labelledby pointing back at the label.
+    const genderCombobox = wrapper.find('[role="combobox"]')
     const genderLabel = wrapper.findAll('label').find((l) => l.text() === 'جنسیت')
     expect(genderLabel).toBeTruthy()
-    expect(genderLabel!.attributes('for')).toBe(genderSelect.attributes('id'))
+    expect(genderCombobox.attributes('aria-labelledby')).toBe(genderLabel!.attributes('id'))
   })
 
   it('leaves an unset gender visibly unset instead of pre-answering it as female', async () => {
@@ -91,9 +94,12 @@ describe('profile page', () => {
     const wrapper = await mountSuspended(ProfilePage)
     await flushPromises()
 
-    const select = wrapper.find('select')
-    expect((select.element as HTMLSelectElement).value).toBe('')
-    expect(select.find('option[value=""]').exists()).toBe(true)
+    // Same lookup rationale as index.spec.ts: vue-multiselect's own component is the stable
+    // reference through AppSelect's .client.vue wrapping. A null model-value means '' matched
+    // no option, which is exactly what "nothing picked" has to look like -- and it renders as
+    // the placeholder rather than as one of the two real choices.
+    expect(wrapper.findComponent(Multiselect).props('modelValue')).toBeNull()
+    expect(wrapper.find('.multiselect__placeholder').text()).toBe('انتخاب کنید')
   })
 
   it('refuses to save while the gender is unset, with a Persian inline error and no API call', async () => {
@@ -162,7 +168,6 @@ describe('profile page', () => {
 
   it('does not toast or update the session when the save fails', async () => {
     fetchMock.mockImplementation(async (path: string) => {
-      if (path === '/favorites') return []
       if (path === '/auth/profile') throw { response: { status: 500 }, statusMessage: 'Server error' }
       throw new Error(`unexpected fetch path in test: ${path}`)
     })
@@ -182,6 +187,23 @@ describe('profile page', () => {
     // its own Persian copy rather than surfacing the English phrase.
     expect(toasts.value.length).toBe(before + 1)
     expect(toasts.value.at(-1)?.message).toBe('خطایی رخ داد')
+  })
+
+  it('links out to /account/favorites instead of listing saved salons inline', async () => {
+    // Saved salons used to be fetched and rendered directly on this page -- moved to its
+    // own route (a dedicated card feed, matching /account/wallet and /account/referral's
+    // established "profile links out, the sub-page does the fetching" pattern) so a saved
+    // salon has a real place to be discovered, not just a plain-text row buried here.
+    stub()
+    const wrapper = await mountSuspended(ProfilePage)
+    await flushPromises()
+
+    expect(fetchMock).not.toHaveBeenCalledWith('/favorites', expect.anything())
+    const favoritesLink = wrapper
+      .findAllComponents({ name: 'NuxtLink' })
+      .find((link) => link.props('to') === '/account/favorites')
+    expect(favoritesLink).toBeTruthy()
+    expect(favoritesLink!.text()).toContain('مشاهده سالن‌های ذخیره‌شده')
   })
 
   it('renders the sign-out control with danger styling, not the reserved ad/sponsorship color', async () => {
@@ -229,7 +251,6 @@ describe('profile page', () => {
     const { browserUnsubscribe } = stubSupportedBrowser(true)
     browserUnsubscribe.mockRejectedValue(new Error('service worker gone'))
     fetchMock.mockImplementation(async (path: string) => {
-      if (path === '/favorites') return []
       if (path === '/push/subscribe') throw { response: { status: 500 }, statusMessage: 'Server error' }
       if (path === '/auth/logout') return undefined
       throw new Error(`unexpected fetch path in test: ${path}`)

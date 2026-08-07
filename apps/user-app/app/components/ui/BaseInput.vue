@@ -42,7 +42,7 @@ const inputId = useId()
         :placeholder="placeholder"
         :required="required"
         :autofocus="autofocus"
-        class="w-full rounded-xl border bg-(--color-surface-card) py-3 text-(--color-text) transition-colors placeholder:text-(--color-text-muted)/60 focus:outline-none focus:ring-2 focus:ring-(--color-accent)/30"
+        class="h-11 w-full rounded-xl border bg-(--color-surface-card) text-(--color-text) transition-colors placeholder:text-(--color-text-muted) focus:outline-none focus:ring-2 focus:ring-(--color-accent)/30"
         :class="[
           icon ? 'ps-11 pe-4' : 'px-4',
           align === 'center' ? 'text-center tracking-[0.4em]' : '',

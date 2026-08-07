@@ -97,7 +97,7 @@ const reviewButtonLabel = computed(() => {
        this template with `booking` at its pre-fetch value (undefined) before the rejection is
        handled. Without this v-if, that pass throws inside the render function itself (an
        unhandled rejection, not the createError) -- see salons/[slug].vue, which this mirrors. -->
-  <div v-if="booking" class="p-4 space-y-4">
+  <div v-if="booking" class="mx-auto max-w-2xl space-y-4 p-4">
     <!-- break-words on the card, not per line: overflow-wrap inherits, and every field in
          here (salon name, service name, worker name) is provider-authored free text that
          can arrive as one unbreakable token. -->

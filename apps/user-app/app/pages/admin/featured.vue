@@ -73,7 +73,7 @@ useSeoMeta({ title: 'مدیریت سالن‌های ویژه — قیچی' })
 </script>
 
 <template>
-  <div class="p-4 space-y-4">
+  <div class="mx-auto max-w-4xl space-y-4 p-4">
     <div class="space-y-1">
       <h1 class="text-lg font-bold text-(--color-text)">مدیریت سالن‌های ویژه (تبلیغ)</h1>
       <!-- Says out loud why a pending salon is missing from the list: nothing but an
@@ -125,13 +125,13 @@ useSeoMeta({ title: 'مدیریت سالن‌های ویژه — قیچی' })
                 </span>
               </td>
               <td class="p-3">
-                <label :for="`until-${salon.id}`" class="sr-only">تا تاریخ ویژه بودن {{ salon.name }}</label>
-                <input
-                  :id="`until-${salon.id}`"
-                  v-model="untilInputs[salon.id]"
-                  type="date"
+                <span class="sr-only">تا تاریخ ویژه بودن {{ salon.name }}</span>
+                <JalaliDatePicker
+                  :model-value="untilInputs[salon.id] ?? ''"
+                  :aria-label="`تا تاریخ ویژه بودن ${salon.name}`"
+                  placeholder="بدون تاریخ"
                   data-testid="featured-until-input"
-                  class="w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) px-3 py-2 text-sm text-(--color-text) transition-colors focus:outline-none focus:border-(--color-accent) focus:ring-2 focus:ring-(--color-accent)/30"
+                  @update:model-value="untilInputs[salon.id] = $event"
                 />
               </td>
               <td class="p-3">

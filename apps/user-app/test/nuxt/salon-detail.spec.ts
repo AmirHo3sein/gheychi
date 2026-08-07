@@ -36,14 +36,14 @@ const PORTFOLIO = [
   { id: 'pf2', url: 'http://cdn.example/pf2.jpg', caption: null, serviceId: null, sortOrder: 1 },
 ]
 
-/** Route every endpoint the page hits; per-test overrides tweak the salon/portfolio. */
-function mockEndpoints(overrides: { salon?: Record<string, unknown>; portfolio?: unknown[] } = {}) {
+/** Route every endpoint the page hits; per-test overrides tweak the salon/portfolio/hours. */
+function mockEndpoints(overrides: { salon?: Record<string, unknown>; portfolio?: unknown[]; hours?: unknown[]; services?: unknown[] } = {}) {
   fetchMock.mockImplementation(async (path: string) => {
     if (path === '/salons/test-salon') return { ...SALON, ...overrides.salon }
-    if (path === '/salons/test-salon/services') return SERVICES
-    if (path === '/salons/test-salon/hours') return []
+    if (path === '/salons/test-salon/services') return overrides.services ?? SERVICES
+    if (path === '/salons/test-salon/hours') return overrides.hours ?? []
     if (path === '/salons/test-salon/photos') return []
-    if (path === '/salons/s1/reviews') return []
+    if (path === '/salons/s1/reviews') return { items: [], total: 0, page: 1, pageSize: 50 }
     if (path === '/salons/test-salon/portfolio') return overrides.portfolio ?? PORTFOLIO
     if (path === '/salons/test-salon/stories') return []
     if (path === '/salons/test-salon/workers') return []
@@ -157,6 +157,22 @@ describe('salon detail page', () => {
     expect(wrapper.text()).toContain((50000).toLocaleString('fa-IR'))
   })
 
+  // A provider-authored note that the listed duration is a minimum, not a guarantee --
+  // must reach the customer, not just live unused in the API response.
+  it('shows a service duration note when the provider set one, and omits it when they did not', async () => {
+    mockEndpoints({
+      services: [
+        { id: 'svc1', name: 'کوتاهی مو', description: 'این زمان تقریبی است و ممکن است بیشتر طول بکشد', price: 300000, durationMin: 45 },
+        { id: 'svc2', name: 'رنگ مو', description: null, price: 500000, durationMin: 90 },
+      ],
+    })
+    wrapper = await mountSuspended(SalonDetailPage)
+
+    expect(wrapper.text()).toContain('این زمان تقریبی است و ممکن است بیشتر طول بکشد')
+    const secondRow = wrapper.findAll('li').find((r: { text: () => string }) => r.text().includes('رنگ مو'))!
+    expect(secondRow.text()).not.toContain('تقریبی')
+  })
+
   it('renders a single-pin map near the address from the salon location', async () => {
     mockEndpoints()
     wrapper = await mountSuspended(SalonDetailPage)
@@ -179,7 +195,7 @@ describe('salon detail page', () => {
       if (path === '/salons/test-salon/services') return []
       if (path === '/salons/test-salon/hours') return []
       if (path === '/salons/test-salon/photos') return []
-      if (path === '/salons/s1/reviews') return []
+      if (path === '/salons/s1/reviews') return { items: [], total: 0, page: 1, pageSize: 50 }
       if (path === '/salons/test-salon/portfolio') return []
       if (path === '/salons/test-salon/stories') return []
       if (path === '/salons/test-salon/workers') return []
@@ -190,5 +206,25 @@ describe('salon detail page', () => {
 
     expect(wrapper.get('[data-testid="services-empty"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="hours-empty"]').exists()).toBe(true)
+  })
+
+  // Iran's week starts شنبه (Saturday), not یکشنبه (Sunday) -- a Sunday-first list read as a
+  // foreign week. page.hours can be a partial set (a salon can leave a day unset), so this
+  // also confirms sorting works from an out-of-order, non-dense subset, not just a full 0-6 array.
+  it('lists working hours starting from Saturday, not Sunday', async () => {
+    mockEndpoints({
+      hours: [
+        { weekday: 0, openTime: '09:00:00', closeTime: '18:00:00' }, // یکشنبه
+        { weekday: 3, openTime: '09:00:00', closeTime: '18:00:00' }, // چهارشنبه
+        { weekday: 6, openTime: '10:00:00', closeTime: '20:00:00' }, // شنبه
+      ],
+    })
+    wrapper = await mountSuspended(SalonDetailPage)
+
+    const dayNames = wrapper
+      .get('[data-testid="hours-list"]')
+      .findAll('li')
+      .map((li: { text: () => string }) => li.text().split(':')[0]!.trim())
+    expect(dayNames).toEqual(['شنبه', 'یکشنبه', 'چهارشنبه'])
   })
 })

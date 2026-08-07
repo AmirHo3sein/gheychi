@@ -173,7 +173,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
             :key="n"
             name="star"
             :size="24"
-            :class="n <= rating ? 'text-(--color-accent-strong)' : 'text-(--color-border)'"
+            :class="n <= rating ? 'text-(--color-accent-text)' : 'text-(--color-border)'"
           />
         </div>
         <template v-if="hasWorker">
@@ -184,7 +184,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
               :key="n"
               name="star"
               :size="24"
-              :class="n <= workerRating ? 'text-(--color-accent-strong)' : 'text-(--color-border)'"
+              :class="n <= workerRating ? 'text-(--color-accent-text)' : 'text-(--color-border)'"
             />
           </div>
         </template>
@@ -216,7 +216,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
             class="flex h-11 w-11 items-center justify-center"
             @click="editRating = n"
           >
-            <BaseIcon name="star" :size="24" :class="n <= editRating ? 'text-(--color-accent-strong)' : 'text-(--color-border)'" />
+            <BaseIcon name="star" :size="24" :class="n <= editRating ? 'text-(--color-accent-text)' : 'text-(--color-border)'" />
           </button>
         </div>
         <template v-if="hasWorker">
@@ -230,7 +230,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
               class="flex h-11 w-11 items-center justify-center"
               @click="editWorkerRating = n"
             >
-              <BaseIcon name="star" :size="24" :class="n <= editWorkerRating ? 'text-(--color-accent-strong)' : 'text-(--color-border)'" />
+              <BaseIcon name="star" :size="24" :class="n <= editWorkerRating ? 'text-(--color-accent-text)' : 'text-(--color-border)'" />
             </button>
           </div>
         </template>
@@ -261,7 +261,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
             class="flex h-11 w-11 items-center justify-center"
             @click="rating = n"
           >
-            <BaseIcon name="star" :size="24" :class="n <= rating ? 'text-(--color-accent-strong)' : 'text-(--color-border)'" />
+            <BaseIcon name="star" :size="24" :class="n <= rating ? 'text-(--color-accent-text)' : 'text-(--color-border)'" />
           </button>
         </div>
         <template v-if="hasWorker">
@@ -275,7 +275,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
               class="flex h-11 w-11 items-center justify-center"
               @click="workerRating = n"
             >
-              <BaseIcon name="star" :size="24" :class="n <= workerRating ? 'text-(--color-accent-strong)' : 'text-(--color-border)'" />
+              <BaseIcon name="star" :size="24" :class="n <= workerRating ? 'text-(--color-accent-text)' : 'text-(--color-border)'" />
             </button>
           </div>
         </template>

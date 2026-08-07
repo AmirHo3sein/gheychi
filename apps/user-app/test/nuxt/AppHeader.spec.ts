@@ -10,23 +10,25 @@ describe('AppHeader', () => {
     useSessionStore().$reset()
   })
 
-  it('shows the account links only once logged in', async () => {
+  it('shows the account links and logout icon only once logged in', async () => {
     const anonymous = await mountSuspended(AppHeader)
     expect(anonymous.text()).not.toContain('نوبت‌های من')
+    expect(anonymous.find('[data-testid="header-logout"]').exists()).toBe(false)
 
     useSessionStore().setUser(USER)
     const loggedIn = await mountSuspended(AppHeader)
     expect(loggedIn.text()).toContain('نوبت‌های من')
     expect(loggedIn.text()).toContain('پروفایل')
+    expect(loggedIn.find('[data-testid="header-logout"]').exists()).toBe(true)
   })
 
   // Layout regression guard, not styling taste. This header renders on every page, so it
   // is the single widest-blast-radius overflow risk in the app. At 320px (PRODUCT.md's
-  // hard floor: budget Android) a logged-in header needs roughly 355px -- logo, two text
-  // links, and a three-way theme toggle that is a fixed ~112px and can neither shrink nor
-  // break -- against a 288px content box. Without wrapping it overflows, and in RTL that
-  // escapes to the LEFT, off the readable edge. happy-dom has no layout engine, so the
-  // property that makes the overflow impossible is pinned by class instead.
+  // hard floor: budget Android) a logged-in header needs roughly 330px -- logo, two text
+  // links, the theme toggle, and the logout icon, none of which can shrink or break --
+  // against a 288px content box. Without wrapping it overflows, and in RTL that escapes to
+  // the LEFT, off the readable edge. happy-dom has no layout engine, so the property that
+  // makes the overflow impossible is pinned by class instead.
   it('wraps rather than overflowing when the logged-in nav is wider than the viewport', async () => {
     useSessionStore().setUser(USER)
     const wrapper = await mountSuspended(AppHeader)

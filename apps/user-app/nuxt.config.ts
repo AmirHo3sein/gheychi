@@ -80,8 +80,11 @@ export default defineNuxtConfig({
       description: 'رزرو آنلاین نوبت سالن‌های زیبایی',
       lang: 'fa',
       dir: 'rtl',
-      theme_color: '#0EA89B',
-      background_color: '#F4FBFA',
+      // Brand palette, not the pre-rebrand teal these were left on: theme_color tints the
+      // browser/OS chrome, background_color paints the launch splash before the app itself
+      // paints -- so it must match --color-surface or the first frame flashes the wrong hue.
+      theme_color: '#FFB6A3',
+      background_color: '#FFF8F5',
       display: 'standalone',
       icons: [
         { src: '/pwa-192.png', sizes: '192x192', type: 'image/png' },
@@ -92,6 +95,10 @@ export default defineNuxtConfig({
   app: {
     head: {
       htmlAttrs: { lang: 'fa', dir: 'rtl' },
+      link: [
+        { rel: 'icon', type: 'image/png', href: '/favicon.png' },
+        { rel: 'apple-touch-icon', href: '/pwa-192.png' },
+      ],
       script: [
         {
           innerHTML: `(function(){try{var m=document.cookie.match(/(?:^|; )theme=([^;]*)/);var p=m?decodeURIComponent(m[1]):'system';var d=p==='dark'||(p==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.classList.add('dark');}catch(e){}})();`,

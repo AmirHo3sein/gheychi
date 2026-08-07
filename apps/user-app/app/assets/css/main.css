@@ -9,91 +9,90 @@
 @theme static {
   --font-sans: 'Vazirmatn Variable', ui-sans-serif, system-ui, sans-serif;
 
-  /* Light mode -- "Teal Trust" */
-  --color-surface: #F4FBFA;
+  /* Light mode -- exact palette handed down from the brand's design-system spec, same
+     derivation as provider-panel/admin-panel's identical token set (see provider-panel's
+     main.css for the full WCAG-contrast derivation notes and the --color-fill-text
+     rationale: most of the spec's own hex values are pastel and fail as a fill under white
+     text, so those fills keep the spec's exact hex and the text drawn on them switches to
+     dark graphite instead). */
+  --color-surface: #FFF8F5;
   --color-surface-card: #FFFFFF;
-  --color-surface-subtle: #EAF5F3;
-  --color-text: #0B4F4A;
-  /* Darkened from the original #5B8783 (hue/saturation preserved, lightness reduced) --
-     the original only reached ~4.0:1 against --color-surface-card and ~3.8:1 against
-     --color-surface, failing WCAG AA's 4.5:1 for secondary text. #4C716D verified via
-     the sRGB-to-linear + relative-luminance + contrast-ratio formulas at 5.40:1 (card)
-     and 5.15:1 (surface). Dark mode's --color-text-muted (#B3A3B0) already passes
-     (~6.9:1) and is untouched. */
-  --color-text-muted: #4C716D;
-  --color-border: #DCEDEA;
-  --color-accent: #0EA89B;
-  /* accent-strong/accent-deep are the fill/hover pair for white-text-on-accent surfaces
-     (BaseButton primary, selected chips/toggles) -- verified >=4.5:1 against white (WCAG AA).
-     Plain --color-accent (#0EA89B) only reaches 2.96:1 as a fill, so it stays reserved for
-     rings, borders, and text-on-light-background uses, never as a background under white text. */
-  --color-accent-strong: #0F766E;
-  --color-accent-deep: #115E59;
-  --color-accent-soft: #E3F6F3;
-  /* accent-text: accent-hued TEXT on a card/surface background (status labels, inline
-     links) -- distinct from accent-strong, which is only verified for white text ON TOP
-     of it as a fill/hover background, not as foreground text itself. Light mode's value
-     happens to equal accent-strong (5.47:1 against --color-surface-card) because that
-     shade passes in both directions here; dark mode does NOT share that property (see
-     the dark block below) so this token must not be assumed interchangeable with
-     accent-strong just because they match in light mode. */
-  --color-accent-text: #0F766E;
-  --color-ad: #FF7A45;
-  /* ad-strong: contrast-safe fill for white text on the "ad" color (e.g. the featured-salon
-     badge) -- plain --color-ad is 2.59:1 as a fill, kept only for text-on-light-background uses. */
-  --color-ad-strong: #C2410C;
-  /* Darkened from the original #DC4747 (hue/saturation preserved, lightness reduced) --
-     the original only reached ~4.17:1 as TEXT against --color-surface-card and ~3.59:1
-     against --color-danger-soft, failing WCAG AA's 4.5:1 for text (this is a separate
-     role from --color-danger-strong below, which is the already-correct white-on-fill
-     token). #C0392B verified via the sRGB-to-linear + relative-luminance + contrast-ratio
-     formulas at 5.44:1 (surface-card) and 4.69:1 (danger-soft) -- both clear 4.5:1 with
-     margin. Dark mode's --color-danger (#F2645C) already passes as text (~5.3:1/4.7:1)
-     and is untouched. */
-  --color-danger: #C0392B;
-  /* Same white-text-on-fill fix as accent/ad above -- plain --color-danger is 4.17:1 as a
-     fill (fails 4.5:1), found while fixing BaseButton's primary variant. */
-  --color-danger-strong: #B91C1C;
+  --color-surface-subtle: #FFF3EF;
+  --color-text: #2D2D2D;
+  /* #666666, not the spec's literal #777777 "Secondary": that only reaches 4.48:1
+     on white -- failing AA by a hair -- and drops to 3.67:1 on --color-border-soft,
+     which is where muted text actually sits (ghost-button hover, table headers).
+     This clears 4.5:1 on every light surface in the system. */
+  --color-text-muted: #666666;
+  --color-border: #E2D7D3;
+  --color-accent: #FFB6A3;
+  --color-accent-strong: #FFB6A3;
+  --color-accent-deep: #F59C86;
+  --color-accent-pressed: #E98871;
+  --color-accent-soft: #FFF1EC;
+  --color-accent-text: #8F4335;
+  --color-fill-text: #2D2D2D;
+  /* "Featured salon" accent -- mapped to the mascot's gold bowtie detail (#D4AF37, the
+     spec's own "Premium/Rewards" color) rather than a shade of the primary coral, so a
+     "ویژه" badge reads as a distinct premium tier next to accent-colored primary actions.
+     Text drawn on top uses --color-fill-text (graphite, 6.55:1), same as every other fill. */
+  --color-ad: #D4AF37;
+  --color-ad-strong: #D4AF37;
+  /* Danger stays crimson, not coral -- kept clearly distinct from the new peach accent so a
+     destructive action never reads as just a duller "primary" button. */
+  /* Darkened a shade off #DA2525 so danger copy also clears AA on its own tinted
+     backdrop (--color-danger-soft / --color-accent-soft), not just on white. */
+  --color-danger: #D12424;
+  --color-danger-strong: #E76F6F;
   --color-danger-soft: #FCEAEA;
   --color-success: #1E9E6B;
 
-  --shadow-color: 178 45% 20%;
-  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.06), 0 1px 1px hsl(var(--shadow-color) / 0.04);
-  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.16), 0 2px 6px -2px hsl(var(--shadow-color) / 0.08);
-  --shadow-lg: 0 24px 48px -16px hsl(var(--shadow-color) / 0.22), 0 8px 16px -4px hsl(var(--shadow-color) / 0.1);
+  --color-premium: #D4AF37;
+  --color-wallet: #5EC9A3;
+  --color-ai: #A78BFA;
+  --color-reports: #6FA8FF;
+
+  /* Shadows are neutral graphite per the spec (not brand-hue-tinted) -- rgb(45,45,45) is
+     literally #2D2D2D, hence hue 0 / sat 0% / light 18%. */
+  --shadow-color: 0 0% 18%;
+  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.04), 0 1px 1px hsl(var(--shadow-color) / 0.03);
+  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.08), 0 2px 6px -2px hsl(var(--shadow-color) / 0.06);
+  --shadow-lg: 0 24px 48px -16px hsl(var(--shadow-color) / 0.12), 0 8px 16px -4px hsl(var(--shadow-color) / 0.08);
 }
 
+/* Dark mode -- warm charcoal, not an inverted black-and-white, same derivation as
+   provider-panel/admin-panel's identical token set. --color-fill-text isn't redefined here
+   -- every fill it sits on (accent, danger-strong) is still light/pastel in dark mode too
+   ("glow slightly", not invert), so the light mode value (constant graphite) still applies. */
 .dark {
-  --color-surface: #151217;
-  --color-surface-card: #211D24;
-  --color-surface-subtle: #2A2530;
-  --color-text: #F5F0F2;
-  --color-text-muted: #B3A3B0;
-  --color-border: #38323D;
-  --color-accent: #7A3FF2;
-  /* See the light-mode comment above: accent-strong/accent-deep are the verified-safe fill
-     pair for white text (dark accent's resting shade, 5.50:1, already passed unfixed --
-     it's #9463F5's ORIGINAL role as the hover shade that failed at 3.92:1). */
-  --color-accent-strong: #6D28D9;
-  --color-accent-deep: #5B21B6;
-  --color-accent-soft: #2C2140;
-  /* accent-text (dark): #6D28D9 (accent-strong) only reaches 2.33:1 as TEXT against
-     --color-surface-card -- it was verified the opposite direction (white text ON TOP of
-     it as a fill, 5.50:1) and fails badly here; a darkened "strong" shade loses contrast
-     against a dark background instead of gaining it. #A78BFA verified at 6.10:1 against
-     --color-surface-card / 6.82:1 against --color-surface via the same sRGB-to-linear +
-     relative-luminance formula used throughout this file. */
-  --color-accent-text: #A78BFA;
-  --color-ad: #F24F8D;
-  --color-ad-strong: #BE185D;
-  --color-danger: #F2645C;
-  --color-danger-strong: #9F1239;
+  --color-surface: #171616;
+  --color-surface-card: #262323;
+  --color-surface-subtle: #1F1D1D;
+  --color-text: #F7F4F2;
+  --color-text-muted: #B8B0AB;
+  --color-border: #494444;
+  --color-accent: #FFB6A3;
+  --color-accent-strong: #FFB6A3;
+  --color-accent-deep: #FF9F87;
+  --color-accent-pressed: #FF8D72;
+  --color-accent-soft: #3F2018;
+  --color-accent-text: #FFB6A3;
+  --color-ad: #D4AF37;
+  --color-ad-strong: #D4AF37;
+  --color-danger: #E66B6B;
+  --color-danger-strong: #E76F6F;
   --color-danger-soft: #3A2229;
   --color-success: #3FC98A;
 
-  --shadow-color: 275 55% 4%;
-  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.4), 0 1px 1px hsl(var(--shadow-color) / 0.3);
-  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.55), 0 2px 6px -2px hsl(var(--shadow-color) / 0.4);
+  --color-premium: #D4AF37;
+  --color-wallet: #5EC9A3;
+  --color-ai: #A78BFA;
+  --color-reports: #6FA8FF;
+
+  /* Pure black per the spec's dark shadows (rgba(0,0,0,...)), not graphite-tinted. */
+  --shadow-color: 0 0% 0%;
+  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.35), 0 1px 1px hsl(var(--shadow-color) / 0.25);
+  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.45), 0 2px 6px -2px hsl(var(--shadow-color) / 0.35);
   --shadow-lg: 0 24px 48px -16px hsl(var(--shadow-color) / 0.65), 0 8px 16px -4px hsl(var(--shadow-color) / 0.5);
 }
 
@@ -104,10 +103,149 @@ html, body {
 }
 
 /* Consistent focus treatment for every interactive element -- replaces the
-   browser default outline (which clips awkwardly on rounded inputs/buttons)
-   without removing focus visibility entirely. */
+   browser default outline (which clips awkwardly on rounded inputs/buttons) without
+   removing focus visibility entirely. accent-text, not the raw pastel accent -- a light
+   peach outline on a light page would barely be visible (WCAG 1.4.11 non-text contrast). */
 :focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-accent-text);
   outline-offset: 2px;
   border-radius: 4px;
+}
+
+/* vue-multiselect brand + RTL overrides -- identical to provider-panel/admin-panel's
+   .app-select block, kept as a separate copy per the cross-app isolation convention.
+   --color-border-soft doesn't exist in this app's token set (see color list above), so
+   selected/hover option rows use --color-surface-subtle instead -- the equivalent
+   "recessed fill" token here. */
+.app-select .multiselect__tags {
+  min-height: 44px;
+  padding: 0.6rem 0.75rem 0.6rem 2.5rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-card);
+  font-size: 0.9rem;
+  text-align: right;
+}
+.app-select .multiselect--active .multiselect__tags {
+  border-color: var(--color-accent-text);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent-text) 30%, transparent);
+}
+.app-select .multiselect__select {
+  right: auto;
+  left: 1px;
+  height: 42px;
+}
+.app-select .multiselect__select::before {
+  border-color: var(--color-text-muted) transparent transparent transparent;
+}
+.app-select .multiselect__single,
+.app-select .multiselect__placeholder,
+.app-select .multiselect__input {
+  margin: 0;
+  padding: 0;
+  text-align: right;
+  color: var(--color-text);
+  background: transparent;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  max-width: 100%;
+}
+.app-select .multiselect__placeholder {
+  color: var(--color-text-muted);
+  padding-top: 0;
+}
+.app-select .multiselect__content-wrapper {
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  background: var(--color-surface-card);
+  box-shadow: var(--shadow-md);
+  margin-top: 0.25rem;
+  /* overflow-y: auto (not `hidden`) is load-bearing, not a style choice -- vue-multiselect's
+     own default CSS relies on this element scrolling internally once the option list
+     exceeds its max-height (default 300px, set inline via the maxHeight prop). `hidden`
+     silently cancelled that: for a short list nothing ever overflowed, so it went
+     unnoticed elsewhere, but this app's 80+ city picker rendered fully unclipped instead
+     of scrolling, swallowing the rest of the page under it. overflow-x stays hidden so
+     the rounded corners never show a horizontal scrollbar. */
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.app-select .multiselect__option {
+  padding: 0.65rem 0.9rem;
+  min-height: auto;
+  font-size: 0.9rem;
+  text-align: right;
+  color: var(--color-text);
+  background: transparent;
+  transition: background-color 0.1s ease, color 0.1s ease;
+}
+.app-select .multiselect__option--selected {
+  background: var(--color-surface-subtle);
+  font-weight: 700;
+}
+.app-select .multiselect__option--highlight,
+.app-select .multiselect__option--highlight::after {
+  background: var(--color-accent);
+  color: var(--color-fill-text);
+}
+
+/* Error state, set by AppSelect.client.vue's `error` prop -- the red border BaseInput.vue
+   puts straight on its <input> has to be aimed at .multiselect__tags here, since that inner
+   element (not the component root a Tailwind class would land on) is what draws the border.
+   Kept out of the shared .app-select block above because provider-panel/admin-panel's
+   copies have no error state to mirror. */
+.app-select--error .multiselect__tags {
+  border-color: var(--color-danger);
+}
+
+/* Login screen -- one centred composition, byte-identical in all three apps (own copy per the
+   cross-app isolation convention), so change them together. Replaces an earlier 50/50 split
+   layout: at desktop widths that gave each half far more room than its contents needed, so
+   the page read as two large empty rectangles with a small card and a small mascot adrift in
+   them. A single centred column keeps the artwork, the heading and the form in one compact
+   group at every width, which also removes the need for a separate mobile treatment. */
+.login-bg {
+  background:
+    radial-gradient(65% 55% at 12% 8%, color-mix(in srgb, var(--color-accent) 55%, transparent), transparent 72%),
+    radial-gradient(60% 50% at 88% 92%, color-mix(in srgb, var(--color-accent-deep) 45%, transparent), transparent 72%),
+    var(--color-surface);
+}
+
+/* Soft glow seating the mascot so it doesn't float against the gradient unattached. */
+.login-glow {
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--color-accent) 55%, transparent), transparent);
+}
+
+/* Slow drift on the atmospheric blobs behind the composition. */
+@keyframes mesh-morph-a {
+  0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); }
+  50% { transform: translate(4%, -6%) scale(1.15) rotate(8deg); }
+}
+@keyframes mesh-morph-b {
+  0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); }
+  50% { transform: translate(-5%, 5%) scale(1.1) rotate(-6deg); }
+}
+.mesh-a { animation: mesh-morph-a 18s ease-in-out infinite; }
+.mesh-b { animation: mesh-morph-b 22s ease-in-out infinite; }
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.login-stagger {
+  opacity: 0;
+  animation: fade-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-stagger {
+    opacity: 1;
+    animation: none;
+  }
+  .mesh-a,
+  .mesh-b {
+    animation: none;
+  }
 }

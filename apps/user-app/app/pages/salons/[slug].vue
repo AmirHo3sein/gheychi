@@ -22,6 +22,7 @@ interface SalonServiceItem { id: string; name: string; description: string | nul
 interface WorkingHourItem { weekday: number; openTime: string; closeTime: string }
 interface PhotoItem { id: string; url: string }
 interface ReviewItem { id: string; rating: number; comment: string | null; salonReply: string | null; createdAt: string }
+interface ReviewsPage { items: ReviewItem[]; total: number; page: number; pageSize: number }
 interface WorkerItem { id: string; name: string; ratingAvg: string | number; ratingCount: number }
 // Mirrors booking/[slug]/[serviceId].vue's local interface -- kept in sync with that
 // page's shape rather than shared, matching this codebase's per-file DTO convention.
@@ -40,7 +41,7 @@ const { data: page } = await useAsyncData(`salon-${slug}`, async () => {
     apiFetch<SalonServiceItem[]>(`/salons/${slug}/services`, { silent: true }),
     apiFetch<WorkingHourItem[]>(`/salons/${slug}/hours`, { silent: true }),
     apiFetch<PhotoItem[]>(`/salons/${slug}/photos`, { silent: true }),
-    apiFetch<ReviewItem[]>(`/salons/${salonRes.data.id}/reviews`, { silent: true }),
+    apiFetch<ReviewsPage>(`/salons/${salonRes.data.id}/reviews`, { silent: true }),
     apiFetch<SalonPortfolioItem[]>(`/salons/${slug}/portfolio`, { silent: true }),
     apiFetch<WorkerItem[]>(`/salons/${slug}/workers`, { silent: true }),
     apiFetch<BookingTerms>('/platform-config/booking-terms', { silent: true }),
@@ -51,7 +52,10 @@ const { data: page } = await useAsyncData(`salon-${slug}`, async () => {
     services: servicesRes.data ?? [],
     hours: hoursRes.data ?? [],
     photos: photosRes.data ?? [],
-    reviews: reviewsRes.data ?? [],
+    // Only the first page is rendered today, matching search's own precedent -- the
+    // default page size (50) matches the old hard cap so this is invisible for the
+    // overwhelming majority of salons.
+    reviews: reviewsRes.data?.items ?? [],
     portfolio: portfolioRes.data ?? [],
     workers: workersRes.data ?? [],
     terms: termsRes.data,
@@ -170,7 +174,19 @@ async function toggleFavorite() {
   if (!error) isFavorited.value = !isFavorited.value
 }
 
+// Weekday 0 = یکشنبه, matching the API's `working_hours.weekday` (JS Date.getDay()) -- a
+// lookup table by stored int, not a display order.
 const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه']
+// Iran's week starts Saturday, not Sunday -- separate, display-only ordering so the stored
+// numbering above never has to change. page.hours may not include every weekday (a salon can
+// leave a day unset), so this sorts by each row's own position in this order rather than
+// assuming a complete/dense 0-6 array.
+const WEEKDAY_DISPLAY_ORDER = [6, 0, 1, 2, 3, 4, 5]
+const orderedHours = computed(() =>
+  [...(page.value?.hours ?? [])].sort(
+    (a, b) => WEEKDAY_DISPLAY_ORDER.indexOf(a.weekday) - WEEKDAY_DISPLAY_ORDER.indexOf(b.weekday),
+  ),
+)
 </script>
 
 <template>
@@ -179,7 +195,7 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
        this template with `page` at its pre-fetch value (undefined) before the rejection is
        handled. Without this v-if, that pass throws inside the render function itself (an
        unhandled rejection, not the createError) -- see blog/[slug].vue, which this mirrors. -->
-  <div v-if="page" class="p-4 space-y-6">
+  <div v-if="page" class="mx-auto max-w-2xl space-y-6 p-4">
     <StoriesRing
       v-if="stories.length"
       :stories="stories"
@@ -212,7 +228,7 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
             data-testid="salon-verified-badge"
             class="inline-flex items-center gap-1 rounded-full bg-(--color-accent-soft) px-2 py-1 text-xs font-bold text-(--color-text)"
           >
-            <BaseIcon name="shield" :size="14" class="text-(--color-accent-strong)" />
+            <BaseIcon name="shield" :size="14" class="text-(--color-accent-text)" />
             سالن تایید شده
           </span>
         </div>
@@ -284,30 +300,36 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
         <li v-for="service in page.services" :key="service.id">
           <NuxtLink
             :to="`/booking/${slug}/${service.id}`"
-            class="flex items-center justify-between gap-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 text-sm shadow-(--shadow-sm) transition-shadow hover:shadow-(--shadow-md)"
+            class="block rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 text-sm shadow-(--shadow-sm) transition-shadow hover:shadow-(--shadow-md)"
           >
             <!-- Same shape as the booking page's price row, and for the same reason: at
                  320px a provider-authored service name, a discount badge and a
                  seven-figure price do not fit one 254px line. The name is allowed to
                  break (it is the only genuinely elastic part), while the badge and each
                  price stay whole and wrap as units. -->
-            <span class="min-w-0 break-words text-(--color-text)">{{ service.name }} ({{ service.durationMin }} دقیقه)</span>
-            <span class="flex flex-wrap items-center justify-end gap-2">
-              <span
-                v-if="service.discountPercent"
-                class="whitespace-nowrap rounded-full bg-(--color-danger-soft) px-2 py-0.5 text-xs font-bold text-(--color-danger)"
-              >
-                ٪{{ service.discountPercent.toLocaleString('fa-IR') }} تخفیف
-              </span>
-              <span class="flex flex-col items-end whitespace-nowrap leading-tight">
-                <span v-if="service.discountPercent" class="text-xs text-(--color-text-muted) line-through">
-                  {{ service.price.toLocaleString('fa-IR') }} تومان
+            <div class="flex items-center justify-between gap-3">
+              <span class="min-w-0 break-words text-(--color-text)">{{ service.name }} ({{ service.durationMin }} دقیقه)</span>
+              <span class="flex flex-wrap items-center justify-end gap-2">
+                <span
+                  v-if="service.discountPercent"
+                  class="whitespace-nowrap rounded-full bg-(--color-danger-soft) px-2 py-0.5 text-xs font-bold text-(--color-danger)"
+                >
+                  ٪{{ service.discountPercent.toLocaleString('fa-IR') }} تخفیف
                 </span>
-                <span class="font-bold text-(--color-text)">
-                  {{ applyDiscount(service.price, service.discountPercent).toLocaleString('fa-IR') }} تومان
+                <span class="flex flex-col items-end whitespace-nowrap leading-tight">
+                  <span v-if="service.discountPercent" class="text-xs text-(--color-text-muted) line-through">
+                    {{ service.price.toLocaleString('fa-IR') }} تومان
+                  </span>
+                  <span class="font-bold text-(--color-text)">
+                    {{ applyDiscount(service.price, service.discountPercent).toLocaleString('fa-IR') }} تومان
+                  </span>
                 </span>
               </span>
-            </span>
+            </div>
+            <!-- Provider-authored note on the listed duration (e.g. "may take longer") --
+                 the duration above is a minimum, not a guarantee, and this is where a salon
+                 says so explicitly instead of a customer being surprised mid-appointment. -->
+            <p v-if="service.description" class="mt-1.5 text-xs text-(--color-text-muted)">{{ service.description }}</p>
           </NuxtLink>
         </li>
       </ul>
@@ -331,8 +353,8 @@ const WEEKDAY_NAMES = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چه�
 
     <section>
       <h2 class="mb-2 text-xl font-bold text-(--color-text)">ساعات کاری</h2>
-      <ul v-if="page.hours.length" class="text-sm space-y-1 text-(--color-text)">
-        <li v-for="hour in page.hours" :key="hour.weekday">
+      <ul v-if="page.hours.length" data-testid="hours-list" class="text-sm space-y-1 text-(--color-text)">
+        <li v-for="hour in orderedHours" :key="hour.weekday">
           {{ WEEKDAY_NAMES[hour.weekday] }}: {{ hour.openTime.slice(0, 5) }} - {{ hour.closeTime.slice(0, 5) }}
         </li>
       </ul>

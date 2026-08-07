@@ -79,7 +79,7 @@ useSeoMeta({
         :disabled="isLoading"
         class="min-h-9 shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60"
         :class="categorySlug === ''
-          ? 'bg-(--color-accent-strong) text-white'
+          ? 'bg-(--color-accent-strong) text-(--color-fill-text)'
           : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) hover:text-(--color-text)'"
         @click="selectCategory('')"
       >
@@ -93,7 +93,7 @@ useSeoMeta({
         :disabled="isLoading"
         class="min-h-9 shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60"
         :class="categorySlug === cat.slug
-          ? 'bg-(--color-accent-strong) text-white'
+          ? 'bg-(--color-accent-strong) text-(--color-fill-text)'
           : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) hover:text-(--color-text)'"
         @click="selectCategory(cat.slug)"
       >
@@ -126,7 +126,7 @@ useSeoMeta({
             <BaseIcon name="camera" :size="28" class="text-(--color-text-muted)" />
           </div>
           <div class="space-y-1 p-3 text-sm">
-            <p v-if="post.categoryName" class="text-xs text-(--color-accent-strong)">{{ post.categoryName }}</p>
+            <p v-if="post.categoryName" class="text-xs text-(--color-accent-text)">{{ post.categoryName }}</p>
             <!-- BaseCard here is overflow-hidden, so an unbreakable title doesn't scroll
                  the body -- it gets silently clipped instead, which loses meaning. Let it
                  break. -->

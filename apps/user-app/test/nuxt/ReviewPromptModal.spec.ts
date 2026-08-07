@@ -113,7 +113,7 @@ describe('ReviewPromptModal', () => {
 
     const starIcons = wrapper.find('[data-testid="view-salon-rating-stars"]').findAll('svg')
     expect(starIcons).toHaveLength(5)
-    const filled = starIcons.filter((icon) => icon.classes().some((c) => c.includes('accent-strong')))
+    const filled = starIcons.filter((icon) => icon.classes().some((c) => c.includes('accent-text')))
     expect(filled).toHaveLength(2)
   })
 
@@ -168,7 +168,7 @@ describe('ReviewPromptModal', () => {
     const filled = wrapper
       .find('[data-testid="view-salon-rating-stars"]')
       .findAll('svg')
-      .filter((icon) => icon.classes().some((c) => c.includes('accent-strong')))
+      .filter((icon) => icon.classes().some((c) => c.includes('accent-text')))
     expect(filled).toHaveLength(3)
 
     await wrapper.find('[data-testid="edit-review-button"]').trigger('click')

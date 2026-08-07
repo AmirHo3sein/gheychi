@@ -11,6 +11,13 @@ export interface SearchResult {
   coverPhoto: string | null
   isFeatured: boolean
   hasActiveStory: boolean
+  categories: { id: number; name: string; icon: string }[]
+}
+
+export interface SearchPage {
+  items: SearchResult[]
+  nextCursor: string | null
+  hasMore: boolean
 }
 
 /** Public story shape from GET /salons/:slug/stories (published, unexpired only). */

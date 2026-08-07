@@ -85,8 +85,21 @@ onBeforeUnmount(() => {
 })
 </script>
 
+<!--
+  isolate (on the div below) is load-bearing, not decoration: Leaflet's own panes/controls
+  use z-index up to 1000, and .leaflet-container never sets a z-index of its own -- without a
+  stacking context here, those values leak out and can paint over same-page elements with a
+  much higher paint order, including full-screen fixed overlays like StoryViewer (z-50): the
+  map sits in normal document flow behind it, but its escaped Leaflet controls don't respect
+  that and render on top wherever the map happens to be scrolled to on screen.
+  This comment is deliberately OUTSIDE <template>, not inside it: a comment as the first node
+  inside <template> makes Vue treat the component as multi-root, which silently disables
+  automatic $attrs fallthrough (data-testid="salon-map" from the parent stopped reaching this
+  div, with only a console warning -- no error, no visual sign, just a test that couldn't
+  find the element anymore). Confirmed by moving it here instead.
+-->
 <template>
-  <div ref="mapEl" class="h-96 w-full overflow-hidden rounded-2xl" />
+  <div ref="mapEl" class="isolate h-96 w-full overflow-hidden rounded-2xl" />
 </template>
 
 <style>

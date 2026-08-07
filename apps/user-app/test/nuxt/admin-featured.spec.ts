@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { flushPromises } from '@vue/test-utils'
 import AdminFeaturedPage from '../../app/pages/admin/featured.vue'
+import JalaliDatePicker from '../../app/components/ui/JalaliDatePicker.vue'
 
 // Same pattern as bookings-list.spec.ts: this page loads via onMounted (not a
 // top-level useAsyncData await), so every test mounts then awaits flushPromises()
@@ -123,8 +124,9 @@ describe('admin featured page', () => {
     wrapper = await mountSuspended(AdminFeaturedPage)
     await flushPromises()
 
-    const dateInput = wrapper.get('[data-testid="featured-until-input"]')
-    await dateInput.setValue('2026-09-01')
+    // JalaliDatePicker isn't a native input -- drive its v-model contract directly, same
+    // as AppSelect/AppMultiSelect elsewhere in this repo's test suites.
+    await wrapper.findComponent(JalaliDatePicker).vm.$emit('update:modelValue', '2026-09-01')
 
     fetchMock.mockImplementation(async (path: string, opts?: { method?: string; body?: unknown }) => {
       if (path === '/admin/salons/s1/featured' && opts?.method === 'PATCH') return {}

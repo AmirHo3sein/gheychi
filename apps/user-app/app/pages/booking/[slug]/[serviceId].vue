@@ -2,7 +2,7 @@
 import { applyDiscount } from '../../../utils/discount'
 
 interface Salon { id: string; name: string; address: string }
-interface SalonServiceItem { id: string; name: string; price: number; durationMin: number; discountPercent: number | null }
+interface SalonServiceItem { id: string; name: string; description: string | null; price: number; durationMin: number; discountPercent: number | null }
 interface BookingTerms { depositPercent: number; depositMinToman: number; cancellationWindowHours: number }
 // GET /salons/:slug/workers (PublicSalonContentController) -- active workers only,
 // the same minimal projection the public worker-ratings page already relies on.
@@ -37,7 +37,10 @@ const { data: page } = await useAsyncData(`booking-${slug}-${serviceId}`, async 
     apiFetch<Salon>(`/salons/${slug}`, { silent: true }),
     apiFetch<SalonServiceItem[]>(`/salons/${slug}/services`, { silent: true }),
     apiFetch<BookingTerms>('/platform-config/booking-terms', { silent: true }),
-    apiFetch<SalonWorker[]>(`/salons/${slug}/workers`, { silent: true }),
+    // serviceId narrows the roster to workers actually eligible for THIS service (an
+    // owner can restrict a worker to a subset of the salon's services) -- see
+    // PublicSalonContentController.listWorkers on the API side.
+    apiFetch<SalonWorker[]>(`/salons/${slug}/workers`, { query: { serviceId }, silent: true }),
   ])
   const service = servicesRes.data?.find((s) => s.id === serviceId)
   if (!salonRes.data || !service) return null
@@ -51,11 +54,13 @@ if (!page.value) {
 // null = "any available staff", exactly today's unchanged default.
 const selectedWorkerId = ref<string | null>(null)
 
-// redirectOn401: false -- an anonymous customer can browse this whole page before ever
-// logging in (login only happens at confirmBooking's own 401 branch), so a guest's wallet
-// lookup failing quietly (no balance to show) must not force-redirect them off a page they
-// haven't asked to log in for yet. silent: true for the same reason: no toast for a lookup
-// the customer never triggered themselves.
+// This route isn't in isPublicRoute()'s list, so auth.global.ts already redirected any
+// anonymous visitor to /login before this script ever runs -- the customer is guaranteed
+// logged in here. redirectOn401: false is still correct, just for a narrower reason: a
+// session that expires between page load and this fetch (or a stale cookie) should not
+// force-redirect mid-view over a lookup the customer never triggered themselves -- the
+// wallet section just quietly shows nothing, same as a genuine zero balance. silent: true
+// for the same reason: no toast for a background lookup.
 const { data: walletBalanceToman } = await useAsyncData(`booking-wallet-${slug}-${serviceId}`, async () => {
   const { data } = await apiFetch<{ balances: Array<{ currency: string; balance: number }> }>('/wallet/mine', {
     silent: true,
@@ -284,10 +289,14 @@ async function confirmBooking() {
        this template with `page` at its pre-fetch value (undefined) before the rejection is
        handled. Without this v-if, that pass throws inside the render function itself (an
        unhandled rejection, not the createError) -- see blog/[slug].vue, which this mirrors. -->
-  <div v-if="page" class="p-4 space-y-4">
+  <div v-if="page" class="mx-auto max-w-2xl space-y-4 p-4">
     <div>
       <h1 class="text-xl font-bold text-(--color-text)">{{ page.service.name }}</h1>
       <p class="text-sm">{{ page.salon.name }} — {{ page.salon.address }}</p>
+      <p class="mt-1 text-sm text-(--color-text-muted)">مدت زمان: {{ page.service.durationMin.toLocaleString('fa-IR') }} دقیقه</p>
+      <!-- Provider-authored note on the listed duration (e.g. "may take longer") -- the
+           figure above is a minimum, not a guarantee. -->
+      <p v-if="page.service.description" class="mt-1 text-xs text-(--color-text-muted)">{{ page.service.description }}</p>
     </div>
 
     <!-- Optional -- omitted (selectedWorkerId stays null) means "any available staff",
@@ -300,7 +309,7 @@ async function confirmBooking() {
         :aria-pressed="selectedWorkerId === null"
         class="inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-full px-4 text-sm font-medium transition-colors"
         :class="selectedWorkerId === null
-          ? 'bg-(--color-accent-strong) text-white'
+          ? 'bg-(--color-accent-strong) text-(--color-fill-text)'
           : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text) hover:bg-(--color-surface-subtle)'"
         @click="selectedWorkerId = null"
       >
@@ -313,7 +322,7 @@ async function confirmBooking() {
         :aria-pressed="selectedWorkerId === worker.id"
         class="inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-full px-4 text-sm font-medium transition-colors"
         :class="selectedWorkerId === worker.id
-          ? 'bg-(--color-accent-strong) text-white'
+          ? 'bg-(--color-accent-strong) text-(--color-fill-text)'
           : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text) hover:bg-(--color-surface-subtle)'"
         @click="selectedWorkerId = worker.id"
       >

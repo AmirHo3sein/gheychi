@@ -109,7 +109,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: closeLightbox, enabled: () 
           v-if="lightboxService"
           :to="`/booking/${slug}/${lightboxService.id}`"
           data-testid="portfolio-booking-pill"
-          class="inline-flex min-h-11 items-center rounded-full bg-(--color-accent) px-4 text-sm font-semibold text-white"
+          class="inline-flex min-h-11 items-center rounded-full bg-(--color-accent) px-4 text-sm font-semibold text-(--color-fill-text)"
         >
           رزرو این خدمت
         </NuxtLink>

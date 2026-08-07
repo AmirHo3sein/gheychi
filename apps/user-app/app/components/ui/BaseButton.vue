@@ -21,10 +21,10 @@ withDefaults(
     :class="[
       block ? 'w-full' : '',
       size === 'lg' ? 'px-5 py-3.5 text-base' : 'px-4 py-2.5 text-sm',
-      variant === 'primary' && 'bg-(--color-accent-strong) text-white shadow-(--shadow-sm) hover:bg-(--color-accent-deep) hover:shadow-(--shadow-md)',
-      variant === 'secondary' && 'bg-(--color-surface-subtle) text-(--color-text) hover:bg-(--color-border)',
+      variant === 'primary' && 'bg-(--color-accent-strong) text-(--color-fill-text) shadow-(--shadow-sm) hover:bg-(--color-accent-deep) hover:shadow-(--shadow-md) active:bg-(--color-accent-pressed)',
+      variant === 'secondary' && 'border border-(--color-border) bg-(--color-surface-subtle) text-(--color-text) hover:bg-(--color-border)',
       variant === 'ghost' && 'bg-transparent text-(--color-text-muted) hover:bg-(--color-surface-subtle) hover:text-(--color-text)',
-      variant === 'danger' && 'bg-(--color-danger-strong) text-white hover:opacity-90',
+      variant === 'danger' && 'bg-(--color-danger-strong) text-(--color-fill-text) hover:opacity-90',
     ]"
   >
     <BaseIcon v-if="loading" name="spinner" :size="size === 'lg' ? 20 : 16" class="animate-spin" />

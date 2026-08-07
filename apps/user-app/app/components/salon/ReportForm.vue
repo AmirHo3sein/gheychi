@@ -113,7 +113,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
         type="button"
         data-testid="submit-report-button"
         :disabled="submitting || !isValid"
-        class="min-h-11 w-full rounded-lg bg-(--color-accent) text-white p-2 font-semibold disabled:opacity-50"
+        class="min-h-11 w-full rounded-lg bg-(--color-accent) text-(--color-fill-text) p-2 font-semibold disabled:opacity-50"
         @click="submit"
       >
         ثبت گزارش

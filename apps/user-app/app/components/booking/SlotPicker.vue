@@ -54,7 +54,7 @@ function selectDate(date: string) {
         :aria-pressed="selectedDate === day.date"
         class="inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-full px-4 text-sm font-medium transition-colors"
         :class="selectedDate === day.date
-          ? 'bg-(--color-accent-strong) text-white'
+          ? 'bg-(--color-accent-strong) text-(--color-fill-text)'
           : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text) hover:bg-(--color-surface-subtle)'"
         @click="selectDate(day.date)"
       >
@@ -70,7 +70,7 @@ function selectDate(date: string) {
         :aria-pressed="selectedSlot === slot"
         class="inline-flex min-h-11 items-center justify-center rounded-xl border p-2 text-sm font-medium transition-colors"
         :class="selectedSlot === slot
-          ? 'border-transparent bg-(--color-accent-strong) text-white'
+          ? 'border-transparent bg-(--color-accent-strong) text-(--color-fill-text)'
           : 'border-(--color-border) bg-(--color-surface-card) text-(--color-text) hover:bg-(--color-surface-subtle)'"
         @click="emit('select', slot)"
       >

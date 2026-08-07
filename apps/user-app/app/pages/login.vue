@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { SessionUser } from '~/stores/session'
+import { toEnglishDigits } from '../utils/digits'
+import { GENDER_OPTIONS } from '../utils/gender-map'
 
 definePageMeta({ layout: 'bare' })
 
@@ -9,7 +11,13 @@ const route = useRoute()
 const { rebindToCurrentUser: rebindPushSubscription } = usePushSubscription()
 
 const step = ref<'phone' | 'code' | 'profile'>('phone')
-const phone = ref('')
+// Iranian keyboards/IMEs commonly default to Persian numerals -- typing them into a plain
+// ref would look correct on screen but fail the API's ASCII-only /^09\d{9}$/ check.
+const phoneRaw = ref('')
+const phone = computed({
+  get: () => phoneRaw.value,
+  set: (v: string) => { phoneRaw.value = toEnglishDigits(v) },
+})
 const code = ref('')
 const name = ref('')
 const gender = ref<'female' | 'male' | ''>('')
@@ -46,18 +54,19 @@ if (typeof refParam === 'string' && refParam.trim()) {
 const STEP_ORDER = ['phone', 'code', 'profile'] as const
 const stepIndex = computed(() => STEP_ORDER.indexOf(step.value))
 
-const RESEND_COOLDOWN_SEC = 45
-const resendCooldown = ref(0)
-let cooldownTimer: ReturnType<typeof setInterval> | undefined
-
-// Expiry is a SEPARATE clock from the resend cooldown above, and conflating the two is
-// exactly the trap this screen used to set: the only visible number was the 45s cooldown,
-// which reads as "time left on my code" while the code actually lives 120s. A user who
-// waited past that got "wrong code" for digits that were correct but stale. Both clocks are
-// now shown for what they are, and the TTL comes from the API (expiresInSec) rather than a
-// hardcoded 120 here that could silently drift from OtpService.
+// Resend is gated on the CODE'S OWN LIFETIME, not a separate shorter cooldown. This screen
+// used to run two independent clocks -- a 45s resend cooldown beside the API's 120s expiry --
+// so the button re-armed while the current code was still perfectly valid, and the user was
+// shown two unrelated countdowns for one situation. Resending then also spends one of the
+// three-per-hour server budget for a code that had not expired. One deadline now: while the
+// code lives there is nothing to resend, and the moment it dies resend unlocks. The TTL still
+// comes from the API (expiresInSec) rather than a hardcoded 120 that could drift from
+// OtpService.
 const codeExpiresIn = ref(0)
 let expiryTimer: ReturnType<typeof setInterval> | undefined
+// Only reached when the API reports no TTL: expiry is then unknown (so nothing is claimed
+// about it on screen), but resend still needs some floor rather than being free to spam.
+const RESEND_FALLBACK_SEC = 45
 // Only claim anything about expiry when the API actually told us the TTL -- otherwise a
 // response without expiresInSec would render an immediate, false "your code expired".
 const codeTtlKnown = ref(false)
@@ -69,30 +78,19 @@ const resendsRemaining = ref<number | null>(null)
 
 const codeExpired = computed(() => step.value === 'code' && codeTtlKnown.value && codeExpiresIn.value <= 0)
 
-function startCooldown() {
-  resendCooldown.value = RESEND_COOLDOWN_SEC
-  clearInterval(cooldownTimer)
-  cooldownTimer = setInterval(() => {
-    resendCooldown.value -= 1
-    if (resendCooldown.value <= 0) clearInterval(cooldownTimer)
-  }, 1000)
-}
-
 function startExpiryCountdown(seconds: number) {
   clearInterval(expiryTimer)
   codeTtlKnown.value = seconds > 0
-  codeExpiresIn.value = seconds
-  if (!codeTtlKnown.value) return
+  // With no TTL from the API, codeTtlKnown stays false so no expiry claim is rendered -- but
+  // the countdown still runs, because it is also what gates the resend button.
+  codeExpiresIn.value = seconds > 0 ? seconds : RESEND_FALLBACK_SEC
   expiryTimer = setInterval(() => {
     codeExpiresIn.value -= 1
     if (codeExpiresIn.value <= 0) clearInterval(expiryTimer)
   }, 1000)
 }
 
-onUnmounted(() => {
-  clearInterval(cooldownTimer)
-  clearInterval(expiryTimer)
-})
+onUnmounted(() => clearInterval(expiryTimer))
 
 async function requestOtp() {
   submitting.value = true
@@ -110,7 +108,6 @@ async function requestOtp() {
   }
   code.value = ''
   step.value = 'code'
-  startCooldown()
   startExpiryCountdown(data?.expiresInSec ?? 0)
   resendsRemaining.value = data?.resendsRemaining ?? null
 }
@@ -197,49 +194,39 @@ const STEP_HINT: Record<typeof step.value, string> = {
 </script>
 
 <template>
-  <div class="min-h-screen lg:flex">
-    <!-- Brand panel: hidden on mobile, the left visual half from lg breakpoint up -->
-    <div class="relative hidden overflow-hidden bg-(--color-accent) lg:flex lg:w-1/2 lg:flex-col lg:justify-between lg:p-12">
-      <div
-        class="pointer-events-none absolute -end-24 -top-24 h-96 w-96 rounded-full bg-white/10 blur-3xl"
-        aria-hidden="true"
-      />
-      <div
-        class="pointer-events-none absolute -start-16 bottom-0 h-72 w-72 rounded-full bg-black/10 blur-3xl"
-        aria-hidden="true"
-      />
-
-      <NuxtLink to="/" class="relative z-10 flex items-center gap-2 text-white">
-        <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-white/15 backdrop-blur">
-          <BaseIcon name="sparkles" :size="20" />
-        </span>
-        <span class="text-lg font-bold">قیچی</span>
-      </NuxtLink>
-
-      <div class="relative z-10 space-y-4 text-white">
-        <h2 class="max-w-md text-3xl font-bold leading-relaxed">
-          رزرو نوبت آرایشگاه، ساده و سریع
-        </h2>
-        <p class="max-w-sm text-white/80">
-          بهترین سالن‌های زیبایی نزدیک خودت رو پیدا کن، نوبت بگیر و دیگه نگران معطلی نباش.
-        </p>
-      </div>
-
-      <p class="relative z-10 text-sm text-white/60">© {{ new Date().getFullYear() }} قیچی</p>
+  <!-- One centred composition, identical in structure across all three apps (provider-panel
+       and admin-panel carry the same markup with their own copy) -- login is the one screen
+       every product shares, so it is the one that should read the same. -->
+  <main class="login-bg relative flex min-h-dvh items-center justify-center p-6">
+    <!-- Decoration lives in its own absolutely-positioned, clipped layer: putting
+         `overflow-hidden` on the scrolling parent instead would clip the card itself on a
+         short viewport, where this app's tallest step (profile) needs to scroll. -->
+    <div class="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+      <div class="mesh-a absolute -top-32 -start-24 h-96 w-96 rounded-full bg-(--color-accent) opacity-40 blur-3xl" />
+      <div class="mesh-b absolute -bottom-32 -end-24 h-96 w-96 rounded-full bg-(--color-accent-deep) opacity-30 blur-3xl" />
     </div>
 
-    <!-- Form panel -->
-    <div class="flex min-h-screen flex-1 items-center justify-center p-6">
-      <div class="w-full max-w-sm">
-        <!-- Mobile-only brand mark -->
-        <div class="mb-8 flex items-center justify-center gap-2 lg:hidden">
-          <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-(--color-accent) text-white">
-            <BaseIcon name="sparkles" :size="20" />
-          </span>
-          <span class="text-lg font-bold">قیچی</span>
-        </div>
+    <div class="relative w-full max-w-md">
+      <!-- The mascot stands BEHIND the card: it is earlier in the DOM and unpositioned, while
+           the card below is `relative z-10` with an opaque background, so the negative margin
+           tucks the character's legs neatly behind the card's top edge instead of leaving it
+           floating in its own empty band. -->
+      <div class="login-stagger relative -mb-20 flex justify-center" style="animation-delay: 0s">
+        <div class="login-glow pointer-events-none absolute bottom-4 h-40 w-56 opacity-70" aria-hidden="true" />
+        <img src="/mascot-full.png" alt="" class="relative h-60 w-auto" />
+      </div>
 
+      <div class="login-stagger relative z-10" style="animation-delay: 0.1s">
         <BaseCard padding="lg">
+          <!-- Inside the card, matching the two panels -- above it, this row would land in
+               the band the mascot overlaps and collide with the character. A link, unlike
+               the panels': this is the public site, so the mark doubles as the way back to
+               the storefront. -->
+          <NuxtLink to="/" class="mb-5 flex items-center justify-center gap-2.5">
+            <img src="/brand-icon.png" alt="" class="h-9 w-9 shrink-0 rounded-xl" />
+            <span class="text-base font-bold">قیچی</span>
+          </NuxtLink>
+
           <!-- Step indicator -->
           <div class="mb-6 flex items-center gap-1.5" aria-hidden="true">
             <span
@@ -340,17 +327,19 @@ const STEP_HINT: Record<typeof step.value, string> = {
               <p class="text-center text-sm text-(--color-text-muted)">
                 <button
                   type="button"
-                  class="font-medium text-(--color-accent) transition-opacity disabled:cursor-not-allowed disabled:text-(--color-text-muted) disabled:opacity-70"
-                  :disabled="resendCooldown > 0 || resendsRemaining === 0"
+                  class="font-medium text-(--color-accent-text) transition-opacity disabled:cursor-not-allowed disabled:text-(--color-text-muted) disabled:opacity-70"
+                  :disabled="codeExpiresIn > 0 || resendsRemaining === 0"
                   @click="requestOtp"
                 >
-                  {{ resendCooldown > 0 ? `ارسال مجدد کد (${resendCooldown})` : 'ارسال مجدد کد' }}
+                  {{ codeExpiresIn > 0 ? `ارسال مجدد کد (${formatCountdown(codeExpiresIn)})` : 'ارسال مجدد کد' }}
                 </button>
               </p>
-              <!-- Resends are capped at 3/hour server-side. Saying so up front is the whole
-                   point: the cooldown re-arms every 45s, so without this a user could burn
-                   every attempt in a minute and a half and only find out by being locked
-                   out. `null` = we haven't issued one this session yet, so say nothing. -->
+              <!-- Resends are capped at 3/hour server-side, and resend only unlocks once the
+                   current code has expired, so the budget can no longer be burnt in a couple
+                   of minutes. The warning still earns its place: three codes is three codes,
+                   and being told at the point of spending the last one beats discovering the
+                   hour-long lockout afterwards. `null` = none issued this session, so say
+                   nothing. -->
               <p
                 v-if="resendsRemaining !== null && resendsRemaining <= 1"
                 data-testid="resend-limit-warning"
@@ -367,11 +356,9 @@ const STEP_HINT: Record<typeof step.value, string> = {
 
             <form v-else key="profile" class="space-y-4" @submit.prevent="completeProfile">
               <BaseInput v-model="name" type="text" icon="user" label="نام" placeholder="نام شما" required autofocus />
-              <BaseSelect v-model="gender" label="جنسیت" required>
-                <option value="" disabled>انتخاب کنید</option>
-                <option value="female">زن</option>
-                <option value="male">مرد</option>
-              </BaseSelect>
+              <!-- The old disabled <option value=""> is AppSelect's placeholder now, not an
+                   option: it was never choosable, only how '' (nothing picked) renders. -->
+              <AppSelect v-model="gender" label="جنسیت" required :options="GENDER_OPTIONS" :searchable="false" />
               <BaseButton type="submit" :loading="submitting" block size="lg">تکمیل ثبت‌نام</BaseButton>
             </form>
           </Transition>
@@ -381,9 +368,13 @@ const STEP_HINT: Record<typeof step.value, string> = {
             {{ formError }}
           </p>
         </BaseCard>
+
+        <p class="login-stagger mt-6 text-center text-xs text-(--color-text-muted)" style="animation-delay: 0.2s">
+          © {{ new Date().getFullYear() }} قیچی
+        </p>
       </div>
     </div>
-  </div>
+  </main>
 </template>
 
 <style scoped>

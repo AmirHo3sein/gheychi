@@ -41,8 +41,8 @@ const hasUnseen = computed(() => hasUnseenStories(props.lastSeen, newestStoryCre
         class="block h-16 w-16 rounded-full border-2 border-(--color-surface) object-cover"
         alt=""
       />
-      <span v-else class="flex h-16 w-16 items-center justify-center rounded-full border-2 border-(--color-surface) bg-(--color-surface-card) text-(--color-text-muted)">
-        <BaseIcon name="sparkles" :size="22" />
+      <span v-else class="block h-16 w-16 overflow-hidden rounded-full border-2 border-(--color-surface)">
+        <SalonImagePlaceholder icon="sparkles" rounded="full" :icon-size="22" />
       </span>
     </span>
     <span aria-hidden="true" class="text-xs">استوری</span>

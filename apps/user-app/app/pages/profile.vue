@@ -1,31 +1,23 @@
 <script setup lang="ts">
-interface FavoriteSalon { id: string; name: string; slug: string; city: string }
+import { GENDER_OPTIONS } from '../utils/gender-map'
 
 const session = useSessionStore()
 const { apiFetch } = useApi()
 const { supported: pushSupported, isSubscribed, refreshStatus, subscribe, unsubscribe } = usePushSubscription()
+const { logout } = useLogout()
 
-const favorites = ref<FavoriteSalon[]>([])
 const name = ref(session.user?.name ?? '')
 // Never default an UNSET gender to a value: this field decides which salons the user is
 // shown at all (see toSearchGender/index.vue), so pre-answering it silently picks a whole
 // product experience on the user's behalf -- and, worse, makes the profile look complete
-// while the account still has gender = null server-side. '' renders as the placeholder
-// option, exactly like login.vue's profile step.
+// while the account still has gender = null server-side. '' matches no option, so AppSelect
+// shows its placeholder, exactly like login.vue's profile step.
 const gender = ref<'female' | 'male' | ''>(session.user?.gender ?? '')
 const savingProfile = ref(false)
 const nameError = ref('')
 const genderError = ref('')
 
-onMounted(async () => {
-  // refreshStatus() (push-subscription status) and the favorites fetch are independent --
-  // no need to serialize them.
-  const [, favoritesResult] = await Promise.all([
-    refreshStatus(),
-    apiFetch<FavoriteSalon[]>('/favorites', { silent: true }),
-  ])
-  favorites.value = favoritesResult.data ?? []
-})
+onMounted(refreshStatus)
 
 // Mirrors the API's name-length constraint (2-100 chars) so an invalid name never leaves
 // the client -- otherwise the server's class-validator error message (English) would reach
@@ -78,40 +70,19 @@ async function togglePush() {
   else await subscribe()
 }
 
-// Unbinding this browser's push subscription must happen BEFORE the session cookie is
-// cleared -- DELETE /push/subscribe is scoped to { endpoint, userId }, so afterwards the
-// row would be stranded owned by the user who just left and the next person to log in on
-// this device would keep receiving their appointment notifications. It is also time-boxed
-// rather than merely try/caught: `navigator.serviceWorker.ready` never rejects, it simply
-// never resolves when there's no active registration, and a user must always be able to
-// log out regardless of what the service worker is doing.
-const PUSH_UNBIND_TIMEOUT_MS = 2000
-
-async function logout() {
-  await Promise.race([
-    unsubscribe().catch(() => {}),
-    new Promise((resolve) => setTimeout(resolve, PUSH_UNBIND_TIMEOUT_MS)),
-  ])
-  await apiFetch('/auth/logout', { method: 'POST' })
-  session.setUser(null)
-  await navigateTo('/login')
-}
-
 useSeoMeta({ title: 'پروفایل — قیچی' })
 </script>
 
 <template>
-  <div class="p-4 space-y-6">
+  <div class="mx-auto max-w-2xl p-4 space-y-6">
     <section class="space-y-3">
       <h1 class="text-lg font-bold">پروفایل</h1>
       <p class="text-sm text-(--color-text-muted)">{{ session.user?.phone }}</p>
       <form class="space-y-4" @submit.prevent="saveProfile">
         <BaseInput v-model="name" type="text" label="نام" placeholder="نام" :maxlength="100" required :error="nameError" />
-        <BaseSelect v-model="gender" label="جنسیت" required :error="genderError">
-          <option value="" disabled>انتخاب کنید</option>
-          <option value="female">زن</option>
-          <option value="male">مرد</option>
-        </BaseSelect>
+        <!-- The old disabled <option value=""> is AppSelect's placeholder now, not an option:
+             it was never a choosable value, only the "nothing picked yet" rendering of ''. -->
+        <AppSelect v-model="gender" label="جنسیت" required :error="genderError" :options="GENDER_OPTIONS" :searchable="false" />
         <BaseButton type="submit" :loading="savingProfile">ذخیره</BaseButton>
       </form>
     </section>
@@ -150,14 +121,13 @@ useSeoMeta({ title: 'پروفایل — قیچی' })
     </section>
 
     <section class="space-y-2">
-      <h2 class="font-bold">سالن‌های ذخیره شده</h2>
-      <p v-if="!favorites.length" class="text-sm text-(--color-text-muted)">سالنی ذخیره نکرده‌اید</p>
-      <div v-else class="space-y-2">
-        <NuxtLink v-for="salon in favorites" :key="salon.id" :to="`/salons/${salon.slug}`" class="block">
-          <!-- Provider-authored salon name in a card with no other constraint on it. -->
-          <BaseCard class="text-sm break-words text-(--color-text)">{{ salon.name }} — {{ salon.city }}</BaseCard>
-        </NuxtLink>
-      </div>
+      <h2 class="font-bold">سالن‌های ذخیره‌شده</h2>
+      <NuxtLink to="/account/favorites" class="block">
+        <BaseCard class="flex items-center justify-between text-(--color-text)">
+          <span class="text-sm">مشاهده سالن‌های ذخیره‌شده</span>
+          <BaseIcon name="chevron-back" :size="18" class="text-(--color-text-muted)" />
+        </BaseCard>
+      </NuxtLink>
     </section>
 
     <div class="pt-2 text-center">

@@ -8,7 +8,9 @@ test('a salon flagged featured by an admin shows the Ad badge on Home', async ({
   const client = new Client({
     host: process.env.DB_HOST ?? 'localhost', port: Number(process.env.DB_PORT ?? 5544),
     user: process.env.DB_USER ?? 'gheychi', password: process.env.DB_PASS ?? 'gheychi',
-    database: process.env.DB_NAME ?? 'gheychi',
+    // Must match prepare-db.cjs's own default -- that's the database the webServer-spawned
+    // API this test drives is actually connected to.
+    database: process.env.DB_NAME ?? 'gheychi_e2e',
   })
   await client.connect()
   await client.query(`INSERT INTO users (phone, role) VALUES ('09120000201', 'admin') ON CONFLICT DO NOTHING`)

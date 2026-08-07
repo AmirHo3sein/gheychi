@@ -16,7 +16,7 @@ defineProps<{ photos: { id: string; url: string }[] }>()
       :alt="`تصویر گالری سالن ${index + 1}`"
     />
   </div>
-  <div v-else class="h-48 rounded-xl bg-(--color-surface-card) flex items-center justify-center text-sm">
-    تصویری موجود نیست
+  <div v-else class="h-48">
+    <SalonImagePlaceholder :icon-size="36" />
   </div>
 </template>

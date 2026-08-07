@@ -288,6 +288,36 @@ describe('login page - OTP expiry and resend budget', () => {
     expect(wrapper.find('[data-testid="code-expiry"]').exists()).toBe(false)
   })
 
+  it('keeps resend locked for exactly as long as the code lives, then unlocks it', async () => {
+    // The two used to be independent clocks (45s cooldown vs the API's TTL), so resend
+    // re-armed while the current code was still valid and the screen showed two unrelated
+    // countdowns. Resend must now track the code's own expiry.
+    // A generous TTL: runOnlyPendingTimersAsync() below already consumes a tick or two, so a
+    // short one would leave no headroom for the "still alive" half of the assertion.
+    vi.useFakeTimers()
+    fetchMock.mockResolvedValueOnce({ expiresInSec: 30, resendsRemaining: 2 })
+    const wrapper = await mountSuspended(LoginPage)
+    await wrapper.find('input[type="tel"]').setValue('09120000000')
+    await wrapper.find('form').trigger('submit.prevent')
+    await vi.runOnlyPendingTimersAsync()
+
+    const resendButton = () => wrapper.findAll('button').find((b) => b.text().includes('ارسال مجدد'))
+    expect(resendButton()?.attributes('disabled')).toBeDefined()
+
+    // Well inside the code's life -- resend stays locked, and it stays locked past the 45s
+    // the old independent cooldown would have re-armed at.
+    await vi.advanceTimersByTimeAsync(10_000)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="code-expiry"]').exists()).toBe(true)
+    expect(resendButton()?.attributes('disabled')).toBeDefined()
+
+    // Code expires -- resend unlocks.
+    await vi.advanceTimersByTimeAsync(30_000)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="code-expired"]').exists()).toBe(true)
+    expect(resendButton()?.attributes('disabled')).toBeUndefined()
+  })
+
   it('warns on the last allowed resend so the hour-long lockout is not a surprise', async () => {
     // The limiter allows 3 requests/hour while the cooldown re-arms every 45s, so without
     // this a user could burn the whole budget in ~90s and only find out by being locked out.

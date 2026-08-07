@@ -293,7 +293,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: close, enabled: () => !repo
           v-if="currentService"
           :to="`/booking/${slug}/${currentService.id}`"
           data-testid="story-booking-pill"
-          class="inline-flex min-h-11 items-center rounded-full bg-(--color-accent) px-4 text-sm font-semibold text-white"
+          class="inline-flex min-h-11 items-center rounded-full bg-(--color-accent) px-4 text-sm font-semibold text-(--color-fill-text)"
         >
           رزرو این خدمت
         </NuxtLink>

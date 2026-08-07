@@ -66,7 +66,10 @@ test('search, view salon, book, pay, land on confirmation', async ({ page }) => 
   await page.getByRole('button', { name: 'تایید' }).click()
 
   await page.getByPlaceholder('نام').fill('کاربر تست')
-  await page.getByRole('combobox').selectOption('female')
+  // AppSelect is a vue-multiselect, not a native <select>: its combobox is a div, so it has
+  // to be opened and its option clicked rather than driven with selectOption().
+  await page.getByRole('combobox').click()
+  await page.locator('.multiselect__option', { hasText: 'زن' }).first().click()
   await page.getByRole('button', { name: 'تکمیل ثبت‌نام' }).click()
 
   await expectUrlTolerantOfDevReload(page, '/', '/')
