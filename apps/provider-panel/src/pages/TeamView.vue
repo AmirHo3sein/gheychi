@@ -8,6 +8,7 @@ import AppInput from '@/components/ui/AppInput.vue'
 import AppMultiSelect from '@/components/ui/AppMultiSelect.vue'
 import type { SelectOption } from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
+import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import { toEnglishDigits } from '@/utils/digits'
@@ -36,6 +37,14 @@ interface ReferralCode {
   shareUrl: string
 }
 
+interface ScheduleException {
+  id: string
+  date: string
+  // null means a whole-salon closure (HoursView.vue's own feature) -- never shown here,
+  // this page only ever renders/creates rows where this is set.
+  workerId: string | null
+}
+
 const { apiFetch } = useApi()
 const { push: pushToast } = useToast()
 const workers = ref<Worker[]>([])
@@ -60,21 +69,69 @@ const referralLoading = reactive<Record<string, boolean>>({})
 const referralError = reactive<Record<string, string>>({})
 const referralCodes = reactive<Record<string, ReferralCode>>({})
 
+// One shared fetch of every exception (whole-salon AND per-worker), grouped client-side --
+// same idiom as BookingsView.vue's day view, cheaper than one request per worker card.
+const exceptions = ref<ScheduleException[]>([])
+const workerOffDraft = reactive<Record<string, string>>({})
+const workerOffSaving = reactive<Record<string, boolean>>({})
+
 async function load() {
   loading.value = true
   loadError.value = false
-  const [workersRes, servicesRes] = await Promise.all([
+  const [workersRes, servicesRes, exceptionsRes] = await Promise.all([
     apiFetch<Worker[]>('/salons/mine/workers', { silent: true }),
     apiFetch<SalonServiceOption[]>('/salons/mine/services', { silent: true }),
+    apiFetch<ScheduleException[]>('/salons/mine/exceptions', { silent: true }),
   ])
-  if (workersRes.error || servicesRes.error) {
+  if (workersRes.error || servicesRes.error || exceptionsRes.error) {
     loadError.value = true
     loading.value = false
     return
   }
   workers.value = workersRes.data ?? []
   salonServices.value = servicesRes.data ?? []
+  exceptions.value = exceptionsRes.data ?? []
+  // JalaliDatePicker's modelValue is a required prop -- seeding an empty draft entry per
+  // worker up front means it never receives undefined, just an unset ''.
+  for (const w of workers.value) workerOffDraft[w.id] = workerOffDraft[w.id] ?? ''
   loading.value = false
+}
+
+// Every day off for one worker, soonest first -- deliberately NOT filtered to upcoming-only
+// (unlike BookingsView.vue's day view): the date picker doesn't stop an owner from picking a
+// past date by mistake, and nothing here validates that server-side either (matching
+// HoursView.vue's own whole-salon exceptions list, which is equally unfiltered) -- silently
+// hiding a just-created row because it happened to land in the past would look like the
+// "add" button did nothing at all.
+function workerOffDays(workerId: string): ScheduleException[] {
+  return exceptions.value
+    .filter((e) => e.workerId === workerId)
+    .sort((a, b) => a.date.localeCompare(b.date))
+}
+
+function offDayLabel(e: ScheduleException): string {
+  return new Date(`${e.date}T12:00:00Z`).toLocaleDateString('fa-IR')
+}
+
+async function addWorkerOffDay(worker: Worker) {
+  const date = workerOffDraft[worker.id]
+  if (!date) return
+  workerOffSaving[worker.id] = true
+  const { data, error } = await apiFetch<ScheduleException>('/salons/mine/exceptions', {
+    method: 'POST',
+    body: { date, workerId: worker.id },
+  })
+  workerOffSaving[worker.id] = false
+  if (error) return
+  if (data) exceptions.value.push(data)
+  workerOffDraft[worker.id] = ''
+}
+
+async function removeWorkerOffDay(id: string) {
+  if (!window.confirm('این روز مرخصی حذف شود؟')) return
+  const { error } = await apiFetch(`/salons/mine/exceptions/${id}`, { method: 'DELETE' })
+  if (error) return
+  exceptions.value = exceptions.value.filter((e) => e.id !== id)
 }
 
 onMounted(load)
@@ -124,7 +181,10 @@ async function addWorker() {
       : 'اطلاعات وارد شده نامعتبر است. لطفاً نام و شماره موبایل را بررسی کنید.'
     return
   }
-  if (data) workers.value.unshift(data)
+  if (data) {
+    workers.value.unshift(data)
+    workerOffDraft[data.id] = ''
+  }
 
   newWorker.name = ''
   newWorker.phone = ''
@@ -241,6 +301,50 @@ async function copyReferralCode(code: string) {
           <p class="text-xs text-(--color-text-muted)">
             {{ w.serviceIds.length === 0 ? 'این عضو می‌تواند همه خدمات سالن را انجام دهد.' : 'این عضو فقط خدمات انتخاب‌شده را انجام می‌دهد.' }}
           </p>
+        </div>
+
+        <div class="space-y-2">
+          <label class="text-sm font-medium text-(--color-text)">روزهای مرخصی</label>
+          <div class="flex min-w-0 items-center gap-2">
+            <div class="min-w-0 flex-1">
+              <JalaliDatePicker
+                v-model="workerOffDraft[w.id]"
+                aria-label="تاریخ مرخصی"
+                :data-testid="`worker-off-date-${w.id}`"
+              />
+            </div>
+            <AppButton
+              type="button"
+              variant="secondary"
+              class="shrink-0"
+              :data-testid="`add-worker-off-${w.id}`"
+              :disabled="!workerOffDraft[w.id] || workerOffSaving[w.id]"
+              :loading="workerOffSaving[w.id]"
+              @click="addWorkerOffDay(w)"
+            >
+              <AppIcon name="plus" :size="16" />
+            </AppButton>
+          </div>
+          <ul v-if="workerOffDays(w.id).length > 0" class="space-y-1">
+            <li
+              v-for="e in workerOffDays(w.id)"
+              :key="e.id"
+              :data-testid="`worker-off-${e.id}`"
+              class="flex items-center justify-between gap-2 rounded-lg bg-(--color-surface) px-3 py-1.5 text-sm text-(--color-text)"
+            >
+              <span class="tnum">{{ offDayLabel(e) }}</span>
+              <button
+                type="button"
+                aria-label="حذف روز مرخصی"
+                :data-testid="`remove-worker-off-${e.id}`"
+                class="shrink-0 text-(--color-text-muted) hover:text-(--tone-danger-text)"
+                @click="removeWorkerOffDay(e.id)"
+              >
+                <AppIcon name="trash" :size="14" />
+              </button>
+            </li>
+          </ul>
+          <p v-else class="text-xs text-(--color-text-muted)">این عضو مرخصی ثبت‌شده‌ای ندارد.</p>
         </div>
 
         <div>

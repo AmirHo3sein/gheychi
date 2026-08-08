@@ -1,10 +1,10 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { SalonOwnerGuard } from '../salons/salon-owner.guard';
 import { AssignWorkerDto } from '../salons/dto/worker.dto';
 import { BookingsService } from './bookings.service';
-import { UpdateBookingStatusDto } from './dto/booking.dto';
+import { CreateManualBookingDto, UpdateBookingStatusDto } from './dto/booking.dto';
 
 @Controller('salons/mine/bookings')
 @UseGuards(AuthGuard, SalonOwnerGuard)
@@ -14,6 +14,13 @@ export class SalonBookingsController {
   @Get()
   list(@Req() req: Request) {
     return this.bookings.listForSalon(req.salonId!);
+  }
+
+  // A customer who called or walked in -- not in the system at all. See
+  // BookingsService.createManual's own comment for the full design.
+  @Post()
+  createManual(@Req() req: Request, @Body() dto: CreateManualBookingDto) {
+    return this.bookings.createManual(req.salonId!, dto);
   }
 
   @Patch(':id')

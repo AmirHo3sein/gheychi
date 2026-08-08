@@ -1,8 +1,10 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { iranDateString } from '../common/iran-time.util';
 import { ListWorkersQueryDto, WorkerRatingsQueryDto } from './dto/worker.dto';
 import { PortfolioItem } from './portfolio-item.entity';
+import { ScheduleException } from './schedule-exception.entity';
 import { SalonService } from './salon-service.entity';
 import { SalonPhoto } from './salon-photo.entity';
 import { SalonStory } from './salon-story.entity';
@@ -19,6 +21,7 @@ export class PublicSalonContentController {
     private readonly workerEligibility: WorkerEligibilityService,
     @InjectRepository(SalonService) private readonly services: Repository<SalonService>,
     @InjectRepository(WorkingHour) private readonly hours: Repository<WorkingHour>,
+    @InjectRepository(ScheduleException) private readonly exceptions: Repository<ScheduleException>,
     @InjectRepository(SalonPhoto) private readonly photos: Repository<SalonPhoto>,
     @InjectRepository(SalonStory) private readonly stories: Repository<SalonStory>,
     @InjectRepository(PortfolioItem) private readonly portfolio: Repository<PortfolioItem>,
@@ -41,6 +44,31 @@ export class PublicSalonContentController {
   async listHours(@Param('slug') slug: string) {
     const salonId = await this.requireSalonId(slug);
     return this.hours.find({ where: { salonId }, order: { weekday: 'ASC', openTime: 'ASC' } });
+  }
+
+  @Get('exceptions')
+  async listExceptions(@Param('slug') slug: string) {
+    const salonId = await this.requireSalonId(slug);
+    // Future-dated only (today included) -- a past closure is no longer useful information
+    // for a customer deciding whether/when to book. Postgres's own CURRENT_DATE would
+    // evaluate in the DB session's timezone (UTC here, per docker-compose.yml -- no TZ is
+    // set), which disagrees with Iran's fixed UTC+3:30 offset for the first 3.5 hours of
+    // every Iran-local day; iranDateString is the same Iran-calendar-day logic the
+    // availability computation itself uses, so this stays correct regardless of the DB's
+    // own timezone.
+    const today = iranDateString(new Date());
+    const rows = await this.exceptions
+      .createQueryBuilder('exception')
+      .where('exception.salon_id = :salonId', { salonId })
+      .andWhere('exception.date >= :today', { today })
+      // A single worker's day off must never read as the whole salon being closed here.
+      .andWhere('exception.worker_id IS NULL')
+      .orderBy('exception.date', 'ASC')
+      .getMany();
+    // isClosed isn't exposed -- every row here is one (schedule.controller.ts's addException
+    // defaults it true and nothing in this app can create a false one), so it would only add
+    // a field public callers have no real use for.
+    return rows.map(({ date, startTime, endTime, reason }) => ({ date, startTime, endTime, reason }));
   }
 
   @Get('photos')

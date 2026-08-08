@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AppMultiSelect from '@/components/ui/AppMultiSelect.vue'
+import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import { resetToast, useToast } from '@/composables/useToast'
 import TeamView from './TeamView.vue'
 
@@ -63,14 +64,14 @@ describe('TeamView referral code reveal', () => {
     await toggle.trigger('click')
     await new Promise((r) => setTimeout(r, 0))
     await wrapper.vm.$nextTick()
-    expect(fetchMock).toHaveBeenCalledTimes(3) // initial list + initial services + referral-code fetch
+    expect(fetchMock).toHaveBeenCalledTimes(4) // initial list + services + exceptions + referral-code fetch
 
     await toggle.trigger('click') // hide
     expect(wrapper.find('[data-testid="referral-code-panel"]').exists()).toBe(false)
 
     await toggle.trigger('click') // show again -- no new fetch
     await new Promise((r) => setTimeout(r, 0))
-    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock).toHaveBeenCalledTimes(4)
     expect(wrapper.get('[data-testid="referral-code-value"]').text()).toBe('REF-XYZ789')
 
     wrapper.unmount()
@@ -240,6 +241,104 @@ describe('TeamView per-worker service restriction', () => {
   })
 })
 
+describe('TeamView per-worker time off', () => {
+  const exceptions = [
+    { id: 'e-past', date: '2020-01-01', workerId: 'w1' },
+    { id: 'e-w1', date: '2099-01-01', workerId: 'w1' },
+    { id: 'e-whole-salon', date: '2099-03-03', workerId: null },
+  ]
+
+  beforeEach(() => {
+    fetchMock.mockReset()
+    resetToast()
+    fetchMock.mockImplementation((path: string) => {
+      if (path === '/salons/mine/workers') return Promise.resolve({ data: structuredClone(workers), error: null })
+      if (path === '/salons/mine/exceptions') return Promise.resolve({ data: structuredClone(exceptions), error: null })
+      return Promise.resolve({ data: null, error: null })
+    })
+  })
+
+  it("lists every one of a worker's own days off (past included), but never a whole-salon closure", async () => {
+    const wrapper = await mountView()
+
+    // w1 (Sara) has both of her own rows in the fixture -- a past date isn't filtered out
+    // (matching HoursView.vue's own unfiltered whole-salon exceptions list: hiding a
+    // just-created row because it happened to land in the past would look like "add" did
+    // nothing). The whole-salon row (workerId: null) must never appear under any worker.
+    expect(wrapper.find('[data-testid="worker-off-e-w1"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="worker-off-e-past"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="worker-off-e-whole-salon"]').exists()).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  it('shows the empty-state hint for a worker with no upcoming days off', async () => {
+    const wrapper = await mountView()
+
+    // w2 (Maryam) has no rows at all in the fixture.
+    expect(wrapper.text()).toContain('این عضو مرخصی ثبت‌شده‌ای ندارد.')
+
+    wrapper.unmount()
+  })
+
+  it('adds a day off for a specific worker', async () => {
+    const wrapper = await mountView()
+    fetchMock.mockImplementationOnce(() =>
+      Promise.resolve({ data: { id: 'new-e', date: '2099-06-06', workerId: 'w2' }, error: null }),
+    )
+
+    wrapper.findComponent<typeof JalaliDatePicker>('[data-testid="worker-off-date-w2"]').vm.$emit('update:modelValue', '2099-06-06')
+    await wrapper.vm.$nextTick()
+
+    await wrapper.get('[data-testid="add-worker-off-w2"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(fetchMock).toHaveBeenCalledWith('/salons/mine/exceptions', {
+      method: 'POST',
+      body: { date: '2099-06-06', workerId: 'w2' },
+    })
+    expect(wrapper.find('[data-testid="worker-off-new-e"]').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('does not add a day off without a date chosen', async () => {
+    const wrapper = await mountView()
+    fetchMock.mockClear()
+
+    await wrapper.get('[data-testid="add-worker-off-w2"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('removes a worker day off only after confirmation', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const wrapper = await mountView()
+    fetchMock.mockClear()
+
+    await wrapper.get('[data-testid="remove-worker-off-e-w1"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="worker-off-e-w1"]').exists()).toBe(true)
+
+    confirmSpy.mockReturnValue(true)
+    await wrapper.get('[data-testid="remove-worker-off-e-w1"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(fetchMock).toHaveBeenCalledWith('/salons/mine/exceptions/e-w1', { method: 'DELETE' })
+    expect(wrapper.find('[data-testid="worker-off-e-w1"]').exists()).toBe(false)
+
+    wrapper.unmount()
+  })
+})
+
 describe('TeamView loading state', () => {
   beforeEach(() => {
     fetchMock.mockReset()
@@ -247,13 +346,15 @@ describe('TeamView loading state', () => {
   })
 
   it('shows a loading spinner distinct from the empty state while the initial fetch is pending', async () => {
-    // load() fires both the workers and services fetches in a Promise.all -- each needs
-    // its own resolver, not one shared variable a second call would silently overwrite.
+    // load() fires the workers, services, AND exceptions fetches in a Promise.all -- each
+    // needs its own resolver, not one shared variable a later call would silently overwrite.
     let resolveWorkers!: (v: { data: typeof workers; error: null }) => void
     let resolveServices!: (v: { data: unknown[]; error: null }) => void
+    let resolveExceptions!: (v: { data: unknown[]; error: null }) => void
     fetchMock.mockImplementation((path: string) => {
       if (path === '/salons/mine/workers') return new Promise((resolve) => { resolveWorkers = resolve })
-      return new Promise((resolve) => { resolveServices = resolve })
+      if (path === '/salons/mine/services') return new Promise((resolve) => { resolveServices = resolve })
+      return new Promise((resolve) => { resolveExceptions = resolve })
     })
 
     const wrapper = mount(TeamView)
@@ -265,6 +366,7 @@ describe('TeamView loading state', () => {
 
     resolveWorkers({ data: [], error: null })
     resolveServices({ data: [], error: null })
+    resolveExceptions({ data: [], error: null })
     await new Promise((r) => setTimeout(r, 0))
     await wrapper.vm.$nextTick()
 
@@ -318,7 +420,7 @@ describe('TeamView add-member form', () => {
 
     expect(wrapper.text()).toContain('نام و شماره موبایل الزامی است')
     // No API call was made for the empty submit itself.
-    expect(fetchMock).toHaveBeenCalledTimes(2) // only the initial list + services load
+    expect(fetchMock).toHaveBeenCalledTimes(3) // only the initial list + services + exceptions load
   })
 
   it('maps a non-409 server error (e.g. phone-format validation) to a fixed Persian message, never the raw server string', async () => {

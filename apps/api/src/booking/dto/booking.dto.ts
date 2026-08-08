@@ -1,4 +1,5 @@
-import { IsBoolean, IsIn, IsISO8601, IsOptional, IsString, IsUUID, Length } from 'class-validator';
+import { IsBoolean, IsIn, IsISO8601, IsOptional, IsString, IsUUID, Length, Matches } from 'class-validator';
+import { IRAN_MOBILE } from '../../common/validators';
 
 export class AvailabilityQueryDto {
   @IsUUID()
@@ -46,4 +47,36 @@ export class CreateBookingDto {
 export class UpdateBookingStatusDto {
   @IsIn(['completed', 'no_show'])
   status: 'completed' | 'no_show';
+}
+
+// The owner recording a customer who called or walked in -- not in the system at all, so
+// `phone` is how BookingsService.createManual resolves (or creates) a real `users` row for
+// them via the same findOrCreateByPhone SalonWorkersController.create() already uses for
+// worker-by-phone onboarding.
+export class CreateManualBookingDto {
+  @Matches(IRAN_MOBILE, { message: 'phone must be a valid Iranian mobile number' })
+  phone: string;
+
+  // Only ever applied when the resolved customer has no name yet (a brand-new shadow
+  // account, or an existing one that never set one) -- never overwrites a real registered
+  // customer's own name. See createManual's own comment.
+  @IsOptional()
+  @IsString()
+  @Length(2, 120)
+  name?: string;
+
+  @IsUUID()
+  serviceId: string;
+
+  @IsOptional()
+  @IsUUID()
+  workerId?: string;
+
+  @IsISO8601()
+  startsAt: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 500)
+  notes?: string;
 }

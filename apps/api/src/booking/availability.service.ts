@@ -1,13 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, LessThan, MoreThan, Repository } from 'typeorm';
+import { In, IsNull, LessThan, MoreThan, Not, Repository } from 'typeorm';
 import { SalonService } from '../salons/salon-service.entity';
 import { ScheduleException } from '../salons/schedule-exception.entity';
 import { WorkerEligibilityService } from '../salons/worker-eligibility.service';
 import { WorkingHour } from '../salons/working-hour.entity';
 import { Salon } from '../salons/salon.entity';
 import { Booking } from './booking.entity';
-import { computeAvailableSlots, DayAvailability, WorkingHourRange } from './availability.util';
+import { computeAvailableSlots, DateException, DayAvailability, WorkingHourRange } from './availability.util';
 
 const AVAILABILITY_WINDOW_DAYS = 14;
 
@@ -44,9 +44,13 @@ export class AvailabilityService {
 
     const windowEnd = new Date(now.getTime() + AVAILABILITY_WINDOW_DAYS * 24 * 60 * 60_000);
 
-    const [hourRows, exceptionRows, activeBookingRows] = await Promise.all([
+    const [hourRows, exceptionRows, workerExceptionRows, activeBookingRows] = await Promise.all([
       this.hours.find({ where: { salonId } }),
-      this.exceptions.find({ where: { salonId, isClosed: true } }),
+      // Whole-salon closures only -- a per-worker row here would incorrectly close the
+      // ENTIRE salon; those are fetched separately below and only ever narrow a single
+      // worker's own availability inside the requestedWorkerId branch.
+      this.exceptions.find({ where: { salonId, isClosed: true, workerId: IsNull() } }),
+      this.exceptions.find({ where: { salonId, isClosed: true, workerId: Not(IsNull()) } }),
       this.bookings.find({
         where: {
           salonId,
@@ -64,19 +68,35 @@ export class AvailabilityService {
       hoursByWeekday.set(h.weekday, existing);
     }
 
+    const exceptionsByDate = new Map<string, DateException>();
+    for (const e of exceptionRows) {
+      exceptionsByDate.set(e.date, e.startTime === null || e.endTime === null ? 'whole-day' : { startTime: e.startTime, endTime: e.endTime });
+    }
+
+    // Only ever consulted inside computeAvailableSlots's requestedWorkerId branch --
+    // "any available worker" mode never narrows by a specific worker's own days off.
+    const workerOffDates = new Map<string, Set<string>>();
+    for (const e of workerExceptionRows) {
+      if (!e.workerId) continue;
+      const existing = workerOffDates.get(e.workerId) ?? new Set<string>();
+      existing.add(e.date);
+      workerOffDates.set(e.workerId, existing);
+    }
+
     return computeAvailableSlots({
       now,
       days: AVAILABILITY_WINDOW_DAYS,
       durationMin: service.durationMin,
       capacity: salon.capacity,
       hoursByWeekday,
-      closedDates: new Set(exceptionRows.map((e) => e.date)),
+      exceptionsByDate,
       existingBookings: activeBookingRows.map((b) => ({
         startsAt: b.startsAt,
         endsAt: b.endsAt,
         workerId: b.workerId,
       })),
       requestedWorkerId: workerId,
+      workerOffDates,
     });
   }
 }

@@ -98,7 +98,7 @@ async function main(): Promise<void> {
         durationMin: SERVICE_DURATION_MIN,
         capacity: SALON_CAPACITY,
         hoursByWeekday: new Map(OPEN_ALL_WEEK),
-        closedDates: new Set(),
+        exceptionsByDate: new Map(),
         existingBookings: bookingRows.map((b) => ({
           startsAt: new Date(b.starts_at),
           endsAt: new Date(b.ends_at),

@@ -78,6 +78,35 @@ describe('Availability (e2e)', () => {
     expect(after.body.map((d: { date: string }) => d.date)).not.toContain(targetDate);
   });
 
+  it('narrows a day to around a partial-day schedule exception instead of excluding it entirely', async () => {
+    const before = await request(app.getHttpServer())
+      .get(`/api/salons/${salonId}/availability`)
+      .query({ serviceId })
+      .expect(200);
+    // Open 09:00-11:00 with a 60min service yields two slots/day (09:00, 10:00) -- pick a
+    // day that still has both (the previous test whole-day-closed the first day it saw).
+    const targetDay = before.body.find((d: { slots: string[] }) => d.slots.length === 2);
+    const targetDate = targetDay.date;
+
+    const ds = app.get(DataSource);
+    await ds.query(
+      `INSERT INTO schedule_exceptions (salon_id, date, is_closed, start_time, end_time, reason)
+       VALUES ($1, $2, true, '09:00', '10:00', 'تعمیرات')`,
+      [salonId, targetDate],
+    );
+
+    const after = await request(app.getHttpServer())
+      .get(`/api/salons/${salonId}/availability`)
+      .query({ serviceId })
+      .expect(200);
+    const afterDay = after.body.find((d: { date: string }) => d.date === targetDate);
+    // The date itself is still bookable (unlike a whole-day exception) -- just the 09:00
+    // slot that overlaps the exception is gone; 10:00 (outside it) remains offered.
+    expect(afterDay).toBeDefined();
+    expect(afterDay.slots).toHaveLength(1);
+    expect(new Date(afterDay.slots[0]).toISOString()).not.toBe(new Date(targetDay.slots[0]).toISOString());
+  });
+
   it('404s for a service that does not belong to the salon', () =>
     request(app.getHttpServer())
       .get(`/api/salons/${salonId}/availability`)

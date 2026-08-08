@@ -53,6 +53,22 @@ describe('Public salon content (e2e)', () => {
         ($1, 'https://cdn.example.com/second.jpg', 1, false)`,
       [salonId],
     );
+    // One past (must be excluded), one far-future whole-day, one far-future partial-day with
+    // a reason -- deliberately far from "now" in both directions so this never becomes
+    // flaky as the real calendar date advances.
+    await ds.query(
+      `INSERT INTO schedule_exceptions (salon_id, date, is_closed) VALUES ($1, '2020-01-01', true)`,
+      [salonId],
+    );
+    await ds.query(
+      `INSERT INTO schedule_exceptions (salon_id, date, is_closed) VALUES ($1, '2030-01-01', true)`,
+      [salonId],
+    );
+    await ds.query(
+      `INSERT INTO schedule_exceptions (salon_id, date, is_closed, start_time, end_time, reason)
+       VALUES ($1, '2030-01-02', true, '13:00', '14:00', 'تعمیرات')`,
+      [salonId],
+    );
     await ds.destroy();
   });
 
@@ -79,10 +95,20 @@ describe('Public salon content (e2e)', () => {
     ]);
   });
 
-  it('404s for an unknown slug on all three endpoints', async () => {
+  it('lists only future-dated exceptions, oldest first, with the internal isClosed flag omitted', async () => {
+    const res = await request(app.getHttpServer()).get(`/api/salons/${slug}/exceptions`).expect(200);
+    expect(res.body).toEqual([
+      { date: '2030-01-01', startTime: null, endTime: null, reason: null },
+      { date: '2030-01-02', startTime: '13:00:00', endTime: '14:00:00', reason: 'تعمیرات' },
+    ]);
+    expect(res.body.every((e: object) => !('isClosed' in e))).toBe(true);
+  });
+
+  it('404s for an unknown slug on all endpoints', async () => {
     await request(app.getHttpServer()).get('/api/salons/does-not-exist/services').expect(404);
     await request(app.getHttpServer()).get('/api/salons/does-not-exist/hours').expect(404);
     await request(app.getHttpServer()).get('/api/salons/does-not-exist/photos').expect(404);
+    await request(app.getHttpServer()).get('/api/salons/does-not-exist/exceptions').expect(404);
   });
 
   it('lists all approved salon slugs for the sitemap, unfiltered by location', async () => {

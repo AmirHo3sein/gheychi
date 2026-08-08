@@ -18,16 +18,32 @@ import { WorkerEligibilityService } from '../salons/worker-eligibility.service';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
 import { InvoicingService } from '../invoicing/invoicing.service';
 import { ReferralsService } from '../referrals/referrals.service';
+import { User } from '../users/user.entity';
+import { UsersService } from '../users/users.service';
 import { WalletTransaction } from '../wallet/wallet-transaction.entity';
 import { WalletService } from '../wallet/wallet.service';
 import { Booking, BookingStatus } from './booking.entity';
 import { releaseBookingHold } from './booking-hold-release.util';
-import { CreateBookingDto } from './dto/booking.dto';
+import { CreateBookingDto, CreateManualBookingDto } from './dto/booking.dto';
 import { calculateDeposit } from './deposit.util';
 import { DiscountCandidate, resolveBestPriceWithWinner } from './discount.util';
 import { PAYMENT_GATEWAY, PaymentGateway } from './payment-gateway';
 import { Payment } from './payment.entity';
 import { PaymentsService } from './payments.service';
+
+// attachNames' own enrichment shape -- shared by every method that returns it
+// (listForSalon, listMine, findMine, assignWorker, createManual) so the five previously
+// duplicated inline type literals stay in exact sync as fields are added here.
+// customerPhone is never actually optional (every booking's userId resolves to a real
+// users row, phone is NOT NULL there) -- customerName stays nullable since a shadow
+// account created by createManual/findOrCreateByPhone may never get one.
+type EnrichedBooking = Booking & {
+  salonName: string;
+  serviceName: string;
+  workerName: string | null;
+  customerName: string | null;
+  customerPhone: string;
+};
 
 const LOCK_TTL_MS = 5000;
 // See listForSalon()'s own comment -- a defensive ceiling, not a UX pagination feature.
@@ -46,6 +62,7 @@ export class BookingsService {
     @InjectRepository(Salon) private readonly salons: Repository<Salon>,
     @InjectRepository(SalonService) private readonly services: Repository<SalonService>,
     @InjectRepository(Worker) private readonly workers: Repository<Worker>,
+    @InjectRepository(User) private readonly users: Repository<User>,
     private readonly dataSource: DataSource,
     private readonly workerEligibility: WorkerEligibilityService,
     private readonly config: PlatformConfigService,
@@ -58,6 +75,7 @@ export class BookingsService {
     private readonly referralsService: ReferralsService,
     private readonly walletService: WalletService,
     private readonly invoicing: InvoicingService,
+    private readonly usersService: UsersService,
   ) {}
 
   async createHold(
@@ -320,6 +338,115 @@ export class BookingsService {
     return { booking, paymentUrl, couponApplied, paymentRequired: true };
   }
 
+  // The salon owner recording a customer who called or walked in -- never went through the
+  // online flow at all, so nothing here is "held" pending payment; it's inserted straight to
+  // 'confirmed' with no Payment row, deliberately mirroring createHold's own zero-deposit
+  // branch (a fully-discounted online booking) exactly, which is why cancel() needs no
+  // changes to handle this correctly later: a missing Payment row already degrades every
+  // refund/hold-release path to a no-op everywhere that reads one. Discounts/coupons/wallet
+  // don't apply here at all -- there is no checkout to apply them at.
+  async createManual(salonId: string, dto: CreateManualBookingDto): Promise<EnrichedBooking> {
+    const [salon, service] = await Promise.all([
+      this.salons.findOneBy({ id: salonId, status: 'approved' }),
+      this.services.findOneBy({ id: dto.serviceId, salonId, isActive: true }),
+    ]);
+    if (!salon) throw new NotFoundException('Salon not found');
+    if (!service) throw new NotFoundException('Service not found');
+
+    const startsAt = new Date(dto.startsAt);
+    if (Number.isNaN(startsAt.getTime()) || startsAt <= new Date()) {
+      throw new BadRequestException('startsAt must be a valid future date-time');
+    }
+    const endsAt = new Date(startsAt.getTime() + service.durationMin * 60_000);
+
+    // findOrCreateByPhone is the exact call SalonWorkersController.create() already uses to
+    // add a worker by phone -- same idiom, a real `users` row either way, satisfying
+    // bookings.user_id's NOT NULL FK honestly instead of inventing free-text customer
+    // columns. Only ever sets a name on a customer who doesn't have one yet (brand new, or
+    // an existing shadow account nobody named) -- never overwrites a real registered
+    // customer's own name just because the owner typed something different.
+    const { user: customer, isNew } = await this.usersService.findOrCreateByPhone(dto.phone);
+    if (dto.name && (isNew || !customer.name)) {
+      await this.usersService.updateProfile(customer.id, { name: dto.name });
+    }
+
+    // Same per-salon lock, same reasoning, as createHold's own comment above.
+    const lockKey = `lock:booking:${salonId}`;
+    const acquired = await this.redis.set(lockKey, '1', 'PX', LOCK_TTL_MS, 'NX');
+    if (!acquired) throw new ConflictException('این عملیات توسط درخواست دیگری در حال انجام است، دوباره تلاش کنید');
+
+    let booking: Booking;
+    try {
+      booking = await this.dataSource.transaction(async (em) => {
+        // Same two overlap checks as createHold, verbatim -- a manual booking is a REAL
+        // appointment occupying a real chair/worker, so it must be guarded against
+        // double-booking exactly like an online one, even though it skips checkout.
+        const overlapping = await em.count(Booking, {
+          where: {
+            salonId,
+            status: In(['pending_payment', 'confirmed']),
+            startsAt: LessThan(endsAt),
+            endsAt: MoreThan(startsAt),
+          },
+        });
+        if (overlapping >= salon.capacity) throw new ConflictException('این زمان قبلا پر شده است');
+
+        if (dto.workerId) {
+          const worker = await this.workers.findOneBy({ id: dto.workerId, salonId });
+          if (!worker) throw new NotFoundException('Worker not found');
+          if (!worker.active) throw new BadRequestException('این کارمند غیرفعال است');
+
+          const eligible = await this.workerEligibility.isWorkerEligibleForService(dto.workerId, dto.serviceId, em);
+          if (!eligible) throw new BadRequestException('این کارمند این خدمت را انجام نمی‌دهد');
+
+          const workerOverlapping = await em.count(Booking, {
+            where: {
+              workerId: dto.workerId,
+              status: In(['pending_payment', 'confirmed']),
+              startsAt: LessThan(endsAt),
+              endsAt: MoreThan(startsAt),
+            },
+          });
+          if (workerOverlapping > 0) throw new ConflictException('این کارمند در این زمان نوبت دیگری دارد');
+        }
+
+        return em.save(
+          Booking,
+          em.create(Booking, {
+            userId: customer.id,
+            salonId,
+            serviceId: dto.serviceId,
+            startsAt,
+            endsAt,
+            priceSnapshot: service.price,
+            depositAmount: 0,
+            workerId: dto.workerId ?? null,
+            status: 'confirmed',
+            source: 'manual',
+            notes: dto.notes ?? null,
+          }),
+        );
+      });
+    } finally {
+      await this.redis.del(lockKey);
+    }
+
+    // Best-effort, same pattern as createHold's own zero-deposit branch: texts the walk-in
+    // customer a real confirmation (and pings the owner too -- a small, accepted redundancy
+    // since they just entered this themselves) without letting a notification failure
+    // surface as a failed request.
+    try {
+      await this.paymentsService.notifyConfirmed(booking.id);
+    } catch (err) {
+      this.logger.error(
+        `Failed to notify the manual booking confirmation of booking ${booking.id}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    const [withNames] = await this.attachNames([booking]);
+    return withNames;
+  }
+
   // Shared by createHold and retryPayment -- both need to obtain a fresh Zarinpal
   // authority/paymentUrl for a booking's deposit and persist that authority against
   // the booking's single Payment row so the callback can later reconcile it.
@@ -394,7 +521,7 @@ export class BookingsService {
     userId: string,
     id: string,
   ): Promise<
-    Booking & { salonName: string; serviceName: string; workerName: string | null; refundStatus: 'pending' | 'done' | null }
+    EnrichedBooking & { refundStatus: 'pending' | 'done' | null }
   > {
     const booking = await this.bookings.findOneBy({ id, userId });
     if (!booking) throw new NotFoundException('Booking not found');
@@ -412,7 +539,7 @@ export class BookingsService {
 
   async listMine(
     userId: string,
-  ): Promise<Array<Booking & { salonName: string; serviceName: string; workerName: string | null }>> {
+  ): Promise<Array<EnrichedBooking>> {
     const bookings = await this.bookings.find({
       where: { userId },
       order: { startsAt: 'DESC' },
@@ -498,6 +625,17 @@ export class BookingsService {
       }
     });
 
+    // Best-effort, independent of the refund path below -- a bare cancel with no refund
+    // owed (e.g. the customer cancelled outside the window) was previously silent to
+    // them. Never let a notification failure surface as a failed cancellation.
+    try {
+      await this.paymentsService.notifyCancelled(booking.id, isOwner ? 'salon' : 'user');
+    } catch (err) {
+      this.logger.error(
+        `Failed to notify the cancellation of booking ${booking.id}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
     // Attempt the real refund immediately so the common case completes within this
     // request (mock/happy path: customer sees the final state right away). The
     // cancellation is already committed at this point, so NOTHING from the attempt
@@ -519,25 +657,36 @@ export class BookingsService {
 
   private async attachNames(
     bookings: Booking[],
-  ): Promise<Array<Booking & { salonName: string; serviceName: string; workerName: string | null }>> {
+  ): Promise<Array<EnrichedBooking>> {
     if (bookings.length === 0) return [];
     const salonIds = [...new Set(bookings.map((b) => b.salonId))];
     const serviceIds = [...new Set(bookings.map((b) => b.serviceId))];
     const workerIds = [...new Set(bookings.map((b) => b.workerId).filter((id): id is string => id !== null))];
-    const [salonNameById, serviceNameById, workerNameById] = await Promise.all([
+    // Every booking's own customer -- not resolveNamesById (that helper's generic bound is
+    // `{id, name: string}`, and User.name is nullable; phone, which callers actually need
+    // to reach a walk-in customer who never opened the app, isn't a "name" at all).
+    const customerIds = [...new Set(bookings.map((b) => b.userId))];
+    const [salonNameById, serviceNameById, workerNameById, customerRows] = await Promise.all([
       resolveNamesById(this.salons, salonIds),
       resolveNamesById(this.services, serviceIds),
       resolveNamesById(this.workers, workerIds),
+      this.users.find({ where: { id: In(customerIds) } }),
     ]);
-    return bookings.map((b) => ({
-      ...b,
-      salonName: salonNameById.get(b.salonId) ?? 'Unknown salon',
-      serviceName: serviceNameById.get(b.serviceId) ?? 'Unknown service',
-      workerName: b.workerId ? (workerNameById.get(b.workerId) ?? null) : null,
-    }));
+    const customerById = new Map(customerRows.map((u) => [u.id, u]));
+    return bookings.map((b) => {
+      const customer = customerById.get(b.userId);
+      return {
+        ...b,
+        salonName: salonNameById.get(b.salonId) ?? 'Unknown salon',
+        serviceName: serviceNameById.get(b.serviceId) ?? 'Unknown service',
+        workerName: b.workerId ? (workerNameById.get(b.workerId) ?? null) : null,
+        customerName: customer?.name ?? null,
+        customerPhone: customer?.phone ?? '',
+      };
+    });
   }
 
-  async listForSalon(salonId: string): Promise<Array<Booking & { salonName: string; serviceName: string; workerName: string | null }>> {
+  async listForSalon(salonId: string): Promise<Array<EnrichedBooking>> {
     // No pagination UI exists downstream today (the provider panel's bookings screen
     // loads this once and filters/sorts client-side over the full list) -- rather than
     // change the response shape and force a frontend rework, this is a generous but
@@ -556,7 +705,7 @@ export class BookingsService {
     salonId: string,
     bookingId: string,
     workerId: string,
-  ): Promise<Booking & { salonName: string; serviceName: string; workerName: string | null }> {
+  ): Promise<EnrichedBooking> {
     // Same per-salon lock createHold's own worker-overlap check relies on -- a worker can
     // never belong to two salons, so serializing on salonId already serializes every
     // request (a new hold, or another assignment) that could conflict on this worker too.

@@ -104,3 +104,127 @@ describe('Salon-side booking management (e2e)', () => {
       .expect(400);
   });
 });
+
+describe('Manual/offline bookings (e2e)', () => {
+  let app: INestApplication;
+  let ownerCookie: string;
+  let customerCookie: string;
+  let salonId: string;
+  let serviceId: string;
+
+  beforeAll(async () => {
+    await resetDatabase();
+    app = await createTestApp();
+
+    ownerCookie = await loginAs(app, '09122020009');
+    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+    const categoryId = categoriesRes.body[0].id;
+    const salonRes = await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerCookie).send({
+      name: 'Manual Bookings Salon',
+      genderTarget: 'women',
+      address: 'Somewhere St, No. 2',
+      city: 'Tehran',
+      lat: 35.7,
+      lng: 51.4,
+      // Deliberately 1 -- a manual booking must genuinely occupy the salon's only chair,
+      // blocking a subsequent online booking for the same slot.
+      capacity: 1,
+      categoryIds: [categoryId],
+    });
+    salonId = salonRes.body.id;
+
+    const serviceRes = await request(app.getHttpServer())
+      .post('/api/salons/mine/services')
+      .set('Cookie', ownerCookie)
+      .send({ categoryId, name: 'Cut', price: 500000, durationMin: 60 });
+    serviceId = serviceRes.body.id;
+
+    const ds = app.get(DataSource);
+    await ds.query(`UPDATE salons SET status = 'approved' WHERE id = $1`, [salonId]);
+    await ds.query(
+      `INSERT INTO working_hours (salon_id, weekday, open_time, close_time)
+       SELECT $1, generate_series(0, 6), '00:00', '23:00'`,
+      [salonId],
+    );
+
+    customerCookie = await loginAs(app, '09123030009');
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('rejects a non-owner from recording a manual booking', () =>
+    request(app.getHttpServer())
+      .post('/api/salons/mine/bookings')
+      .set('Cookie', customerCookie)
+      .send({ phone: '09121110000', serviceId, startsAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString() })
+      .expect(404)); // customer has no salon of their own -- SalonOwnerGuard 404s via findMine
+
+  it('rejects an invalid phone number', () =>
+    request(app.getHttpServer())
+      .post('/api/salons/mine/bookings')
+      .set('Cookie', ownerCookie)
+      .send({ phone: '123', serviceId, startsAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString() })
+      .expect(400));
+
+  it('records a walk-in customer by phone as a confirmed, source=manual booking with no deposit', async () => {
+    const startsAt = new Date(Date.now() + 24 * 60 * 60_000).toISOString();
+    const res = await request(app.getHttpServer())
+      .post('/api/salons/mine/bookings')
+      .set('Cookie', ownerCookie)
+      .send({ phone: '09121110001', name: 'مشتری حضوری', serviceId, startsAt, notes: 'تماس تلفنی' })
+      .expect(201);
+
+    expect(res.body).toMatchObject({
+      status: 'confirmed',
+      source: 'manual',
+      depositAmount: 0,
+      customerPhone: '09121110001',
+      customerName: 'مشتری حضوری',
+      notes: 'تماس تلفنی',
+    });
+
+    const list = await request(app.getHttpServer())
+      .get('/api/salons/mine/bookings')
+      .set('Cookie', ownerCookie)
+      .expect(200);
+    expect(list.body.find((b: { id: string }) => b.id === res.body.id)).toMatchObject({ source: 'manual', customerPhone: '09121110001' });
+  });
+
+  it('blocks a subsequent ONLINE booking for the same now-occupied slot', async () => {
+    const startsAt = new Date(Date.now() + 48 * 60 * 60_000).toISOString();
+    await request(app.getHttpServer())
+      .post('/api/salons/mine/bookings')
+      .set('Cookie', ownerCookie)
+      .send({ phone: '09121110002', serviceId, startsAt })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/bookings')
+      .set('Cookie', customerCookie)
+      .send({ salonId, serviceId, startsAt })
+      .expect(409);
+  });
+
+  it('reuses an existing customer\'s account by phone without overwriting their real name', async () => {
+    const phone = '09121110003';
+    // First manual booking creates the shadow account and names it.
+    const first = await request(app.getHttpServer())
+      .post('/api/salons/mine/bookings')
+      .set('Cookie', ownerCookie)
+      .send({ phone, name: 'اسم واقعی', serviceId, startsAt: new Date(Date.now() + 72 * 60 * 60_000).toISOString() })
+      .expect(201);
+    expect(first.body.customerName).toBe('اسم واقعی');
+
+    // A second manual booking for the SAME phone, with a different typed name, must not
+    // clobber the name already on record for that customer.
+    const second = await request(app.getHttpServer())
+      .post('/api/salons/mine/bookings')
+      .set('Cookie', ownerCookie)
+      .send({ phone, name: 'اسم اشتباه', serviceId, startsAt: new Date(Date.now() + 96 * 60 * 60_000).toISOString() })
+      .expect(201);
+    expect(second.body.customerName).toBe('اسم واقعی');
+    expect(second.body.customerPhone).toBe(phone);
+  });
+});

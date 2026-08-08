@@ -148,6 +148,80 @@ describe('PaymentsService.attemptRefund', () => {
   });
 });
 
+describe('PaymentsService.notifyCancelled', () => {
+  let service: PaymentsService;
+  let bookingsFindOneBy: jest.Mock;
+  let salonsFindById: jest.Mock;
+  let usersFindById: jest.Mock;
+  let smsSend: jest.Mock;
+  let pushSend: jest.Mock;
+
+  const BOOKING = { id: 'booking-1', userId: 'user-1', salonId: 'salon-1', startsAt: new Date('2026-09-01T09:00:00.000Z') };
+  const SALON = { id: 'salon-1', name: 'سالن آرا', ownerId: 'owner-1' };
+  const CUSTOMER = { id: 'user-1', phone: '09120000000' };
+  const OWNER = { id: 'owner-1', phone: '09121111111' };
+
+  beforeEach(async () => {
+    bookingsFindOneBy = jest.fn().mockResolvedValue({ ...BOOKING });
+    salonsFindById = jest.fn().mockResolvedValue({ ...SALON });
+    usersFindById = jest.fn().mockImplementation((id: string) =>
+      Promise.resolve(id === 'user-1' ? { ...CUSTOMER } : id === 'owner-1' ? { ...OWNER } : null),
+    );
+    smsSend = jest.fn().mockResolvedValue(undefined);
+    pushSend = jest.fn().mockResolvedValue(undefined);
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PaymentsService,
+        { provide: getRepositoryToken(Payment), useValue: {} },
+        { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy } },
+        { provide: DataSource, useValue: {} },
+        { provide: SalonsService, useValue: { findById: salonsFindById } },
+        { provide: UsersService, useValue: { findById: usersFindById } },
+        { provide: SMS_PROVIDER, useValue: { send: smsSend } },
+        { provide: PAYMENT_GATEWAY, useValue: {} },
+        { provide: PushService, useValue: { sendToUser: pushSend } },
+        { provide: AlertsService, useValue: { raise: jest.fn() } },
+        { provide: ReferralsService, useValue: {} },
+        { provide: WalletService, useValue: {} },
+      ],
+    }).compile();
+
+    service = moduleRef.get(PaymentsService);
+  });
+
+  it('notifies only the customer when the SALON cancelled -- the owner does not need to notify themselves', async () => {
+    await service.notifyCancelled('booking-1', 'salon');
+
+    expect(smsSend).toHaveBeenCalledTimes(1);
+    expect(smsSend).toHaveBeenCalledWith('09120000000', expect.stringContaining('لغو شد'));
+    expect(pushSend).toHaveBeenCalledTimes(1);
+    expect(pushSend).toHaveBeenCalledWith('user-1', expect.objectContaining({ title: expect.any(String) }));
+  });
+
+  it('notifies BOTH the customer and the owner when the CUSTOMER cancelled -- the owner sees the slot freed up', async () => {
+    await service.notifyCancelled('booking-1', 'user');
+
+    expect(smsSend).toHaveBeenCalledTimes(2);
+    expect(smsSend).toHaveBeenCalledWith('09120000000', expect.any(String));
+    expect(smsSend).toHaveBeenCalledWith('09121111111', expect.any(String));
+  });
+
+  it('no-ops without throwing when the booking no longer exists', async () => {
+    bookingsFindOneBy.mockResolvedValue(null);
+
+    await expect(service.notifyCancelled('booking-1', 'user')).resolves.toBeUndefined();
+    expect(smsSend).not.toHaveBeenCalled();
+  });
+
+  it('no-ops without throwing when the salon no longer exists', async () => {
+    salonsFindById.mockResolvedValue(null);
+
+    await expect(service.notifyCancelled('booking-1', 'user')).resolves.toBeUndefined();
+    expect(smsSend).not.toHaveBeenCalled();
+  });
+});
+
 describe('PaymentsService.handleCallback lost-CAS recovery', () => {
   let service: PaymentsService;
   let paymentsFindOneBy: jest.Mock;

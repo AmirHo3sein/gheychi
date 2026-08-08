@@ -21,6 +21,18 @@ import { Salon } from '../salons/salon.entity';
 import { SalonService } from '../salons/salon-service.entity';
 import { Worker } from '../salons/worker.entity';
 import { WorkerEligibilityService } from '../salons/worker-eligibility.service';
+import { User } from '../users/user.entity';
+import { UsersService } from '../users/users.service';
+
+// Every module below satisfies BookingsService's User repository + UsersService deps (added
+// for attachNames' customer-identity enrichment and createManual) the same way -- an empty
+// customer list by default, overridden per-test where a specific customerName/Phone matters.
+const usersRepoStub = () => ({ find: jest.fn().mockResolvedValue([]) });
+const usersServiceStub = () => ({
+  findOrCreateByPhone: jest.fn(),
+  updateProfile: jest.fn(),
+  findById: jest.fn(),
+});
 
 describe('BookingsService.getEarnings', () => {
   let service: BookingsService;
@@ -36,6 +48,8 @@ describe('BookingsService.getEarnings', () => {
         { provide: getRepositoryToken(Salon), useValue: {} },
         { provide: getRepositoryToken(SalonService), useValue: {} },
         { provide: getRepositoryToken(Worker), useValue: {} },
+        { provide: getRepositoryToken(User), useValue: usersRepoStub() },
+        { provide: UsersService, useValue: usersServiceStub() },
         { provide: DataSource, useValue: { query: dataSourceQuery } },
         { provide: PlatformConfigService, useValue: { getCommissionPercent: jest.fn().mockResolvedValue(10) } },
         { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
@@ -106,6 +120,8 @@ describe('BookingsService.getEarnings', () => {
         { provide: getRepositoryToken(Salon), useValue: {} },
         { provide: getRepositoryToken(SalonService), useValue: {} },
         { provide: getRepositoryToken(Worker), useValue: {} },
+        { provide: getRepositoryToken(User), useValue: usersRepoStub() },
+        { provide: UsersService, useValue: usersServiceStub() },
         { provide: DataSource, useValue: { query: dataSourceQuery } },
         { provide: PlatformConfigService, useValue: config },
         { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
@@ -195,6 +211,8 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
         },
         { provide: getRepositoryToken(SalonService), useValue: { findOneBy: jest.fn().mockResolvedValue({ ...SERVICE }) } },
         { provide: getRepositoryToken(Worker), useValue: { findOneBy: workersFindOneBy } },
+        { provide: getRepositoryToken(User), useValue: usersRepoStub() },
+        { provide: UsersService, useValue: usersServiceStub() },
         {
           provide: DataSource,
           useValue: {
@@ -391,6 +409,188 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
   });
 });
 
+describe('BookingsService.createManual', () => {
+  let service: BookingsService;
+  let emCount: jest.Mock;
+  let emSave: jest.Mock;
+  let findOrCreateByPhone: jest.Mock;
+  let updateProfile: jest.Mock;
+  let notifyConfirmed: jest.Mock;
+  let redisSet: jest.Mock;
+  let redisDel: jest.Mock;
+  let workersFindOneBy: jest.Mock;
+  let isWorkerEligibleForService: jest.Mock;
+  let usersFind: jest.Mock;
+
+  const SALON = { id: 'salon-1', status: 'approved', capacity: 1, name: 'Test Salon' };
+  const SERVICE = { id: 'service-1', salonId: 'salon-1', price: 150_000, durationMin: 30, isActive: true };
+  const CUSTOMER = { id: 'customer-1', name: null as string | null, phone: '09120000000' };
+  const DTO = {
+    phone: '09120000000',
+    serviceId: 'service-1',
+    startsAt: new Date(Date.now() + 86_400_000).toISOString(),
+  };
+
+  function savedBooking(): Record<string, unknown> {
+    return emSave.mock.calls.find(([entity]) => entity === Booking)![1] as Record<string, unknown>;
+  }
+
+  beforeEach(async () => {
+    emCount = jest.fn().mockResolvedValue(0);
+    emSave = jest.fn(async (entity: unknown, obj: Record<string, unknown>) => ({ id: 'booking-1', ...obj }));
+    findOrCreateByPhone = jest.fn().mockResolvedValue({ user: { ...CUSTOMER }, isNew: true });
+    updateProfile = jest.fn().mockResolvedValue(undefined);
+    notifyConfirmed = jest.fn().mockResolvedValue(undefined);
+    redisSet = jest.fn().mockResolvedValue('OK');
+    redisDel = jest.fn().mockResolvedValue(1);
+    workersFindOneBy = jest.fn().mockResolvedValue({ id: 'worker-1', salonId: 'salon-1', active: true });
+    isWorkerEligibleForService = jest.fn().mockResolvedValue(true);
+    usersFind = jest.fn().mockResolvedValue([{ ...CUSTOMER }]);
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        BookingsService,
+        { provide: getRepositoryToken(Booking), useValue: {} },
+        { provide: getRepositoryToken(Payment), useValue: {} },
+        {
+          provide: getRepositoryToken(Salon),
+          useValue: { findOneBy: jest.fn().mockResolvedValue({ ...SALON }), find: jest.fn().mockResolvedValue([SALON]) },
+        },
+        {
+          provide: getRepositoryToken(SalonService),
+          useValue: { findOneBy: jest.fn().mockResolvedValue({ ...SERVICE }), find: jest.fn().mockResolvedValue([{ id: 'service-1', name: 'کوتاهی مو' }]) },
+        },
+        { provide: getRepositoryToken(Worker), useValue: { findOneBy: workersFindOneBy, find: jest.fn().mockResolvedValue([]) } },
+        { provide: getRepositoryToken(User), useValue: { find: usersFind } },
+        { provide: UsersService, useValue: { findOrCreateByPhone, updateProfile, findById: jest.fn() } },
+        {
+          provide: DataSource,
+          useValue: {
+            transaction: jest.fn((cb: (em: unknown) => unknown) =>
+              cb({ count: emCount, create: (_e: unknown, obj: unknown) => obj, save: emSave }),
+            ),
+          },
+        },
+        { provide: PlatformConfigService, useValue: {} },
+        { provide: ConfigService, useValue: { getOrThrow: jest.fn(), get: jest.fn() } },
+        { provide: REDIS, useValue: { set: redisSet, del: redisDel } },
+        { provide: PAYMENT_GATEWAY, useValue: {} },
+        { provide: PaymentsService, useValue: { attemptRefund: jest.fn(), notifyConfirmed } },
+        { provide: AlertsService, useValue: { raise: jest.fn() } },
+        { provide: CouponsService, useValue: {} },
+        { provide: ReferralsService, useValue: {} },
+        { provide: WalletService, useValue: {} },
+        { provide: InvoicingService, useValue: {} },
+        { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService } },
+      ],
+    }).compile();
+
+    service = moduleRef.get(BookingsService);
+  });
+
+  it('resolves the customer by phone, inserts a confirmed manual booking with no Payment row, and notifies', async () => {
+    const result = await service.createManual('salon-1', { ...DTO });
+
+    expect(findOrCreateByPhone).toHaveBeenCalledWith('09120000000');
+    expect(savedBooking()).toMatchObject({
+      userId: 'customer-1',
+      salonId: 'salon-1',
+      serviceId: 'service-1',
+      priceSnapshot: 150_000,
+      depositAmount: 0,
+      status: 'confirmed',
+      source: 'manual',
+      notes: null,
+    });
+    expect(emSave).not.toHaveBeenCalledWith(Payment, expect.anything());
+    expect(notifyConfirmed).toHaveBeenCalledWith('booking-1');
+    expect(result.customerPhone).toBe('09120000000');
+    expect(redisDel).toHaveBeenCalled();
+  });
+
+  it('sets the name on a brand-new shadow customer when one is given', async () => {
+    await service.createManual('salon-1', { ...DTO, name: 'علی رضایی' });
+
+    expect(updateProfile).toHaveBeenCalledWith('customer-1', { name: 'علی رضایی' });
+  });
+
+  it('never overwrites an existing customer\'s own name, even when a different name is typed', async () => {
+    findOrCreateByPhone.mockResolvedValue({ user: { ...CUSTOMER, name: 'مشتری قدیمی' }, isNew: false });
+
+    await service.createManual('salon-1', { ...DTO, name: 'یک اسم دیگر' });
+
+    expect(updateProfile).not.toHaveBeenCalled();
+  });
+
+  it('sets a name for an existing (not new) customer who never had one', async () => {
+    findOrCreateByPhone.mockResolvedValue({ user: { ...CUSTOMER, name: null }, isNew: false });
+
+    await service.createManual('salon-1', { ...DTO, name: 'مشتری بدون نام' });
+
+    expect(updateProfile).toHaveBeenCalledWith('customer-1', { name: 'مشتری بدون نام' });
+  });
+
+  it('carries owner-authored notes onto the booking', async () => {
+    await service.createManual('salon-1', { ...DTO, notes: 'تماس تلفنی' });
+    expect(savedBooking().notes).toBe('تماس تلفنی');
+  });
+
+  it('409s when the salon is already at capacity for that time', async () => {
+    emCount.mockResolvedValue(1); // salon.capacity is 1
+
+    await expect(service.createManual('salon-1', { ...DTO })).rejects.toBeInstanceOf(ConflictException);
+    expect(emSave).not.toHaveBeenCalledWith(Booking, expect.anything());
+  });
+
+  it('400s on a startsAt that is not a valid future date-time', async () => {
+    await expect(
+      service.createManual('salon-1', { ...DTO, startsAt: new Date(Date.now() - 86_400_000).toISOString() }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('404s when the chosen worker does not belong to this salon', async () => {
+    workersFindOneBy.mockResolvedValue(null);
+
+    await expect(service.createManual('salon-1', { ...DTO, workerId: 'worker-9' })).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('400s when the chosen worker belongs to the salon but is inactive', async () => {
+    workersFindOneBy.mockResolvedValue({ id: 'worker-1', salonId: 'salon-1', active: false });
+
+    await expect(service.createManual('salon-1', { ...DTO, workerId: 'worker-1' })).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('400s when the chosen worker cannot perform this service', async () => {
+    isWorkerEligibleForService.mockResolvedValue(false);
+
+    await expect(service.createManual('salon-1', { ...DTO, workerId: 'worker-1' })).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('409s when the chosen worker already has an overlapping booking, even with spare salon capacity', async () => {
+    // The FIRST em.count call is the salon-wide capacity check; the SECOND is the
+    // per-worker overlap check, same shape as createHold's own equivalent test.
+    emCount.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
+
+    await expect(service.createManual('salon-1', { ...DTO, workerId: 'worker-1' })).rejects.toBeInstanceOf(ConflictException);
+    expect(emSave).not.toHaveBeenCalledWith(Booking, expect.anything());
+  });
+
+  it('still returns the created booking when the confirmation notification fails', async () => {
+    notifyConfirmed.mockRejectedValue(new Error('sms provider down'));
+
+    const result = await service.createManual('salon-1', { ...DTO });
+
+    expect(result.id).toBe('booking-1');
+  });
+
+  it('releases the per-salon lock even when the transaction throws', async () => {
+    emCount.mockResolvedValue(1); // forces the capacity ConflictException
+
+    await expect(service.createManual('salon-1', { ...DTO })).rejects.toBeInstanceOf(ConflictException);
+    expect(redisDel).toHaveBeenCalled();
+  });
+});
+
 describe('BookingsService.cancel', () => {
   let service: BookingsService;
   let bookingsFindOneBy: jest.Mock;
@@ -398,6 +598,7 @@ describe('BookingsService.cancel', () => {
   let emUpdate: jest.Mock;
   let emDelete: jest.Mock;
   let attemptRefund: jest.Mock;
+  let notifyCancelled: jest.Mock;
 
   const BOOKING = {
     id: 'booking-1',
@@ -411,6 +612,7 @@ describe('BookingsService.cancel', () => {
     emUpdate = jest.fn().mockResolvedValue({ affected: 1 });
     emDelete = jest.fn().mockResolvedValue({ affected: 0 });
     attemptRefund = jest.fn().mockResolvedValue('refunded');
+    notifyCancelled = jest.fn().mockResolvedValue(undefined);
     bookingsFindOneBy = jest.fn();
     salonsFindOneBy = jest.fn().mockResolvedValue({ id: 'salon-1', ownerId: 'owner-1' });
 
@@ -422,6 +624,8 @@ describe('BookingsService.cancel', () => {
         { provide: getRepositoryToken(Salon), useValue: { findOneBy: salonsFindOneBy } },
         { provide: getRepositoryToken(SalonService), useValue: {} },
         { provide: getRepositoryToken(Worker), useValue: {} },
+        { provide: getRepositoryToken(User), useValue: usersRepoStub() },
+        { provide: UsersService, useValue: usersServiceStub() },
         {
           provide: DataSource,
           useValue: {
@@ -441,7 +645,7 @@ describe('BookingsService.cancel', () => {
         { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
         { provide: REDIS, useValue: {} },
         { provide: PAYMENT_GATEWAY, useValue: {} },
-        { provide: PaymentsService, useValue: { attemptRefund } },
+        { provide: PaymentsService, useValue: { attemptRefund, notifyCancelled } },
         { provide: AlertsService, useValue: { raise: jest.fn() } },
         { provide: CouponsService, useValue: { resolveAndValidate: jest.fn() } },
         { provide: ReferralsService, useValue: { tryGrantReward: jest.fn().mockResolvedValue(undefined) } },
@@ -472,6 +676,8 @@ describe('BookingsService.cancel', () => {
       expect.objectContaining({ status: 'refund_pending', refundRequestedAt: expect.any(Date) }),
     );
     expect(attemptRefund).toHaveBeenCalledWith('booking-1');
+    // The owner did the cancelling -- they don't need to notify themselves.
+    expect(notifyCancelled).toHaveBeenCalledWith('booking-1', 'salon');
   });
 
   it('does not attempt a refund when the customer cancels inside the window (deposit forfeited)', async () => {
@@ -481,6 +687,19 @@ describe('BookingsService.cancel', () => {
 
     expect(emUpdate).toHaveBeenCalledWith(Payment, { bookingId: 'booking-1' }, { status: 'paid' });
     expect(attemptRefund).not.toHaveBeenCalled();
+    // Still notifies (and this time the owner too) even though nothing is refunded --
+    // "cancelled" and "refunded" are two separate, honest pieces of information.
+    expect(notifyCancelled).toHaveBeenCalledWith('booking-1', 'user');
+  });
+
+  it('still cancels successfully when the notification throws (best-effort, never blocks the response)', async () => {
+    bookingsFindOneBy.mockResolvedValue({ ...BOOKING });
+    notifyCancelled.mockRejectedValue(new Error('sms provider down'));
+
+    const result = await service.cancel('booking-1', 'owner-1');
+
+    expect(result.id).toBe('booking-1');
+    expect(attemptRefund).toHaveBeenCalled(); // the refund path still runs independently
   });
 
   it('does not attempt a refund for a pending_payment booking (nothing was captured)', async () => {
@@ -558,6 +777,8 @@ describe('BookingsService.retryPayment authority persist failure', () => {
         { provide: getRepositoryToken(Salon), useValue: { findOneBy: salonsFindOneBy } },
         { provide: getRepositoryToken(SalonService), useValue: {} },
         { provide: getRepositoryToken(Worker), useValue: {} },
+        { provide: getRepositoryToken(User), useValue: usersRepoStub() },
+        { provide: UsersService, useValue: usersServiceStub() },
         {
           provide: DataSource,
           useValue: {
@@ -647,6 +868,8 @@ describe('BookingsService.assignWorker', () => {
         { provide: getRepositoryToken(Salon), useValue: { find: jest.fn().mockResolvedValue([]) } },
         { provide: getRepositoryToken(SalonService), useValue: { find: jest.fn().mockResolvedValue([]) } },
         { provide: getRepositoryToken(Worker), useValue: { find: workersFind } },
+        { provide: getRepositoryToken(User), useValue: usersRepoStub() },
+        { provide: UsersService, useValue: usersServiceStub() },
         { provide: DataSource, useValue: { transaction: dataSourceTransaction } },
         { provide: PlatformConfigService, useValue: {} },
         { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
@@ -820,6 +1043,8 @@ describe('BookingsService.listMine / findMine -- workerName enrichment', () => {
         { provide: getRepositoryToken(Salon), useValue: { find: salonsFind } },
         { provide: getRepositoryToken(SalonService), useValue: { find: servicesFind } },
         { provide: getRepositoryToken(Worker), useValue: { find: workersFind } },
+        { provide: getRepositoryToken(User), useValue: usersRepoStub() },
+        { provide: UsersService, useValue: usersServiceStub() },
         { provide: DataSource, useValue: {} },
         { provide: PlatformConfigService, useValue: {} },
         { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
@@ -918,6 +1143,8 @@ describe('BookingsService.updateStatus -- first-completed-booking referral trigg
         { provide: getRepositoryToken(Salon), useValue: {} },
         { provide: getRepositoryToken(SalonService), useValue: {} },
         { provide: getRepositoryToken(Worker), useValue: {} },
+        { provide: getRepositoryToken(User), useValue: usersRepoStub() },
+        { provide: UsersService, useValue: usersServiceStub() },
         {
           provide: DataSource,
           useValue: { transaction: jest.fn((cb: (em: unknown) => unknown) => cb({ update: emUpdate })) },

@@ -132,6 +132,7 @@ const PUBLIC_ROUTES: Array<[Function, string]> = [
   [SalonReviewsController, 'list'],
   [PublicSalonContentController, 'listServices'],
   [PublicSalonContentController, 'listHours'],
+  [PublicSalonContentController, 'listExceptions'],
   [PublicSalonContentController, 'listPhotos'],
   [PublicSalonContentController, 'listStories'],
   [PublicSalonContentController, 'listPortfolio'],

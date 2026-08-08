@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
+import { isUniqueViolation } from '../common/postgres-error-codes';
 import { Gender, User } from './user.entity';
 
 @Injectable()
@@ -20,8 +21,20 @@ export class UsersService {
     const repo = em ? em.getRepository(User) : this.repo;
     const existing = await repo.findOneBy({ phone });
     if (existing) return { user: existing, isNew: false };
-    const user = await repo.save(repo.create({ phone }));
-    return { user, isNew: true };
+    try {
+      const user = await repo.save(repo.create({ phone }));
+      return { user, isNew: true };
+    } catch (err) {
+      // users.phone is DB-UNIQUE -- a genuinely concurrent call for the same brand-new
+      // phone (e.g. a salon owner double-submitting a manual booking) can lose this race
+      // between the read above and this insert. The loser re-reads rather than 500ing;
+      // the row the winner just committed is what it should have found in the first place.
+      if (isUniqueViolation(err)) {
+        const winner = await repo.findOneBy({ phone });
+        if (winner) return { user: winner, isNew: false };
+      }
+      throw err;
+    }
   }
 
   async updateProfile(id: string, patch: { name?: string; gender?: Gender }): Promise<User> {

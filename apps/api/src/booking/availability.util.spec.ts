@@ -19,7 +19,7 @@ describe('computeAvailableSlots', () => {
       durationMin: 60,
       capacity: 1,
       hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '12:00:00' }]]]),
-      closedDates: new Set(),
+      exceptionsByDate: new Map(),
       existingBookings: [],
     });
     expect(result).toHaveLength(1);
@@ -39,7 +39,7 @@ describe('computeAvailableSlots', () => {
       durationMin: 90,
       capacity: 1,
       hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '10:30:00' }]]]),
-      closedDates: new Set(),
+      exceptionsByDate: new Map(),
       existingBookings: [],
     });
     // exactly one 90-minute slot fits 09:00-10:30; a second would end at 12:00, past close
@@ -56,7 +56,7 @@ describe('computeAvailableSlots', () => {
         { openTime: '09:00:00', closeTime: '11:00:00' },
         { openTime: '15:00:00', closeTime: '17:00:00' },
       ]]]),
-      closedDates: new Set(),
+      exceptionsByDate: new Map(),
       existingBookings: [],
     });
     // wall clock 09:00 / 10:00 / 15:00 / 16:00 Iran
@@ -75,21 +75,21 @@ describe('computeAvailableSlots', () => {
       durationMin: 60,
       capacity: 1,
       hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '10:00:00' }]]]), // only Monday
-      closedDates: new Set(),
+      exceptionsByDate: new Map(),
       existingBookings: [],
     });
     expect(result).toHaveLength(1);
     expect(result[0].date).toBe('2026-08-03');
   });
 
-  it('excludes a date listed in closedDates even if it has working hours', () => {
+  it('excludes a whole-day exception even if it has working hours', () => {
     const result = computeAvailableSlots({
       now: NOW,
       days: 1,
       durationMin: 60,
       capacity: 1,
       hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '10:00:00' }]]]),
-      closedDates: new Set(['2026-08-03']),
+      exceptionsByDate: new Map([['2026-08-03', 'whole-day']]),
       existingBookings: [],
     });
     expect(result).toHaveLength(0);
@@ -102,7 +102,7 @@ describe('computeAvailableSlots', () => {
       durationMin: 60,
       capacity: 2,
       hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '11:00:00' }]]]),
-      closedDates: new Set(),
+      exceptionsByDate: new Map(),
       existingBookings: [
         // two real bookings occupying the 09:00-10:00 Iran slot
         { startsAt: new Date('2026-08-03T05:30:00.000Z'), endsAt: new Date('2026-08-03T06:30:00.000Z') },
@@ -120,7 +120,7 @@ describe('computeAvailableSlots', () => {
       durationMin: 60,
       capacity: 1,
       hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '11:00:00' }]]]),
-      closedDates: new Set(),
+      exceptionsByDate: new Map(),
       existingBookings: [
         // an existing 09:30-10:30 Iran booking overlaps both the 09:00 and 10:00 candidates
         { startsAt: new Date('2026-08-03T06:00:00.000Z'), endsAt: new Date('2026-08-03T07:00:00.000Z') },
@@ -136,7 +136,7 @@ describe('computeAvailableSlots', () => {
       durationMin: 60,
       capacity: 1,
       hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '12:00:00' }]]]),
-      closedDates: new Set(),
+      exceptionsByDate: new Map(),
       existingBookings: [],
     });
     // 09:00 Iran has already started/passed; 10:00 and 11:00 Iran remain
@@ -153,7 +153,7 @@ describe('computeAvailableSlots', () => {
         [1, [{ openTime: '09:00:00', closeTime: '11:00:00' }]], // Monday: 09:00 candidate is past, 10:00 remains
         [2, [{ openTime: '09:00:00', closeTime: '10:00:00' }]], // Tuesday: a future day, its 09:00 must NOT be excluded
       ]),
-      closedDates: new Set(),
+      exceptionsByDate: new Map(),
       existingBookings: [],
     });
     expect(result).toHaveLength(2);
@@ -168,7 +168,7 @@ describe('computeAvailableSlots', () => {
       durationMin: 60,
       capacity: 1,
       hoursByWeekday: new Map(),
-      closedDates: new Set(),
+      exceptionsByDate: new Map(),
       existingBookings: [],
     });
     expect(result).toEqual([]);
@@ -181,7 +181,7 @@ describe('computeAvailableSlots', () => {
       durationMin: 0,
       capacity: 1,
       hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '12:00:00' }]]]),
-      closedDates: new Set(),
+      exceptionsByDate: new Map(),
       existingBookings: [],
     });
     expect(zero).toEqual([]);
@@ -192,7 +192,7 @@ describe('computeAvailableSlots', () => {
       durationMin: -30,
       capacity: 1,
       hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '12:00:00' }]]]),
-      closedDates: new Set(),
+      exceptionsByDate: new Map(),
       existingBookings: [],
     });
     expect(negative).toEqual([]);
@@ -205,7 +205,7 @@ describe('computeAvailableSlots', () => {
       durationMin: 60,
       capacity: 3, // plenty of salon-wide room -- the worker is still the constraint
       hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '11:00:00' }]]]),
-      closedDates: new Set(),
+      exceptionsByDate: new Map(),
       existingBookings: [
         {
           startsAt: new Date('2026-08-03T05:30:00.000Z'),
@@ -226,7 +226,7 @@ describe('computeAvailableSlots', () => {
       durationMin: 60,
       capacity: 3,
       hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '10:00:00' }]]]),
-      closedDates: new Set(),
+      exceptionsByDate: new Map(),
       existingBookings: [
         {
           startsAt: new Date('2026-08-03T05:30:00.000Z'),
@@ -246,7 +246,7 @@ describe('computeAvailableSlots', () => {
       durationMin: 60,
       capacity: 3,
       hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '10:00:00' }]]]),
-      closedDates: new Set(),
+      exceptionsByDate: new Map(),
       existingBookings: [
         {
           startsAt: new Date('2026-08-03T05:30:00.000Z'),
@@ -266,7 +266,7 @@ describe('computeAvailableSlots', () => {
       durationMin: 60,
       capacity: 3,
       hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '10:00:00' }]]]),
-      closedDates: new Set(),
+      exceptionsByDate: new Map(),
       existingBookings: [
         {
           startsAt: new Date('2026-08-03T05:30:00.000Z'),
@@ -275,6 +275,51 @@ describe('computeAvailableSlots', () => {
         },
       ],
       requestedWorkerId: 'worker-1',
+    });
+    expect(result[0].slots).toEqual(['2026-08-03T05:30:00.000Z']);
+  });
+
+  it('skips the whole day for the requested worker when they have a day off that date', () => {
+    const result = computeAvailableSlots({
+      now: NOW,
+      days: 1,
+      durationMin: 60,
+      capacity: 3,
+      hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '11:00:00' }]]]),
+      exceptionsByDate: new Map(),
+      existingBookings: [],
+      requestedWorkerId: 'worker-1',
+      workerOffDates: new Map([['worker-1', new Set(['2026-08-03'])]]),
+    });
+    expect(result).toEqual([]);
+  });
+
+  it('does not apply a worker\'s day off to a DIFFERENT worker', () => {
+    const result = computeAvailableSlots({
+      now: NOW,
+      days: 1,
+      durationMin: 60,
+      capacity: 3,
+      hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '10:00:00' }]]]),
+      exceptionsByDate: new Map(),
+      existingBookings: [],
+      requestedWorkerId: 'worker-2',
+      workerOffDates: new Map([['worker-1', new Set(['2026-08-03'])]]),
+    });
+    expect(result[0].slots).toEqual(['2026-08-03T05:30:00.000Z']);
+  });
+
+  it('ignores workerOffDates entirely in "any available worker" mode', () => {
+    const result = computeAvailableSlots({
+      now: NOW,
+      days: 1,
+      durationMin: 60,
+      capacity: 3,
+      hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '10:00:00' }]]]),
+      exceptionsByDate: new Map(),
+      existingBookings: [],
+      // no requestedWorkerId -- a colleague can still take the slot even if worker-1 is off
+      workerOffDates: new Map([['worker-1', new Set(['2026-08-03'])]]),
     });
     expect(result[0].slots).toEqual(['2026-08-03T05:30:00.000Z']);
   });
@@ -289,7 +334,7 @@ describe('computeAvailableSlots', () => {
         { openTime: '15:00:00', closeTime: '17:00:00' },
         { openTime: '09:00:00', closeTime: '11:00:00' },
       ]]]),
-      closedDates: new Set(),
+      exceptionsByDate: new Map(),
       existingBookings: [],
     });
     // wall clock 09:00 / 10:00 / 15:00 / 16:00 Iran
@@ -320,7 +365,7 @@ describe('computeAvailableSlots', () => {
         durationMin: 60,
         capacity: 1,
         hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '20:00:00' }]]]),
-        closedDates: new Set(),
+        exceptionsByDate: new Map(),
         existingBookings: [],
       });
       const slots = result[0].slots;
@@ -347,7 +392,7 @@ describe('computeAvailableSlots', () => {
         // Tuesday only. If the UTC date/weekday were used this would resolve to Monday and
         // return nothing.
         hoursByWeekday: new Map([[2, [{ openTime: '09:00:00', closeTime: '11:00:00' }]]]),
-        closedDates: new Set(),
+        exceptionsByDate: new Map(),
         existingBookings: [],
       });
       expect(result).toHaveLength(1);
@@ -362,10 +407,85 @@ describe('computeAvailableSlots', () => {
         durationMin: 60,
         capacity: 1,
         hoursByWeekday: new Map([[2, [{ openTime: '09:00:00', closeTime: '11:00:00' }]]]),
-        closedDates: new Set(['2026-08-04']), // the Iran date the provider closed
+        exceptionsByDate: new Map([['2026-08-04', 'whole-day']]), // the Iran date the provider closed
         existingBookings: [],
       });
       expect(result).toHaveLength(0);
+    });
+  });
+
+  // A recurring lunch break is modeled as a second working_hours row (already covered by
+  // the out-of-order-ranges test above) -- these cover the OTHER half, an ad-hoc partial-day
+  // schedule_exceptions row narrowing a day's ranges just for that one date.
+  describe('partial-day exceptions', () => {
+    const asTehran = (iso: string) =>
+      new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tehran' }).format(new Date(iso));
+
+    it('splits a single open range around a mid-day closure (a lunch break), offering neither slot that would overlap it', () => {
+      const result = computeAvailableSlots({
+        now: NOW,
+        days: 1,
+        durationMin: 60,
+        capacity: 1,
+        hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '20:00:00' }]]]),
+        exceptionsByDate: new Map([['2026-08-03', { startTime: '13:00', endTime: '14:00' }]]),
+        existingBookings: [],
+      });
+      const times = result[0]!.slots.map(asTehran);
+      // 09:00-13:00 hourly, then 14:00-20:00 hourly -- nothing starting at or spanning 13:00.
+      expect(times).toEqual(['09:00', '10:00', '11:00', '12:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00']);
+    });
+
+    it('clips the start of a range when the exception covers its opening', () => {
+      const result = computeAvailableSlots({
+        now: NOW,
+        days: 1,
+        durationMin: 60,
+        capacity: 1,
+        hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '12:00:00' }]]]),
+        exceptionsByDate: new Map([['2026-08-03', { startTime: '08:00', endTime: '10:00' }]]),
+        existingBookings: [],
+      });
+      expect(result[0]!.slots.map(asTehran)).toEqual(['10:00', '11:00']);
+    });
+
+    it('clips the end of a range when the exception covers its close', () => {
+      const result = computeAvailableSlots({
+        now: NOW,
+        days: 1,
+        durationMin: 60,
+        capacity: 1,
+        hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '12:00:00' }]]]),
+        exceptionsByDate: new Map([['2026-08-03', { startTime: '11:00', endTime: '13:00' }]]),
+        existingBookings: [],
+      });
+      expect(result[0]!.slots.map(asTehran)).toEqual(['09:00', '10:00']);
+    });
+
+    it('removes an entire range the exception fully covers, without a second range in the map', () => {
+      const result = computeAvailableSlots({
+        now: NOW,
+        days: 1,
+        durationMin: 60,
+        capacity: 1,
+        hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '12:00:00' }]]]),
+        exceptionsByDate: new Map([['2026-08-03', { startTime: '08:00', endTime: '13:00' }]]),
+        existingBookings: [],
+      });
+      expect(result).toHaveLength(0);
+    });
+
+    it('leaves a range untouched when the exception falls entirely outside it', () => {
+      const result = computeAvailableSlots({
+        now: NOW,
+        days: 1,
+        durationMin: 60,
+        capacity: 1,
+        hoursByWeekday: new Map([[1, [{ openTime: '09:00:00', closeTime: '12:00:00' }]]]),
+        exceptionsByDate: new Map([['2026-08-03', { startTime: '15:00', endTime: '16:00' }]]),
+        existingBookings: [],
+      });
+      expect(result[0]!.slots.map(asTehran)).toEqual(['09:00', '10:00', '11:00']);
     });
   });
 });

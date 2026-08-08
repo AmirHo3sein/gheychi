@@ -366,6 +366,44 @@ export class PaymentsService {
     return 'refunded';
   }
 
+  /**
+   * The "booking was cancelled" notification -- independent of and in addition to
+   * notifyRefunded (two separate, honest pieces of information: "cancelled" vs
+   * "refunded", not merged into one message). Called by BookingsService.cancel() right
+   * after its status-update transaction commits, regardless of whether a refund is
+   * owed -- today a bare cancel with no refund (e.g. outside the cancellation window) is
+   * completely silent to the customer. Always tells the customer; when the CUSTOMER did
+   * the cancelling, also pings the owner so they see the slot freed up -- when the owner
+   * cancels, they don't need to notify themselves.
+   */
+  async notifyCancelled(bookingId: string, cancelledBy: 'user' | 'salon'): Promise<void> {
+    const booking = await this.bookings.findOneBy({ id: bookingId });
+    if (!booking) return;
+    const salon = await this.salonsService.findById(booking.salonId);
+    if (!salon) return;
+    const when = booking.startsAt.toISOString();
+
+    const [customer, owner] = await Promise.all([
+      this.usersService.findById(booking.userId),
+      cancelledBy === 'user' ? this.usersService.findById(salon.ownerId) : Promise.resolve(null),
+    ]);
+
+    await Promise.all([
+      customer
+        ? this.notifyOne(customer, `نوبت شما در ${salon.name}، ${when} لغو شد.`, {
+            title: 'لغو نوبت',
+            body: `${salon.name} — ${when}`,
+          })
+        : Promise.resolve(),
+      owner
+        ? this.notifyOne(owner, `یک نوبت در ${salon.name} برای ${when} لغو شد.`, {
+            title: 'لغو نوبت',
+            body: `${salon.name} — ${when}`,
+          })
+        : Promise.resolve(),
+    ]);
+  }
+
   private async notifyRefunded(bookingId: string): Promise<void> {
     const booking = await this.bookings.findOneBy({ id: bookingId });
     if (!booking) return;

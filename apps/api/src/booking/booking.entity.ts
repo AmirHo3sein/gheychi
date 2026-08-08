@@ -85,6 +85,18 @@ export class Booking {
   @Column({ name: 'wallet_amount_used', type: 'bigint', nullable: true, transformer: nullableBigintToNumber })
   walletAmountUsed: number | null;
 
+  // 'online' (the default, and every booking before this column existed) came through
+  // createHold's normal customer-facing flow; 'manual' came through
+  // BookingsService.createManual -- the owner recording a walk-in/phone customer who isn't
+  // otherwise in the system. Never set by createHold itself; the DB DEFAULT covers it.
+  @Column({ type: 'varchar', default: 'online' })
+  source: 'online' | 'manual';
+
+  // Owner-authored free text on a manual booking (e.g. "تماس تلفنی - مشتری قدیمی") -- always
+  // null for an online booking; there's nowhere in that flow for a customer to write one.
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  notes: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 }
