@@ -216,6 +216,7 @@ async function submitManualBooking() {
   manualForm.name = ''
   manualForm.serviceId = null
   manualForm.workerId = null
+  manualForm.date = ''
   manualForm.time = '09:00'
   manualForm.notes = ''
   pushToast('نوبت با موفقیت ثبت شد')
