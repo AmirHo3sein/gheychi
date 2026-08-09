@@ -187,7 +187,6 @@ watch(page, load)
         <AppButton
           v-if="hasActiveFilters"
           variant="ghost"
-          class="mb-2"
           @click="clearFilters"
         >
           <template #icon><AppIcon name="reset" :size="15" /></template>

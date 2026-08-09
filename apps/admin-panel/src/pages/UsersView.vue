@@ -154,7 +154,7 @@ watch(page, load)
             <JalaliDatePicker v-model="joinedTo" placeholder="تا تاریخ" aria-label="تا تاریخ عضویت" class="w-40" />
           </div>
         </div>
-        <AppButton v-if="hasActiveFilters" type="button" variant="ghost" class="mb-2" @click="clearFilters">
+        <AppButton v-if="hasActiveFilters" type="button" variant="ghost" @click="clearFilters">
           <template #icon>
             <AppIcon name="reset" :size="15" />
           </template>
