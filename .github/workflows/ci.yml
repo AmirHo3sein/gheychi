@@ -106,8 +106,20 @@ jobs:
         # browser cache is shared across all three apps regardless of which filter installs it.
         run: pnpm --filter @gheychi/user-app exec playwright install --with-deps chromium
 
+      # prepare-db.cjs must run as its own step BEFORE playwright test -- it was missing
+      # here entirely, so this step ran playwright straight against whatever gheychi_e2e
+      # happened to contain (its schema/seed state depends on migrations auto-running on
+      # webServer boot, not a deterministic reset). prepare-db.cjs's own header comment
+      # documents exactly why this can't be Playwright's globalSetup instead: no ordering
+      # guarantee against the webServer-spawned API process querying the database first.
+      # Confirmed as the cause of this step's persistent CI-only failures (duplicate-key
+      # violations on already-present rows, eventually a missing-table error) reproducing on
+      # unrelated dependency-bump PRs going back days -- never locally, where `pnpm test:e2e`
+      # (which does call prepare-db.cjs) is what's actually run.
       - name: user-app Playwright e2e
-        run: pnpm --filter @gheychi/user-app exec playwright test --retries=1
+        run: |
+          pnpm --filter @gheychi/user-app exec node e2e/prepare-db.cjs
+          pnpm --filter @gheychi/user-app exec playwright test --retries=1
 
       - name: Upload user-app Playwright trace/video on failure
         if: always()
@@ -127,14 +139,18 @@ jobs:
         run: pkill -f "nest start" || true
 
       - name: provider-panel Playwright e2e
-        run: pnpm --filter @gheychi/provider-panel exec playwright test --retries=1
+        run: |
+          pnpm --filter @gheychi/provider-panel exec node e2e/prepare-db.cjs
+          pnpm --filter @gheychi/provider-panel exec playwright test --retries=1
 
       - name: Kill any lingering api dev server
         if: always()
         run: pkill -f "nest start" || true
 
       - name: admin-panel Playwright e2e
-        run: pnpm --filter @gheychi/admin-panel exec playwright test --retries=1
+        run: |
+          pnpm --filter @gheychi/admin-panel exec node e2e/prepare-db.cjs
+          pnpm --filter @gheychi/admin-panel exec playwright test --retries=1
 
       - name: Build all apps
         run: pnpm build
