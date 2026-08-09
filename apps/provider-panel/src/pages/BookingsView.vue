@@ -87,6 +87,10 @@ onMounted(loadAll)
 // booking always surfaces first.
 const sortedBookings = computed(() => [...bookings.value].sort((a, b) => a.startsAt.localeCompare(b.startsAt)))
 
+const todayCount = computed(
+  () => sortedBookings.value.filter((b) => tehranDateString(new Date(b.startsAt)) === tehranDateString(new Date())).length,
+)
+
 // The leading empty entry is the old native <option value="">: it is what an unassigned
 // booking displays, so it stays a real option rather than a placeholder. Picking it is a
 // no-op, exactly as before -- assignWorker ignores an empty value.
@@ -141,15 +145,18 @@ async function assignWorker(booking: Booking, workerId: string | number | null) 
     submittingId.value = null
   }
 }
+
 // Slot instants are real UTC (see availability.util.ts); pin the salon's own timezone rather
 // than relying on the browser's, so a provider viewing from another timezone still sees the
 // appointment time their salon actually operates on.
-function formatBookingDateTime(iso: string): string {
-  return new Intl.DateTimeFormat('fa-IR', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-    timeZone: 'Asia/Tehran',
-  }).format(new Date(iso))
+function formatBookingTime(iso: string): string {
+  return new Intl.DateTimeFormat('fa-IR', { timeStyle: 'short', timeZone: 'Asia/Tehran' }).format(new Date(iso))
+}
+
+function formatDateLabel(dateStr: string): string {
+  return new Intl.DateTimeFormat('fa-IR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Tehran' }).format(
+    new Date(`${dateStr}T12:00:00Z`),
+  )
 }
 
 // -- Manual/offline booking: the owner recording a customer who called or walked in --
@@ -240,132 +247,188 @@ function goToToday() {
   selectedDate.value = tehranDateString(new Date())
 }
 
-const selectedDateLabel = computed(() =>
-  new Intl.DateTimeFormat('fa-IR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Tehran' }).format(
-    new Date(`${selectedDate.value}T12:00:00Z`),
-  ),
-)
+const selectedDateLabel = computed(() => formatDateLabel(selectedDate.value))
 
 const bookingsForSelectedDate = computed(() =>
   sortedBookings.value.filter((b) => tehranDateString(new Date(b.startsAt)) === selectedDate.value),
 )
 
 const displayedBookings = computed(() => (showAllBookings.value ? sortedBookings.value : bookingsForSelectedDate.value))
+
+// -- Grouping: "همه نوبت‌ها" reads as a running daily agenda (date headers), not a flat
+// unstructured list -- displayedBookings is already ascending by startsAt, so the order
+// groups are first pushed in is already the right display order for free. --
+interface BookingGroup {
+  date: string
+  label: string
+  isToday: boolean
+  bookings: Booking[]
+}
+
+const groupedBookings = computed<BookingGroup[]>(() => {
+  const order: string[] = []
+  const byDate = new Map<string, Booking[]>()
+  for (const b of displayedBookings.value) {
+    const date = tehranDateString(new Date(b.startsAt))
+    if (!byDate.has(date)) {
+      byDate.set(date, [])
+      order.push(date)
+    }
+    byDate.get(date)!.push(b)
+  }
+  const today = tehranDateString(new Date())
+  return order.map((date) => ({ date, label: formatDateLabel(date), isToday: date === today, bookings: byDate.get(date)! }))
+})
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-6xl space-y-4 p-4 lg:p-6">
-    <h1 class="text-lg font-bold text-(--color-text)">نوبت‌ها</h1>
+  <div class="mx-auto w-full max-w-3xl space-y-6 p-4 lg:p-6">
+    <div>
+      <h1 class="text-xl font-bold text-(--color-text)">نوبت‌ها</h1>
+      <p class="mt-1 text-sm text-(--color-text-muted)">
+        {{ todayCount > 0 ? `امروز ${todayCount.toLocaleString('fa-IR')} نوبت دارید` : 'امروز نوبتی ثبت نشده است' }}
+      </p>
+    </div>
 
-    <div v-if="loadError" class="space-y-3 rounded-xl border border-dashed border-(--color-border) p-4 text-center">
+    <AppCard v-if="loadError" class="space-y-3 text-center">
+      <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)">
+        <AppIcon name="warning" :size="22" />
+      </div>
       <p class="text-sm text-(--tone-danger-text)">نوبت‌ها بارگذاری نشد.</p>
       <AppButton type="button" variant="secondary" data-testid="retry-bookings" @click="loadAll">
         تلاش دوباره
       </AppButton>
-    </div>
+    </AppCard>
 
     <template v-else>
-      <div v-if="loading" class="flex items-center justify-center py-8 text-(--color-text-muted)">
-        <AppIcon name="spinner" :size="20" class="animate-spin" />
+      <div v-if="loading" class="flex items-center justify-center py-12 text-(--color-text-muted)">
+        <AppIcon name="spinner" :size="22" class="animate-spin" />
       </div>
 
       <template v-else>
         <!-- Always-visible, not a modal -- same shape as HoursView.vue's ad-hoc-closures
-             form. Capped and centered independently of the page's own wide container. -->
-        <AppCard class="mx-auto max-w-2xl space-y-3">
-          <h2 class="font-bold text-(--color-text)">ثبت نوبت حضوری/تلفنی</h2>
-          <AppInput
-            v-model="manualForm.phone"
-            label="شماره موبایل مشتری"
-            type="tel"
-            inputmode="tel"
-            class="tnum"
-            placeholder="09xxxxxxxxx"
-            data-testid="manual-booking-phone"
-          />
-          <AppInput v-model="manualForm.name" label="نام مشتری (اختیاری)" data-testid="manual-booking-name" />
-
-          <div>
-            <label id="manual-service-label" class="mb-1.5 block text-sm font-medium text-(--color-text)">خدمت</label>
-            <AppSelect
-              v-model="manualForm.serviceId"
-              :options="serviceOptions"
-              placeholder="انتخاب خدمت"
-              aria-labelledby="manual-service-label"
-              data-testid="manual-booking-service"
-            />
+             form. A compact quick-add panel, not a page-dominating wall of fields. -->
+        <AppCard class="space-y-4">
+          <div class="flex items-center gap-3">
+            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-(--color-accent-soft) text-(--color-accent-text)">
+              <AppIcon name="plus" :size="18" />
+            </span>
+            <div class="min-w-0">
+              <h2 class="font-bold text-(--color-text)">ثبت نوبت حضوری/تلفنی</h2>
+              <p class="text-xs text-(--color-text-muted)">برای مشتریانی که تلفنی یا حضوری نوبت می‌گیرند</p>
+            </div>
           </div>
 
-          <div v-if="workers.length > 0">
-            <label id="manual-worker-label" class="mb-1.5 block text-sm font-medium text-(--color-text)">کارمند (اختیاری)</label>
-            <AppSelect
-              v-model="manualForm.workerId"
-              :options="manualWorkerOptions"
-              aria-labelledby="manual-worker-label"
-              data-testid="manual-booking-worker"
+          <div class="grid gap-3 sm:grid-cols-2">
+            <AppInput
+              v-model="manualForm.phone"
+              label="شماره موبایل مشتری"
+              icon="phone"
+              type="tel"
+              inputmode="tel"
+              class="tnum"
+              placeholder="09xxxxxxxxx"
+              data-testid="manual-booking-phone"
             />
+            <AppInput v-model="manualForm.name" label="نام مشتری (اختیاری)" icon="user-circle" data-testid="manual-booking-name" />
           </div>
 
-          <div class="flex min-w-0 items-end gap-2 sm:gap-3">
-            <div class="min-w-0 flex-1">
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label id="manual-service-label" class="mb-1.5 block text-sm font-medium text-(--color-text)">خدمت</label>
+              <AppSelect
+                v-model="manualForm.serviceId"
+                :options="serviceOptions"
+                placeholder="انتخاب خدمت"
+                aria-labelledby="manual-service-label"
+                data-testid="manual-booking-service"
+              />
+            </div>
+
+            <div v-if="workers.length > 0">
+              <label id="manual-worker-label" class="mb-1.5 block text-sm font-medium text-(--color-text)">کارمند (اختیاری)</label>
+              <AppSelect
+                v-model="manualForm.workerId"
+                :options="manualWorkerOptions"
+                aria-labelledby="manual-worker-label"
+                data-testid="manual-booking-worker"
+              />
+            </div>
+          </div>
+
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div>
               <label class="mb-1.5 block text-sm font-medium text-(--color-text)">تاریخ</label>
               <JalaliDatePicker v-model="manualForm.date" aria-label="تاریخ نوبت" data-testid="manual-booking-date" />
             </div>
-            <div class="min-w-0 flex-1">
+            <div>
               <label class="mb-1.5 block text-sm font-medium text-(--color-text)">ساعت</label>
               <input
                 v-model="manualForm.time"
                 type="time"
                 aria-label="ساعت نوبت"
                 data-testid="manual-booking-time"
-                class="tnum min-h-11 w-full min-w-0 rounded-xl border border-(--color-border) bg-(--color-surface) p-2 text-sm"
+                class="tnum min-h-11 w-full min-w-0 rounded-xl border border-(--color-border) bg-(--color-surface-card) p-2 text-sm"
               />
             </div>
           </div>
 
-          <AppInput v-model="manualForm.notes" label="یادداشت (اختیاری)" placeholder="مثلاً تماس تلفنی" data-testid="manual-booking-notes" />
+          <AppInput v-model="manualForm.notes" label="یادداشت (اختیاری)" icon="pencil" placeholder="مثلاً تماس تلفنی" data-testid="manual-booking-notes" />
 
           <p v-if="manualFormError" class="flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)">
+            <AppIcon name="warning" :size="15" class="shrink-0" />
             {{ manualFormError }}
           </p>
 
-          <AppButton
-            type="button"
-            block
-            data-testid="submit-manual-booking"
-            :disabled="manualSubmitting"
-            :loading="manualSubmitting"
-            @click="submitManualBooking"
-          >
-            <template #icon><AppIcon name="plus" :size="16" /></template>
-            ثبت نوبت
-          </AppButton>
+          <div class="flex justify-end">
+            <AppButton
+              type="button"
+              class="w-full sm:w-auto sm:min-w-44"
+              data-testid="submit-manual-booking"
+              :disabled="manualSubmitting"
+              :loading="manualSubmitting"
+              @click="submitManualBooking"
+            >
+              <template #icon><AppIcon name="plus" :size="16" /></template>
+              ثبت نوبت
+            </AppButton>
+          </div>
         </AppCard>
 
         <!-- Day view: filters the same single fetch above to one Tehran-calendar-day.
-             "نمایش همه نوبت‌ها" switches back to today's original unfiltered grid --
-             additive, existing behavior stays reachable. -->
-        <div class="mx-auto flex max-w-2xl flex-wrap items-center justify-between gap-3">
-          <div v-if="!showAllBookings" class="flex min-w-0 items-center gap-1.5">
+             The segmented control drives the exact same boolean as before (a real
+             checkbox under the hood, styled as two tabs) -- "همه نوبت‌ها" switches back
+             to the full agenda, grouped by date. Additive: existing behavior untouched. -->
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div v-if="!showAllBookings" class="flex min-w-0 flex-wrap items-center gap-1.5">
+            <!-- RTL flex places the FIRST DOM child at the physical right edge -- so
+                 prev-day (rightmost) points further right (rotated) and next-day (to its
+                 left) points further left (unrotated), each chevron pointing away from the
+                 date picker toward its own side, not toward it. -->
             <AppButton type="button" variant="ghost" aria-label="روز قبل" data-testid="prev-day" @click="stepDay(-1)">
-              <AppIcon name="chevron-left" :size="16" />
+              <AppIcon name="chevron-left" :size="16" class="rotate-180" />
             </AppButton>
             <div class="w-40 shrink-0">
               <JalaliDatePicker v-model="selectedDate" aria-label="انتخاب روز" data-testid="day-picker" />
             </div>
             <AppButton type="button" variant="ghost" aria-label="روز بعد" data-testid="next-day" @click="stepDay(1)">
-              <AppIcon name="chevron-left" :size="16" class="rotate-180" />
+              <AppIcon name="chevron-left" :size="16" />
             </AppButton>
             <AppButton type="button" variant="ghost" data-testid="jump-today" @click="goToToday">امروز</AppButton>
           </div>
-          <p v-else class="text-sm text-(--color-text-muted)">همه نوبت‌ها</p>
+          <p v-else class="text-sm font-semibold text-(--color-text)">فهرست همه نوبت‌ها</p>
 
-          <label class="flex min-h-11 shrink-0 items-center gap-2 text-sm text-(--color-text)">
-            <input v-model="showAllBookings" type="checkbox" data-testid="toggle-show-all" class="h-4 w-4 accent-(--color-accent)" />
-            نمایش همه نوبت‌ها
+          <label class="inline-flex shrink-0 cursor-pointer overflow-hidden rounded-xl border border-(--color-border) bg-(--color-surface-card) text-sm font-medium">
+            <input v-model="showAllBookings" type="checkbox" data-testid="toggle-show-all" class="sr-only" />
+            <span class="min-h-11 px-3.5 py-2.5 leading-6 transition-colors" :class="showAllBookings ? 'bg-(--color-accent-strong) text-(--color-fill-text)' : 'text-(--color-text-muted)'">
+              همه نوبت‌ها
+            </span>
+            <span class="min-h-11 px-3.5 py-2.5 leading-6 transition-colors" :class="!showAllBookings ? 'bg-(--color-accent-strong) text-(--color-fill-text)' : 'text-(--color-text-muted)'">
+              یک روز
+            </span>
           </label>
         </div>
-        <p v-if="!showAllBookings" class="mx-auto max-w-2xl text-sm font-semibold text-(--color-text)">{{ selectedDateLabel }}</p>
+        <p v-if="!showAllBookings" class="text-sm font-semibold text-(--color-text)">{{ selectedDateLabel }}</p>
 
         <EmptyState
           v-if="displayedBookings.length === 0"
@@ -373,98 +436,98 @@ const displayedBookings = computed(() => (showAllBookings.value ? sortedBookings
           :message="showAllBookings ? 'هنوز نوبتی ثبت نشده است.' : 'نوبتی برای این روز ثبت نشده است.'"
         />
 
-        <!-- One column on phone; more columns (i.e. more visible bookings, not wider cards)
-             as the viewport grows -- PRODUCT.md treats the desktop review session as equally
-             real, and a single 1888px-wide card would waste all of it. auto-fit + justify-
-             center rather than a fixed md:/xl: count: a lone or odd trailing booking would
-             otherwise strand in the RTL start (right) column with visibly empty space beside
-             it -- this still goes multi-column once there are enough bookings to fill a row. -->
-        <div v-else class="grid items-start justify-center gap-3 [grid-template-columns:repeat(auto-fit,minmax(280px,360px))]">
-          <AppCard v-for="b in displayedBookings" :key="b.id" :data-testid="`booking-${b.id}`" :padded="false" class="space-y-3 p-4">
-            <div class="flex items-start justify-between gap-3">
-              <!-- min-w-0 + break-words: a long salon-authored service name must wrap inside
-                   the card, never push the badge out of it. -->
-              <div class="min-w-0">
-                <p class="break-words text-sm font-bold text-(--color-text)">{{ b.serviceName }}</p>
-                <p class="text-xs text-(--color-text-muted)"><span dir="ltr" class="tnum">{{ formatToman(b.priceSnapshot) }}</span> تومان</p>
+        <!-- A daily agenda, not a card grid -- grouped by Tehran-calendar-date so "همه
+             نوبت‌ها" reads as a schedule, and every row shares one predictable width
+             (no per-column auto-fit sizing, the source of the previous layout's uneven,
+             floating cards). -->
+        <div v-else class="space-y-6">
+          <div v-for="group in groupedBookings" :key="group.date" class="space-y-3">
+            <div v-if="showAllBookings" class="flex items-center gap-2 px-1">
+              <h3 class="text-sm font-bold text-(--color-text)">{{ group.label }}</h3>
+              <StatusBadge v-if="group.isToday" label="امروز" tone="info" />
+              <span class="tnum text-xs text-(--color-text-muted)">({{ group.bookings.length.toLocaleString('fa-IR') }})</span>
+            </div>
+
+            <AppCard v-for="b in group.bookings" :key="b.id" :data-testid="`booking-${b.id}`" class="space-y-3">
+              <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="flex min-w-0 items-start gap-3">
+                  <div class="flex w-16 shrink-0 flex-col items-center justify-center rounded-xl bg-(--color-surface-subtle) py-2 text-(--color-text)">
+                    <span class="tnum text-sm font-bold">{{ formatBookingTime(b.startsAt) }}</span>
+                  </div>
+                  <!-- min-w-0 + break-words: a long salon-authored service name must wrap
+                       inside the card, never push the badges out of it. -->
+                  <div class="min-w-0 space-y-1">
+                    <p class="break-words text-sm font-bold text-(--color-text)">{{ b.serviceName }}</p>
+                    <p class="text-sm text-(--color-text-muted)">
+                      {{ b.customerName || 'بدون نام' }}
+                      <span v-if="b.customerPhone" dir="ltr" class="tnum"> — {{ b.customerPhone }}</span>
+                    </p>
+                    <p class="text-xs text-(--color-text-muted)"><span dir="ltr" class="tnum">{{ formatToman(b.priceSnapshot) }}</span> تومان</p>
+                  </div>
+                </div>
+                <div class="flex shrink-0 flex-col items-end gap-1.5">
+                  <StatusBadge :label="bookingStatusLabel(b.status).label" :tone="bookingStatusLabel(b.status).tone" />
+                  <StatusBadge v-if="b.source === 'manual'" label="ثبت دستی" tone="neutral" />
+                </div>
               </div>
-              <div class="flex shrink-0 flex-col items-end gap-1.5">
-                <StatusBadge :label="bookingStatusLabel(b.status).label" :tone="bookingStatusLabel(b.status).tone" />
-                <StatusBadge v-if="b.source === 'manual'" label="ثبت دستی" tone="neutral" />
+
+              <div v-if="b.status === 'confirmed' && workers.length > 0" class="border-t border-(--color-border-soft) pt-3">
+                <!-- AppSelect's root is vue-multiselect's role="combobox" div, not a labelable
+                     native control, so <label for> can no longer reach it; aria-labelledby is
+                     the right ARIA association and falls through onto that root div. -->
+                <label :id="`worker-select-${b.id}`" class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">تخصیص کارمند</label>
+                <AppSelect
+                  :model-value="b.workerId ?? ''"
+                  :options="workerOptions"
+                  :disabled="submittingId === b.id"
+                  :aria-labelledby="`worker-select-${b.id}`"
+                  data-testid="assign-worker"
+                  @update:model-value="assignWorker(b, $event)"
+                />
               </div>
-            </div>
+              <p v-else-if="b.workerName" class="border-t border-(--color-border-soft) pt-3 text-sm text-(--color-text-muted)">
+                کارمند: <span class="font-semibold text-(--color-text)">{{ b.workerName }}</span>
+              </p>
 
-            <p class="text-sm text-(--color-text)">
-              {{ b.customerName || 'بدون نام' }}
-              <span v-if="b.customerPhone" dir="ltr" class="tnum text-(--color-text-muted)"> — {{ b.customerPhone }}</span>
-            </p>
-            <p class="tnum text-sm text-(--color-text-muted)">{{ formatBookingDateTime(b.startsAt) }}</p>
-
-            <div v-if="b.status === 'confirmed' && workers.length > 0">
-              <!-- AppSelect's root is vue-multiselect's role="combobox" div, not a labelable
-                   native control, so <label for> can no longer reach it; aria-labelledby is
-                   the right ARIA association and falls through onto that root div. -->
-              <label :id="`worker-select-${b.id}`" class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">تخصیص کارمند</label>
-              <AppSelect
-                :model-value="b.workerId ?? ''"
-                :options="workerOptions"
-                :disabled="submittingId === b.id"
-                :aria-labelledby="`worker-select-${b.id}`"
-                data-testid="assign-worker"
-                @update:model-value="assignWorker(b, $event)"
-              />
-            </div>
-            <p v-else-if="b.workerName" class="text-sm text-(--color-text-muted)">
-              کارمند: <span class="font-semibold text-(--color-text)">{{ b.workerName }}</span>
-            </p>
-
-            <!--
-              A grid, not a flex row: the three labelled buttons need ~300px side by side and
-              the card only offers ~256px at 320px, so a single row overflowed the page. Two
-              per row on a phone with the destructive «لغو» on its own full-width row (which
-              also stops it sitting a thumb-width from «انجام شد»); one row from sm up.
-
-              The two labels are left to wrap naturally (no forced mid-word line break) --
-              CSS Grid's default `align-items: stretch` already equalizes both buttons'
-              height to whichever one wraps, so a forced break isn't needed for that and
-              only made the label read as visually broken.
-            -->
-            <div v-if="b.status === 'confirmed'" class="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              <AppButton
-                data-testid="mark-completed"
-                type="button"
-                variant="secondary"
-                :disabled="submittingId === b.id"
-                :loading="submittingId === b.id"
-                @click="markStatus(b.id, 'completed')"
-              >
-                <template #icon><AppIcon name="check" :size="15" /></template>
-                <span class="text-center">انجام شد</span>
-              </AppButton>
-              <AppButton
-                data-testid="mark-no-show"
-                type="button"
-                variant="secondary"
-                :disabled="submittingId === b.id"
-                :loading="submittingId === b.id"
-                @click="markStatus(b.id, 'no_show')"
-              >
-                <template #icon><AppIcon name="x" :size="15" /></template>
-                <span class="text-center">عدم حضور</span>
-              </AppButton>
-              <AppButton
-                data-testid="cancel-booking"
-                type="button"
-                variant="danger"
-                class="col-span-2 sm:col-span-1"
-                :disabled="submittingId === b.id"
-                :loading="submittingId === b.id"
-                @click="cancelBooking(b.id)"
-              >
-                لغو
-              </AppButton>
-            </div>
-          </AppCard>
+              <div v-if="b.status === 'confirmed'" class="flex flex-wrap justify-end gap-2 border-t border-(--color-border-soft) pt-3">
+                <AppButton
+                  data-testid="mark-completed"
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  :disabled="submittingId === b.id"
+                  :loading="submittingId === b.id"
+                  @click="markStatus(b.id, 'completed')"
+                >
+                  <template #icon><AppIcon name="check" :size="13" /></template>
+                  انجام شد
+                </AppButton>
+                <AppButton
+                  data-testid="mark-no-show"
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  :disabled="submittingId === b.id"
+                  :loading="submittingId === b.id"
+                  @click="markStatus(b.id, 'no_show')"
+                >
+                  <template #icon><AppIcon name="x" :size="13" /></template>
+                  عدم حضور
+                </AppButton>
+                <AppButton
+                  data-testid="cancel-booking"
+                  type="button"
+                  variant="danger"
+                  size="sm"
+                  :disabled="submittingId === b.id"
+                  :loading="submittingId === b.id"
+                  @click="cancelBooking(b.id)"
+                >
+                  لغو
+                </AppButton>
+              </div>
+            </AppCard>
+          </div>
         </div>
       </template>
     </template>
