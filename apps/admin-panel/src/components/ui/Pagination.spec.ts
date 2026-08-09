@@ -12,8 +12,8 @@ describe('Pagination', () => {
   })
 
   it('reports the current slice and clamps the end of a last, partial page', () => {
-    expect(mountPagination({ page: 1, pageSize: 20, total: 45 }).get('p').text()).toBe('1–20 از 45')
-    expect(mountPagination({ page: 3, pageSize: 20, total: 45 }).get('p').text()).toBe('41–45 از 45')
+    expect(mountPagination({ page: 1, pageSize: 20, total: 45 }).get('p').text()).toBe('۱–۲۰ از ۴۵')
+    expect(mountPagination({ page: 3, pageSize: 20, total: 45 }).get('p').text()).toBe('۴۱–۴۵ از ۴۵')
   })
 
   it('disables the edge buttons instead of emitting an out-of-range page', async () => {

@@ -35,7 +35,7 @@ defineProps<{ workers: WorkerItem[] }>()
         <span class="min-w-0 flex-1 break-words">{{ worker.name }}</span>
         <span v-if="worker.ratingCount" class="flex shrink-0 items-center gap-1 whitespace-nowrap text-(--color-text-muted)">
           <BaseIcon name="star" :size="14" />
-          {{ Number(worker.ratingAvg).toFixed(1) }} ({{ worker.ratingCount }})
+          {{ Number(worker.ratingAvg).toLocaleString('fa-IR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }} ({{ worker.ratingCount.toLocaleString('fa-IR') }})
         </span>
         <span v-else class="shrink-0 text-(--color-text-muted)">بدون امتیاز</span>
       </li>

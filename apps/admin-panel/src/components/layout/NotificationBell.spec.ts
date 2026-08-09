@@ -72,7 +72,7 @@ describe('NotificationBell', () => {
     const { wrapper } = await mountBell()
 
     expect(wrapper.find('[data-testid="unread-badge"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="unread-badge"]').text()).toBe('3')
+    expect(wrapper.get('[data-testid="unread-badge"]').text()).toBe('۳')
   })
 
   it('hides the badge when the count is zero', async () => {

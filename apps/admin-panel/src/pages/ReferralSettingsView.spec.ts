@@ -117,7 +117,9 @@ describe('ReferralSettingsView', () => {
     // Only the GET has happened -- the confirm screen is showing, not yet PATCHed.
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const summary = wrapper.get('[data-testid="confirm-summary-user"]')
-    expect(summary.text()).toContain('20000')
+    // referrerRewardValue's kind is toman-denominated -- Farsi-digit, fa-IR-grouped
+    // (formatToman), matching referredRewardValue's percent kind.
+    expect(summary.text()).toContain('۲۰٬۰۰۰')
     expect(summary.text()).toContain('15')
     // Only the 'user' card shows a confirm summary -- the other two rows are untouched.
     expect(wrapper.find('[data-testid="confirm-summary-salon_owner"]').exists()).toBe(false)
@@ -162,7 +164,7 @@ describe('ReferralSettingsView', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining('/admin/referral-reward-types/worker'), expect.anything())
     // The edited value survives the cancel.
-    expect((wrapper.get('[data-testid="referrer-value-worker"]').element as HTMLInputElement).value).toBe('500')
+    expect((wrapper.get('[data-testid="referrer-value-worker"]').element as HTMLInputElement).value).toBe('۵۰۰')
   })
 
   it('sends null (not 0/NaN) for the nullable cap fields left empty', async () => {

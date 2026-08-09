@@ -24,6 +24,7 @@ import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { currencyLabel, walletTransactionTypeLabel } from '@/utils/labels'
+import { formatToman } from '@/utils/format-toman'
 
 const TYPE_OPTIONS = [
   { value: '', label: 'همه انواع' },
@@ -129,8 +130,11 @@ function formatDateTime(iso: string): string {
   }).format(new Date(iso))
 }
 
-function formatAmount(amount: number): string {
-  return `${amount > 0 ? '+' : ''}${amount.toLocaleString('fa-IR')}`
+// Toman is money and renders Latin-digit/comma-grouped (formatToman); "points" is a loyalty
+// count, not a price, and stays in this app's ordinary Persian-digit format.
+function formatAmount(amount: number, currency: 'toman' | 'points'): string {
+  const sign = amount > 0 ? '+' : ''
+  return currency === 'toman' ? `${sign}${formatToman(amount)}` : `${sign}${amount.toLocaleString('fa-IR')}`
 }
 
 function clearFilters() {
@@ -226,7 +230,6 @@ watch(page, load)
           v-if="hasActiveFilters"
           type="button"
           variant="ghost"
-          class="mb-2"
           @click="clearFilters"
         >
           <template #icon><AppIcon name="reset" :size="15" /></template>
@@ -276,10 +279,11 @@ watch(page, load)
               </td>
               <td class="px-5 py-3.5 text-(--color-text-muted)">{{ currencyLabel(tx.currency) }}</td>
               <td
+                dir="ltr"
                 class="tnum px-5 py-3.5 font-semibold"
                 :class="tx.amount >= 0 ? 'text-(--tone-success-text)' : 'text-(--tone-danger-text)'"
               >
-                {{ formatAmount(tx.amount) }}
+                {{ formatAmount(tx.amount, tx.currency) }}
               </td>
               <td class="px-5 py-3.5">
                 <StatusBadge :label="walletTransactionTypeLabel(tx.type).label" :tone="walletTransactionTypeLabel(tx.type).tone" />

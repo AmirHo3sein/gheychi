@@ -11,7 +11,9 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
+import AppMoneyInput from '@/components/ui/AppMoneyInput.vue'
 import { configKeyMeta } from '@/utils/labels'
+import { formatToman } from '@/utils/format-toman'
 
 interface ConfigRow {
   key: string
@@ -94,6 +96,14 @@ function rowError(key: string): string | undefined {
   if (text === '') return 'این مقدار نمی‌تواند خالی باشد'
   if (Number.isNaN(Number(text))) return 'یک عدد معتبر وارد کنید'
   return max !== null ? `باید بین ${min} تا ${max} باشد` : `باید حداقل ${min} باشد`
+}
+
+// deposit_min_toman is the only toman-denominated config key today (the rest are %, hours,
+// minutes) -- render it Latin-digit/comma-grouped (formatToman) like every other price in
+// the app; every other unit stays this app's ordinary Persian-digit format.
+function formatConfigValue(key: string, value: number | undefined): string {
+  if (value === undefined) return ''
+  return configKeyMeta(key).unit === 'تومان' ? formatToman(value) : value.toLocaleString('fa-IR')
 }
 
 // Only the rows whose value actually differs from what's persisted -- the confirm summary
@@ -182,7 +192,16 @@ onMounted(load)
             </div>
           </div>
           <div class="flex shrink-0 items-center gap-2">
+            <AppMoneyInput
+              v-if="configKeyMeta(row.key).unit === 'تومان'"
+              :model-value="rowText[row.key]"
+              class="w-24"
+              :aria-label="configKeyMeta(row.key).label"
+              :error="rowError(row.key)"
+              @update:model-value="(v) => onRowInput(row, v)"
+            />
             <AppInput
+              v-else
               :model-value="rowText[row.key]"
               type="number"
               class="tnum w-24 text-left"
@@ -214,8 +233,8 @@ onMounted(load)
         >
           <p class="min-w-0 text-sm font-semibold text-(--color-text)">{{ configKeyMeta(row.key).label }}</p>
           <p class="tnum min-w-0 text-sm text-(--color-text-muted)">
-            از <span class="font-semibold text-(--color-text)">{{ originalValueOf(row.key)?.toLocaleString('fa-IR') }} {{ configKeyMeta(row.key).unit }}</span>
-            به <span class="font-semibold text-(--tone-warning-text)">{{ row.value.toLocaleString('fa-IR') }} {{ configKeyMeta(row.key).unit }}</span>
+            از <span class="font-semibold text-(--color-text)">{{ formatConfigValue(row.key, originalValueOf(row.key)) }} {{ configKeyMeta(row.key).unit }}</span>
+            به <span class="font-semibold text-(--tone-warning-text)">{{ formatConfigValue(row.key, row.value) }} {{ configKeyMeta(row.key).unit }}</span>
           </p>
         </div>
       </AppCard>

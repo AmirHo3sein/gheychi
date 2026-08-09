@@ -217,7 +217,7 @@ describe('account referral page', () => {
 
     const row = wrapper.find('[data-testid="reward-item"]')
     expect(row.find('[data-testid="reward-kind"]').text()).toBe('اعتبار کیف پول')
-    expect(row.find('[data-testid="reward-value"]').text()).toContain('20,000')
+    expect(row.find('[data-testid="reward-value"]').text()).toContain('۲۰٬۰۰۰')
     expect(row.find('[data-testid="reward-value"]').text()).toContain('تومان')
     expect(row.find('[data-testid="reward-status"]').text()).toBe('اعطا شده')
     expect(row.find('a').attributes('href')).toBe('/account/wallet')

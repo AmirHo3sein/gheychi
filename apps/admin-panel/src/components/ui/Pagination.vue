@@ -27,7 +27,9 @@ function go(page: number) {
     v-if="total > 0"
     class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-(--color-border-soft) px-5 py-3"
   >
-    <p class="tnum text-xs text-(--color-text-muted)">{{ rangeStart }}–{{ rangeEnd }} از {{ total }}</p>
+    <p class="tnum text-xs text-(--color-text-muted)">
+      {{ rangeStart.toLocaleString('fa-IR') }}–{{ rangeEnd.toLocaleString('fa-IR') }} از {{ total.toLocaleString('fa-IR') }}
+    </p>
     <div class="flex items-center gap-1">
       <button
         type="button"
@@ -38,7 +40,9 @@ function go(page: number) {
       >
         <AppIcon name="chevron-right" :size="15" />
       </button>
-      <span class="tnum px-2 text-xs font-semibold text-(--color-text)">صفحه {{ page }} از {{ totalPages }}</span>
+      <span class="tnum px-2 text-xs font-semibold text-(--color-text)"
+        >صفحه {{ page.toLocaleString('fa-IR') }} از {{ totalPages.toLocaleString('fa-IR') }}</span
+      >
       <button
         type="button"
         :disabled="page >= totalPages"

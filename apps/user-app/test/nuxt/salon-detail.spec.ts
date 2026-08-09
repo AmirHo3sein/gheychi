@@ -152,11 +152,11 @@ describe('salon detail page', () => {
 
     expect(wrapper.get('[data-testid="salon-verified-badge"]').text()).toContain('تایید شده')
     // Every result on this page is already API-gated to status:'approved' -- the
-    // disclosure's numbers must come from the fetched terms, not be hardcoded. The percent
-    // renders as a Persian digit (matching the rest of the page); the toman amount renders
-    // Latin-digit/comma-grouped instead (formatToman), for legibility on large prices.
+    // disclosure's numbers must come from the fetched terms, not be hardcoded. Both the
+    // percent and the toman amount (formatToman) render as Farsi digits, matching the rest
+    // of the page.
     expect(wrapper.text()).toContain(`٪${(20).toLocaleString('fa-IR')}`)
-    expect(wrapper.text()).toContain((50000).toLocaleString('en-US'))
+    expect(wrapper.text()).toContain((50000).toLocaleString('fa-IR'))
   })
 
   // A provider-authored note that the listed duration is a minimum, not a guarantee --
@@ -267,7 +267,7 @@ describe('salon detail page', () => {
     wrapper = await mountSuspended(SalonDetailPage)
 
     const timeRange = wrapper.get('[data-testid="hours-list"] li')
-    expect(timeRange.text()).toContain('09:00 - 20:00')
+    expect(timeRange.text()).toContain('۰۹:۰۰ - ۲۰:۰۰')
     expect(timeRange.find('[dir="ltr"]').exists()).toBe(true)
   })
 
@@ -285,8 +285,8 @@ describe('salon detail page', () => {
 
     const rows = wrapper.get('[data-testid="hours-list"]').findAll('li')
     expect(rows).toHaveLength(1)
-    expect(rows[0]!.text()).toContain('09:00 - 13:00')
-    expect(rows[0]!.text()).toContain('14:00 - 20:00')
+    expect(rows[0]!.text()).toContain('۰۹:۰۰ - ۱۳:۰۰')
+    expect(rows[0]!.text()).toContain('۱۴:۰۰ - ۲۰:۰۰')
   })
 
   it('lists an upcoming closure with its time range and reason', async () => {
@@ -299,7 +299,7 @@ describe('salon detail page', () => {
     wrapper = await mountSuspended(SalonDetailPage)
 
     const closures = wrapper.get('[data-testid="upcoming-closures"]')
-    expect(closures.text()).toContain('13:00 تا 14:00')
+    expect(closures.text()).toContain('۱۳:۰۰ تا ۱۴:۰۰')
     expect(closures.text()).toContain('تعمیرات')
   })
 

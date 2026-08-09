@@ -114,9 +114,7 @@ describe('BookingsView', () => {
 
     const card = wrapper.find('[data-testid="booking-b1"]')
     expect(card.text()).toContain('کوتاهی مو زنانه')
-    // Toman amounts render Latin-digit/comma-grouped (formatToman), unlike this app's usual
-    // fa-IR digit grouping -- large prices stay quick to scan digit-by-digit.
-    expect(card.text()).toContain((250000).toLocaleString('en-US'))
+    expect(card.text()).toContain((250000).toLocaleString('fa-IR'))
   })
 
   it('re-sorts ascending by startsAt even when the API returns furthest-future first', async () => {

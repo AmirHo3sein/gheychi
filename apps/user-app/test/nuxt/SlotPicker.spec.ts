@@ -151,7 +151,7 @@ describe('SlotPicker', () => {
     const wrapper = await mountSuspended(SlotPicker, { props: { salonId: 's1', serviceId: 'sv1' } })
 
     const times = wrapper.findAll('[data-testid="slot-button"]').map((b) => b.text())
-    expect(times).toEqual(['16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00', '19:30'])
+    expect(times).toEqual(['۱۶:۰۰', '۱۶:۳۰', '۱۷:۰۰', '۱۷:۳۰', '۱۸:۰۰', '۱۸:۳۰', '۱۹:۰۰', '۱۹:۳۰'])
 
     // 16:00/16:30 fall in "بعدازظهر" (afternoon, before 17:00); everything else lands in
     // "عصر و شب" (evening) -- and the afternoon heading must appear first in the DOM.

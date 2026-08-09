@@ -5,6 +5,7 @@ import { readStorySeen } from '../../utils/story-seen'
 import { applyDiscount } from '../../utils/discount'
 import { geoJsonToLatLng } from '../../utils/geo'
 import { formatToman } from '../../utils/format-toman'
+import { toPersianDigits } from '../../utils/digits'
 
 interface Salon {
   id: string
@@ -218,7 +219,7 @@ function formatClosureDate(dateStr: string): string {
 
 function formatClosureTimeRange(e: SalonExceptionItem): string | null {
   if (!e.startTime || !e.endTime) return null
-  return `${e.startTime.slice(0, 5)} تا ${e.endTime.slice(0, 5)}`
+  return `${toPersianDigits(e.startTime.slice(0, 5))} تا ${toPersianDigits(e.endTime.slice(0, 5))}`
 }
 
 // "باز / بسته" status, deliberately left null until onMounted rather than computed eagerly:
@@ -337,7 +338,7 @@ function scrollToSection(id: string) {
         @click.prevent="scrollToSection('reviews')"
       >
         <BaseIcon name="star" :size="14" />
-        {{ Number(page.salon.ratingAvg).toFixed(1) }} ({{ page.salon.ratingCount.toLocaleString('fa-IR') }})
+        {{ Number(page.salon.ratingAvg).toLocaleString('fa-IR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }} ({{ page.salon.ratingCount.toLocaleString('fa-IR') }})
       </a>
       <!-- items-start, unlike the rating row above it: at 320px the name column is
            ~176px wide and a Persian street address wraps to three lines, which
@@ -432,7 +433,7 @@ function scrollToSection(id: string) {
                  break (it is the only genuinely elastic part), while the badge and each
                  price stay whole and wrap as units. -->
             <div class="flex items-center justify-between gap-3">
-              <span class="min-w-0 break-words text-(--color-text)">{{ service.name }} ({{ service.durationMin }} دقیقه)</span>
+              <span class="min-w-0 break-words text-(--color-text)">{{ service.name }} ({{ service.durationMin.toLocaleString('fa-IR') }} دقیقه)</span>
               <span class="flex flex-wrap items-center justify-end gap-2">
                 <span
                   v-if="service.discountPercent"
@@ -510,7 +511,7 @@ function scrollToSection(id: string) {
                first one being protected. -->
           <span dir="ltr" class="tnum text-end">
             <template v-for="(dayRange, i) in day.ranges" :key="i">
-              <span v-if="i > 0">، </span>{{ dayRange.openTime.slice(0, 5) }} - {{ dayRange.closeTime.slice(0, 5) }}
+              <span v-if="i > 0">، </span>{{ toPersianDigits(dayRange.openTime.slice(0, 5)) }} - {{ toPersianDigits(dayRange.closeTime.slice(0, 5)) }}
             </template>
           </span>
         </li>

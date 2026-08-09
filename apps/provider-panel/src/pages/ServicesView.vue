@@ -5,11 +5,13 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
+import AppMoneyInput from '@/components/ui/AppMoneyInput.vue'
 import AppSelect, { type SelectOption } from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
+import { formatToman } from '@/utils/format-toman'
 
 interface Service {
   id: string
@@ -185,7 +187,7 @@ async function updatePrice(service: Service) {
   if (price === service.price) return
 
   const confirmed = window.confirm(
-    `قیمت «${service.name}» از ${service.price.toLocaleString('fa-IR')} به ${price.toLocaleString('fa-IR')} تومان تغییر کند؟`,
+    `قیمت «${service.name}» از ${formatToman(service.price)} به ${formatToman(price)} تومان تغییر کند؟`,
   )
   if (!confirmed) {
     priceDrafts[service.id] = String(service.price)
@@ -299,12 +301,10 @@ async function updateDescription(service: Service) {
                  collided with AppInput's own w-full (both land on the <input> via $attrs).
                  Capped at sm so the two short numeric fields don't stretch across a laptop. -->
             <div class="grid grid-cols-2 gap-3 sm:max-w-sm">
-              <AppInput
+              <AppMoneyInput
                 v-model="priceDrafts[s.id]"
                 label="قیمت (تومان)"
-                type="number"
-                min="1"
-                class="tnum"
+                data-testid="service-price-input"
                 @change="updatePrice(s)"
               />
               <AppInput
@@ -340,11 +340,10 @@ async function updateDescription(service: Service) {
       <AppSelect v-model="newService.categoryId" :options="categoryOptions" placeholder="دسته‌بندی" />
       <AppInput v-model="newService.name" placeholder="نام خدمت" />
       <div class="grid grid-cols-2 gap-3">
-        <AppInput
+        <AppMoneyInput
           :model-value="String(newService.price)"
           label="قیمت (تومان)"
-          type="number"
-          class="tnum"
+          data-testid="new-service-price-input"
           @update:model-value="(v) => (newService.price = Number(v))"
         />
         <AppInput

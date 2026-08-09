@@ -11,6 +11,7 @@ import { useTheme } from '@/composables/useTheme'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon, { type IconName } from '@/components/ui/AppIcon.vue'
 import { genderTargetLabel, salonStatusLabel, userRoleLabel } from '@/utils/labels'
+import { toPersianDigits } from '@/utils/digits'
 
 use([CanvasRenderer, PieChart, BarChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent])
 
@@ -57,6 +58,15 @@ const TONE_HEX: Record<Tone, { light: string; dark: string }> = {
 }
 function toneColor(tone: Tone): string {
   return isDark.value ? TONE_HEX[tone].dark : TONE_HEX[tone].light
+}
+
+// ECharts renders to canvas and formats its own tooltip/axis-label numbers as plain JS
+// `String(number)` (Latin digits) unless told otherwise -- ordinary toLocaleString('fa-IR')
+// template usage elsewhere in this app doesn't reach these, since ECharts owns this text
+// itself. `unknown` params (not echarts' own types, not a direct dependency of this app)
+// kept minimal to just the two fields each formatter below actually reads.
+function pieTooltipFormatter(params: { name: string; value: number; percent: number }): string {
+  return `${params.name}: ${toPersianDigits(params.value)} (${toPersianDigits(Math.round(params.percent))}٪)`
 }
 
 const TONE_BG: Record<'success' | 'warning' | 'danger' | 'info', string> = {
@@ -110,7 +120,7 @@ const salonStatusChart = computed(() => {
   }))
   return {
     textStyle: baseTextStyle.value,
-    tooltip: { trigger: 'item', textStyle: { fontFamily: FONT } },
+    tooltip: { trigger: 'item', textStyle: { fontFamily: FONT }, formatter: pieTooltipFormatter },
     legend: { bottom: 0, textStyle: { fontFamily: FONT, fontSize: 11, color: baseTextStyle.value.color } },
     series: [
       {
@@ -137,7 +147,7 @@ const genderChart = computed(() => {
   }))
   return {
     textStyle: baseTextStyle.value,
-    tooltip: { trigger: 'item', textStyle: { fontFamily: FONT } },
+    tooltip: { trigger: 'item', textStyle: { fontFamily: FONT }, formatter: pieTooltipFormatter },
     legend: { bottom: 0, textStyle: { fontFamily: FONT, fontSize: 11, color: baseTextStyle.value.color } },
     series: [
       {
@@ -163,7 +173,7 @@ const userRoleChart = computed(() => {
   }))
   return {
     textStyle: baseTextStyle.value,
-    tooltip: { trigger: 'item', textStyle: { fontFamily: FONT } },
+    tooltip: { trigger: 'item', textStyle: { fontFamily: FONT }, formatter: pieTooltipFormatter },
     legend: { bottom: 0, textStyle: { fontFamily: FONT, fontSize: 11, color: baseTextStyle.value.color } },
     series: [
       {
@@ -183,7 +193,16 @@ const ratingChart = computed(() => {
   const counts = [1, 2, 3, 4, 5].map((star) => reviews.value.filter((r) => r.rating === star).length)
   return {
     textStyle: baseTextStyle.value,
-    tooltip: { trigger: 'axis', textStyle: { fontFamily: FONT } },
+    tooltip: {
+      trigger: 'axis',
+      textStyle: { fontFamily: FONT },
+      // 'axis' trigger hands the formatter an array (one entry per series at that category --
+      // just the one bar series here), unlike the pie charts' single-object 'item' trigger.
+      formatter: (params: Array<{ name: string; value: number }>) => {
+        const p = params[0]
+        return p ? `${p.name}: ${toPersianDigits(p.value)}` : ''
+      },
+    },
     grid: { top: 20, right: 16, bottom: 24, left: 28 },
     xAxis: {
       type: 'category',
@@ -196,7 +215,7 @@ const ratingChart = computed(() => {
       type: 'value',
       minInterval: 1,
       splitLine: { lineStyle: { color: splitLineColor.value } },
-      axisLabel: { fontFamily: FONT, fontSize: 11, color: axisLabelColor.value },
+      axisLabel: { fontFamily: FONT, fontSize: 11, color: axisLabelColor.value, formatter: (value: number) => toPersianDigits(value) },
     },
     series: [
       {

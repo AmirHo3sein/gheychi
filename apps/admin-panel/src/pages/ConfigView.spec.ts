@@ -77,6 +77,23 @@ describe('ConfigView', () => {
     expect(wrapper.find('[data-testid="config-confirm-summary"]').exists()).toBe(false)
   })
 
+  // deposit_min_toman is the one toman-denominated config key -- it renders Farsi-digit,
+  // fa-IR-grouped (formatToman) via AppMoneyInput, matching every other row here (%, hours).
+  it('shows the toman-denominated row comma-grouped in Farsi digits, both in the field and the confirm summary', async () => {
+    const wrapper = await mountView()
+
+    const tomanInput = wrapper.get('[aria-label="حداقل پیش‌پرداخت"]')
+    expect((tomanInput.element as HTMLInputElement).value).toBe('۵۰٬۰۰۰')
+    expect((tomanInput.element as HTMLInputElement).type).toBe('text')
+
+    await tomanInput.setValue('80000')
+    await wrapper.get('[data-testid="config-save-button"]').trigger('click')
+
+    const summary = wrapper.get('[data-testid="config-confirm-summary"]')
+    expect(summary.text()).toContain('۵۰٬۰۰۰')
+    expect(summary.text()).toContain('۸۰٬۰۰۰')
+  })
+
   it('cancelling the confirm screen does not fire the PATCH', async () => {
     const wrapper = await mountView()
 
@@ -100,7 +117,9 @@ describe('ConfigView', () => {
     const inputs = wrapper.findAll('input[type="number"]')
 
     await inputs[0].setValue(50) // deposit_percent: a genuine change, 20 -> 50
-    await inputs[2].setValue('') // cancellation_window_hours: cleared via select-all-delete
+    // deposit_min_toman is a text field now (AppMoneyInput), so cancellation_window_hours is
+    // the second remaining number input on the page.
+    await inputs[1].setValue('') // cancellation_window_hours: cleared via select-all-delete
 
     // Number('') === 0 must never silently win here -- save stays disabled and the row
     // shows a distinguishing error, even though a real change exists elsewhere in the form.
@@ -129,7 +148,9 @@ describe('ConfigView', () => {
     const wrapper = await mountView()
     const inputs = wrapper.findAll('input[type="number"]')
 
-    await inputs[2].setValue(-5) // cancellation_window_hours: floor is 0, no ceiling
+    // deposit_min_toman is a text field now (AppMoneyInput), so cancellation_window_hours is
+    // the second remaining number input on the page.
+    await inputs[1].setValue(-5) // cancellation_window_hours: floor is 0, no ceiling
 
     expect(wrapper.get('[data-testid="config-save-button"]').attributes('disabled')).toBeDefined()
     expect(wrapper.text()).toContain('باید حداقل')

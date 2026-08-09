@@ -25,6 +25,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import type { SelectOption } from '@/components/ui/AppSelect.vue'
+import { formatToman } from '@/utils/format-toman'
 
 const CURRENCY_OPTIONS: SelectOption[] = [
   { value: 'toman', label: 'تومان' },
@@ -115,7 +116,8 @@ async function submit() {
   submitting.value = false
   if (data) {
     const target = selectedUser.value
-    push(`موجودی «${target.name ?? target.phone}» به‌روزرسانی شد؛ موجودی جدید: ${data.balanceAfter.toLocaleString('fa-IR')}`)
+    const newBalance = currency.value === 'toman' ? formatToman(data.balanceAfter) : data.balanceAfter.toLocaleString('fa-IR')
+    push(`موجودی «${target.name ?? target.phone}» به‌روزرسانی شد؛ موجودی جدید: ${newBalance}`)
     emit('adjusted', { userId: target.id, balanceAfter: data.balanceAfter })
     resetForm()
   } else {
@@ -237,8 +239,8 @@ async function submit() {
         <li><span class="font-semibold">کاربر:</span> {{ selectedUser?.name ?? selectedUser?.phone }} ({{ selectedUser?.phone }})</li>
         <li>
           <span class="font-semibold">مبلغ:</span>
-          <span :class="(amount ?? 0) >= 0 ? 'text-(--tone-success-text)' : 'text-(--tone-danger-text)'">
-            {{ (amount ?? 0) >= 0 ? '+' : '' }}{{ (amount ?? 0).toLocaleString('fa-IR') }}
+          <span dir="ltr" :class="(amount ?? 0) >= 0 ? 'text-(--tone-success-text)' : 'text-(--tone-danger-text)'">
+            {{ (amount ?? 0) >= 0 ? '+' : '' }}{{ currency === 'toman' ? formatToman(amount ?? 0) : (amount ?? 0).toLocaleString('fa-IR') }}
           </span>
           {{ currency === 'toman' ? 'تومان' : 'امتیاز' }}
         </li>

@@ -18,8 +18,8 @@ describe('SalonTeam', () => {
     const rows = wrapper.findAll('[data-testid="salon-team-member"]')
     expect(rows).toHaveLength(2)
     expect(wrapper.text()).toContain('سارا محمدی')
-    expect(wrapper.text()).toContain('4.8')
-    expect(wrapper.text()).toContain('(12)')
+    expect(wrapper.text()).toContain('۴٫۸')
+    expect(wrapper.text()).toContain('(۱۲)')
   })
 
   it('shows a no-rating placeholder for a worker with zero ratings', async () => {

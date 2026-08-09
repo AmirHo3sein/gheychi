@@ -103,7 +103,7 @@ describe('booking confirm page', () => {
     // calculateDeposit(300_000, 20, 200_000) => max(round(300_000 * 20 / 100), 200_000) = 200_000
     const expectedDeposit = Math.max(Math.round((SERVICE.price * TERMS.depositPercent) / 100), TERMS.depositMinToman)
     expect(expectedDeposit).toBe(200_000)
-    expect(wrapper.text()).toContain(expectedDeposit.toLocaleString('en-US'))
+    expect(wrapper.text()).toContain(expectedDeposit.toLocaleString('fa-IR'))
   })
 
   it('shows the listed duration, and a provider-authored note when the duration may run longer', async () => {
@@ -137,8 +137,8 @@ describe('booking confirm page', () => {
     await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
     await nextTick()
 
-    expect(wrapper.text()).toContain((150_000).toLocaleString('en-US'))
-    expect(wrapper.text()).not.toContain((200_000).toLocaleString('en-US'))
+    expect(wrapper.text()).toContain((150_000).toLocaleString('fa-IR'))
+    expect(wrapper.text()).not.toContain((200_000).toLocaleString('fa-IR'))
   })
 
   it('does not render a wallet checkbox when the customer has no wallet balance', async () => {
@@ -159,13 +159,13 @@ describe('booking confirm page', () => {
     await nextTick()
 
     // deposit before wallet: max(round(300,000*20/100), 200,000) = 200,000 (the cap).
-    expect(wrapper.text()).toContain((200_000).toLocaleString('en-US'))
+    expect(wrapper.text()).toContain((200_000).toLocaleString('fa-IR'))
 
     await wrapper.find('input[type="checkbox"]').setValue(true)
     await nextTick()
 
     // min(50,000 balance, 200,000 deposit) = 50,000 applied -- 150,000 due online.
-    expect(wrapper.text()).toContain((150_000).toLocaleString('en-US'))
+    expect(wrapper.text()).toContain((150_000).toLocaleString('fa-IR'))
 
     await wrapper.find('[data-testid="confirm-booking-button"]').trigger('click')
     await flushPromises()
@@ -291,7 +291,7 @@ describe('booking confirm page', () => {
 
     // Savings amount: originalPrice - finalPrice = 90,000
     expect(wrapper.text()).toContain('شما')
-    expect(wrapper.text()).toContain((90_000).toLocaleString('en-US'))
+    expect(wrapper.text()).toContain((90_000).toLocaleString('fa-IR'))
     expect(wrapper.text()).toContain('صرفه‌جویی کردید')
     // The percent badge is legitimate here since the WINNER was percent-kind.
     expect(wrapper.text()).toContain('٪' + (30).toLocaleString('fa-IR'))
@@ -317,7 +317,7 @@ describe('booking confirm page', () => {
 
     // Savings amount: originalPrice - finalPrice = 50,000, always correct regardless of kind.
     expect(wrapper.text()).toContain('شما')
-    expect(wrapper.text()).toContain((50_000).toLocaleString('en-US'))
+    expect(wrapper.text()).toContain((50_000).toLocaleString('fa-IR'))
     expect(wrapper.text()).toContain('صرفه‌جویی کردید')
     // No percent badge anywhere in the discount area -- must not fabricate a percent
     // equivalent of a fixed-toman win. '٪' only ever appears in that badge (the coupon
@@ -351,7 +351,7 @@ describe('booking confirm page', () => {
     await applyCouponCode(wrapper, 'WEAK10')
 
     expect(wrapper.text()).not.toContain('صرفه‌جویی کردید')
-    expect(wrapper.text()).not.toContain((90_000).toLocaleString('en-US'))
+    expect(wrapper.text()).not.toContain((90_000).toLocaleString('fa-IR'))
     // ...and says so plainly instead of the old "applied successfully" next to an unmoved price.
     expect(wrapper.text()).toContain('قیمت تغییری نمی‌کند')
     // The badge still shows the service's real 30% -- that discount is genuinely applied.

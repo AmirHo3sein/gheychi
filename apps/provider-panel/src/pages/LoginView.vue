@@ -7,7 +7,7 @@ import AppInput from '@/components/ui/AppInput.vue'
 import { useApi } from '@/composables/useApi'
 import { useSessionStore, type SessionUser } from '@/stores/session'
 import { CODE_EXPIRED_MESSAGE, CODE_REJECTED_MESSAGE, describeAuthError, formatCountdown } from '@/utils/auth-errors'
-import { toEnglishDigits } from '@/utils/digits'
+import { toEnglishDigits, toPersianDigits } from '@/utils/digits'
 
 const router = useRouter()
 const { apiFetch } = useApi()
@@ -188,7 +188,7 @@ async function verifyOtp() {
       </div>
 
       <p class="login-stagger mt-6 text-center text-xs text-(--color-text-muted)" style="animation-delay: 0.2s">
-        © {{ new Date().getFullYear() }} قیچی
+        © {{ toPersianDigits(new Date().getFullYear()) }} قیچی
       </p>
     </div>
   </main>

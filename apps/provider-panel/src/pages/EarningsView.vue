@@ -8,6 +8,7 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useApi } from '@/composables/useApi'
 import { invoiceStatusLabel, jalaliMonthLabel } from '@/utils/labels'
+import { formatToman } from '@/utils/format-toman'
 
 interface Earnings {
   totalCollected: number
@@ -60,10 +61,20 @@ async function load() {
 
 onMounted(load)
 
-function toman(amount: number | null | undefined): string {
+// The API's declared response types say these money fields are always `number`, but this
+// screen has shipped a null/NaN one in practice -- these two stay defensive rather than
+// trust the type. Split in two (instead of one function returning "X تومان") so the template
+// can dir="ltr"-isolate just the digits without also dragging the Persian "تومان" into that
+// isolation, which would flip its position relative to the number (see git history/PR
+// discussion on the salon-detail working-hours bidi bug this mirrors).
+function formattedAmount(amount: number | null | undefined): string {
   if (amount == null || Number.isNaN(amount)) return '—'
-  return `${amount.toLocaleString('fa-IR')} تومان`
+  return formatToman(amount)
 }
+function isValidAmount(amount: number | null | undefined): boolean {
+  return amount != null && !Number.isNaN(amount)
+}
+
 </script>
 
 <template>
@@ -101,7 +112,7 @@ function toman(amount: number | null | undefined): string {
                and it must wrap inside the card rather than widen it. -->
           <div class="min-w-0">
             <p class="text-xs text-(--color-text-muted)">مجموع دریافتی</p>
-            <p class="tnum break-words text-xl font-bold text-(--color-text)">{{ toman(earnings.totalCollected) }}</p>
+            <p class="break-words text-xl font-bold text-(--color-text)"><span dir="ltr" class="tnum">{{ formattedAmount(earnings.totalCollected) }}</span><span v-if="isValidAmount(earnings.totalCollected)"> تومان</span></p>
           </div>
         </div>
       </AppCard>
@@ -113,7 +124,7 @@ function toman(amount: number | null | undefined): string {
           </div>
           <div class="min-w-0">
             <p class="text-xs text-(--color-text-muted)">کارمزد پلتفرم ({{ earnings.commissionPercent }}٪)</p>
-            <p class="tnum break-words text-xl font-bold text-(--color-text-muted)">−{{ toman(earnings.commissionAmount) }}</p>
+            <p class="break-words text-xl font-bold text-(--color-text-muted)"><span dir="ltr" class="tnum">{{ isValidAmount(earnings.commissionAmount) ? '−' : '' }}{{ formattedAmount(earnings.commissionAmount) }}</span><span v-if="isValidAmount(earnings.commissionAmount)"> تومان</span></p>
           </div>
         </div>
       </AppCard>
@@ -125,7 +136,7 @@ function toman(amount: number | null | undefined): string {
           </div>
           <div class="min-w-0">
             <p class="text-xs text-(--color-text-muted)">مبلغ قابل پرداخت</p>
-            <p class="tnum break-words text-xl font-bold text-(--tone-success-text)">{{ toman(earnings.netPayout) }}</p>
+            <p class="break-words text-xl font-bold text-(--tone-success-text)"><span dir="ltr" class="tnum">{{ formattedAmount(earnings.netPayout) }}</span><span v-if="isValidAmount(earnings.netPayout)"> تومان</span></p>
           </div>
         </div>
       </AppCard>
@@ -158,8 +169,8 @@ function toman(amount: number | null | undefined): string {
                 class="border-b border-(--color-border-soft) last:border-0"
               >
                 <td class="tnum px-4 py-3 text-(--color-text)">{{ jalaliMonthLabel(invoice.jalaliYear, invoice.jalaliMonth) }}</td>
-                <td class="tnum px-4 py-3 font-semibold text-(--color-text)">{{ toman(invoice.totalNetPayable) }}</td>
-                <td class="tnum px-4 py-3 text-(--color-text-muted)">{{ toman(invoice.paidTotal) }}</td>
+                <td class="px-4 py-3 font-semibold text-(--color-text)"><span dir="ltr" class="tnum">{{ formattedAmount(invoice.totalNetPayable) }}</span><span v-if="isValidAmount(invoice.totalNetPayable)"> تومان</span></td>
+                <td class="px-4 py-3 text-(--color-text-muted)"><span dir="ltr" class="tnum">{{ formattedAmount(invoice.paidTotal) }}</span><span v-if="isValidAmount(invoice.paidTotal)"> تومان</span></td>
                 <td class="px-4 py-3">
                   <StatusBadge :label="invoiceStatusLabel(invoice.status).label" :tone="invoiceStatusLabel(invoice.status).tone" />
                 </td>

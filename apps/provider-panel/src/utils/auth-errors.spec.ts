@@ -45,13 +45,13 @@ describe('describeAuthError', () => {
 })
 
 describe('formatCountdown', () => {
-  it('renders mm:ss and zero-pads the seconds', () => {
-    expect(formatCountdown(120)).toBe('2:00')
-    expect(formatCountdown(65)).toBe('1:05')
-    expect(formatCountdown(9)).toBe('0:09')
+  it('renders mm:ss with Farsi digits and zero-pads the seconds', () => {
+    expect(formatCountdown(120)).toBe('۲:۰۰')
+    expect(formatCountdown(65)).toBe('۱:۰۵')
+    expect(formatCountdown(9)).toBe('۰:۰۹')
   })
 
   it('never renders a negative clock if the interval overshoots', () => {
-    expect(formatCountdown(-5)).toBe('0:00')
+    expect(formatCountdown(-5)).toBe('۰:۰۰')
   })
 })

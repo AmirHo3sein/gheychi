@@ -144,7 +144,6 @@ watch(page, load)
           v-if="hasActiveFilters"
           type="button"
           variant="ghost"
-          class="mb-2"
           @click="clearFilters"
         >
           <template #icon><AppIcon name="reset" :size="15" /></template>
@@ -199,7 +198,9 @@ watch(page, load)
                 :fill="n <= review.rating ? 'currentColor' : 'none'"
                 :class="n > review.rating && 'text-(--color-border)'"
               />
-              <span class="tnum mr-1 text-sm font-bold text-(--color-text)">{{ review.rating }}.0</span>
+              <span class="tnum mr-1 text-sm font-bold text-(--color-text)">{{
+                Number(review.rating).toLocaleString('fa-IR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+              }}</span>
             </div>
             <p class="mt-1.5 text-sm font-semibold text-(--color-text)">{{ review.salonName }}</p>
           </div>

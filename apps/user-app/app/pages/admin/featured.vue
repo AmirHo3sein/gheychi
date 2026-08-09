@@ -160,7 +160,7 @@ useSeoMeta({ title: 'مدیریت سالن‌های ویژه — قیچی' })
           صفحه قبل
         </BaseButton>
         <p class="text-xs text-(--color-text-muted)">
-          صفحه {{ page }} از {{ pageCount }} — {{ total }} سالن تاییدشده
+          صفحه {{ page.toLocaleString('fa-IR') }} از {{ pageCount.toLocaleString('fa-IR') }} — {{ total.toLocaleString('fa-IR') }} سالن تاییدشده
         </p>
         <BaseButton variant="secondary" class="shrink-0" data-testid="featured-next" :disabled="loading || page >= pageCount" @click="page++">
           صفحه بعد

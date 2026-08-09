@@ -149,7 +149,7 @@ onUnmounted(() => {
         data-testid="unread-badge"
         class="tnum absolute -end-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-(--color-danger-strong) px-1 text-[10px] font-bold text-(--color-fill-text)"
       >
-        {{ count > 99 ? '۹۹+' : count }}
+        {{ count > 99 ? '۹۹+' : count.toLocaleString('fa-IR') }}
       </span>
     </button>
 

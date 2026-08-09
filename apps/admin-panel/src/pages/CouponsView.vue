@@ -9,6 +9,7 @@ import AppInput from '@/components/ui/AppInput.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
+import { toPersianDigits } from '@/utils/digits'
 
 // Platform-wide coupons only (GET/POST/PATCH/DELETE /admin/coupons) -- salonId is always null
 // for rows returned here, so there's deliberately no salon column, unlike the salon-scoped
@@ -133,7 +134,7 @@ function formatDate(iso: string | null): string {
 // actually receive a null discountPercent, but rendering "٪" alone (or "٪null") if one ever
 // slipped through would be worse than a clear placeholder.
 function formatDiscountPercent(percent: number | null): string {
-  return percent === null ? '—' : `${percent}٪`
+  return percent === null ? '—' : `${percent.toLocaleString('fa-IR')}٪`
 }
 
 // Normalizes newCode to uppercase as it's typed, not just visually via CSS -- otherwise the
@@ -211,8 +212,8 @@ function buildEditDiffs(): FieldDiff[] {
     diffs.push({ key: 'expiresAt', label: 'تاریخ انقضا', oldText: oldExpiry, newText: newExpiry })
   }
 
-  const oldMax = editOriginal.value.maxRedemptions === null ? 'نامحدود' : String(editOriginal.value.maxRedemptions)
-  const newMax = editMaxRedemptions.value === null ? 'نامحدود' : String(editMaxRedemptions.value)
+  const oldMax = editOriginal.value.maxRedemptions === null ? 'نامحدود' : toPersianDigits(editOriginal.value.maxRedemptions)
+  const newMax = editMaxRedemptions.value === null ? 'نامحدود' : toPersianDigits(editMaxRedemptions.value)
   if (oldMax !== newMax) {
     diffs.push({ key: 'maxRedemptions', label: 'سقف تعداد استفاده', oldText: oldMax, newText: newMax })
   }
@@ -431,7 +432,7 @@ onMounted(load)
                         @update:model-value="(v) => (editMaxRedemptions = v === '' ? null : Number(v))"
                       />
                     </td>
-                    <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ coupon.redeemedCount }}</td>
+                    <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ coupon.redeemedCount.toLocaleString('fa-IR') }}</td>
                     <td class="px-5 py-3.5">
                       <StatusBadge :label="coupon.isActive ? 'فعال' : 'غیرفعال'" :tone="coupon.isActive ? 'success' : 'neutral'" />
                     </td>
@@ -453,8 +454,10 @@ onMounted(load)
                 <template v-else>
                   <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDiscountPercent(coupon.discountPercent) }}</td>
                   <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDate(coupon.expiresAt) }}</td>
-                  <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ coupon.maxRedemptions ?? 'نامحدود' }}</td>
-                  <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ coupon.redeemedCount }}</td>
+                  <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{
+                    coupon.maxRedemptions === null ? 'نامحدود' : coupon.maxRedemptions.toLocaleString('fa-IR')
+                  }}</td>
+                  <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ coupon.redeemedCount.toLocaleString('fa-IR') }}</td>
                   <td :ref="(el) => setToggleCellEl(coupon.id, el)" class="px-5 py-3.5">
                     <!-- Delete and deactivate used to be two separate-looking entry points for
                          the exact same mutation (both just set is_active=false -- there is no

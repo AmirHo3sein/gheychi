@@ -6,6 +6,7 @@
 // and can never be shown in this Persian-only app; mapping by status is what keeps a rate
 // limit or a dead network from being reported as bad user input.
 import type { ApiError } from '@/composables/useApi'
+import { toPersianDigits } from '@/utils/digits'
 
 /**
  * OtpService allows RATE_LIMIT_MAX requests per RATE_WINDOW_SEC -- 3 per hour. The window
@@ -43,5 +44,5 @@ export function formatCountdown(totalSec: number): string {
   const safe = Math.max(0, Math.floor(totalSec))
   const m = Math.floor(safe / 60)
   const s = safe % 60
-  return `${m}:${String(s).padStart(2, '0')}`
+  return toPersianDigits(`${m}:${String(s).padStart(2, '0')}`)
 }

@@ -68,7 +68,7 @@ const hiddenCategoryCount = computed(() => Math.max(0, props.salon.categories.le
       </div>
       <p class="mt-1 flex items-center gap-1 text-(--color-text-muted)">
         <BaseIcon name="star" :size="14" />
-        {{ salon.ratingAvg.toFixed(1) }} ({{ salon.ratingCount }}) · {{ salon.distanceKm.toFixed(1) }} کیلومتر
+        {{ salon.ratingAvg.toLocaleString('fa-IR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }} ({{ salon.ratingCount.toLocaleString('fa-IR') }}) · {{ salon.distanceKm.toLocaleString('fa-IR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }} کیلومتر
       </p>
       <p v-if="salon.minPrice" class="mt-0.5 text-(--color-text-muted)">از <span dir="ltr" class="tnum">{{ formatToman(salon.minPrice) }}</span> تومان</p>
     </div>

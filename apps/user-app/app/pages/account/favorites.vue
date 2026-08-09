@@ -90,7 +90,7 @@ useSeoMeta({ title: 'سالن‌های ذخیره‌شده — قیچی' })
           </div>
           <p v-if="salon.ratingCount" class="mt-1 flex items-center gap-1 text-(--color-text-muted)">
             <BaseIcon name="star" :size="14" />
-            {{ salon.ratingAvg.toFixed(1) }} ({{ salon.ratingCount.toLocaleString('fa-IR') }})
+            {{ salon.ratingAvg.toLocaleString('fa-IR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }} ({{ salon.ratingCount.toLocaleString('fa-IR') }})
           </p>
         </div>
       </NuxtLink>

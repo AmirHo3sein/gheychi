@@ -518,7 +518,7 @@ async function confirmRemoveCover() {
             <div>
               <div class="mb-1 flex items-center justify-between">
                 <label class="text-xs text-(--color-text-muted)" for="post-excerpt">خلاصه</label>
-                <span class="text-xs text-(--color-text-muted)">{{ excerpt.length }} / 500</span>
+                <span class="text-xs text-(--color-text-muted)">{{ excerpt.length.toLocaleString('fa-IR') }}/۵۰۰</span>
               </div>
               <!-- maxlength matches the blog DTO's excerpt cap (varchar(500) / @Length(0, 500)) -->
               <textarea
@@ -547,7 +547,7 @@ async function confirmRemoveCover() {
                 <div>
                   <div class="mb-1 flex items-center justify-between">
                     <label class="text-xs text-(--color-text-muted)" for="post-meta-description">توضیح متا</label>
-                    <span class="text-xs text-(--color-text-muted)">{{ metaDescription.length }} / 300</span>
+                    <span class="text-xs text-(--color-text-muted)">{{ metaDescription.length.toLocaleString('fa-IR') }}/۳۰۰</span>
                   </div>
                   <!-- maxlength matches the blog DTO's metaDescription cap (varchar(300) / @Length(0, 300)) -->
                   <textarea

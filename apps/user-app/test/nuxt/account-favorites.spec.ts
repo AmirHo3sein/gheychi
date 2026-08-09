@@ -62,7 +62,7 @@ describe('account favorites page', () => {
     expect(rows[0]!.text()).toContain('سالن زیبایی ستاره')
     expect(rows[0]!.text()).toContain('تهران')
     expect(rows[0]!.text()).toContain('کوتاهی مو')
-    expect(rows[0]!.text()).toContain('4.6') // ratingAvg.toFixed(1) -- plain JS, ASCII decimal
+    expect(rows[0]!.text()).toContain('۴٫۶') // ratingAvg via fa-IR toLocaleString -- Farsi digits and decimal separator
     expect(rows[0]!.text()).toContain('۱۲') // ratingCount, fa-IR digits
     // NuxtImg renders a single <img> (the testid lands directly on it, no wrapper), and its
     // src goes through the provider's resize query string rather than staying the raw URL.

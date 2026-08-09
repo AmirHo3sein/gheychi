@@ -75,15 +75,15 @@ describe('account wallet page', () => {
     const wrapper = await mountSuspended(WalletPage)
 
     expect(wrapper.find('[data-testid="wallet-balance"]').text()).toContain('تومان')
-    // Toman amounts render Latin-digit/comma-grouped (formatToman), not this app's usual
-    // fa-IR digit grouping -- large prices stay quick to scan digit-by-digit.
-    expect(wrapper.text()).toContain('30,000')
+    // Toman amounts render fa-IR digit-grouped (formatToman), matching every other numeric
+    // display in this app.
+    expect(wrapper.text()).toContain('۳۰٬۰۰۰')
 
     const rows = wrapper.findAll('[data-testid="wallet-transaction"]')
     expect(rows).toHaveLength(2)
-    expect(rows[0]!.text()).toContain('20,000')
+    expect(rows[0]!.text()).toContain('۲۰٬۰۰۰')
     expect(rows[0]!.find('[data-testid="wallet-transaction-amount"]').classes()).toContain('text-(--color-danger)')
-    expect(rows[1]!.text()).toContain('+50,000')
+    expect(rows[1]!.text()).toContain('+۵۰٬۰۰۰')
     expect(rows[1]!.find('[data-testid="wallet-transaction-amount"]').classes()).toContain('text-(--color-success)')
     expect(rows[1]!.text()).toContain('جبران خطای رزرو')
   })

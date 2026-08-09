@@ -125,7 +125,7 @@ watch(page, load)
           class="w-52"
         />
         <AppSelect v-model="statusFilter" :options="STATUS_OPTIONS" label="وضعیت" width="10rem" />
-        <AppButton v-if="hasActiveFilters" type="button" variant="ghost" class="mb-2" @click="clearFilters">
+        <AppButton v-if="hasActiveFilters" type="button" variant="ghost" @click="clearFilters">
           <template #icon>
             <AppIcon name="reset" :size="15" />
           </template>
@@ -188,7 +188,9 @@ watch(page, load)
                       :fill="n <= rating.rating ? 'currentColor' : 'none'"
                       :class="n > rating.rating && 'text-(--color-border)'"
                     />
-                    <span class="tnum mr-1 text-sm font-bold text-(--color-text)">{{ rating.rating }}.0</span>
+                    <span class="tnum mr-1 text-sm font-bold text-(--color-text)">{{
+                      Number(rating.rating).toLocaleString('fa-IR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+                    }}</span>
                   </div>
                 </td>
                 <td class="px-5 py-3.5">

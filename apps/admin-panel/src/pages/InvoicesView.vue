@@ -17,6 +17,7 @@ import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import InvoiceStatusActions from '@/components/invoices/InvoiceStatusActions.vue'
 import { invoiceStatusLabel, invoicePaymentMethodLabel, jalaliMonthLabel } from '@/utils/labels'
+import { formatToman } from '@/utils/format-toman'
 
 type InvoiceStatus = 'issued' | 'partially_paid' | 'paid' | 'void'
 
@@ -104,7 +105,7 @@ watch(statusFilter, loadFromFilterChange)
 watch(page, load)
 
 function toman(n: number): string {
-  return `${n.toLocaleString('fa-IR')} تومان`
+  return `${formatToman(n)} تومان`
 }
 
 const hasActiveFilters = computed(() => !!statusFilter.value)
@@ -236,7 +237,7 @@ function formatDateTime(iso: string): string {
                     </p>
                     <div v-else class="space-y-4">
                       <div>
-                        <p class="mb-2 text-xs font-semibold text-(--color-text-muted)">اقلام این صورتحساب ({{ detailItems.length }} رزرو)</p>
+                        <p class="mb-2 text-xs font-semibold text-(--color-text-muted)">اقلام این صورتحساب ({{ detailItems.length.toLocaleString('fa-IR') }} رزرو)</p>
                         <ul v-if="detailItems.length" class="tnum space-y-1 text-xs text-(--color-text-muted)">
                           <li v-for="item in detailItems" :key="item.id">
                             {{ formatDateTime(item.createdAt) }} — ناخالص {{ toman(item.grossAmount) }}، کارمزد {{ toman(item.commissionAmount) }}، خالص {{ toman(item.netAmount) }}

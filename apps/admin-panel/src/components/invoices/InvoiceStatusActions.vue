@@ -9,6 +9,7 @@ import { useApi } from '@/composables/useApi'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
+import AppMoneyInput from '@/components/ui/AppMoneyInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 
 const props = defineProps<{ invoiceId: string; status: 'issued' | 'partially_paid' | 'paid' | 'void' }>()
@@ -78,13 +79,11 @@ async function submit() {
 
     <div v-else class="space-y-3">
       <div class="flex flex-wrap items-end gap-2.5">
-        <AppInput
+        <AppMoneyInput
           :model-value="amount === null ? '' : String(amount)"
           data-testid="payment-amount-input"
           label="مبلغ (تومان)"
-          type="number"
-          min="1"
-          class="tnum w-36"
+          class="w-36"
           :error="amountError ? 'مبلغ باید بزرگ‌تر از صفر باشد' : undefined"
           @update:model-value="(v) => { amount = v === '' ? null : Number(v); amountError = false }"
         />

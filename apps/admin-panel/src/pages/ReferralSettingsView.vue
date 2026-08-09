@@ -16,10 +16,12 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
+import AppMoneyInput from '@/components/ui/AppMoneyInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import type { SelectOption } from '@/components/ui/AppSelect.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { qualifyingEventLabel, referralTypeLabel, rewardKindLabel, rewardKindUnit } from '@/utils/labels'
+import { formatToman } from '@/utils/format-toman'
 
 type ReferralType = 'user' | 'salon_owner' | 'worker'
 type RewardKind = 'wallet_credit' | 'percent_discount' | 'fixed_discount' | 'cashback' | 'loyalty_points'
@@ -122,6 +124,17 @@ function formatNullable(value: number | null, unit: string, nullLabel: string): 
   return value === null ? nullLabel : `${value}${unit}`
 }
 
+// Toman renders Latin-digit/comma-grouped (formatToman) in the confirm summary, same as the
+// field itself (AppMoneyInput) -- every other reward unit (%, امتیاز) keeps this file's
+// existing raw-number diff text unchanged.
+function formatRewardAmount(value: number, unit: string): string {
+  return unit === 'تومان' ? `${formatToman(value)}${unit}` : `${value}${unit}`
+}
+
+function formatNullableReward(value: number | null, unit: string, nullLabel: string): string {
+  return value === null ? nullLabel : formatRewardAmount(value, unit)
+}
+
 // Builds the "what will actually change" list for one row's confirm summary -- only fields
 // whose formatted text differs from the persisted snapshot are included.
 function buildDiffs(row: RewardTypeRow, original: RewardTypeRow): FieldDiff[] {
@@ -135,27 +148,27 @@ function buildDiffs(row: RewardTypeRow, original: RewardTypeRow): FieldDiff[] {
   addIfChanged(
     'referrerRewardValue',
     'مقدار پاداش معرف',
-    `${original.referrerRewardValue}${rewardKindUnit(original.referrerRewardKind)}`,
-    `${row.referrerRewardValue}${rewardKindUnit(row.referrerRewardKind)}`,
+    formatRewardAmount(original.referrerRewardValue, rewardKindUnit(original.referrerRewardKind)),
+    formatRewardAmount(row.referrerRewardValue, rewardKindUnit(row.referrerRewardKind)),
   )
   addIfChanged(
     'referrerRewardMax',
     'سقف پاداش معرف',
-    formatNullable(original.referrerRewardMax, rewardKindUnit(original.referrerRewardKind), 'نامحدود'),
-    formatNullable(row.referrerRewardMax, rewardKindUnit(row.referrerRewardKind), 'نامحدود'),
+    formatNullableReward(original.referrerRewardMax, rewardKindUnit(original.referrerRewardKind), 'نامحدود'),
+    formatNullableReward(row.referrerRewardMax, rewardKindUnit(row.referrerRewardKind), 'نامحدود'),
   )
   addIfChanged('referredRewardKind', 'نوع پاداش معرفی‌شده', rewardKindLabel(original.referredRewardKind), rewardKindLabel(row.referredRewardKind))
   addIfChanged(
     'referredRewardValue',
     'مقدار پاداش معرفی‌شده',
-    `${original.referredRewardValue}${rewardKindUnit(original.referredRewardKind)}`,
-    `${row.referredRewardValue}${rewardKindUnit(row.referredRewardKind)}`,
+    formatRewardAmount(original.referredRewardValue, rewardKindUnit(original.referredRewardKind)),
+    formatRewardAmount(row.referredRewardValue, rewardKindUnit(row.referredRewardKind)),
   )
   addIfChanged(
     'referredRewardMax',
     'سقف پاداش معرفی‌شده',
-    formatNullable(original.referredRewardMax, rewardKindUnit(original.referredRewardKind), 'نامحدود'),
-    formatNullable(row.referredRewardMax, rewardKindUnit(row.referredRewardKind), 'نامحدود'),
+    formatNullableReward(original.referredRewardMax, rewardKindUnit(original.referredRewardKind), 'نامحدود'),
+    formatNullableReward(row.referredRewardMax, rewardKindUnit(row.referredRewardKind), 'نامحدود'),
   )
   addIfChanged('qualifyingEvent', 'رویداد شرط پاداش', qualifyingEventLabel(original.qualifyingEvent), qualifyingEventLabel(row.qualifyingEvent))
   addIfChanged('grantHoldbackHours', 'مهلت انتظار اعطا', `${original.grantHoldbackHours} ساعت`, `${row.grantHoldbackHours} ساعت`)
@@ -440,7 +453,14 @@ onMounted(load)
             <div class="flex items-start gap-2">
               <div class="min-w-0 flex-1">
                 <label class="mb-1.5 block text-xs text-(--color-text-muted)">مقدار ({{ rewardKindUnit(row.referrerRewardKind) }})</label>
+                <AppMoneyInput
+                  v-if="rewardKindUnit(row.referrerRewardKind) === 'تومان'"
+                  :model-value="String(row.referrerRewardValue)"
+                  :data-testid="`referrer-value-${row.referralType}`"
+                  @update:model-value="(v) => (row.referrerRewardValue = Number(v))"
+                />
                 <AppInput
+                  v-else
                   :model-value="String(row.referrerRewardValue)"
                   :data-testid="`referrer-value-${row.referralType}`"
                   type="number"
@@ -454,8 +474,16 @@ onMounted(load)
               </div>
               <div class="min-w-0 flex-1">
                 <label class="mb-1.5 block text-xs text-(--color-text-muted)">سقف (اختیاری)</label>
-                <AppInput
+                <AppMoneyInput
+                  v-if="rewardKindUnit(row.referrerRewardKind) === 'تومان'"
                   :model-value="row.referrerRewardMax === null ? '' : String(row.referrerRewardMax)"
+                  :data-testid="`referrer-max-${row.referralType}`"
+                  @update:model-value="(v) => (row.referrerRewardMax = v === '' ? null : Number(v))"
+                />
+                <AppInput
+                  v-else
+                  :model-value="row.referrerRewardMax === null ? '' : String(row.referrerRewardMax)"
+                  :data-testid="`referrer-max-${row.referralType}`"
                   type="number"
                   min="0"
                   placeholder="نامحدود"
@@ -482,7 +510,14 @@ onMounted(load)
             <div class="flex items-start gap-2">
               <div class="min-w-0 flex-1">
                 <label class="mb-1.5 block text-xs text-(--color-text-muted)">مقدار ({{ rewardKindUnit(row.referredRewardKind) }})</label>
+                <AppMoneyInput
+                  v-if="rewardKindUnit(row.referredRewardKind) === 'تومان'"
+                  :model-value="String(row.referredRewardValue)"
+                  :data-testid="`referred-value-${row.referralType}`"
+                  @update:model-value="(v) => (row.referredRewardValue = Number(v))"
+                />
                 <AppInput
+                  v-else
                   :model-value="String(row.referredRewardValue)"
                   :data-testid="`referred-value-${row.referralType}`"
                   type="number"
@@ -496,8 +531,16 @@ onMounted(load)
               </div>
               <div class="min-w-0 flex-1">
                 <label class="mb-1.5 block text-xs text-(--color-text-muted)">سقف (اختیاری)</label>
-                <AppInput
+                <AppMoneyInput
+                  v-if="rewardKindUnit(row.referredRewardKind) === 'تومان'"
                   :model-value="row.referredRewardMax === null ? '' : String(row.referredRewardMax)"
+                  :data-testid="`referred-max-${row.referralType}`"
+                  @update:model-value="(v) => (row.referredRewardMax = v === '' ? null : Number(v))"
+                />
+                <AppInput
+                  v-else
+                  :model-value="row.referredRewardMax === null ? '' : String(row.referredRewardMax)"
+                  :data-testid="`referred-max-${row.referralType}`"
                   type="number"
                   min="0"
                   placeholder="نامحدود"

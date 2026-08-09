@@ -39,7 +39,7 @@ describe('WorkerRatingsView', () => {
     expect(wrapper.findAll('tbody tr')).toHaveLength(1)
     expect(wrapper.text()).toContain('آرش کریمی')
     expect(wrapper.text()).toContain('سالن زیبایی نگین')
-    expect(wrapper.text()).toContain('4.0')
+    expect(wrapper.text()).toContain('۴٫۰')
   })
 
   it('does not pass silent:true on the list fetch, so a validation failure surfaces distinctly', async () => {

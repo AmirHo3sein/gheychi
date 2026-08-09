@@ -86,7 +86,7 @@ describe('booking detail page', () => {
   it('shows how much wallet balance was applied when walletAmountUsed is set', async () => {
     fetchMock.mockResolvedValue({ ...BASE_BOOKING, walletAmountUsed: 50_000 })
     wrapper = await mountSuspended(BookingDetailPage)
-    expect(wrapper.text()).toContain((50_000).toLocaleString('en-US'))
+    expect(wrapper.text()).toContain((50_000).toLocaleString('fa-IR'))
     expect(wrapper.text()).toContain('از کیف پول شما کسر شد')
   })
 

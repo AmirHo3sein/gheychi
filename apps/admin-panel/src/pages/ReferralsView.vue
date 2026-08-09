@@ -30,6 +30,7 @@ import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { debounce } from '@/utils/debounce'
 import { qualifyingEventLabel, referralStatusLabel, referralTypeLabel, rewardKindLabel, rewardKindUnit } from '@/utils/labels'
+import { formatToman } from '@/utils/format-toman'
 
 const STATUS_OPTIONS = [
   { value: '', label: 'همه وضعیت‌ها' },
@@ -177,10 +178,16 @@ function formatDateTime(iso: string): string {
   }).format(new Date(iso))
 }
 
+// Toman renders Latin-digit/comma-grouped (formatToman); percent and loyalty-points amounts
+// stay in this app's ordinary Persian-digit format -- only توman is a price.
+function formatRewardNumber(kind: RewardKind, value: number): string {
+  return rewardKindUnit(kind) === 'تومان' ? formatToman(value) : value.toLocaleString('fa-IR')
+}
+
 function formatRewardTerms(kind: RewardKind, value: number, max: number | null): string {
   const unit = rewardKindUnit(kind)
-  const base = `${rewardKindLabel(kind)} — ${value.toLocaleString('fa-IR')} ${unit}`
-  return max === null ? base : `${base} (تا سقف ${max.toLocaleString('fa-IR')} ${unit})`
+  const base = `${rewardKindLabel(kind)} — ${formatRewardNumber(kind, value)} ${unit}`
+  return max === null ? base : `${base} (تا سقف ${formatRewardNumber(kind, max)} ${unit})`
 }
 
 // The per-side grant detail's coupon-kind value: the ACTUAL resolved discount (post-cap,
@@ -191,7 +198,7 @@ function formatRewardTerms(kind: RewardKind, value: number, max: number | null):
 // 'تومان'), so this stays a single generic formatter rather than a kind-specific branch.
 function formatResolvedRewardValue(kind: RewardKind, value: number): string {
   const unit = rewardKindUnit(kind)
-  return unit === '٪' ? `٪${value.toLocaleString('fa-IR')}` : `${value.toLocaleString('fa-IR')} ${unit}`
+  return unit === '٪' ? `٪${value.toLocaleString('fa-IR')}` : `${formatRewardNumber(kind, value)} ${unit}`
 }
 
 function clearFilters() {
@@ -237,7 +244,6 @@ watch(page, load)
           v-if="hasActiveFilters"
           type="button"
           variant="ghost"
-          class="mb-2"
           @click="clearFilters"
         >
           <template #icon><AppIcon name="reset" :size="15" /></template>
@@ -368,7 +374,7 @@ watch(page, load)
                               {{ rewardForRole(referral.id, role)!.reversalReason }}
                             </p>
                             <p v-if="rewardForRole(referral.id, role)!.reversalShortfallAmount !== null" class="text-(--tone-danger-text)">
-                              کسری بازگشت: {{ rewardForRole(referral.id, role)!.reversalShortfallAmount!.toLocaleString('fa-IR') }} تومان
+                              کسری بازگشت: {{ formatToman(rewardForRole(referral.id, role)!.reversalShortfallAmount!) }} تومان
                             </p>
                           </div>
                           <p v-else class="mt-1 text-(--color-text-muted)">هنوز اعطا نشده</p>

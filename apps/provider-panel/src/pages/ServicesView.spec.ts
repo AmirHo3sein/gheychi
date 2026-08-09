@@ -124,8 +124,7 @@ describe('ServicesView', () => {
     const wrapper = mount(ServicesView)
     await new Promise((r) => setTimeout(r, 0))
 
-    // First number input on the page is the service row's price field.
-    const input = wrapper.findAll('input[type="number"]')[0]!
+    const input = wrapper.get('[data-testid="service-price-input"]')
     await input.setValue('150000')
     await input.trigger('change')
     await new Promise((r) => setTimeout(r, 0))
@@ -137,11 +136,7 @@ describe('ServicesView', () => {
     expect(useToast().toasts.value.some((t) => t.message === 'قیمت به‌روزرسانی شد')).toBe(true)
   })
 
-  // A `type="number"` input drops Persian digits entirely, so the natural "select all and
-  // retype ۱۸۰۰۰۰" leaves the field empty and fires `change` on blur. That used to PATCH
-  // { price: 0 } -- which the API's @Min(0) accepts -- and then report success, publishing a
-  // free, bookable service.
-  it.each([['', 'empty'], ['0', 'zero'], ['-5', 'negative'], ['۱۸۰۰۰۰', 'Persian digits (dropped by type=number)']])(
+  it.each([['', 'empty'], ['0', 'zero'], ['-5', 'negative']])(
     'refuses to save %s (%s) as a price, restores the previous value and warns instead of reporting success',
     async (value) => {
       const fetchMock = vi.fn()
@@ -153,7 +148,7 @@ describe('ServicesView', () => {
       const wrapper = mount(ServicesView)
       await new Promise((r) => setTimeout(r, 0))
 
-      const input = wrapper.findAll('input[type="number"]')[0]!
+      const input = wrapper.get('[data-testid="service-price-input"]')
       await input.setValue(value)
       await input.trigger('change')
       await new Promise((r) => setTimeout(r, 0))
@@ -161,11 +156,38 @@ describe('ServicesView', () => {
       // Only the two initial GETs happened -- no PATCH was fired.
       expect(fetchMock.mock.calls.length).toBe(2)
       expect(confirmSpy).not.toHaveBeenCalled()
-      expect((input.element as HTMLInputElement).value).toBe('100000')
+      // AppMoneyInput redraws comma-grouped once it isn't focused (this test never focuses
+      // it, matching how the rejection restores the field programmatically, not via a user
+      // still typing in it).
+      expect((input.element as HTMLInputElement).value).toBe('۱۰۰٬۰۰۰')
       expect(useToast().toasts.value.some((t) => t.message === 'قیمت باید یک عدد صحیح بزرگ‌تر از صفر باشد.')).toBe(true)
       expect(useToast().toasts.value.some((t) => t.message === 'قیمت به‌روزرسانی شد')).toBe(false)
     },
   )
+
+  // AppMoneyInput normalizes Persian digits instead of silently discarding them (the old
+  // type="number" field's documented bug -- the natural "select all, retype ۱۸۰۰۰۰" used to
+  // leave the field empty and PATCH { price: 0 }, which the API's @Min(0) happily accepted).
+  it('accepts a Persian-digit price entry, normalizing it rather than rejecting it', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ...SERVICE, price: 180000 }) }) // PATCH price
+    vi.stubGlobal('fetch', fetchMock)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    const wrapper = mount(ServicesView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    const input = wrapper.get('[data-testid="service-price-input"]')
+    await input.setValue('۱۸۰۰۰۰')
+    await input.trigger('change')
+    await new Promise((r) => setTimeout(r, 0))
+
+    const patchCall = fetchMock.mock.calls[2]!
+    expect(JSON.parse(patchCall[1].body)).toEqual({ price: 180000 })
+    expect(useToast().toasts.value.some((t) => t.message === 'قیمت به‌روزرسانی شد')).toBe(true)
+  })
 
   it('does not save a price change when the confirm is declined, and puts the field back', async () => {
     const fetchMock = vi.fn()
@@ -177,13 +199,13 @@ describe('ServicesView', () => {
     const wrapper = mount(ServicesView)
     await new Promise((r) => setTimeout(r, 0))
 
-    const input = wrapper.findAll('input[type="number"]')[0]!
+    const input = wrapper.get('[data-testid="service-price-input"]')
     await input.setValue('1')
     await input.trigger('change')
     await new Promise((r) => setTimeout(r, 0))
 
     expect(fetchMock.mock.calls.length).toBe(2)
-    expect((input.element as HTMLInputElement).value).toBe('100000')
+    expect((input.element as HTMLInputElement).value).toBe('۱۰۰٬۰۰۰')
     expect(useToast().toasts.value.some((t) => t.message === 'قیمت به‌روزرسانی شد')).toBe(false)
   })
 
@@ -196,11 +218,10 @@ describe('ServicesView', () => {
     const wrapper = mount(ServicesView)
     await new Promise((r) => setTimeout(r, 0))
 
-    await wrapper.findAll('input[type="text"]').at(-1)!.setValue('رنگ مو')
+    await wrapper.find('input[placeholder="نام خدمت"]').setValue('رنگ مو')
     // AppSelect wraps vue-multiselect (no native <select> to set), so drive its contract.
     await wrapper.findComponent(AppSelect).vm.$emit('update:modelValue', 1)
-    // The new-service price field: first number input, since no service rows are rendered.
-    await wrapper.findAll('input[type="number"]')[0]!.setValue('')
+    await wrapper.get('[data-testid="new-service-price-input"]').setValue('')
 
     const addButton = wrapper.findAll('button').find((b) => b.text().includes('افزودن'))!
     await addButton.trigger('click')
@@ -225,13 +246,13 @@ describe('ServicesView', () => {
       const wrapper = mount(ServicesView)
       await new Promise((r) => setTimeout(r, 0))
 
-      await wrapper.findAll('input[type="text"]').at(-1)!.setValue('رنگ مو')
+      await wrapper.find('input[placeholder="نام خدمت"]').setValue('رنگ مو')
       await wrapper.findComponent(AppSelect).vm.$emit('update:modelValue', 1)
-      // No service rows are rendered, so the create card owns every number input:
-      // [0] price, [1] duration, [2] discount.
+      await wrapper.get('[data-testid="new-service-price-input"]').setValue('150000')
+      // Price is a text field now (AppMoneyInput); no service rows are rendered, so the
+      // create card owns every remaining number input: [0] duration, [1] discount.
       const numberInputs = wrapper.findAll('input[type="number"]')
-      await numberInputs[0]!.setValue('150000')
-      await numberInputs[1]!.setValue(value)
+      await numberInputs[0]!.setValue(value)
 
       const addButton = wrapper.findAll('button').find((b) => b.text().includes('افزودن'))!
       await addButton.trigger('click')
@@ -251,11 +272,12 @@ describe('ServicesView', () => {
     const wrapper = mount(ServicesView)
     await new Promise((r) => setTimeout(r, 0))
 
-    await wrapper.findAll('input[type="text"]').at(-1)!.setValue('رنگ مو')
+    await wrapper.find('input[placeholder="نام خدمت"]').setValue('رنگ مو')
     await wrapper.findComponent(AppSelect).vm.$emit('update:modelValue', 1)
+    await wrapper.get('[data-testid="new-service-price-input"]').setValue('150000')
+    // Price is a text field now (AppMoneyInput); [0] duration, [1] discount remain.
     const numberInputs = wrapper.findAll('input[type="number"]')
-    await numberInputs[0]!.setValue('150000')
-    await numberInputs[2]!.setValue('150')
+    await numberInputs[1]!.setValue('150')
 
     const addButton = wrapper.findAll('button').find((b) => b.text().includes('افزودن'))!
     await addButton.trigger('click')
@@ -278,8 +300,9 @@ describe('ServicesView', () => {
       const wrapper = mount(ServicesView)
       await new Promise((r) => setTimeout(r, 0))
 
-      // Row inputs come first: [0] price, [1] discount.
-      const discountInput = wrapper.findAll('input[type="number"]')[1]!
+      // Price is a text field now (AppMoneyInput); the row's discount is the first
+      // remaining number input on the page.
+      const discountInput = wrapper.findAll('input[type="number"]')[0]!
       await discountInput.setValue(value)
       await discountInput.trigger('change')
       await new Promise((r) => setTimeout(r, 0))
@@ -301,7 +324,7 @@ describe('ServicesView', () => {
     const wrapper = mount(ServicesView)
     await new Promise((r) => setTimeout(r, 0))
 
-    const discountInput = wrapper.findAll('input[type="number"]')[1]!
+    const discountInput = wrapper.findAll('input[type="number"]')[0]!
     await discountInput.setValue('20')
     await discountInput.trigger('change')
     await new Promise((r) => setTimeout(r, 0))
@@ -359,7 +382,7 @@ describe('ServicesView', () => {
     await wrapper.findComponent(AppSelect).vm.$emit('update:modelValue', 1)
     await wrapper.find('input[placeholder="نام خدمت"]').setValue('کوتاهی مو')
     await wrapper.find('textarea').setValue('این خدمت گاهی بیشتر از حد معمول طول می‌کشد')
-    await wrapper.findAll('input[type="number"]')[0]!.setValue('100000')
+    await wrapper.get('[data-testid="new-service-price-input"]').setValue('100000')
     const addButton = wrapper.findAll('button').find((b) => b.text() === 'افزودن')!
     await addButton.trigger('click')
     await new Promise((r) => setTimeout(r, 0))
@@ -379,8 +402,8 @@ describe('ServicesView', () => {
     const wrapper = mount(ServicesView)
     await new Promise((r) => setTimeout(r, 0))
 
-    const nameInput = wrapper.findAll('input[type="text"]').at(-1)
-    if (nameInput) await nameInput.setValue('رنگ مو')
+    const nameInput = wrapper.find('input[placeholder="نام خدمت"]')
+    if (nameInput.exists()) await nameInput.setValue('رنگ مو')
 
     const addButton = wrapper.findAll('button').find((b) => b.text().includes('افزودن'))!
     await addButton.trigger('click')

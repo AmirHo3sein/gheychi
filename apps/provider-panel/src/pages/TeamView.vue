@@ -153,7 +153,11 @@ async function updateWorkerServices(worker: Worker, serviceIds: Array<string | n
 
 function ratingText(w: Worker): string {
   if (w.ratingCount === 0) return 'بدون امتیاز'
-  return `${Number(w.ratingAvg).toFixed(1)} (${w.ratingCount.toLocaleString('fa-IR')} نظر)`
+  const rating = Number(w.ratingAvg).toLocaleString('fa-IR', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })
+  return `${rating} (${w.ratingCount.toLocaleString('fa-IR')} نظر)`
 }
 
 async function addWorker() {

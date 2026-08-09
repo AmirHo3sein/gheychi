@@ -20,8 +20,8 @@ describe('pickDefaultDate', () => {
 })
 
 describe('formatSlotTime', () => {
-  it('formats an ISO instant as Tehran local HH:MM', () => {
+  it('formats an ISO instant as Tehran local HH:MM in Farsi digits', () => {
     // 09:00 UTC is 12:30 in Asia/Tehran (UTC+3:30)
-    expect(formatSlotTime('2026-07-11T09:00:00.000Z')).toBe('12:30')
+    expect(formatSlotTime('2026-07-11T09:00:00.000Z')).toBe('۱۲:۳۰')
   })
 })

@@ -4,6 +4,7 @@
 // or a new platform_config key shows up (in its raw form) rather than breaking.
 
 import type { IconName } from '@/components/ui/AppIcon.vue'
+import { toPersianDigits } from './digits'
 
 export type Tone = 'success' | 'warning' | 'danger' | 'neutral' | 'info'
 
@@ -294,16 +295,8 @@ const JALALI_MONTHS = [
   'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند',
 ]
 
-const PERSIAN_DIGITS = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹']
-
 // Plain digit substitution, not toLocaleString('fa-IR') -- a 4-digit year would
-// otherwise pick up a "٬" thousands separator (matches JalaliDatePicker.vue's own
-// toPersianDigits, duplicated here rather than imported since it's a one-line helper
-// and importing a component file into a plain util module would be backwards).
-function toPersianDigits(n: number): string {
-  return String(n).replace(/[0-9]/g, (d) => PERSIAN_DIGITS[Number(d)])
-}
-
+// otherwise pick up a "٬" thousands separator.
 export function jalaliMonthLabel(year: number, month: number): string {
   const name = JALALI_MONTHS[month - 1] ?? String(month)
   return `${name} ${toPersianDigits(year)}`
