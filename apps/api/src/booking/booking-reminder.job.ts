@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, LessThanOrEqual, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { CronJobRunner } from '../common/cron-job-runner.service';
+import { formatIranDateTimeFa } from '../common/iran-time.util';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
 import { PushService } from '../push/push.service';
 import { SalonsService } from '../salons/salons.service';
@@ -72,7 +73,7 @@ export class BookingReminderJob {
           continue;
         }
 
-        const when = booking.startsAt.toISOString();
+        const when = formatIranDateTimeFa(booking.startsAt);
         // PushService.sendToUser is a documented best-effort no-throw call (it swallows
         // every per-subscription failure internally, and "no subscriptions" also looks
         // like success) -- it can never report a real delivery failure back to us, so it
@@ -82,11 +83,11 @@ export class BookingReminderJob {
         // with zero logging or alerting, while the booking was still permanently marked
         // reminded (see the claim above) -- silently losing the reminder for good.
         await this.push
-          .sendToUser(customer.id, { title: 'Upcoming appointment', body: `${salon.name} — ${when}` })
+          .sendToUser(customer.id, { title: 'یادآوری نوبت', body: `${salon.name} — ${when}` })
           .catch(() => {});
 
         const smsOk = await this.sms
-          .send(customer.phone, `Reminder: your appointment at ${salon.name} is at ${when}. Address: ${salon.address}`)
+          .send(customer.phone, `یادآوری: نوبت شما در ${salon.name} ساعت ${when} است. آدرس: ${salon.address}`)
           .then(() => true)
           .catch((err) => {
             this.logger.error(

@@ -39,3 +39,18 @@ export function iranWallClockToInstant(dateStr: string, minutesFromMidnight: num
   const midnightUtcOfDate = new Date(`${dateStr}T00:00:00.000Z`).getTime();
   return new Date(midnightUtcOfDate + (minutesFromMidnight - IRAN_UTC_OFFSET_MIN) * 60_000);
 }
+
+/**
+ * The single spot rendering an instant into the Persian-digit, Tehran-local date+time text
+ * shown to customers in SMS/push bodies (booking confirmed/cancelled, reminders). Node's
+ * Intl API resolves 'fa-IR' + Asia/Tehran identically to the frontend's own
+ * `Intl.DateTimeFormat('fa-IR', {...})` display pattern, so a customer's confirmation text
+ * and the booking card they see in the app always agree. Before this existed, notification
+ * text used `booking.startsAt.toISOString()` directly -- a raw UTC instant 3.5 hours behind
+ * the hour the customer actually booked.
+ */
+export function formatIranDateTimeFa(instant: Date): string {
+  return new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Tehran' }).format(
+    instant,
+  );
+}

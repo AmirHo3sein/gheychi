@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
+import { formatIranDateTimeFa } from '../common/iran-time.util';
 import { PushService } from '../push/push.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { SMS_PROVIDER, SmsProvider } from '../sms/sms.provider';
@@ -381,7 +382,7 @@ export class PaymentsService {
     if (!booking) return;
     const salon = await this.salonsService.findById(booking.salonId);
     if (!salon) return;
-    const when = booking.startsAt.toISOString();
+    const when = formatIranDateTimeFa(booking.startsAt);
 
     const [customer, owner] = await Promise.all([
       this.usersService.findById(booking.userId),
@@ -445,7 +446,7 @@ export class PaymentsService {
       this.usersService.findById(booking.userId),
       this.usersService.findById(salon.ownerId),
     ]);
-    const when = booking.startsAt.toISOString();
+    const when = formatIranDateTimeFa(booking.startsAt);
 
     // SMS/push failures never roll back a confirmed booking (per the design spec's
     // error-handling section) -- these are best-effort notifications, not a queued-with-retry
@@ -453,14 +454,14 @@ export class PaymentsService {
     // run concurrently to avoid stacking their latency onto the payment-callback response.
     await Promise.all([
       customer
-        ? this.notifyOne(customer, `Booking confirmed at ${salon.name}, ${when}. Address: ${salon.address}`, {
-            title: 'Booking confirmed',
+        ? this.notifyOne(customer, `نوبت شما در ${salon.name}، ${when} تایید شد. آدرس: ${salon.address}`, {
+            title: 'تایید نوبت',
             body: `${salon.name} — ${when}`,
           })
         : Promise.resolve(),
       owner
-        ? this.notifyOne(owner, `New booking at ${salon.name} for ${when}`, {
-            title: 'New booking',
+        ? this.notifyOne(owner, `یک نوبت جدید در ${salon.name} برای ${when} ثبت شد.`, {
+            title: 'نوبت جدید',
             body: `${salon.name} — ${when}`,
           })
         : Promise.resolve(),
