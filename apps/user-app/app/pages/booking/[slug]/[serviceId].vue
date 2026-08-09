@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { applyDiscount } from '../../../utils/discount'
+import { formatToman } from '../../../utils/format-toman'
 
 interface Salon { id: string; name: string; address: string }
 interface SalonServiceItem { id: string; name: string; description: string | null; price: number; durationMin: number; discountPercent: number | null }
@@ -289,49 +290,72 @@ async function confirmBooking() {
        this template with `page` at its pre-fetch value (undefined) before the rejection is
        handled. Without this v-if, that pass throws inside the render function itself (an
        unhandled rejection, not the createError) -- see blog/[slug].vue, which this mirrors. -->
-  <div v-if="page" class="mx-auto max-w-2xl space-y-4 p-4">
-    <div>
-      <h1 class="text-xl font-bold text-(--color-text)">{{ page.service.name }}</h1>
-      <p class="text-sm">{{ page.salon.name }} — {{ page.salon.address }}</p>
-      <p class="mt-1 text-sm text-(--color-text-muted)">مدت زمان: {{ page.service.durationMin.toLocaleString('fa-IR') }} دقیقه</p>
-      <!-- Provider-authored note on the listed duration (e.g. "may take longer") -- the
-           figure above is a minimum, not a guarantee. -->
-      <p v-if="page.service.description" class="mt-1 text-xs text-(--color-text-muted)">{{ page.service.description }}</p>
+  <div v-if="page" class="mx-auto max-w-2xl space-y-5 p-4">
+    <div class="flex items-center gap-2">
+      <NuxtLink
+        :to="`/salons/${slug}`"
+        aria-label="بازگشت به سالن"
+        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-surface-subtle)"
+      >
+        <BaseIcon name="chevron-forward" :size="20" />
+      </NuxtLink>
+      <div class="min-w-0">
+        <h1 class="truncate text-lg font-bold text-(--color-text)">{{ page.service.name }}</h1>
+        <p class="truncate text-xs text-(--color-text-muted)">{{ page.salon.name }} — {{ page.salon.address }}</p>
+      </div>
+    </div>
+
+    <div class="flex items-start gap-1.5 rounded-2xl bg-(--color-surface-subtle) p-3 text-xs text-(--color-text-muted)">
+      <BaseIcon name="clock" :size="14" class="mt-0.5 shrink-0" />
+      <span>
+        مدت زمان: {{ page.service.durationMin.toLocaleString('fa-IR') }} دقیقه
+        <!-- Provider-authored note on the listed duration (e.g. "may take longer") -- the
+             figure above is a minimum, not a guarantee. -->
+        <template v-if="page.service.description"> — {{ page.service.description }}</template>
+      </span>
     </div>
 
     <!-- Optional -- omitted (selectedWorkerId stays null) means "any available staff",
          unchanged from before this picker existed. Placed before SlotPicker because the
          choice narrows which slots are even offered, not just who shows up for one
-         already picked. -->
-    <div v-if="page.workers.length" class="flex gap-2 overflow-x-auto pb-1">
-      <button
-        type="button"
-        :aria-pressed="selectedWorkerId === null"
-        class="inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-full px-4 text-sm font-medium transition-colors"
-        :class="selectedWorkerId === null
-          ? 'bg-(--color-accent-strong) text-(--color-fill-text)'
-          : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text) hover:bg-(--color-surface-subtle)'"
-        @click="selectedWorkerId = null"
-      >
-        هر متخصص در دسترس
-      </button>
-      <button
-        v-for="worker in page.workers"
-        :key="worker.id"
-        type="button"
-        :aria-pressed="selectedWorkerId === worker.id"
-        class="inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-full px-4 text-sm font-medium transition-colors"
-        :class="selectedWorkerId === worker.id
-          ? 'bg-(--color-accent-strong) text-(--color-fill-text)'
-          : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text) hover:bg-(--color-surface-subtle)'"
-        @click="selectedWorkerId = worker.id"
-      >
-        {{ worker.name }}
-      </button>
-    </div>
+         already picked. Selected fill is neutral (bg-(--color-text)), not the brand accent
+         -- this page's one accent seal is reserved for the final "پرداخت و رزرو" button, so
+         picking a worker never competes with it (The One Seal Rule). -->
+    <section v-if="page.workers.length">
+      <h2 class="mb-2 flex items-center gap-1.5 text-sm font-bold text-(--color-text)">
+        <BaseIcon name="user" :size="16" class="text-(--color-text-muted)" />
+        چه کسی؟
+      </h2>
+      <div class="flex gap-2 overflow-x-auto pb-0.5">
+        <button
+          type="button"
+          :aria-pressed="selectedWorkerId === null"
+          class="inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-full border px-4 text-sm font-medium transition-colors"
+          :class="selectedWorkerId === null
+            ? 'border-transparent bg-(--color-text) text-(--color-surface)'
+            : 'border-(--color-border) bg-(--color-surface-card) text-(--color-text) hover:bg-(--color-surface-subtle)'"
+          @click="selectedWorkerId = null"
+        >
+          هر متخصص در دسترس
+        </button>
+        <button
+          v-for="worker in page.workers"
+          :key="worker.id"
+          type="button"
+          :aria-pressed="selectedWorkerId === worker.id"
+          class="inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-full border px-4 text-sm font-medium transition-colors"
+          :class="selectedWorkerId === worker.id
+            ? 'border-transparent bg-(--color-text) text-(--color-surface)'
+            : 'border-(--color-border) bg-(--color-surface-card) text-(--color-text) hover:bg-(--color-surface-subtle)'"
+          @click="selectedWorkerId = worker.id"
+        >
+          {{ worker.name }}
+        </button>
+      </div>
+    </section>
 
     <!-- selected-slot feeds SlotPicker's own selectedSlot prop so it can render which slot is
-         actually selected (aria-pressed + accent-strong fill) rather than only emitting 'select'
+         actually selected (aria-pressed + chosen fill) rather than only emitting 'select'
          with no feedback loop back in. -->
     <SlotPicker
       :salon-id="page.salon.id"
@@ -340,6 +364,13 @@ async function confirmBooking() {
       :selected-slot="selectedSlot"
       @select="selectedSlot = $event"
     />
+
+    <!-- Fills the gap between "here are the times" and the confirm card below, which only
+         mounts once a slot is picked -- without this the page just stops, an unexplained
+         blank stretch under the grid on any screen taller than its content. -->
+    <p v-if="!selectedSlot" class="text-center text-xs text-(--color-text-muted)">
+      یک زمان را انتخاب کنید تا رزرو خود را نهایی کنید
+    </p>
 
     <BaseCard v-if="selectedSlot" class="space-y-4 text-sm">
       <!-- At 320px the label, the discount badge and a seven-figure price want ~265px of
@@ -358,10 +389,10 @@ async function confirmBooking() {
             ٪{{ activeDiscountPercent.toLocaleString('fa-IR') }} تخفیف
           </span>
           <span class="flex flex-col items-end whitespace-nowrap leading-tight">
-            <span v-if="activeDiscountPercent" class="text-xs text-(--color-text-muted) line-through">
-              {{ page.service.price.toLocaleString('fa-IR') }}
+            <span v-if="activeDiscountPercent" dir="ltr" class="tnum text-xs text-(--color-text-muted) line-through">
+              {{ formatToman(page.service.price) }}
             </span>
-            <span class="font-bold text-(--color-text)">{{ displayPrice.toLocaleString('fa-IR') }} تومان</span>
+            <span class="font-bold text-(--color-text)"><span dir="ltr" class="tnum">{{ formatToman(displayPrice) }}</span> تومان</span>
           </span>
         </span>
       </div>
@@ -374,12 +405,12 @@ async function confirmBooking() {
         class="flex items-center gap-2 rounded-xl border border-(--color-border) px-3 py-2 text-(--color-text)"
       >
         <input v-model="applyWalletBalance" type="checkbox" class="h-4 w-4 shrink-0" />
-        <span>استفاده از موجودی کیف پول ({{ walletBalanceToman.toLocaleString('fa-IR') }} تومان)</span>
+        <span>استفاده از موجودی کیف پول (<span dir="ltr" class="tnum">{{ formatToman(walletBalanceToman) }}</span> تومان)</span>
       </label>
       <p v-if="depositDueOnline !== null">
-        پیش‌پرداخت آنلاین: {{ depositDueOnline.toLocaleString('fa-IR') }} تومان
+        پیش‌پرداخت آنلاین: <span dir="ltr" class="tnum">{{ formatToman(depositDueOnline) }}</span> تومان
         <span v-if="walletAmountToApply > 0" class="text-(--color-text-muted)">
-          ({{ walletAmountToApply.toLocaleString('fa-IR') }} تومان از کیف پول)
+          (<span dir="ltr" class="tnum">{{ formatToman(walletAmountToApply) }}</span> تومان از کیف پول)
         </span>
       </p>
       <p v-if="page.terms" class="text-(--color-text-muted)">لغو رایگان تا {{ page.terms.cancellationWindowHours }} ساعت قبل از نوبت</p>
@@ -434,7 +465,7 @@ async function confirmBooking() {
           :class="couponSavings ? 'text-(--color-success)' : 'text-(--color-text-muted)'"
         >
           <BaseIcon :name="couponSavings ? 'check-circle' : 'alert-circle'" :size="14" class="shrink-0" />
-          <span v-if="couponSavings">شما {{ couponSavings.toLocaleString('fa-IR') }} تومان صرفه‌جویی کردید</span>
+          <span v-if="couponSavings">شما <span dir="ltr" class="tnum">{{ formatToman(couponSavings) }}</span> تومان صرفه‌جویی کردید</span>
           <span v-else>این کد تخفیف معتبر است، اما از تخفیف فعلی این خدمت بیشتر نیست؛ قیمت تغییری نمی‌کند</span>
         </p>
       </div>

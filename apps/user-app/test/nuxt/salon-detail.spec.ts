@@ -37,11 +37,12 @@ const PORTFOLIO = [
 ]
 
 /** Route every endpoint the page hits; per-test overrides tweak the salon/portfolio/hours. */
-function mockEndpoints(overrides: { salon?: Record<string, unknown>; portfolio?: unknown[]; hours?: unknown[]; services?: unknown[] } = {}) {
+function mockEndpoints(overrides: { salon?: Record<string, unknown>; portfolio?: unknown[]; hours?: unknown[]; exceptions?: unknown[]; services?: unknown[] } = {}) {
   fetchMock.mockImplementation(async (path: string) => {
     if (path === '/salons/test-salon') return { ...SALON, ...overrides.salon }
     if (path === '/salons/test-salon/services') return overrides.services ?? SERVICES
     if (path === '/salons/test-salon/hours') return overrides.hours ?? []
+    if (path === '/salons/test-salon/exceptions') return overrides.exceptions ?? []
     if (path === '/salons/test-salon/photos') return []
     if (path === '/salons/s1/reviews') return { items: [], total: 0, page: 1, pageSize: 50 }
     if (path === '/salons/test-salon/portfolio') return overrides.portfolio ?? PORTFOLIO
@@ -151,10 +152,11 @@ describe('salon detail page', () => {
 
     expect(wrapper.get('[data-testid="salon-verified-badge"]').text()).toContain('تایید شده')
     // Every result on this page is already API-gated to status:'approved' -- the
-    // disclosure's numbers must come from the fetched terms, not be hardcoded. Numerals
-    // render as Persian digits via toLocaleString('fa-IR'), matching the rest of the page.
+    // disclosure's numbers must come from the fetched terms, not be hardcoded. The percent
+    // renders as a Persian digit (matching the rest of the page); the toman amount renders
+    // Latin-digit/comma-grouped instead (formatToman), for legibility on large prices.
     expect(wrapper.text()).toContain(`٪${(20).toLocaleString('fa-IR')}`)
-    expect(wrapper.text()).toContain((50000).toLocaleString('fa-IR'))
+    expect(wrapper.text()).toContain((50000).toLocaleString('en-US'))
   })
 
   // A provider-authored note that the listed duration is a minimum, not a guarantee --
@@ -171,6 +173,34 @@ describe('salon detail page', () => {
     expect(wrapper.text()).toContain('این زمان تقریبی است و ممکن است بیشتر طول بکشد')
     const secondRow = wrapper.findAll('li').find((r: { text: () => string }) => r.text().includes('رنگ مو'))!
     expect(secondRow.text()).not.toContain('تقریبی')
+  })
+
+  it('scrolls to the services section when the sticky footer CTA is clicked, without a hash-navigation reload', async () => {
+    mockEndpoints()
+    // document.getElementById (what the click handler actually queries) only finds
+    // anything once the component is attached to the real document -- mountSuspended
+    // doesn't do that by default (same reasoning as PortfolioGrid.spec.ts's own usage).
+    wrapper = await mountSuspended(SalonDetailPage, { attachTo: document.body })
+    const scrollIntoView = vi.fn()
+    // scrollIntoView is explicit here (not relying on the browser's native `<a href="#...">`
+    // fragment-navigation) precisely because that native path was reported not doing
+    // anything in practice -- this pins the click handler actually taking over.
+    vi.spyOn(document.getElementById('services')!, 'scrollIntoView').mockImplementation(scrollIntoView)
+
+    await wrapper.get('a[href="#services"]').trigger('click')
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
+  })
+
+  it('scrolls to the reviews section when the rating row is clicked', async () => {
+    mockEndpoints()
+    wrapper = await mountSuspended(SalonDetailPage, { attachTo: document.body })
+    const scrollIntoView = vi.fn()
+    vi.spyOn(document.getElementById('reviews')!, 'scrollIntoView').mockImplementation(scrollIntoView)
+
+    await wrapper.get('a[href="#reviews"]').trigger('click')
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
   })
 
   it('renders a single-pin map near the address from the salon location', async () => {
@@ -226,5 +256,123 @@ describe('salon detail page', () => {
       .findAll('li')
       .map((li: { text: () => string }) => li.text().split(':')[0]!.trim())
     expect(dayNames).toEqual(['شنبه', 'یکشنبه', 'چهارشنبه'])
+  })
+
+  // jsdom's .text() reads DOM/logical order, which stayed "open - close" even in a build
+  // that visually swapped the two under RTL bidi reordering (caught only by actually looking
+  // at a rendered page, not by this suite) -- this asserts the dir="ltr" isolation that fix
+  // depends on, since logical order alone can't tell the two states apart.
+  it('isolates each time range as ltr so open/close never visually swap under RTL bidi reordering', async () => {
+    mockEndpoints({ hours: [{ weekday: 6, openTime: '09:00:00', closeTime: '20:00:00' }] })
+    wrapper = await mountSuspended(SalonDetailPage)
+
+    const timeRange = wrapper.get('[data-testid="hours-list"] li')
+    expect(timeRange.text()).toContain('09:00 - 20:00')
+    expect(timeRange.find('[dir="ltr"]').exists()).toBe(true)
+  })
+
+  // A lunch-break split shift is two working_hours rows for the same weekday -- without
+  // grouping, these rendered as two separate <li>s both keyed on the same weekday (a
+  // duplicate Vue key) instead of one merged row.
+  it('merges a lunch-break split shift into one row instead of two duplicate-keyed ones', async () => {
+    mockEndpoints({
+      hours: [
+        { weekday: 6, openTime: '09:00:00', closeTime: '13:00:00' },
+        { weekday: 6, openTime: '14:00:00', closeTime: '20:00:00' },
+      ],
+    })
+    wrapper = await mountSuspended(SalonDetailPage)
+
+    const rows = wrapper.get('[data-testid="hours-list"]').findAll('li')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.text()).toContain('09:00 - 13:00')
+    expect(rows[0]!.text()).toContain('14:00 - 20:00')
+  })
+
+  it('lists an upcoming closure with its time range and reason', async () => {
+    mockEndpoints({
+      exceptions: [
+        { date: '2030-01-01', startTime: null, endTime: null, reason: null },
+        { date: '2030-01-02', startTime: '13:00:00', endTime: '14:00:00', reason: 'تعمیرات' },
+      ],
+    })
+    wrapper = await mountSuspended(SalonDetailPage)
+
+    const closures = wrapper.get('[data-testid="upcoming-closures"]')
+    expect(closures.text()).toContain('13:00 تا 14:00')
+    expect(closures.text()).toContain('تعمیرات')
+  })
+
+  // isOpenNow reads the real system clock (via the same Tehran-wall-clock round-trip trick
+  // as the component itself) -- fake timers pin it to Monday 2026-08-03 so these are
+  // deterministic regardless of when the suite actually runs.
+  describe('open-now status', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('reports open during the SECOND range of a lunch-break split shift, not just the first', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-03T11:30:00.000Z')) // 15:00 Tehran, Monday
+      mockEndpoints({
+        hours: [
+          { weekday: 1, openTime: '09:00:00', closeTime: '13:00:00' },
+          { weekday: 1, openTime: '14:00:00', closeTime: '20:00:00' },
+        ],
+      })
+      wrapper = await mountSuspended(SalonDetailPage)
+
+      expect(wrapper.get('[data-testid="hours-open-status"]').text()).toBe('باز است')
+    })
+
+    it('reports closed during the gap of a lunch-break split shift', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-03T10:00:00.000Z')) // 13:30 Tehran, Monday -- inside the lunch gap
+      mockEndpoints({
+        hours: [
+          { weekday: 1, openTime: '09:00:00', closeTime: '13:00:00' },
+          { weekday: 1, openTime: '14:00:00', closeTime: '20:00:00' },
+        ],
+      })
+      wrapper = await mountSuspended(SalonDetailPage)
+
+      expect(wrapper.get('[data-testid="hours-open-status"]').text()).toBe('بسته است')
+    })
+
+    it('reports closed on a whole-day exception even though the normal hours would be open', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-03T07:30:00.000Z')) // 11:00 Tehran, Monday
+      mockEndpoints({
+        hours: [{ weekday: 1, openTime: '09:00:00', closeTime: '20:00:00' }],
+        exceptions: [{ date: '2026-08-03', startTime: null, endTime: null, reason: null }],
+      })
+      wrapper = await mountSuspended(SalonDetailPage)
+
+      expect(wrapper.get('[data-testid="hours-open-status"]').text()).toBe('بسته است')
+    })
+
+    it('reports closed only during a partial-day exception\'s own interval, open outside it', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-03T11:00:00.000Z')) // 14:30 Tehran, Monday -- inside the exception
+      mockEndpoints({
+        hours: [{ weekday: 1, openTime: '09:00:00', closeTime: '20:00:00' }],
+        exceptions: [{ date: '2026-08-03', startTime: '14:00:00', endTime: '15:00:00', reason: null }],
+      })
+      wrapper = await mountSuspended(SalonDetailPage)
+
+      expect(wrapper.get('[data-testid="hours-open-status"]').text()).toBe('بسته است')
+    })
+
+    it('reports open outside a partial-day exception\'s interval, on the same date', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-03T06:30:00.000Z')) // 10:00 Tehran, Monday -- before the exception starts
+      mockEndpoints({
+        hours: [{ weekday: 1, openTime: '09:00:00', closeTime: '20:00:00' }],
+        exceptions: [{ date: '2026-08-03', startTime: '14:00:00', endTime: '15:00:00', reason: null }],
+      })
+      wrapper = await mountSuspended(SalonDetailPage)
+
+      expect(wrapper.get('[data-testid="hours-open-status"]').text()).toBe('باز است')
+    })
   })
 })

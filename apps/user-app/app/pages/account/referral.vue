@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatToman } from '../../utils/format-toman'
+
 interface MyCodeResponse {
   code: string
   isActive: boolean
@@ -262,9 +264,10 @@ function rewardStatusLabel(status: RewardStatus): string {
 // display honest whenever they do start appearing.
 function formatRewardValue(item: RewardItem): string {
   if (item.rewardKind === 'percent_discount') return `٪${item.rewardValue.toLocaleString('fa-IR')}`
-  if (item.rewardKind === 'fixed_discount') return `${item.rewardValue.toLocaleString('fa-IR')} تومان`
+  if (item.rewardKind === 'fixed_discount') return `${formatToman(item.rewardValue)} تومان`
   const currency = item.currency ? currencyLabel(item.currency) : ''
-  return `${item.rewardValue.toLocaleString('fa-IR')}${currency ? ' ' + currency : ''}`
+  const value = item.currency === 'toman' ? formatToman(item.rewardValue) : item.rewardValue.toLocaleString('fa-IR')
+  return `${value}${currency ? ' ' + currency : ''}`
 }
 
 function formatDate(iso: string): string {

@@ -37,4 +37,26 @@ describe('SalonReviews', () => {
     expect(wrapper.emitted('report')).toHaveLength(1)
     expect(wrapper.emitted('report')![0]).toEqual(['r2'])
   })
+
+  it('fills exactly as many stars as the review\'s rating, and no more', async () => {
+    const wrapper = await mountSuspended(SalonReviews, { props: { reviews: [reviews[1]!], canReport: false } }) // rating: 2
+    // Scoped to the star row itself (found via its own aria-label), not a raw global
+    // svg index -- the section heading carries its own (unrelated, muted) star icon too.
+    const ratingStars = wrapper.get('[aria-label*="ستاره"]').findAll('svg')
+    expect(ratingStars).toHaveLength(5)
+    expect(ratingStars.filter((s) => s.classes().includes('text-(--color-accent-text)'))).toHaveLength(2)
+    expect(ratingStars.filter((s) => s.classes().includes('text-(--color-border)'))).toHaveLength(3)
+  })
+
+  it('gives the star row an accessible label stating the numeric rating', async () => {
+    const wrapper = await mountSuspended(SalonReviews, { props: { reviews: [reviews[0]!], canReport: false } }) // rating: 5
+    expect(wrapper.find('[aria-label*="ستاره"]').attributes('aria-label')).toContain('۵')
+  })
+
+  it('shows a relative time next to each review', async () => {
+    const wrapper = await mountSuspended(SalonReviews, { props: { reviews: [reviews[0]!], canReport: false } })
+    // Not asserting the exact string (that's relative-date.spec.ts's job) -- just that
+    // createdAt actually reaches the rendered card, which it did not before this redesign.
+    expect(wrapper.text()).toMatch(/پیش|دیروز|گذشته|همین دقیقه/)
+  })
 })

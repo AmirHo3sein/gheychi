@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatToman } from '../../utils/format-toman'
+
 interface BookingDetail {
   id: string
   salonName: string
@@ -110,13 +112,13 @@ const reviewButtonLabel = computed(() => {
         {{ new Date(booking.startsAt).toLocaleString('fa-IR') }}
       </p>
       <div class="space-y-1 border-t border-(--color-border) pt-2">
-        <p>مبلغ کل: {{ booking.priceSnapshot.toLocaleString('fa-IR') }} تومان</p>
-        <p>پیش‌پرداخت: {{ booking.depositAmount.toLocaleString('fa-IR') }} تومان</p>
+        <p>مبلغ کل: <span dir="ltr" class="tnum">{{ formatToman(booking.priceSnapshot) }}</span> تومان</p>
+        <p>پیش‌پرداخت: <span dir="ltr" class="tnum">{{ formatToman(booking.depositAmount) }}</span> تومان</p>
         <!-- depositAmount above is already what's charged online (post-wallet) --
              this line exists only so the reduction is traceable back to the wallet,
              mirroring booking.entity.ts's own walletAmountUsed doc comment. -->
         <p v-if="booking.walletAmountUsed" class="text-(--color-text-muted)">
-          {{ booking.walletAmountUsed.toLocaleString('fa-IR') }} تومان از کیف پول شما کسر شد
+          <span dir="ltr" class="tnum">{{ formatToman(booking.walletAmountUsed) }}</span> تومان از کیف پول شما کسر شد
         </p>
       </div>
     </BaseCard>

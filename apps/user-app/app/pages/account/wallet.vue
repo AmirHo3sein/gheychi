@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatToman } from '../../utils/format-toman'
+
 interface WalletBalance {
   currency: string
   balance: number
@@ -91,8 +93,11 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleString('fa-IR')
 }
 
-function formatAmount(amount: number): string {
-  return `${amount > 0 ? '+' : ''}${amount.toLocaleString('fa-IR')}`
+// Toman is money and reads left-to-right, comma-grouped (formatToman); "points" is a loyalty
+// count, not a price, and stays in this app's ordinary Persian-digit format.
+function formatAmount(amount: number, currency: string): string {
+  const sign = amount > 0 ? '+' : ''
+  return currency === 'toman' ? `${sign}${formatToman(amount)}` : `${sign}${amount.toLocaleString('fa-IR')}`
 }
 
 useSeoMeta({ title: 'کیف پول — قیچی' })
@@ -115,7 +120,8 @@ useSeoMeta({ title: 'کیف پول — قیچی' })
       <BaseCard v-for="b in balances" :key="b.currency" data-testid="wallet-balance">
         <p class="text-sm text-(--color-text-muted)">موجودی {{ currencyLabel(b.currency) }}</p>
         <p class="mt-1 text-2xl font-bold">
-          {{ b.balance.toLocaleString('fa-IR') }}
+          <span v-if="b.currency === 'toman'" dir="ltr" class="tnum">{{ formatToman(b.balance) }}</span>
+          <span v-else>{{ b.balance.toLocaleString('fa-IR') }}</span>
           <span class="text-sm font-normal text-(--color-text-muted)">{{ currencyLabel(b.currency) }}</span>
         </p>
       </BaseCard>
@@ -150,7 +156,9 @@ useSeoMeta({ title: 'کیف پول — قیچی' })
               class="shrink-0 whitespace-nowrap text-sm font-bold"
               :class="tx.amount > 0 ? 'text-(--color-success)' : 'text-(--color-danger)'"
             >
-              {{ formatAmount(tx.amount) }} {{ currencyLabel(tx.currency) }}
+              <span v-if="tx.currency === 'toman'" dir="ltr" class="tnum">{{ formatAmount(tx.amount, tx.currency) }}</span>
+              <span v-else>{{ formatAmount(tx.amount, tx.currency) }}</span>
+              {{ currencyLabel(tx.currency) }}
             </p>
           </div>
         </BaseCard>

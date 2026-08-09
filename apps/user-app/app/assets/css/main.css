@@ -249,3 +249,10 @@ html, body {
     animation: none;
   }
 }
+
+/* Salon detail page's #reviews / #services in-page anchor links (rating row, sticky CTA). */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}

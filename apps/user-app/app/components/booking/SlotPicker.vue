@@ -33,49 +33,106 @@ async function fetchSlots() {
 watch(() => props.workerId, fetchSlots, { immediate: true })
 
 const daysWithSlots = computed(() => days.value.filter((d) => d.slots.length > 0))
-const slotsForSelectedDate = computed(() => days.value.find((d) => d.date === selectedDate.value)?.slots ?? [])
 const hasAnySlots = computed(() => daysWithSlots.value.length > 0)
+
+// ISO instants sort correctly as plain strings (same UTC 'Z' notation throughout, from this
+// same endpoint) -- the API doesn't promise its own slots array is time-ordered, and it
+// wasn't: a salon's real availability response has shown up here as e.g.
+// [17:30, 17:00, 16:30, 16:00, 19:30, ...], which read as random to a customer scanning for
+// "the earliest opening."
+const slotsForSelectedDate = computed(() => {
+  const slots = days.value.find((d) => d.date === selectedDate.value)?.slots ?? []
+  return [...slots].sort()
+})
+
+// Groups a day's (now-sorted) slots into the three day-parts a customer actually thinks in,
+// so a long list reads as "morning / afternoon / evening" instead of one flat wall of times --
+// each bucket only appears when it actually has a slot in it.
+const DAY_PART_ORDER = ['صبح', 'بعدازظهر', 'عصر و شب'] as const
+type DayPart = (typeof DAY_PART_ORDER)[number]
+
+function dayPartOf(iso: string): DayPart {
+  const hour = Number(
+    new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hourCycle: 'h23', timeZone: 'Asia/Tehran' }).format(new Date(iso)),
+  )
+  if (hour < 12) return 'صبح'
+  if (hour < 17) return 'بعدازظهر'
+  return 'عصر و شب'
+}
+
+const slotBuckets = computed(() => {
+  const byPart = new Map<DayPart, string[]>()
+  for (const slot of slotsForSelectedDate.value) {
+    const part = dayPartOf(slot)
+    const bucket = byPart.get(part)
+    if (bucket) bucket.push(slot)
+    else byPart.set(part, [slot])
+  }
+  return DAY_PART_ORDER.filter((part) => byPart.has(part)).map((part) => ({ part, slots: byPart.get(part)! }))
+})
 
 function selectDate(date: string) {
   selectedDate.value = date
 }
+
+// Selected-state fill shared by date pills and time-slot buttons: a bold, neutral "chosen"
+// look (not the brand accent) -- this screen's one accent seal is reserved for the final
+// "پرداخت و رزرو" button below, so picking a date or a time never competes with it.
+const CHOSEN_FILL = 'border-transparent bg-(--color-text) text-(--color-surface)'
+const UNCHOSEN_FILL = 'border-(--color-border) bg-(--color-surface-card) text-(--color-text) hover:bg-(--color-surface-subtle)'
 </script>
 
 <template>
   <div v-if="loading" class="py-6 text-center text-sm text-(--color-text-muted)">در حال بارگذاری...</div>
   <div v-else-if="hasError" class="py-6 text-center text-sm text-(--color-text-muted)">مشکلی پیش آمد، دوباره تلاش کنید</div>
-  <div v-else-if="!hasAnySlots" class="py-6 text-center text-sm text-(--color-text-muted)">نوبت خالی — این سالن در ۱۴ روز آینده نوبت آزاد ندارد</div>
-  <div v-else class="space-y-3">
-    <div class="flex gap-2 overflow-x-auto">
-      <button
-        v-for="day in daysWithSlots"
-        :key="day.date"
-        type="button"
-        :aria-pressed="selectedDate === day.date"
-        class="inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-full px-4 text-sm font-medium transition-colors"
-        :class="selectedDate === day.date
-          ? 'bg-(--color-accent-strong) text-(--color-fill-text)'
-          : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text) hover:bg-(--color-surface-subtle)'"
-        @click="selectDate(day.date)"
-      >
-        {{ formatDateLabel(day.date) }}
-      </button>
-    </div>
-    <div class="grid grid-cols-4 gap-2">
-      <button
-        v-for="slot in slotsForSelectedDate"
-        :key="slot"
-        type="button"
-        data-testid="slot-button"
-        :aria-pressed="selectedSlot === slot"
-        class="inline-flex min-h-11 items-center justify-center rounded-xl border p-2 text-sm font-medium transition-colors"
-        :class="selectedSlot === slot
-          ? 'border-transparent bg-(--color-accent-strong) text-(--color-fill-text)'
-          : 'border-(--color-border) bg-(--color-surface-card) text-(--color-text) hover:bg-(--color-surface-subtle)'"
-        @click="emit('select', slot)"
-      >
-        {{ formatSlotTime(slot) }}
-      </button>
-    </div>
+  <div v-else-if="!hasAnySlots" class="rounded-2xl border border-dashed border-(--color-border) py-8 text-center text-sm text-(--color-text-muted)">
+    نوبت خالی — این سالن در ۱۴ روز آینده نوبت آزاد ندارد
+  </div>
+  <div v-else class="space-y-5">
+    <section>
+      <h2 class="mb-2 flex items-center gap-1.5 text-sm font-bold text-(--color-text)">
+        <BaseIcon name="calendar" :size="16" class="text-(--color-text-muted)" />
+        چه روزی؟
+      </h2>
+      <div class="flex gap-2 overflow-x-auto pb-0.5">
+        <button
+          v-for="day in daysWithSlots"
+          :key="day.date"
+          type="button"
+          :aria-pressed="selectedDate === day.date"
+          class="inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-full border px-4 text-sm font-medium transition-colors"
+          :class="selectedDate === day.date ? CHOSEN_FILL : UNCHOSEN_FILL"
+          @click="selectDate(day.date)"
+        >
+          {{ formatDateLabel(day.date) }}
+        </button>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="mb-2 flex items-center gap-1.5 text-sm font-bold text-(--color-text)">
+        <BaseIcon name="clock" :size="16" class="text-(--color-text-muted)" />
+        چه ساعتی؟
+      </h2>
+      <div class="space-y-3">
+        <div v-for="bucket in slotBuckets" :key="bucket.part">
+          <p class="mb-1.5 text-xs font-medium text-(--color-text-muted)">{{ bucket.part }}</p>
+          <div class="grid grid-cols-4 gap-2">
+            <button
+              v-for="slot in bucket.slots"
+              :key="slot"
+              type="button"
+              data-testid="slot-button"
+              :aria-pressed="selectedSlot === slot"
+              class="tnum inline-flex min-h-11 items-center justify-center rounded-xl border p-2 text-sm font-medium transition-colors"
+              :class="selectedSlot === slot ? CHOSEN_FILL : UNCHOSEN_FILL"
+              @click="emit('select', slot)"
+            >
+              {{ formatSlotTime(slot) }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
 </template>

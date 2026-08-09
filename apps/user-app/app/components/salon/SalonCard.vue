@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { SearchResult } from '../../utils/types'
 import { iconForCategory } from '../../utils/category-icon'
+import { formatToman } from '../../utils/format-toman'
 
 const props = defineProps<{
   salon: SearchResult
@@ -69,7 +70,7 @@ const hiddenCategoryCount = computed(() => Math.max(0, props.salon.categories.le
         <BaseIcon name="star" :size="14" />
         {{ salon.ratingAvg.toFixed(1) }} ({{ salon.ratingCount }}) · {{ salon.distanceKm.toFixed(1) }} کیلومتر
       </p>
-      <p v-if="salon.minPrice" class="mt-0.5 text-(--color-text-muted)">از {{ salon.minPrice.toLocaleString('fa-IR') }} تومان</p>
+      <p v-if="salon.minPrice" class="mt-0.5 text-(--color-text-muted)">از <span dir="ltr" class="tnum">{{ formatToman(salon.minPrice) }}</span> تومان</p>
     </div>
   </NuxtLink>
 </template>

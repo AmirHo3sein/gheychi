@@ -49,7 +49,10 @@ const { titleId } = useDialog(dialogRoot, { onClose: closeLightbox, enabled: () 
 
 <template>
   <section>
-    <h2 class="font-bold mb-2">نمونه کارها</h2>
+    <h2 class="mb-2 flex items-center gap-1.5 text-lg font-bold text-(--color-text)">
+      <BaseIcon name="camera" :size="17" class="text-(--color-text-muted)" />
+      نمونه کارها
+    </h2>
     <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
       <button
         v-for="item in items"

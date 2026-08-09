@@ -1,26 +1,46 @@
 <script setup lang="ts">
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { googleMapsUrl, neshanUrl } from '../../utils/map-links'
 
-const props = defineProps<{
-  salons: { id: string; name: string; slug: string; distanceKm: number }[]
-  center: { lat: number; lng: number }
-  salonCoords: Record<string, { lat: number; lng: number }>
-}>()
+const props = withDefaults(
+  defineProps<{
+    salons: { id: string; name: string; slug: string; distanceKm: number }[]
+    center: { lat: number; lng: number }
+    salonCoords: Record<string, { lat: number; lng: number }>
+    /**
+     * A salon profile embeds this map mid-scroll, where an always-draggable Leaflet
+     * instance is a well-known mobile anti-pattern: a finger that lands on the map while
+     * scrolling the page gets captured by the map's own pan gesture instead, so the page
+     * silently stops scrolling. Compact mode starts with dragging/zoom/scroll-capture
+     * disabled and a tap-to-activate overlay; index.vue's dedicated full-screen map view
+     * (where panning around IS the point) leaves this false and keeps today's behavior
+     * unchanged. Also renders shorter (12rem vs 24rem) -- a secondary "where is it"
+     * reference, not the main content of the screen it's embedded in.
+     */
+    compact?: boolean
+  }>(),
+  { compact: false },
+)
 
 const mapEl = useTemplateRef<HTMLDivElement>('mapEl')
+// Only meaningful in compact mode -- true once the tap-to-activate overlay has been
+// dismissed and the map behaves like a normal interactive Leaflet instance.
+const activated = ref(!props.compact)
 
 let mapInstance: L.Map | null = null
 
-// Iran-friendly directions: nshn.ir opens the Neshan app if installed (else its web
-// map), a domestically-hosted service that works reliably inside Iran. Google Maps is
-// offered as a second option since some users prefer it -- it needs no API key either
-// (a plain https://www.google.com/maps/dir/ URL, not the paid Directions API).
-function neshanUrl(lat: number, lng: number): string {
-  return `https://nshn.ir/?lat=${lat}&lng=${lng}`
-}
-function googleMapsUrl(lat: number, lng: number): string {
-  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`
+function activate() {
+  if (!mapInstance || activated.value) return
+  activated.value = true
+  mapInstance.dragging.enable()
+  mapInstance.scrollWheelZoom.enable()
+  mapInstance.doubleClickZoom.enable()
+  mapInstance.touchZoom.enable()
+  // Constructed with zoomControl:false in compact mode (see initMap below), so the
+  // control has to be added now rather than merely re-enabled. Default position
+  // (top-left), matching the non-compact map's own zoomControl:true default exactly.
+  L.control.zoom().addTo(mapInstance)
 }
 
 function popupHtml(salon: { name: string; slug: string }, coords: { lat: number; lng: number }): string {
@@ -52,7 +72,15 @@ function initMap() {
     return
   }
 
-  mapInstance = L.map(mapEl.value, { zoomControl: true }).setView([props.center.lat, props.center.lng], 13)
+  mapInstance = L.map(mapEl.value, {
+    zoomControl: !props.compact,
+    // Compact mode starts fully non-interactive -- activate() (triggered by the
+    // tap-to-activate overlay) re-enables each of these and adds the zoom control back.
+    dragging: !props.compact,
+    scrollWheelZoom: !props.compact,
+    doubleClickZoom: !props.compact,
+    touchZoom: !props.compact,
+  }).setView([props.center.lat, props.center.lng], 13)
 
   // CARTO's free Voyager tiles -- no API key, no per-request cost, and a cleaner/
   // softer look than raw OpenStreetMap's default style.
@@ -86,20 +114,38 @@ onBeforeUnmount(() => {
 </script>
 
 <!--
-  isolate (on the div below) is load-bearing, not decoration: Leaflet's own panes/controls
-  use z-index up to 1000, and .leaflet-container never sets a z-index of its own -- without a
-  stacking context here, those values leak out and can paint over same-page elements with a
-  much higher paint order, including full-screen fixed overlays like StoryViewer (z-50): the
-  map sits in normal document flow behind it, but its escaped Leaflet controls don't respect
-  that and render on top wherever the map happens to be scrolled to on screen.
+  isolate (on the root div below) is load-bearing, not decoration: Leaflet's own panes/
+  controls use z-index up to 1000, and .leaflet-container never sets a z-index of its own --
+  without a stacking context here, those values leak out and can paint over same-page
+  elements with a much higher paint order, including full-screen fixed overlays like
+  StoryViewer (z-50): the map sits in normal document flow behind it, but its escaped
+  Leaflet controls don't respect that and render on top wherever the map happens to be
+  scrolled to on screen.
   This comment is deliberately OUTSIDE <template>, not inside it: a comment as the first node
   inside <template> makes Vue treat the component as multi-root, which silently disables
   automatic $attrs fallthrough (data-testid="salon-map" from the parent stopped reaching this
   div, with only a console warning -- no error, no visual sign, just a test that couldn't
-  find the element anymore). Confirmed by moving it here instead.
+  find the element anymore). Confirmed by moving it here instead. The compact-mode overlay
+  button below is nested INSIDE this one root, not a sibling, for the same reason -- a second
+  root-level element would make the component genuinely multi-root, not just an ignorable
+  comment, and break the same fallthrough.
 -->
 <template>
-  <div ref="mapEl" class="isolate h-96 w-full overflow-hidden rounded-2xl" />
+  <div class="isolate relative w-full overflow-hidden rounded-2xl" :class="compact ? 'h-48' : 'h-96'">
+    <div ref="mapEl" class="h-full w-full" />
+    <button
+      v-if="compact && !activated"
+      type="button"
+      data-testid="salon-map-activate"
+      class="absolute inset-0 z-[1001] flex items-center justify-center bg-(--color-text)/10 backdrop-blur-[1px] transition-colors hover:bg-(--color-text)/15"
+      @click="activate"
+    >
+      <span class="flex items-center gap-1.5 rounded-full bg-(--color-surface-card) px-3.5 py-2 text-xs font-semibold text-(--color-text) shadow-(--shadow-md)">
+        <BaseIcon name="map-pin" :size="14" />
+        برای نقشه تعاملی لمس کنید
+      </span>
+    </button>
+  </div>
 </template>
 
 <style>
