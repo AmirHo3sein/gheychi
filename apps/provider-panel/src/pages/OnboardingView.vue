@@ -58,9 +58,8 @@ const form = reactive({
   },
   hours: Array.from({ length: 7 }, (_, weekday) => ({
     weekday,
-    openTime: '09:00',
-    closeTime: '20:00',
     enabled: false,
+    ranges: [{ openTime: '09:00', closeTime: '20:00' }],
   })),
   service: {
     categoryId: null as number | null,
@@ -174,7 +173,7 @@ async function submit() {
 
   const enabledHours = form.hours
     .filter((h) => h.enabled)
-    .map(({ weekday, openTime, closeTime }) => ({ weekday, openTime, closeTime }))
+    .flatMap((h) => h.ranges.map((r) => ({ weekday: h.weekday, openTime: r.openTime, closeTime: r.closeTime })))
   if (enabledHours.length) {
     const { error: hoursError } = await apiFetch('/salons/mine/hours', {
       method: 'PUT',

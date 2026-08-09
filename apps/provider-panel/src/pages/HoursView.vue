@@ -5,10 +5,12 @@ import ScheduleStep from '@/components/onboarding/ScheduleStep.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
+import { toPersianDigits } from '@/utils/digits'
 import { validateWorkingHours } from '@/utils/working-hours'
 
 interface WorkingHour {
@@ -16,19 +18,32 @@ interface WorkingHour {
   openTime: string
   closeTime: string
 }
+interface TimeRange {
+  openTime: string
+  closeTime: string
+}
 interface ScheduleException {
   id: string
   date: string
   isClosed: boolean
+  startTime: string | null
+  endTime: string | null
+  reason: string | null
 }
 
 const { apiFetch } = useApi()
 const { push: pushToast } = useToast()
 const hours = ref(
-  Array.from({ length: 7 }, (_, weekday) => ({ weekday, openTime: '09:00', closeTime: '20:00', enabled: false })),
+  Array.from({ length: 7 }, (_, weekday) => ({ weekday, enabled: false, ranges: [{ openTime: '09:00', closeTime: '20:00' }] as TimeRange[] })),
 )
 const exceptions = ref<ScheduleException[]>([])
 const newExceptionDate = ref('')
+// Defaults to a whole-day closure (unchanged existing behavior) -- checking this reveals the
+// start/end time fields for a partial-day closure instead (a supplier visit, a mid-day repair).
+const newExceptionPartialDay = ref(false)
+const newExceptionStartTime = ref('13:00')
+const newExceptionEndTime = ref('14:00')
+const newExceptionReason = ref('')
 const saving = ref(false)
 const hoursError = ref('')
 const invalidWeekdays = ref<number[]>([])
@@ -42,16 +57,15 @@ async function loadHours(): Promise<boolean> {
   const { data, error } = await apiFetch<WorkingHour[]>('/salons/mine/hours', { silent: true })
   if (error) return false
   for (const day of hours.value) {
-    const match = data?.find((h) => h.weekday === day.weekday)
-    // Postgres `time` columns round-trip through pg as HH:MM:SS, but the PUT
-    // validation (HourRangeDto) and the <input type="time"> fields only accept HH:MM.
-    if (match) {
-      Object.assign(day, {
-        weekday: match.weekday,
-        openTime: match.openTime.slice(0, 5),
-        closeTime: match.closeTime.slice(0, 5),
-        enabled: true,
-      })
+    // A day can now have more than one working_hours row (a lunch-break split shift) --
+    // every match for this weekday becomes one range, not just the first. GET /salons/mine/hours
+    // already orders by (weekday, openTime), so `matches` arrives in display order for free.
+    // Postgres `time` columns round-trip through pg as HH:MM:SS, but the PUT validation
+    // (HourRangeDto) and the <input type="time"> fields only accept HH:MM.
+    const matches = (data ?? []).filter((h) => h.weekday === day.weekday)
+    if (matches.length > 0) {
+      day.enabled = true
+      day.ranges = matches.map((m) => ({ openTime: m.openTime.slice(0, 5), closeTime: m.closeTime.slice(0, 5) }))
     }
   }
   return true
@@ -84,7 +98,7 @@ async function saveHours() {
   saving.value = true
   const enabled = hours.value
     .filter((h) => h.enabled)
-    .map(({ weekday, openTime, closeTime }) => ({ weekday, openTime, closeTime }))
+    .flatMap((h) => h.ranges.map((r) => ({ weekday: h.weekday, openTime: r.openTime, closeTime: r.closeTime })))
   const { error } = await apiFetch('/salons/mine/hours', { method: 'PUT', body: { hours: enabled } })
   saving.value = false
   if (!error) pushToast('ساعات کاری ذخیره شد')
@@ -92,8 +106,27 @@ async function saveHours() {
 
 async function addException() {
   if (!newExceptionDate.value) return
-  await apiFetch('/salons/mine/exceptions', { method: 'POST', body: { date: newExceptionDate.value, isClosed: true } })
+  const body: { date: string; isClosed: true; startTime?: string; endTime?: string; reason?: string } = {
+    date: newExceptionDate.value,
+    isClosed: true,
+  }
+  if (newExceptionPartialDay.value) {
+    body.startTime = newExceptionStartTime.value
+    body.endTime = newExceptionEndTime.value
+  }
+  if (newExceptionReason.value.trim()) body.reason = newExceptionReason.value.trim()
+
+  const { error } = await apiFetch('/salons/mine/exceptions', { method: 'POST', body })
+  // A rejected submission (e.g. an inverted partial-day range) keeps the form filled in --
+  // apiFetch's own toast already explains why, so clearing the owner's typed date/times here
+  // would just make them re-enter everything to retry the same mistake.
+  if (error) return
+
   newExceptionDate.value = ''
+  newExceptionPartialDay.value = false
+  newExceptionStartTime.value = '13:00'
+  newExceptionEndTime.value = '14:00'
+  newExceptionReason.value = ''
   await loadExceptions()
 }
 
@@ -105,6 +138,14 @@ async function removeException(id: string) {
 
 function exceptionDateLabel(e: ScheduleException): string {
   return new Date(e.date).toLocaleDateString('fa-IR')
+}
+
+// Postgres `time` columns round-trip through pg as HH:MM:SS -- same truncation loadHours()
+// already does for working_hours. A plain string slice, not an Intl call, so it renders
+// ASCII digits unless converted explicitly.
+function exceptionTimeRangeLabel(e: ScheduleException): string | null {
+  if (!e.startTime || !e.endTime) return null
+  return `${toPersianDigits(e.startTime.slice(0, 5))} تا ${toPersianDigits(e.endTime.slice(0, 5))}`
 }
 </script>
 
@@ -157,23 +198,63 @@ function exceptionDateLabel(e: ScheduleException): string {
           در حال بارگذاری…
         </div>
         <template v-else>
-          <!-- items-end, not the default stretch: the AppInput carries a label above its
-               field, so a stretched button would centre itself against label+field and sit
-               visibly above the input it belongs to. min-w-0 lets the date field shrink to
-               the 320px row instead of forcing it wider. -->
-          <div class="flex items-end gap-2">
-            <div class="min-w-0 flex-1">
+          <AppCard :padded="false" class="space-y-3 p-3.5">
+            <div>
               <label class="mb-1.5 block text-sm font-medium text-(--color-text)">تاریخ تعطیلی</label>
               <JalaliDatePicker v-model="newExceptionDate" aria-label="تاریخ تعطیلی" />
             </div>
-            <AppButton type="button" variant="secondary" class="shrink-0" aria-label="افزودن تعطیلی" @click="addException">
-              <AppIcon name="plus" :size="16" />
+
+            <label class="flex min-h-11 items-center gap-2 text-sm text-(--color-text)">
+              <input v-model="newExceptionPartialDay" type="checkbox" data-testid="exception-partial-day" class="h-4 w-4 accent-(--color-accent)" />
+              فقط بخشی از روز تعطیل است
+            </label>
+
+            <!--
+              Same field styling as ScheduleStep.vue's own time inputs, for visual consistency
+              between the two forms on this page. Defaults to a whole-day closure (unchanged
+              existing behavior) until this is checked.
+            -->
+            <div v-if="newExceptionPartialDay" class="flex min-w-0 items-center gap-2 sm:gap-3">
+              <input
+                v-model="newExceptionStartTime"
+                type="time"
+                data-testid="exception-start-time"
+                aria-label="ساعت شروع تعطیلی"
+                class="tnum min-h-11 w-full min-w-0 flex-1 rounded-xl border border-(--color-border) bg-(--color-surface) p-2 text-sm"
+              />
+              <span class="shrink-0 text-xs text-(--color-text-muted)">تا</span>
+              <input
+                v-model="newExceptionEndTime"
+                type="time"
+                data-testid="exception-end-time"
+                aria-label="ساعت پایان تعطیلی"
+                class="tnum min-h-11 w-full min-w-0 flex-1 rounded-xl border border-(--color-border) bg-(--color-surface) p-2 text-sm"
+              />
+            </div>
+
+            <AppInput
+              v-model="newExceptionReason"
+              label="دلیل (اختیاری)"
+              placeholder="مثلاً تعمیرات یا تعطیلات"
+              data-testid="exception-reason"
+            />
+
+            <AppButton type="button" variant="secondary" block data-testid="add-exception" @click="addException">
+              <template #icon><AppIcon name="plus" :size="16" /></template>
+              افزودن تعطیلی
             </AppButton>
-          </div>
+          </AppCard>
+
           <EmptyState v-if="exceptions.length === 0" icon="hours" message="تعطیلی موردی ثبت نشده است." class="mt-3" />
           <div v-else class="mt-3 space-y-2">
             <AppCard v-for="e in exceptions" :key="e.id" :padded="false" class="flex items-center justify-between gap-2 p-3">
-              <span class="tnum min-w-0 text-sm text-(--color-text)">{{ exceptionDateLabel(e) }}</span>
+              <div class="min-w-0">
+                <p class="tnum text-sm text-(--color-text)">
+                  {{ exceptionDateLabel(e) }}
+                  <span v-if="exceptionTimeRangeLabel(e)" class="text-(--color-text-muted)"> — {{ exceptionTimeRangeLabel(e) }}</span>
+                </p>
+                <p v-if="e.reason" class="mt-0.5 truncate text-xs text-(--color-text-muted)">{{ e.reason }}</p>
+              </div>
               <AppButton type="button" variant="danger" class="shrink-0" aria-label="حذف تعطیلی" @click="removeException(e.id)">
                 <AppIcon name="trash" :size="16" />
               </AppButton>

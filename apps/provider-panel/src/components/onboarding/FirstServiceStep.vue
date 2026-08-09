@@ -3,6 +3,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import AppInput from '../ui/AppInput.vue'
+import AppMoneyInput from '../ui/AppMoneyInput.vue'
 import AppButton from '../ui/AppButton.vue'
 import AppIcon from '../ui/AppIcon.vue'
 import AppSelect from '../ui/AppSelect.vue'
@@ -81,13 +82,10 @@ onMounted(loadCategories)
       placeholder="مثلاً کوتاهی مو زنانه"
     />
     <div class="grid grid-cols-2 gap-3">
-      <AppInput
+      <AppMoneyInput
         :model-value="String(model.price)"
         label="قیمت (تومان)"
         data-testid="service-price"
-        type="number"
-        min="0"
-        class="tnum"
         @update:model-value="model.price = Number($event)"
       />
       <AppInput

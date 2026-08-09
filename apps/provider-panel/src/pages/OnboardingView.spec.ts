@@ -160,6 +160,60 @@ describe('OnboardingView', () => {
     expect(router.currentRoute.value.name).toBe('pending-approval')
   })
 
+  // A lunch-break split shift is two working_hours rows for the same weekday -- this pins
+  // that the wizard actually flattens ScheduleStep's per-day `ranges` array into that shape
+  // on submit, not just that the UI lets you add a second range (ScheduleStep.spec.ts's job).
+  it('submits a lunch-break split shift as two separate weekday entries', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([{ id: 1, name: 'رنگ مو' }]) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([{ name: 'تهران', lat: 35.6892, lng: 51.389 }]) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([{ id: 1, name: 'رنگ مو' }]) })
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ id: 's1' }) }) // POST /salons
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // PUT hours
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ id: 'sv1' }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ id: 's1', status: 'pending' }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const router = makeRouter()
+    await router.push('/onboarding')
+    await router.isReady()
+    const wrapper = mount(OnboardingView, { global: { plugins: [router] } })
+
+    await wrapper.find('[data-testid="salon-name"]').setValue('سالن سارا')
+    await selectGenderTarget(wrapper)
+    await selectSalonCity(wrapper)
+    await wrapper.find('[data-testid="address"]').setValue('خیابان ولیعصر، پلاک ۱')
+    await setPinViaFallbackInputs(wrapper)
+    await selectSalonCategory(wrapper)
+    await wrapper.find('[data-testid="wizard-next"]').trigger('click')
+
+    await wrapper.find('[data-testid="day-0"] input[type=checkbox]').setValue(true)
+    const [openInput, closeInput] = wrapper.findAll('[data-testid="day-0"] input[type=time]')
+    await openInput!.setValue('09:00')
+    await closeInput!.setValue('13:00')
+    await wrapper.find('[data-testid="day-0"] [data-testid="add-range"]').trigger('click')
+    const secondRangeInputs = wrapper.findAll('[data-testid="day-0"] input[type=time]').slice(2)
+    await secondRangeInputs[0]!.setValue('14:00')
+    await secondRangeInputs[1]!.setValue('20:00')
+
+    await wrapper.find('[data-testid="wizard-next"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    await selectServiceCategory(wrapper)
+    await wrapper.find('[data-testid="service-name"]').setValue('رنگ مو')
+    await wrapper.find('[data-testid="service-price"]').setValue('500000')
+    await wrapper.find('[data-testid="service-duration"]').setValue('60')
+    await wrapper.find('[data-testid="wizard-submit"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    const hoursCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/salons/mine/hours'))!
+    const body = JSON.parse((hoursCall[1] as { body: string }).body)
+    expect(body.hours).toEqual([
+      { weekday: 0, openTime: '09:00', closeTime: '13:00' },
+      { weekday: 0, openTime: '14:00', closeTime: '20:00' },
+    ])
+  })
+
   it('keeps the submit button disabled when duration or price is out of bounds', async () => {
     const fetchMock = vi
       .fn()
