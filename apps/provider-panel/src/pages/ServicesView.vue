@@ -280,7 +280,10 @@ async function updateDescription(service: Service) {
              container's width, hugging the RTL start (right) edge with visibly empty space
              on the other side. -->
         <div v-else class="space-y-4">
-          <AppCard v-for="s in services" :key="s.id" :padded="false" class="space-y-3 p-4">
+          <!-- "service-card-" prefix, not "service-" -- the latter would collide with the
+               per-row field testids nested inside this same card (service-price-input,
+               service-description), making a prefix-based locator over ALL of them ambiguous. -->
+          <AppCard v-for="s in services" :key="s.id" :data-testid="`service-card-${s.id}`" :padded="false" class="space-y-3 p-4">
             <!--
               flex-wrap + min-w-0: the name, its discount badge and the ~140px
               «غیرفعال‌سازی» button together need more than the ~256px a card has at 320px.
@@ -337,7 +340,7 @@ async function updateDescription(service: Service) {
 
     <AppCard class="space-y-3">
       <h2 class="font-bold text-(--color-text)">افزودن خدمت جدید</h2>
-      <AppSelect v-model="newService.categoryId" :options="categoryOptions" placeholder="دسته‌بندی" />
+      <AppSelect v-model="newService.categoryId" :options="categoryOptions" placeholder="دسته‌بندی" data-testid="new-service-category" />
       <AppInput v-model="newService.name" placeholder="نام خدمت" />
       <div class="grid grid-cols-2 gap-3">
         <AppMoneyInput
@@ -382,7 +385,7 @@ async function updateDescription(service: Service) {
       <p v-if="createError" class="flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)">
         {{ createError }}
       </p>
-      <AppButton type="button" block @click="addService">
+      <AppButton type="button" block data-testid="add-service" @click="addService">
         افزودن
       </AppButton>
     </AppCard>

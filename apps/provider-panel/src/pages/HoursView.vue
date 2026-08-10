@@ -201,7 +201,7 @@ function exceptionTimeRangeLabel(e: ScheduleException): string | null {
           <AppCard :padded="false" class="space-y-3 p-3.5">
             <div>
               <label class="mb-1.5 block text-sm font-medium text-(--color-text)">تاریخ تعطیلی</label>
-              <JalaliDatePicker v-model="newExceptionDate" aria-label="تاریخ تعطیلی" />
+              <JalaliDatePicker v-model="newExceptionDate" aria-label="تاریخ تعطیلی" data-testid="exception-date" />
             </div>
 
             <label class="flex min-h-11 items-center gap-2 text-sm text-(--color-text)">
