@@ -3,6 +3,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
+import { randomUUID } from 'node:crypto';
 import Redis from 'ioredis';
 import { DataSource, In, LessThan, MoreThan, Not, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
@@ -46,6 +47,22 @@ type EnrichedBooking = Booking & {
 };
 
 const LOCK_TTL_MS = 5000;
+// Ownership-aware release: DEL-ing a lock key unconditionally is unsafe once the lock has
+// any TTL, because the caller that set it can no longer tell whether the key it's about to
+// delete is still its own. If this caller's critical section runs past LOCK_TTL_MS, Redis
+// expires the key on its own and a second caller can legitimately acquire it -- an
+// unconditional DEL from the FIRST caller's `finally` would then delete the SECOND
+// caller's still-live lock, letting a third caller in while the second is still working.
+// GET-then-compare-then-DEL from application code has the identical race one level up (the
+// key could be re-acquired by someone else between the GET and the DEL), so the compare
+// and the delete must happen as one atomic step on the Redis server -- hence EVAL.
+const RELEASE_LOCK_IF_OWNER_LUA = `
+if redis.call("get", KEYS[1]) == ARGV[1] then
+  return redis.call("del", KEYS[1])
+else
+  return 0
+end
+`;
 // See listForSalon()'s own comment -- a defensive ceiling, not a UX pagination feature.
 const MAX_SALON_BOOKINGS_LISTED = 1000;
 // Same rationale as MAX_SALON_BOOKINGS_LISTED, scaled down: one customer's own booking
@@ -78,6 +95,28 @@ export class BookingsService {
     private readonly usersService: UsersService,
   ) {}
 
+  // Shared by createHold/createManual/assignWorker -- every per-salon booking-lock
+  // acquisition. Each call gets its OWN random token as the lock's value (never a
+  // shared constant), so releaseSalonLock can later prove it's deleting the exact
+  // lock this call acquired, not one a different caller acquired after this one's
+  // TTL expired. Returns null (never throws) on a lost NX race -- callers decide
+  // their own user-facing message for "someone else is already booking this salon".
+  private async acquireSalonLock(salonId: string): Promise<string | null> {
+    const token = randomUUID();
+    const acquired = await this.redis.set(`lock:booking:${salonId}`, token, 'PX', LOCK_TTL_MS, 'NX');
+    return acquired ? token : null;
+  }
+
+  // Deletes the lock ONLY if it still holds the exact token this caller's own
+  // acquireSalonLock call returned -- see RELEASE_LOCK_IF_OWNER_LUA's own comment for
+  // why this must be a single atomic Redis-side compare-and-delete rather than a
+  // GET-then-DEL from here. A caller whose lock already expired and was re-acquired
+  // by someone else simply no-ops: its token no longer matches, so the Lua script's
+  // GET check fails and the second caller's still-live lock is left untouched.
+  private async releaseSalonLock(salonId: string, token: string): Promise<void> {
+    await this.redis.eval(RELEASE_LOCK_IF_OWNER_LUA, 1, `lock:booking:${salonId}`, token);
+  }
+
   async createHold(
     userId: string,
     dto: CreateBookingDto,
@@ -107,9 +146,8 @@ export class BookingsService {
     // whole salon means the entire check-then-insert critical section below is
     // fully serialized per salon regardless of duration or capacity, which is what
     // actually backs the "double booking is impossible" guarantee.
-    const lockKey = `lock:booking:${dto.salonId}`;
-    const acquired = await this.redis.set(lockKey, '1', 'PX', LOCK_TTL_MS, 'NX');
-    if (!acquired) throw new ConflictException('This slot is being booked by someone else, try again');
+    const lockToken = await this.acquireSalonLock(dto.salonId);
+    if (!lockToken) throw new ConflictException('This slot is being booked by someone else, try again');
 
     let booking: Booking;
     let depositAmount: number;
@@ -303,7 +341,7 @@ export class BookingsService {
       depositAmount = result.depositAmount;
       couponApplied = result.couponApplied;
     } finally {
-      await this.redis.del(lockKey);
+      await this.releaseSalonLock(dto.salonId, lockToken);
     }
 
     // A fully-discounted booking has nothing to charge for: it was committed as 'confirmed'
@@ -371,9 +409,8 @@ export class BookingsService {
     }
 
     // Same per-salon lock, same reasoning, as createHold's own comment above.
-    const lockKey = `lock:booking:${salonId}`;
-    const acquired = await this.redis.set(lockKey, '1', 'PX', LOCK_TTL_MS, 'NX');
-    if (!acquired) throw new ConflictException('این عملیات توسط درخواست دیگری در حال انجام است، دوباره تلاش کنید');
+    const lockToken = await this.acquireSalonLock(salonId);
+    if (!lockToken) throw new ConflictException('این عملیات توسط درخواست دیگری در حال انجام است، دوباره تلاش کنید');
 
     let booking: Booking;
     try {
@@ -428,7 +465,7 @@ export class BookingsService {
         );
       });
     } finally {
-      await this.redis.del(lockKey);
+      await this.releaseSalonLock(salonId, lockToken);
     }
 
     // Best-effort, same pattern as createHold's own zero-deposit branch: texts the walk-in
@@ -711,9 +748,8 @@ export class BookingsService {
     // request (a new hold, or another assignment) that could conflict on this worker too.
     // Without this, two concurrent assign-worker calls (or one racing a createHold) could
     // both pass the overlap count below before either commits its UPDATE.
-    const lockKey = `lock:booking:${salonId}`;
-    const acquired = await this.redis.set(lockKey, '1', 'PX', LOCK_TTL_MS, 'NX');
-    if (!acquired) {
+    const lockToken = await this.acquireSalonLock(salonId);
+    if (!lockToken) {
       throw new ConflictException('این عملیات توسط درخواست دیگری در حال انجام است، دوباره تلاش کنید');
     }
 
@@ -748,7 +784,7 @@ export class BookingsService {
         await em.update(Booking, { id: bookingId }, { workerId });
       });
     } finally {
-      await this.redis.del(lockKey);
+      await this.releaseSalonLock(salonId, lockToken);
     }
 
     const updated = (await this.bookings.findOneBy({ id: bookingId }))!;

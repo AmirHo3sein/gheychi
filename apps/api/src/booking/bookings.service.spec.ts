@@ -161,7 +161,7 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
   let notifyConfirmed: jest.Mock;
   let resolveAndValidate: jest.Mock;
   let redisSet: jest.Mock;
-  let redisDel: jest.Mock;
+  let redisEval: jest.Mock;
   let walletDebit: jest.Mock;
   let workersFindOneBy: jest.Mock;
 
@@ -190,7 +190,7 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
     notifyConfirmed = jest.fn().mockResolvedValue(undefined);
     resolveAndValidate = jest.fn();
     redisSet = jest.fn().mockResolvedValue('OK');
-    redisDel = jest.fn().mockResolvedValue(1);
+    redisEval = jest.fn().mockResolvedValue(1);
     emUpdate = jest.fn();
     // Only used by createPaymentSession's payment_authorities insert now -- worker
     // eligibility is checked via the WorkerEligibilityService mock below instead.
@@ -242,7 +242,7 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
             get: jest.fn().mockReturnValue('http://front.example'),
           },
         },
-        { provide: REDIS, useValue: { set: redisSet, del: redisDel } },
+        { provide: REDIS, useValue: { set: redisSet, eval: redisEval } },
         { provide: PAYMENT_GATEWAY, useValue: { requestPayment } },
         { provide: PaymentsService, useValue: { attemptRefund: jest.fn(), notifyConfirmed } },
         { provide: AlertsService, useValue: { raise: jest.fn() } },
@@ -348,7 +348,7 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
     // Deliberately the booking page, not /booking/callback -- that page's success copy
     // claims the deposit was received, which would be untrue here.
     expect(result.paymentUrl).toBe('http://front.example/bookings/booking-1');
-    expect(redisDel).toHaveBeenCalled(); // the per-salon lock is still released
+    expect(redisEval).toHaveBeenCalled(); // the per-salon lock is still released
   });
 
   it('still returns the confirmed free booking when the confirmation notification fails', async () => {
@@ -417,7 +417,7 @@ describe('BookingsService.createManual', () => {
   let updateProfile: jest.Mock;
   let notifyConfirmed: jest.Mock;
   let redisSet: jest.Mock;
-  let redisDel: jest.Mock;
+  let redisEval: jest.Mock;
   let workersFindOneBy: jest.Mock;
   let isWorkerEligibleForService: jest.Mock;
   let usersFind: jest.Mock;
@@ -442,7 +442,7 @@ describe('BookingsService.createManual', () => {
     updateProfile = jest.fn().mockResolvedValue(undefined);
     notifyConfirmed = jest.fn().mockResolvedValue(undefined);
     redisSet = jest.fn().mockResolvedValue('OK');
-    redisDel = jest.fn().mockResolvedValue(1);
+    redisEval = jest.fn().mockResolvedValue(1);
     workersFindOneBy = jest.fn().mockResolvedValue({ id: 'worker-1', salonId: 'salon-1', active: true });
     isWorkerEligibleForService = jest.fn().mockResolvedValue(true);
     usersFind = jest.fn().mockResolvedValue([{ ...CUSTOMER }]);
@@ -473,7 +473,7 @@ describe('BookingsService.createManual', () => {
         },
         { provide: PlatformConfigService, useValue: {} },
         { provide: ConfigService, useValue: { getOrThrow: jest.fn(), get: jest.fn() } },
-        { provide: REDIS, useValue: { set: redisSet, del: redisDel } },
+        { provide: REDIS, useValue: { set: redisSet, eval: redisEval } },
         { provide: PAYMENT_GATEWAY, useValue: {} },
         { provide: PaymentsService, useValue: { attemptRefund: jest.fn(), notifyConfirmed } },
         { provide: AlertsService, useValue: { raise: jest.fn() } },
@@ -505,7 +505,7 @@ describe('BookingsService.createManual', () => {
     expect(emSave).not.toHaveBeenCalledWith(Payment, expect.anything());
     expect(notifyConfirmed).toHaveBeenCalledWith('booking-1');
     expect(result.customerPhone).toBe('09120000000');
-    expect(redisDel).toHaveBeenCalled();
+    expect(redisEval).toHaveBeenCalled();
   });
 
   it('sets the name on a brand-new shadow customer when one is given', async () => {
@@ -587,7 +587,7 @@ describe('BookingsService.createManual', () => {
     emCount.mockResolvedValue(1); // forces the capacity ConflictException
 
     await expect(service.createManual('salon-1', { ...DTO })).rejects.toBeInstanceOf(ConflictException);
-    expect(redisDel).toHaveBeenCalled();
+    expect(redisEval).toHaveBeenCalled();
   });
 });
 
@@ -826,7 +826,7 @@ describe('BookingsService.assignWorker', () => {
   let emUpdate: jest.Mock;
   let dataSourceTransaction: jest.Mock;
   let redisSet: jest.Mock;
-  let redisDel: jest.Mock;
+  let redisEval: jest.Mock;
   let isWorkerEligibleForService: jest.Mock;
 
   const BOOKING = {
@@ -858,7 +858,7 @@ describe('BookingsService.assignWorker', () => {
       cb({ findOneBy: emFindOneBy, count: emCount, update: emUpdate }),
     );
     redisSet = jest.fn().mockResolvedValue('OK');
-    redisDel = jest.fn().mockResolvedValue(1);
+    redisEval = jest.fn().mockResolvedValue(1);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -873,7 +873,7 @@ describe('BookingsService.assignWorker', () => {
         { provide: DataSource, useValue: { transaction: dataSourceTransaction } },
         { provide: PlatformConfigService, useValue: {} },
         { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
-        { provide: REDIS, useValue: { set: redisSet, del: redisDel } },
+        { provide: REDIS, useValue: { set: redisSet, eval: redisEval } },
         { provide: PAYMENT_GATEWAY, useValue: {} },
         { provide: PaymentsService, useValue: { attemptRefund: jest.fn() } },
         { provide: AlertsService, useValue: { raise: jest.fn() } },
@@ -909,8 +909,14 @@ describe('BookingsService.assignWorker', () => {
     await expect(service.assignWorker('salon-1', 'booking-1', 'worker-9')).rejects.toBeInstanceOf(
       NotFoundException,
     );
-    expect(redisSet).toHaveBeenCalledWith('lock:booking:salon-1', '1', 'PX', expect.any(Number), 'NX');
-    expect(redisDel).toHaveBeenCalledWith('lock:booking:salon-1');
+    // The lock value is now a unique per-acquisition token (a UUID), never the fixed
+    // '1' the old bare-DEL implementation used -- that fixed value is exactly what
+    // made an unconditional DEL unable to tell its own lock apart from anyone else's.
+    expect(redisSet).toHaveBeenCalledWith('lock:booking:salon-1', expect.any(String), 'PX', expect.any(Number), 'NX');
+    // Release goes through the atomic Lua compare-and-delete (EVAL), never a bare DEL,
+    // and is called with the exact token this same acquisition's SET call was given.
+    const [, acquiredToken] = redisSet.mock.calls[0] as [string, string];
+    expect(redisEval).toHaveBeenCalledWith(expect.any(String), 1, 'lock:booking:salon-1', acquiredToken);
   });
 
   it('404s when the worker does not belong to the caller salon', async () => {
@@ -983,7 +989,7 @@ describe('BookingsService.assignWorker', () => {
     const result = await service.assignWorker('salon-1', 'booking-1', 'worker-1');
 
     expect(emUpdate).toHaveBeenCalledWith(Booking, { id: 'booking-1' }, { workerId: 'worker-1' });
-    expect(redisDel).toHaveBeenCalledWith('lock:booking:salon-1');
+    expect(redisEval).toHaveBeenCalledWith(expect.any(String), 1, 'lock:booking:salon-1', expect.any(String));
     expect(result.workerId).toBe('worker-1');
     expect(result.workerName).toBe('Sara');
   });
@@ -999,7 +1005,7 @@ describe('BookingsService.assignWorker', () => {
         lockHeld = true;
         return 'OK';
       });
-      redisDel.mockImplementation(async () => {
+      redisEval.mockImplementation(async () => {
         lockHeld = false;
         return 1;
       });
@@ -1014,6 +1020,72 @@ describe('BookingsService.assignWorker', () => {
       expect(outcomes.filter((o) => o.status === 'rejected')).toHaveLength(1);
       const rejected = outcomes.find((o) => o.status === 'rejected') as PromiseRejectedResult;
       expect(rejected.reason).toBeInstanceOf(ConflictException);
+    });
+
+    // Backs the safe-Redis-lock guarantee directly: a caller whose lock expired mid-
+    // critical-section (a slow DB write under load, say) and was legitimately re-acquired
+    // by a second caller must NOT be able to blow away that second caller's still-live
+    // lock when its own, now-stale `finally` release finally runs. redisSet/redisEval are
+    // backed by a real in-memory store here (not just boolean flags) so SET's NX semantics
+    // and EVAL's GET-compare-then-DEL semantics are genuinely exercised, exactly like the
+    // real Lua script (RELEASE_LOCK_IF_OWNER_LUA) would behave against real Redis.
+    it('never lets a stale (expired-then-lost) lock holder release a lock a second caller has since legitimately acquired', async () => {
+      const store = new Map<string, string>();
+      redisSet.mockImplementation(async (key: string, value: string) => {
+        if (store.has(key)) return null; // NX: refuse if already held
+        store.set(key, value);
+        return 'OK';
+      });
+      redisEval.mockImplementation(async (_script: string, _numKeys: number, key: string, token: string) => {
+        if (store.get(key) !== token) return 0; // not the current owner -- no-op, exactly like real Lua
+        store.delete(key);
+        return 1;
+      });
+
+      // First caller acquires the salon lock via a normal assignWorker call, but its own
+      // critical section (the mocked DB transaction) runs long enough that the lock
+      // expires and a second, independent caller acquires a NEW token for the same key
+      // before the first caller's transaction returns -- simulating exactly the race the
+      // production TTL leaves open.
+      let firstToken: string | undefined;
+      let secondToken: string | undefined;
+      dataSourceTransaction.mockImplementationOnce(async (cb: (em: unknown) => unknown) => {
+        firstToken = [...store.values()][0]; // the token this call's own acquireSalonLock just set
+        store.delete('lock:booking:salon-1'); // simulate the PX TTL expiring mid-operation
+        secondToken = 'second-caller-token';
+        store.set('lock:booking:salon-1', secondToken); // a second caller races in and wins NX
+        return cb({ findOneBy: emFindOneBy, count: emCount, update: emUpdate });
+      });
+
+      await service.assignWorker('salon-1', 'booking-1', 'worker-1');
+
+      expect(firstToken).toBeDefined();
+      expect(secondToken).toBe('second-caller-token');
+      expect(firstToken).not.toBe(secondToken);
+      // The first caller's finally-release ran (redisEval was called with its OWN stale
+      // token) but must have been a no-op: the second caller's lock is still standing.
+      expect(redisEval).toHaveBeenCalledWith(expect.any(String), 1, 'lock:booking:salon-1', firstToken);
+      expect(store.get('lock:booking:salon-1')).toBe(secondToken);
+    });
+
+    it('a caller can always release the exact lock it itself holds', async () => {
+      const store = new Map<string, string>();
+      redisSet.mockImplementation(async (key: string, value: string) => {
+        if (store.has(key)) return null;
+        store.set(key, value);
+        return 'OK';
+      });
+      redisEval.mockImplementation(async (_script: string, _numKeys: number, key: string, token: string) => {
+        if (store.get(key) !== token) return 0;
+        store.delete(key);
+        return 1;
+      });
+
+      await service.assignWorker('salon-1', 'booking-1', 'worker-1');
+
+      // No stale-release interference in play -- the lock this call acquired is the only
+      // one that ever existed for this key, and it must be gone once the call returns.
+      expect(store.has('lock:booking:salon-1')).toBe(false);
     });
   });
 });
