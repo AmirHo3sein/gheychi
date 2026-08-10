@@ -30,10 +30,17 @@ describe('redactExtra', () => {
     'apiKey',
     'privateKey',
     'secret',
+    'authority',
+    'Authority',
   ])('redacts a known-sensitive key: %s', (key) => {
     const result = redactExtra({ [key]: 'super-secret-value' });
     expect(result![key]).toBe('[redacted]');
     expect(JSON.stringify(result)).not.toContain('super-secret-value');
+  });
+
+  it("redacts payments.payment's own authority field name (Zarinpal's per-transaction session id) if it ever ends up in `extra`", () => {
+    const result = redactExtra({ bookingId: 'b-1', authority: 'A00000000000000000000000000000000000' });
+    expect(result).toEqual({ bookingId: 'b-1', authority: '[redacted]' });
   });
 
   it('redacts a sensitive field nested inside a plain object', () => {

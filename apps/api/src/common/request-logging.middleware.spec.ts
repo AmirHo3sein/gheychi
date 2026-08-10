@@ -4,8 +4,14 @@ import { Request, Response } from 'express';
 import { getRequestId } from './request-context';
 import { requestLoggingMiddleware } from './request-logging.middleware';
 
-function fakeReqRes(headers: Record<string, string> = {}) {
-  const req = { method: 'GET', originalUrl: '/api/salons/mine', headers } as unknown as Request;
+function fakeReqRes(headers: Record<string, string> = {}, overrides: Partial<Request> = {}) {
+  const req = {
+    method: 'GET',
+    originalUrl: '/api/salons/mine',
+    path: '/api/salons/mine',
+    headers,
+    ...overrides,
+  } as unknown as Request;
   const res = Object.assign(new EventEmitter(), {
     statusCode: 200,
     setHeader: jest.fn(),
@@ -14,6 +20,10 @@ function fakeReqRes(headers: Record<string, string> = {}) {
 }
 
 describe('requestLoggingMiddleware', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('generates a request id and echoes it back as a response header when none was supplied', () => {
     const { req, res } = fakeReqRes();
     const next = jest.fn();
@@ -93,5 +103,26 @@ describe('requestLoggingMiddleware', () => {
     const [line] = logSpy.mock.calls[0]!;
     expect(line).toContain('GET /api/salons/mine 201');
     expect(line).toContain(`[${req.requestId}]`);
+  });
+
+  it('logs req.path, never the query string -- a GET /payments/callback request carries the Zarinpal Authority as a query param, and that must never end up in the access log', () => {
+    const logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const { req, res } = fakeReqRes(
+      {},
+      {
+        originalUrl: '/api/payments/callback?Authority=A00000000000000000000000000000000000&Status=OK',
+        path: '/api/payments/callback',
+      },
+    );
+    requestLoggingMiddleware(req, res, jest.fn());
+
+    (res as unknown as EventEmitter).emit('finish');
+
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    const [line] = logSpy.mock.calls[0]!;
+    expect(line).toContain('GET /api/payments/callback 200');
+    expect(line).not.toContain('Authority');
+    expect(line).not.toContain('A00000000000000000000000000000000000');
+    expect(line).not.toContain('?');
   });
 });

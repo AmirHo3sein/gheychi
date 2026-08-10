@@ -33,7 +33,14 @@ export function requestLoggingMiddleware(req: Request, res: Response, next: Next
 
   const startedAt = Date.now();
   res.on('finish', () => {
-    logger.log(`${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - startedAt}ms [${requestId}]`);
+    // req.path (not req.originalUrl) -- deliberately excludes the query string, which
+    // can carry a genuinely sensitive value verbatim (GET /payments/callback's own
+    // ?Authority=...&Status=... from Zarinpal is a real, currently-existing example,
+    // not a hypothetical one -- logging it here would print every payment's gateway
+    // transaction authority into the access log on every single callback request).
+    // Mirrors GlobalExceptionFilter's own req.path choice for the exact same reason --
+    // see its doc comment.
+    logger.log(`${req.method} ${req.path} ${res.statusCode} ${Date.now() - startedAt}ms [${requestId}]`);
   });
 
   requestContextStorage.run({ requestId }, next);

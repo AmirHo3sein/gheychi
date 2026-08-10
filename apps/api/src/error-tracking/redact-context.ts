@@ -21,6 +21,14 @@ const SENSITIVE_KEY_SUBSTRINGS = [
   'authorization',
   'apikey',
   'privatekey',
+  // Zarinpal's per-transaction session id (payments.authority -- see payment.entity.ts).
+  // Not itself a full credential (refunding still requires the separate gateway access
+  // token), but it identifies one specific real transaction and this codebase already
+  // treats it carefully everywhere else (GlobalExceptionFilter deliberately logs
+  // req.path, not req.originalUrl, so a stray ?Authority=... query string never reaches
+  // it -- see that file's own comment) -- so it gets the same defense-in-depth backstop
+  // as the rest of this list even though no current call site puts it in `extra`.
+  'authority',
 ];
 
 function normalizeKey(key: string): string {
