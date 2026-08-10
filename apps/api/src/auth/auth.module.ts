@@ -2,6 +2,7 @@ import { forwardRef, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AnalyticsModule } from '../analytics/analytics.module';
 import { AuditModule } from '../audit/audit.module';
 import { ReferralsModule } from '../referrals/referrals.module';
 import { Salon } from '../salons/salon.entity';
@@ -20,6 +21,7 @@ import { RolesGuard } from './roles.guard';
     UsersModule,
     SmsModule,
     AuditModule,
+    AnalyticsModule,
     TypeOrmModule.forFeature([User, Salon]),
     // Genuine bidirectional dependency (see the matching comment in
     // referrals.module.ts): AuthController.verifyOtp needs ReferralsService to redeem

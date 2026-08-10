@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminNotificationsModule } from '../admin-notifications/admin-notifications.module';
+import { AnalyticsModule } from '../analytics/analytics.module';
 import { AuditModule } from '../audit/audit.module';
 import { AuthModule } from '../auth/auth.module';
 import { CatalogModule } from '../catalog/catalog.module';
@@ -52,6 +53,7 @@ import { WorkingHour } from './working-hour.entity';
     StorageModule,
     AuditModule,
     AdminNotificationsModule,
+    AnalyticsModule,
     UsersModule,
     // For the ServiceCategory repo -- salons.service.ts attaches {id,name,icon} to a
     // salon's tagged categories. CatalogModule has no dependency back on SalonsModule,

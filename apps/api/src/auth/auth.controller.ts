@@ -4,6 +4,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { Request, Response } from 'express';
 import { DataSource } from 'typeorm';
+import { AnalyticsService } from '../analytics/analytics.service';
 import { ReferralApplyStatus, ReferralsService } from '../referrals/referrals.service';
 import { SMS_PROVIDER, SmsProvider } from '../sms/sms.provider';
 import { User } from '../users/user.entity';
@@ -31,6 +32,10 @@ export class AuthController {
     private readonly referrals: ReferralsService,
     private readonly dataSource: DataSource,
     @Inject(SMS_PROVIDER) private readonly sms: SmsProvider,
+    // Appended at the end, same convention as BookingsService/PaymentsService's own
+    // constructors -- every existing positional `new AuthController(...)` call site
+    // only needs an arg added at the tail, not threaded through the middle.
+    private readonly analytics: AnalyticsService,
   ) {}
 
   @Post('request-otp')
@@ -93,6 +98,20 @@ export class AuthController {
       const created = await this.users.findOrCreateByPhone(dto.phone);
       user = created.user;
       isNew = created.isNew;
+    }
+
+    // Fires only for a genuinely brand-new row (isNew), never on a returning user's
+    // login -- the account row (and, when present, its referral redemption) has
+    // already committed above, so this is reporting something that truly happened,
+    // same "already committed, cannot fail the request" guarantee as
+    // BookingsService's booking_cancelled call. Best-effort and never awaited: an
+    // analytics outage must add zero latency/failure risk to registration. No PII:
+    // role is an enum and hasReferralCode is a boolean, never the phone or the code
+    // itself.
+    if (isNew) {
+      void this.analytics
+        .track('user_registered', { role: user.role, hasReferralCode: Boolean(dto.referralCode) }, { userId: user.id })
+        .catch(() => {});
     }
 
     if (user.status === 'suspended') throw new ForbiddenException('This account has been suspended');

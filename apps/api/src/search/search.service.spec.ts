@@ -1,5 +1,6 @@
 import { SearchService } from './search.service';
 import { SearchQueryDto } from './dto/search.dto';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 function row(i: number) {
   return {
@@ -24,10 +25,12 @@ const BASE_QUERY: SearchQueryDto = { lat: 35.7, lng: 51.4, gender: 'women' };
 describe('SearchService', () => {
   let query: jest.Mock;
   let service: SearchService;
+  let analytics: { track: jest.Mock };
 
   beforeEach(() => {
     query = jest.fn();
-    service = new SearchService({ query } as never);
+    analytics = { track: jest.fn().mockResolvedValue(undefined) };
+    service = new SearchService({ query } as never, analytics as unknown as AnalyticsService);
   });
 
   it('requests the default page size (50) as the SQL LIMIT when no cursor is given', async () => {
@@ -98,5 +101,33 @@ describe('SearchService', () => {
     expect(params[params.length - 1]).toBe(1000);
     expect(result.hasMore).toBe(false);
     expect(result.nextCursor).toBeNull();
+  });
+
+  describe('analytics', () => {
+    it('tracks search_performed with structured filters and result count, never the raw lat/lng', async () => {
+      query.mockResolvedValue([row(0), row(1)]);
+
+      await service.search({ ...BASE_QUERY, categoryId: 3, sort: 'rating', radiusKm: 10 });
+
+      expect(analytics.track).toHaveBeenCalledWith('search_performed', {
+        gender: 'women',
+        categoryId: 3,
+        sort: 'rating',
+        radiusKm: 10,
+        page: 1,
+        resultCount: 2,
+        hasMore: false,
+      });
+      const [, properties] = analytics.track.mock.calls[0];
+      expect(properties).not.toHaveProperty('lat');
+      expect(properties).not.toHaveProperty('lng');
+    });
+
+    it('still returns results when the analytics provider fails (never affects the response)', async () => {
+      query.mockResolvedValue([row(0)]);
+      analytics.track.mockRejectedValue(new Error('analytics vendor down'));
+
+      await expect(service.search(BASE_QUERY)).resolves.toMatchObject({ items: [expect.objectContaining({ id: 'salon-0' })] });
+    });
   });
 });

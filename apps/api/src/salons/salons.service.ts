@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, Logger, NotFoundExc
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { AdminNotificationsService } from '../admin-notifications/admin-notifications.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 import { ServiceCategory } from '../catalog/service-category.entity';
 import { CitiesService } from '../cities/cities.service';
 import { UsersService } from '../users/users.service';
@@ -30,6 +31,10 @@ export class SalonsService {
     private readonly users: UsersService,
     private readonly adminNotifications: AdminNotificationsService,
     private readonly cities: CitiesService,
+    // Appended at the end, same convention as BookingsService/PaymentsService's own
+    // constructors -- every existing positional `new SalonsService(...)` call site
+    // only needs an arg added at the tail, not threaded through the middle.
+    private readonly analytics: AnalyticsService,
   ) {}
 
   /** Throws BadRequestException (not a raw FK-violation 500) for an id that doesn't exist. */
@@ -71,7 +76,7 @@ export class SalonsService {
     await this.requireValidCategoryIds(dto.categoryIds);
     const cityId = await this.resolveCityId(dto.city, `owner ${ownerId}`);
 
-    return this.dataSource.transaction(async (em) => {
+    const salon = await this.dataSource.transaction(async (em) => {
       const salon = await em.save(
         Salon,
         em.create(Salon, {
@@ -94,6 +99,27 @@ export class SalonsService {
       await this.users.promoteToProvider(ownerId);
       return salon;
     });
+
+    // Fires only after the transaction above has genuinely committed (the salon row,
+    // its category tags, and the owner's promotion are all durable) -- same
+    // "already committed, cannot fail the request" guarantee as BookingsService's
+    // booking_cancelled call. Best-effort and never awaited: an analytics outage
+    // must add zero latency/failure risk to salon submission. No PII: salonId is a
+    // bare id reference, categoryCount/genderTarget/hasDescription describe the
+    // submission's shape without carrying the salon's actual name/address/contact.
+    void this.analytics
+      .track(
+        'salon_submitted',
+        {
+          salonId: salon.id,
+          categoryCount: dto.categoryIds.length,
+          genderTarget: dto.genderTarget,
+          hasDescription: Boolean(dto.description),
+        },
+        { userId: ownerId },
+      )
+      .catch(() => {});
+    return salon;
   }
 
   async findMine(ownerId: string): Promise<Salon & { categories: SalonCategoryTag[] }> {

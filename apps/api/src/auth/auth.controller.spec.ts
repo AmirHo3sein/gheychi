@@ -1,4 +1,5 @@
 import { EntityManager } from 'typeorm';
+import { AnalyticsService } from '../analytics/analytics.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { UsersService } from '../users/users.service';
 import { AuthController } from './auth.controller';
@@ -14,6 +15,7 @@ describe('AuthController.verifyOtp -- referral-code extension', () => {
   let emQuery: jest.Mock;
   let dataSource: { transaction: jest.Mock };
   let res: { cookie: jest.Mock };
+  let analytics: { track: jest.Mock };
 
   const NEW_USER = { id: 'new-user-1', phone: '09120000000', status: 'active', name: null, gender: null, role: 'customer' };
 
@@ -24,6 +26,7 @@ describe('AuthController.verifyOtp -- referral-code extension', () => {
     referrals = { applyReferralAtRegistration: jest.fn() };
     sms = { sendOtp: jest.fn() };
     res = { cookie: jest.fn() };
+    analytics = { track: jest.fn().mockResolvedValue(undefined) };
     emQuery = jest.fn().mockResolvedValue(undefined);
 
     // Mirrors real DataSource.transaction(cb) -- invokes cb with a fake EntityManager
@@ -39,6 +42,7 @@ describe('AuthController.verifyOtp -- referral-code extension', () => {
       referrals as unknown as ReferralsService,
       dataSource as never,
       sms as never,
+      analytics as unknown as AnalyticsService,
     );
   });
 
@@ -121,5 +125,36 @@ describe('AuthController.verifyOtp -- referral-code extension', () => {
 
     expect(res.cookie).toHaveBeenCalledWith('session', 'signed-token', expect.any(Object));
     expect(result).toMatchObject({ referralStatus: 'invalid_code' });
+  });
+
+  describe('analytics', () => {
+    it('tracks user_registered for a brand-new account, never for a returning one', async () => {
+      users.findOrCreateByPhone.mockResolvedValue({ user: NEW_USER, isNew: true });
+
+      await controller.verifyOtp({ phone: NEW_USER.phone, code: '123456' }, res as never);
+
+      expect(analytics.track).toHaveBeenCalledWith(
+        'user_registered',
+        { role: NEW_USER.role, hasReferralCode: false },
+        { userId: NEW_USER.id },
+      );
+
+      analytics.track.mockClear();
+      users.findOrCreateByPhone.mockResolvedValue({ user: NEW_USER, isNew: false });
+
+      await controller.verifyOtp({ phone: NEW_USER.phone, code: '123456' }, res as never);
+
+      expect(analytics.track).not.toHaveBeenCalled();
+    });
+
+    it('still completes registration when the analytics provider fails (never affects the response)', async () => {
+      users.findOrCreateByPhone.mockResolvedValue({ user: NEW_USER, isNew: true });
+      analytics.track.mockRejectedValue(new Error('analytics vendor down'));
+
+      const result = await controller.verifyOtp({ phone: NEW_USER.phone, code: '123456' }, res as never);
+
+      expect(result).toMatchObject({ isNewUser: true });
+      expect(res.cookie).toHaveBeenCalled();
+    });
   });
 });

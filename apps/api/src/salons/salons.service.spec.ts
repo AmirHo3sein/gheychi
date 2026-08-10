@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { AdminNotificationsService } from '../admin-notifications/admin-notifications.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 import { ServiceCategory } from '../catalog/service-category.entity';
 import { CitiesService } from '../cities/cities.service';
 import { UsersService } from '../users/users.service';
@@ -19,6 +20,7 @@ describe('SalonsService', () => {
   let notifications: { emit: jest.Mock };
   let usersService: { promoteToProvider: jest.Mock; findById: jest.Mock };
   let citiesService: { findIdByName: jest.Mock };
+  let analytics: { track: jest.Mock };
   let emSave: jest.Mock;
   let emCreate: jest.Mock;
   let emInsert: jest.Mock;
@@ -43,7 +45,10 @@ describe('SalonsService', () => {
     categoryRows = [];
     salonCategoriesRepo = { createQueryBuilder: jest.fn(() => fakeQueryBuilder()) };
     serviceCategoriesRepo = { count: jest.fn().mockResolvedValue(2) }; // matches a 2-id categoryIds input by default
-    emSave = jest.fn((_entity, obj) => obj);
+    // Mimics the real repo assigning a generated id on insert -- createForOwner's own
+    // salon_submitted analytics call (see the 'analytics' describe block below) reads
+    // salon.id off this return value, same as the real em.save would produce.
+    emSave = jest.fn((_entity, obj) => ({ id: 'new-salon-id', ...obj }));
     emCreate = jest.fn((_entity, obj) => obj);
     emInsert = jest.fn().mockResolvedValue(undefined);
     emDelete = jest.fn().mockResolvedValue(undefined);
@@ -59,6 +64,7 @@ describe('SalonsService', () => {
     // pre-existing test's em.create()/save() assertions about cityId explicit rather
     // than accidentally depending on this mock's default.
     citiesService = { findIdByName: jest.fn().mockResolvedValue(null) };
+    analytics = { track: jest.fn().mockResolvedValue(undefined) };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -70,6 +76,7 @@ describe('SalonsService', () => {
         { provide: UsersService, useValue: usersService },
         { provide: AdminNotificationsService, useValue: notifications },
         { provide: CitiesService, useValue: citiesService },
+        { provide: AnalyticsService, useValue: analytics },
       ],
     }).compile();
     service = moduleRef.get(SalonsService);
@@ -136,6 +143,27 @@ describe('SalonsService', () => {
       // ops-visible warning naming both the bad value and the owner.
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('تهران'));
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('u1'));
+    });
+
+    describe('analytics', () => {
+      it('tracks salon_submitted only after the transaction commits, with no PII', async () => {
+        repo.findOneBy.mockResolvedValue(null);
+
+        await service.createForOwner('u1', DTO);
+
+        expect(analytics.track).toHaveBeenCalledWith(
+          'salon_submitted',
+          { salonId: 'new-salon-id', categoryCount: 2, genderTarget: 'women', hasDescription: false },
+          { userId: 'u1' },
+        );
+      });
+
+      it('still creates the salon when the analytics provider fails (never affects the request)', async () => {
+        repo.findOneBy.mockResolvedValue(null);
+        analytics.track.mockRejectedValue(new Error('analytics vendor down'));
+
+        await expect(service.createForOwner('u1', DTO)).resolves.toBeTruthy();
+      });
     });
   });
 

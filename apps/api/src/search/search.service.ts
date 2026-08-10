@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { AnalyticsService } from '../analytics/analytics.service';
 import { SearchQueryDto } from './dto/search.dto';
 
 export interface SearchResult {
@@ -57,7 +58,13 @@ function encodeCursor(page: number): string {
 
 @Injectable()
 export class SearchService {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    // Appended at the end, same convention as BookingsService/PaymentsService's own
+    // constructors -- every existing positional `new SearchService(...)` call site
+    // only needs an arg added at the tail, not threaded through the middle.
+    private readonly analytics: AnalyticsService,
+  ) {}
 
   async search(q: SearchQueryDto): Promise<SearchPage> {
     // 5km silently excluded any salon in the same city whose pin wasn't within easy walking
@@ -198,6 +205,27 @@ export class SearchService {
     const reachedEndOfData = rows.length < fetchLimit;
     const moreWithinFetched = start + pageSize < allFetched.length;
     const hasMore = moreWithinFetched || (!reachedEndOfData && fetchLimit < MAX_FETCH_ROWS);
+
+    // Best-effort and never awaited, same rationale as BookingsService's own
+    // booking_started call -- an analytics outage must add zero latency/failure risk
+    // to this public, unauthenticated, high-traffic endpoint. Deliberately carries no
+    // raw query text (this endpoint has no free-text field to begin with) and no
+    // lat/lng (precise enough to pin down a searcher's real-world location) -- only
+    // the structured filters the client actually chose (gender/categoryId/sort/radius)
+    // plus how many results came back, which is exactly the shape useful for later
+    // "are searches returning anything" analysis without carrying anything that could
+    // identify the searcher.
+    void this.analytics
+      .track('search_performed', {
+        gender: q.gender,
+        categoryId: q.categoryId ?? null,
+        sort: q.sort ?? 'distance',
+        radiusKm: q.radiusKm ?? 15,
+        page,
+        resultCount: items.length,
+        hasMore,
+      })
+      .catch(() => {});
 
     return { items, nextCursor: hasMore ? encodeCursor(page + 1) : null, hasMore };
   }
