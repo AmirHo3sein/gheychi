@@ -23,6 +23,7 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
+import AppMoneyInput from '@/components/ui/AppMoneyInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import type { SelectOption } from '@/components/ui/AppSelect.vue'
 import { formatToman } from '@/utils/format-toman'
@@ -52,9 +53,10 @@ const amount = ref<number | null>(null)
 const currency = ref<'toman' | 'points'>('toman')
 const reason = ref('')
 
-// AppInput's model is string-typed (native <input> semantics) -- this bridges it to the
-// number|null `amount` ref without changing anything downstream (canSubmit, the confirm
-// summary, the request body) that already reads `amount.value` as a number.
+// AppMoneyInput's model is a digit-string (optional leading "-", e.g. "-50000") -- this
+// bridges it to the number|null `amount` ref without changing anything downstream
+// (canSubmit, the confirm summary, the request body) that already reads `amount.value`
+// as a number.
 const amountText = computed<string>({
   get: () => (amount.value === null ? '' : String(amount.value)),
   set: (value) => {
@@ -190,13 +192,10 @@ async function submit() {
         </div>
 
         <div class="w-40">
-          <AppInput
+          <AppMoneyInput
             v-model="amountText"
             data-testid="adjust-amount-input"
-            type="number"
             label="مبلغ (مثبت = واریز، منفی = برداشت)"
-            placeholder="مثلا 50000 (واریز) یا -50000 (برداشت)"
-            class="tnum"
           />
         </div>
 

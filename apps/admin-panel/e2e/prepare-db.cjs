@@ -94,6 +94,10 @@ async function main() {
        ST_SetSRID(ST_MakePoint(51.389, 35.6892), 4326)::geography)`,
     [rejectOwnerId],
   )
+  // A plain customer with no salon/wallet history yet -- 03-wallet-adjustment.spec.ts's
+  // target user for a manual balance adjustment via WalletView/AdjustBalanceCard.
+  await seed.query(`INSERT INTO users (phone, role) VALUES ('09120000502', 'customer')`)
+
   await seed.end()
 }
 
