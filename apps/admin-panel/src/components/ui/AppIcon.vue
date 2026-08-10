@@ -9,7 +9,7 @@ import {
   Check, X, ChevronLeft, ChevronRight, Search, CircleUser, Building2, TriangleAlert,
   Plus, Pencil, Scissors, Palette, Droplet, Gem, Sparkles, Paintbrush,
   Eye, Zap, Tag, Phone, Calendar, Lock, Sun, Moon, RotateCcw,
-  History, Flag, Bell, Newspaper, TicketPercent, UserCog, Wallet, Gift, UserPlus, LoaderCircle, Receipt,
+  History, Flag, Bell, Newspaper, TicketPercent, UserCog, Wallet, Gift, UserPlus, LoaderCircle, Receipt, BarChart3,
 } from '@lucide/vue'
 
 export type IconName =
@@ -18,7 +18,7 @@ export type IconName =
   | 'warning' | 'plus' | 'pencil' | 'scissors' | 'palette' | 'droplet' | 'nail'
   | 'sparkles' | 'brush' | 'eye' | 'razor' | 'tag' | 'phone' | 'calendar' | 'lock'
   | 'sun' | 'moon' | 'reset' | 'history' | 'flag' | 'bell' | 'newspaper' | 'coupon' | 'worker-ratings' | 'wallet'
-  | 'gift' | 'user-plus' | 'spinner' | 'invoice'
+  | 'gift' | 'user-plus' | 'spinner' | 'invoice' | 'chart'
 
 const ICONS = {
   dashboard: LayoutDashboard,
@@ -65,6 +65,7 @@ const ICONS = {
   'user-plus': UserPlus,
   spinner: LoaderCircle,
   invoice: Receipt,
+  chart: BarChart3,
 } as const
 
 const props = defineProps<{ name: IconName; size?: number }>()

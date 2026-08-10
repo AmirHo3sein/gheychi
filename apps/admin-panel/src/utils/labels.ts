@@ -301,3 +301,21 @@ export function jalaliMonthLabel(year: number, month: number): string {
   const name = JALALI_MONTHS[month - 1] ?? String(month)
   return `${name} ${toPersianDigits(year)}`
 }
+
+// Every raw event_name AnalyticsEventRecord currently writes (see
+// analytics-aggregation.service.ts's FUNNEL_EVENTS plus the non-funnel events other
+// services fire) -- kept in one place so AnalyticsView's totals table never has to show a
+// raw snake_case string for a known event.
+const ANALYTICS_EVENT: Record<string, string> = {
+  booking_started: 'شروع رزرو',
+  booking_confirmed: 'تایید رزرو',
+  booking_cancelled: 'لغو رزرو',
+  payment_succeeded: 'پرداخت موفق',
+  user_registered: 'ثبت‌نام کاربر',
+  salon_submitted: 'ثبت سالن',
+  search_performed: 'جستجو',
+}
+
+export function analyticsEventLabel(eventName: string): string {
+  return ANALYTICS_EVENT[eventName] ?? eventName
+}

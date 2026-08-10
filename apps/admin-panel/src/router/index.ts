@@ -12,6 +12,7 @@ const routes = [
     component: AppLayout,
     children: [
       { path: '', name: 'dashboard', component: () => import('@/pages/DashboardView.vue'), meta: { title: 'داشبورد' } },
+      { path: 'analytics', name: 'analytics', component: () => import('@/pages/AnalyticsView.vue'), meta: { title: 'آمار و تحلیل' } },
       { path: 'salons', name: 'salons', component: () => import('@/pages/SalonsView.vue'), meta: { title: 'آرایشگاه‌ها' } },
       { path: 'salons/:id', name: 'salon-detail', component: () => import('@/pages/SalonDetailView.vue'), meta: { title: 'جزئیات آرایشگاه' } },
       { path: 'featured', name: 'featured', component: () => import('@/pages/FeaturedView.vue'), meta: { title: 'سالن‌های ویژه' } },

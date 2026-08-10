@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   AUDIT_ACTION_KEYS,
+  analyticsEventLabel,
   auditActionLabel,
   blogPostStatusLabel,
   invoicePaymentMethodLabel,
@@ -183,5 +184,21 @@ describe('jalaliMonthLabel', () => {
 
   it('does not insert a thousands separator into the year', () => {
     expect(jalaliMonthLabel(1403, 7)).not.toContain('٬')
+  })
+})
+
+describe('analyticsEventLabel', () => {
+  it('maps every event_name the backend currently tracks to a Farsi label', () => {
+    expect(analyticsEventLabel('booking_started')).toBe('شروع رزرو')
+    expect(analyticsEventLabel('booking_confirmed')).toBe('تایید رزرو')
+    expect(analyticsEventLabel('booking_cancelled')).toBe('لغو رزرو')
+    expect(analyticsEventLabel('payment_succeeded')).toBe('پرداخت موفق')
+    expect(analyticsEventLabel('user_registered')).toBe('ثبت‌نام کاربر')
+    expect(analyticsEventLabel('salon_submitted')).toBe('ثبت سالن')
+    expect(analyticsEventLabel('search_performed')).toBe('جستجو')
+  })
+
+  it('falls back to the raw event name for an unknown event', () => {
+    expect(analyticsEventLabel('weird_event')).toBe('weird_event')
   })
 })
