@@ -47,6 +47,7 @@ This documentation is a snapshot as of **2026-08-04**. The codebase is under act
 | 24 | [Technical Debt](./24-technical-debt.md) | Undeliberate gaps, duplication, and drift found during this audit |
 | 25 | [Future Improvements](./25-future-improvements.md) | Reserved seams and extension points already visible in the code |
 | 26 | [System Map](./26-system-map.md) | Cross-cutting data-flow diagrams and a file-location glossary |
+| 27 | [AI Foundation](./27-ai-foundation.md) | The `AiProvider` abstraction, why it's generic, and why nothing calls it yet |
 
 ## Conventions used throughout this documentation
 
