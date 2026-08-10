@@ -29,6 +29,18 @@ Sandbox exists for request/verify/StartPay but **not for refunds at all**.
 
 Every consumer (salon photos, stories, portfolio, blog covers) shares the same upload pattern: 5MB hard cap (Multer), real magic-number MIME sniffing (`file-type` package, not the client's `Content-Type` header), server-generated storage keys (never the client's filename — path-traversal defense).
 
+## Error tracking — Sentry-shaped seam, no real backend yet
+
+`ErrorTrackingService` (`error-tracking/error-tracking.service.ts`), token `ERROR_TRACKING_PROVIDER`. No env-var selector today because there is exactly one implementation: `LoggerErrorTrackingService`, which logs one structured JSON line (`message`, `name`, `stack`, `requestId`, `userId`, `route`, redacted `extra`) through the existing Nest `Logger` under the `'ErrorTracking'` tag — **not** a real Sentry/APM SDK call, since no DSN/API key exists in this environment.
+
+Two capture points feed it:
+- `GlobalExceptionFilter` (`error-tracking/global-exception.filter.ts`, `APP_FILTER`) — every uncaught 5xx/unknown HTTP exception, with `requestId`/`userId`/`route` context. Subclasses `@nestjs/core`'s `BaseExceptionFilter` and calls `super.catch()`, so the actual HTTP response is byte-for-byte what NestJS's default handling would have produced with no filter at all — capture is a pure side-effect. Ordinary sub-500 business-rule throws (`NotFoundException`, `BadRequestException`, ...) are deliberately NOT captured, to avoid flooding a real tracker with routine control flow.
+- `CronJobRunner` (`common/cron-job-runner.service.ts`) — any background job whose `run()` throws, alongside its existing `AlertsService.raise()` paging call.
+
+**Every context field is redacted before logging**: the three typed fields (`requestId`/`userId`/`route`) are explicitly allow-listed as safe; the free-form `extra` bag is recursively scrubbed by `redactExtra()` (`error-tracking/redact-context.ts`) for any key that looks like a password/token/JWT/cookie/session/OTP/card/secret, however deeply nested. See [21-security.md](./21-security.md).
+
+Swapping in real Sentry (or another APM) later means writing one new class implementing `ErrorTrackingService` and pointing `error-tracking.module.ts`'s provider factory at it — every call site stays unchanged, the same swap-a-provider seam as every other row in this table.
+
 ## Maps — Leaflet + CARTO
 
 No API key or paid SDK anywhere. `user-app`'s `SalonMap.client.vue` and `provider-panel`'s `SalonPinPicker.vue` both use the bundled `leaflet` npm package + CARTO's free Voyager tile layer. Marker popups link out to the customer's own maps app (Neshan `nshn.ir/?lat=&lng=` or Google Maps `google.com/maps/dir/?api=1&destination=`) for directions — no in-app turn-by-turn routing.

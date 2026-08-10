@@ -2,7 +2,7 @@
 
 Every scheduled job is a `@Injectable()` class registered as a provider in its owning module, with a thin `@Cron()`-decorated `handleCron()` delegating to a plain `async run()` method (kept independently unit-testable). Powered by `@nestjs/schedule`'s `ScheduleModule.forRoot()` (registered once, globally, in `AppModule`).
 
-`handleCron()` never calls `run()` directly — it goes through `CronJobRunner.run(jobName, fn, {lockTtlMs?, warnAfterMs?})` (`common/cron-job-runner.service.ts`, `@Global()` via `CommonModule`), which wraps every run in `CronLockService`'s distributed Redis lock (`SET NX PX` / `DEL`, so no two instances run the same job concurrently), pages `AlertsService` on an uncaught failure, and raises a non-cancelling "still running past `warnAfterMs`" warning (it does NOT abandon or cancel the job — that's deliberate, to avoid opening a duplicate-execution window).
+`handleCron()` never calls `run()` directly — it goes through `CronJobRunner.run(jobName, fn, {lockTtlMs?, warnAfterMs?})` (`common/cron-job-runner.service.ts`, `@Global()` via `CommonModule`), which wraps every run in `CronLockService`'s distributed Redis lock (`SET NX PX` / `DEL`, so no two instances run the same job concurrently), pages `AlertsService` on an uncaught failure, also captures that failure through `ErrorTrackingService` (`extra: {jobName, durationMs}` — a cron job has no `requestId`/`userId`; see [19-third-party-services.md](./19-third-party-services.md)), and raises a non-cancelling "still running past `warnAfterMs`" warning (it does NOT abandon or cancel the job — that's deliberate, to avoid opening a duplicate-execution window).
 
 ## Consolidated cron table
 

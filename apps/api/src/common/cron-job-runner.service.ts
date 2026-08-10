@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { AlertsService } from '../alerts/alerts.service';
+import { ERROR_TRACKING_PROVIDER, ErrorTrackingService } from '../error-tracking/error-tracking.service';
 import { CronLockService } from './cron-lock.service';
 
 // Most jobs run every 1-5 minutes; anything still running past this on that cadence is
@@ -18,8 +19,8 @@ export interface CronJobRunOptions {
 
 /**
  * The standard shape every cron job in this codebase runs through: distributed mutual
- * exclusion (CronLockService) + duration logging + a "this is taking unusually long"
- * warning + operator alerting on failure.
+ * exclusion (CronLockService) + started/completed/failed logging with duration + a
+ * "this is taking unusually long" warning + operator alerting on failure.
  *
  * Before this existed, a job whose `run()` threw failed nearly silently: `@nestjs/schedule`
  * has no centralized handler for a rejected cron callback, so the failure surfaced (at
@@ -43,6 +44,7 @@ export class CronJobRunner {
   constructor(
     private readonly cronLock: CronLockService,
     private readonly alerts: AlertsService,
+    @Inject(ERROR_TRACKING_PROVIDER) private readonly errorTracking: ErrorTrackingService,
   ) {}
 
   async run(jobName: string, fn: () => Promise<void>, options: CronJobRunOptions = {}): Promise<void> {
@@ -52,6 +54,7 @@ export class CronJobRunner {
       jobName,
       async () => {
         const startedAt = Date.now();
+        this.logger.log(`Cron job "${jobName}" started`);
         const slowTimer = setTimeout(() => {
           this.alerts
             .raise({
@@ -80,6 +83,12 @@ export class CronJobRunner {
             `Cron job "${jobName}" failed after ${durationMs}ms: ${message}`,
             err instanceof Error ? err.stack : undefined,
           );
+          // Best-effort capture alongside (not instead of) AlertsService.raise() below --
+          // AlertsService pages an operator now; this feeds whatever error-tracking
+          // backend eventually replaces LoggerErrorTrackingService with the full
+          // exception/stack for later triage. No requestId/userId here -- a cron job has
+          // neither; jobName/durationMs go in `extra` instead.
+          this.errorTracking.captureException(err, { extra: { jobName, durationMs } });
           await this.alerts.raise({
             key: `cron-job-failed:${jobName}`,
             severity: 'critical',

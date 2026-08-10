@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_FILTER } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminNotificationsModule } from './admin-notifications/admin-notifications.module';
@@ -11,6 +12,8 @@ import { CitiesModule } from './cities/cities.module';
 import { CommonModule } from './common/common.module';
 import { ContentModule } from './content/content.module';
 import { CouponsModule } from './coupons/coupons.module';
+import { ErrorTrackingModule } from './error-tracking/error-tracking.module';
+import { GlobalExceptionFilter } from './error-tracking/global-exception.filter';
 import { FavoritesModule } from './favorites/favorites.module';
 import { HealthController } from './health/health.controller';
 import { InvoicingModule } from './invoicing/invoicing.module';
@@ -47,6 +50,7 @@ import { WalletModule } from './wallet/wallet.module';
     ScheduleModule.forRoot(),
     RedisModule,
     CommonModule,
+    ErrorTrackingModule,
     PlatformConfigModule,
     AlertsModule,
     AuthModule,
@@ -68,5 +72,6 @@ import { WalletModule } from './wallet/wallet.module';
     StorageModule,
   ],
   controllers: [HealthController],
+  providers: [{ provide: APP_FILTER, useClass: GlobalExceptionFilter }],
 })
 export class AppModule {}
