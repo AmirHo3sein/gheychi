@@ -70,6 +70,8 @@ Guard shorthand: **Auth** = `AuthGuard` (valid session). **Admin** = `AuthGuard,
 | `bookings.controller.ts` (Auth) | `POST /bookings`, `GET /bookings/mine`, `GET /bookings/:id`, `POST /bookings/:id/cancel`, `POST /bookings/:id/retry-payment` |
 | `payments.controller.ts` (Public) | `GET /payments/callback` (Zarinpal redirect target) |
 
+A booking-conflict 409 from `POST /bookings`/`assign-worker` (createHold/createManual/assignWorker) carries a stable `code` (`booking-error-codes.ts`): `BOOKING_UNAVAILABLE` (salon-capacity/slot-overlap/lock-contention) or `WORKER_UNAVAILABLE` (that specific worker is double-booked) — same convention as coupons' `coupon-error-codes.ts`. `GET /payments/callback`'s redirect carries `PAYMENT_FAILED` as a query param on a genuine decline (not on an unrecognized/unattributable authority, a distinct failure mode).
+
 ## Coupons (`coupons/`)
 
 | Controller | Routes |
@@ -193,9 +195,13 @@ Guard shorthand: **Auth** = `AuthGuard` (valid session). **Admin** = `AuthGuard,
 
 ## Health
 
-| Route | Guard |
-|---|---|
-| `GET /health` | Public — `{status:'ok'}` |
+| Route | Guard | Purpose |
+|---|---|---|
+| `GET /health` | Public | Checks DB+Redis, `{status:'ok', db, redis}` or 503 — kept at its original path/shape since all three apps' `playwright.config.ts` `webServer` entries already poll it as their "API is up" gate |
+| `GET /liveness` | Public | Process-alive only, touches neither DB nor Redis — for an orchestrator's liveness probe, so a brief Postgres/Redis blip never gets a healthy process killed |
+| `GET /readiness` | Public | Same DB+Redis check as `/health`, under its own explicit name |
+
+`/liveness` and `/readiness` are additive; `/health` is unchanged. A full route-guard audit run alongside this split (`route-guard-audit.spec.ts`) found zero unintentional-exposure gaps across all 48 controllers — the two new health routes are the only addition to the CI-enforced public-routes allowlist. See [21-security.md](./21-security.md).
 
 ## Notable file-upload endpoints
 

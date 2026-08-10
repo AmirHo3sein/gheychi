@@ -22,7 +22,8 @@ A cross-cutting reference: the development timeline mapped to the files each sta
 | — Referrals & ratings (2026-07-22) | Workers, worker ratings, wallet, referral program | `salons/worker.entity.ts`, `reviews/worker-rating.entity.ts`, `wallet/`, `referrals/` |
 | — Commission & invoicing | Per-booking commission, monthly invoices | `invoicing/` |
 | — Multi-category + worker restrictions | Salon category tagging, per-worker service eligibility | `salons/salon-category.entity.ts`, `salons/worker-service.entity.ts`, `salons/worker-eligibility.service.ts` |
-| — Production-readiness hardening (2026-08-07, most recent) | Cron job distributed locking/failure paging, cursor-paginated search, categories cache, cities promoted to a real DB table, stored-XSS closed, OTP per-IP rate limiting, N+1 fixes | `common/cron-job-runner.service.ts`, `common/cron-lock.service.ts`, `search/search.service.ts`, `cities/`, `common/trusted-image-upload.ts`, `auth/otp.service.ts` |
+| — Production-readiness hardening (2026-08-07) | Cron job distributed locking/failure paging, cursor-paginated search, categories cache, cities promoted to a real DB table, stored-XSS closed, OTP per-IP rate limiting, N+1 fixes | `common/cron-job-runner.service.ts`, `common/cron-lock.service.ts`, `search/search.service.ts`, `cities/`, `common/trusted-image-upload.ts`, `auth/otp.service.ts` |
+| — Production-readiness hardening, continued (2026-08-10, most recent) | Per-request correlation-id logging, an error-tracking abstraction + global exception filter, a product-analytics foundation seeded on the booking funnel, `/liveness`+`/readiness` split from `/health`, stable booking-conflict/payment-failure error codes, IDOR/role-escalation/upload-spoofing test-coverage closure + a full route-guard audit, k6 load-test baselines, the per-salon booking Redis lock made release-ownership-aware, real concurrent-request e2e coverage for four money-critical races, multi-file sitemap pagination, a cross-app design-consistency audit fix | `common/request-context*.ts`, `common/request-context-logger.service.ts`, `error-tracking/`, `analytics/`, `health/health.controller.ts`, `booking/booking-error-codes.ts`, `route-guard-audit.spec.ts`, `load-tests/`, `booking/bookings.service.ts` (`acquireSalonLock`/`releaseSalonLock`), `common/sitemap-pagination.ts` |
 
 Design specs live in `docs/superpowers/specs/`, execution records in `docs/superpowers/plans/`, one file per plan — treat these as the historical "why," while this documentation set is the current "what."
 
@@ -52,9 +53,11 @@ Design specs live in `docs/superpowers/specs/`, execution records in `docs/super
 | SMS | `apps/api/src/sms/` | `sms.provider.ts`, `kavenegar-sms.provider.ts` |
 | Storage | `apps/api/src/storage/` | `storage.provider.ts`, `local-disk-storage.provider.ts`, `s3-storage.provider.ts` |
 | Alerts | `apps/api/src/alerts/` | `alerts.service.ts` |
+| Error tracking | `apps/api/src/error-tracking/` | `error-tracking.service.ts`, `global-exception.filter.ts` (`APP_FILTER`), `logger-error-tracking.service.ts`, `redact-context.ts` |
+| Analytics | `apps/api/src/analytics/` | `analytics.service.ts`, `analytics.provider.ts`, `console-analytics.provider.ts` |
 | Platform config | `apps/api/src/platform-config/` | `platform-config.entity.ts`, `platform-config.service.ts` |
 | Redis | `apps/api/src/redis/` | `redis.module.ts` |
-| Common utils | `apps/api/src/common/` + top-level | `postgres-error-codes.ts`, `slug.util.ts`, `cors-origins.util.ts`, `numeric-transformers.ts`, `cron-job-runner.service.ts`/`cron-lock.service.ts`, `trusted-image-upload.ts`, `request-logging.middleware.ts` |
+| Common utils | `apps/api/src/common/` + top-level | `postgres-error-codes.ts`, `slug.util.ts`, `cors-origins.util.ts`, `numeric-transformers.ts`, `cron-job-runner.service.ts`/`cron-lock.service.ts`, `trusted-image-upload.ts`, `request-logging.middleware.ts`, `request-context.ts`/`request-context-logger.service.ts`, `sitemap-pagination.ts` |
 
 | Frontend app | Directory | Entry points |
 |---|---|---|

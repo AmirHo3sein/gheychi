@@ -41,6 +41,21 @@ Two capture points feed it:
 
 Swapping in real Sentry (or another APM) later means writing one new class implementing `ErrorTrackingService` and pointing `error-tracking.module.ts`'s provider factory at it — every call site stays unchanged, the same swap-a-provider seam as every other row in this table.
 
+## Product analytics — seam only, seeded on the booking funnel
+
+`AnalyticsService` (`analytics/analytics.service.ts`), token `ANALYTICS_PROVIDER`. Same interface → token → env-selected-implementation shape as every other row in this table. No real vendor account exists here, so the only implementation is `ConsoleAnalyticsProvider`, which logs each event as one structured JSON line via Nest's `Logger`.
+
+`AnalyticsService.track()` is genuinely fire-and-forget everywhere it's called (`void ...track().catch(() => {})`, never awaited) so an analytics outage can never add latency to, or fail, a real booking or payment. Four seed events, not a full catalog:
+
+| Event | Fired from | Fires |
+|---|---|---|
+| `booking_started` | `BookingsService.createHold`/`createManual` | Before any validation — the funnel's true entry point |
+| `booking_confirmed` | `PaymentsService.notifyConfirmed` | The one choke point every confirmation path (zero-deposit hold, manual walk-in, paid callback) already funnels through |
+| `booking_cancelled` | `BookingsService.cancel()` | After the transaction commits |
+| `payment_succeeded` | `PaymentsService.handleCallback` | Only the first-time `'captured'` branch — the `'duplicate'` (replayed callback) branch is skipped to avoid double-counting one real payment |
+
+Properties are bare id references (`salonId`/`bookingId`/`workerId`/…) and booleans/enums describing the outcome — never a phone number, payment authority, or other credential, by the same call-site discipline as `ErrorTrackingService`'s context (see below). Swapping in a real vendor (Mixpanel/Amplitude/PostHog/etc.) later means writing one new class implementing `AnalyticsProvider` and pointing `analytics.module.ts`'s provider registration at it — no call site changes.
+
 ## Maps — Leaflet + CARTO
 
 No API key or paid SDK anywhere. `user-app`'s `SalonMap.client.vue` and `provider-panel`'s `SalonPinPicker.vue` both use the bundled `leaflet` npm package + CARTO's free Voyager tile layer. Marker popups link out to the customer's own maps app (Neshan `nshn.ir/?lat=&lng=` or Google Maps `google.com/maps/dir/?api=1&destination=`) for directions — no in-app turn-by-turn routing.

@@ -92,6 +92,7 @@ Key facts:
 - **No Swagger/OpenAPI is generated.** [15-api-reference.md](./15-api-reference.md) is effectively the only API contract document.
 - **CORS**: exactly three allowed, credentialed origins — `FRONTEND_BASE_URL`, `PROVIDER_APP_BASE_URL`, `ADMIN_APP_BASE_URL` (`src/cors-origins.util.ts`). `credentials: true` is required because auth is a cookie, not a bearer token; this only works because the cookie is `sameSite: 'lax'`, which assumes the frontends stay same-site with the API — see [21-security.md](./21-security.md).
 - **Static file serving**: `apps/api/uploads/` is served at `/uploads/*` directly on the API's own origin when `STORAGE_PROVIDER=local`.
+- **Per-request correlation id**: `requestLoggingMiddleware` (`common/request-logging.middleware.ts`) mints (or trusts a validated incoming `X-Request-Id`) one id per request, echoes it back on the response header, and runs the rest of the request — routing, guards, controller, every downstream service call it triggers — inside `requestContextStorage.run()` (`common/request-context.ts`, Node's built-in `AsyncLocalStorage`, no new dependency). `RequestContextConsoleLogger` (`common/request-context-logger.service.ts`, installed via `app.useLogger()` in `main.ts`) overrides NestJS's own low-level formatting hooks so **every** existing `new Logger(Foo.name)` call site app-wide picks up the current request's id automatically — zero call sites touched. Outside a request (a cron tick), `getRequestId()` is simply `undefined`.
 
 ### `AppModule` — every module wired in
 
@@ -108,6 +109,7 @@ Every third-party integration follows the same interface → injection-token →
 | Push | `PushProvider` | `PUSH_PROVIDER` | `ConsolePushProvider`, `WebPushProvider` | `PUSH_PROVIDER=console\|webpush` |
 | Storage | `StorageProvider` | `STORAGE_PROVIDER` | `LocalDiskStorageProvider`, `S3StorageProvider` | `STORAGE_PROVIDER=local\|s3` |
 | Error tracking | `ErrorTrackingService` | `ERROR_TRACKING_PROVIDER` | `LoggerErrorTrackingService` (only implementation; no real Sentry/APM account exists) | none yet |
+| Analytics | `AnalyticsService` | `ANALYTICS_PROVIDER` | `ConsoleAnalyticsProvider` (only implementation; no real analytics vendor account exists) | none yet |
 
 Full detail per integration in [19-third-party-services.md](./19-third-party-services.md). Any new external integration should follow this exact pattern.
 

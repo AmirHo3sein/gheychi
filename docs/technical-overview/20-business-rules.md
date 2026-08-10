@@ -25,7 +25,7 @@ A consolidated reference of every enforced business rule in the platform, groupe
 - A zero-deposit booking (100%-discount or fully wallet-covered) is confirmed immediately with no `Payment` row.
 - Cancellation refunds unconditionally if the *salon* cancels; refunds for a *customer* cancellation only if `(startsAt - now) >= cancellation_window_hours`.
 - A booking can only be marked `completed`/`no_show` from `confirmed`, and only by the salon owner.
-- Every state transition uses a conditional CAS `UPDATE ... WHERE status = <expected>` — a lost race always produces a 409, never a silent double-apply. This idiom recurs across the codebase (salon resubmit, coupon/content moderation, blog publish/unpublish, report resolve) and should be treated as the house style for any new state-transition code.
+- Every state transition uses a conditional CAS `UPDATE ... WHERE status = <expected>` — a lost race always produces a 409, never a silent double-apply. This idiom recurs across the codebase (salon resubmit, coupon/content moderation, blog publish/unpublish, report resolve) and should be treated as the house style for any new state-transition code. A booking-creation 409 now also carries a stable `BOOKING_UNAVAILABLE`/`WORKER_UNAVAILABLE` code (`booking-error-codes.ts`) alongside the status — see [15-api-reference.md](./15-api-reference.md).
 
 ## Availability rules
 
