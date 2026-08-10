@@ -18,6 +18,17 @@ describe('Health (e2e)', () => {
     await app.close();
   });
 
+  // Every test below spies on dataSource.query/redis.ping via mockRejectedValueOnce. Restoring
+  // only the ones each test's own assertions happen to consume left a real gap: liveness's own
+  // "redis unreachable" test queues a rejection that liveness's handler never calls ping() to
+  // consume (by design, liveness never touches Redis) -- it sat pending and fired on the NEXT
+  // test that actually called ping(), turning readiness's unrelated "both reachable" test into a
+  // false 503. restoreAllMocks after every test removes this whole class of cross-test mock
+  // leakage, not just this one instance of it.
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   describe('GET /api/health', () => {
     it('returns ok when the DB and Redis are both reachable', () =>
       request(app.getHttpServer())
