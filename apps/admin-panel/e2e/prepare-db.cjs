@@ -69,6 +69,31 @@ async function main() {
        ST_SetSRID(ST_MakePoint(51.389, 35.6892), 4326)::geography)`,
     [ownerId],
   )
+  // A second, already-approved salon under its own owner -- 02-moderation-and-money.spec.ts
+  // needs a live salon to suspend (the pending one above is only useful for reject, which
+  // requires 'pending'; suspend requires 'approved').
+  const { rows: [{ id: approvedOwnerId }] } = await seed.query(
+    `INSERT INTO users (phone, role) VALUES ('09120000504', 'provider') RETURNING id`,
+  )
+  await seed.query(
+    `INSERT INTO salons (owner_id, name, slug, gender_target, status, address, city, location)
+     VALUES ($1, 'سالن تایید شده', 'e2e-admin-panel-approved-salon', 'women', 'approved', 'آدرس تست', 'تهران',
+       ST_SetSRID(ST_MakePoint(51.389, 35.6892), 4326)::geography)`,
+    [approvedOwnerId],
+  )
+  // A THIRD, dedicated pending salon for 02-moderation-and-money.spec.ts's reject scenario --
+  // it cannot reuse the 'سالن در انتظار تایید' salon above, since 01-approve-salon.spec.ts
+  // runs first against this same shared e2e database and approves that one, leaving
+  // 'reject-button' (v-if="status === 'pending'") permanently absent for any spec after it.
+  const { rows: [{ id: rejectOwnerId }] } = await seed.query(
+    `INSERT INTO users (phone, role) VALUES ('09120000505', 'provider') RETURNING id`,
+  )
+  await seed.query(
+    `INSERT INTO salons (owner_id, name, slug, gender_target, status, address, city, location)
+     VALUES ($1, 'سالن در انتظار رد', 'e2e-admin-panel-reject-salon', 'women', 'pending', 'آدرس تست', 'تهران',
+       ST_SetSRID(ST_MakePoint(51.389, 35.6892), 4326)::geography)`,
+    [rejectOwnerId],
+  )
   await seed.end()
 }
 
