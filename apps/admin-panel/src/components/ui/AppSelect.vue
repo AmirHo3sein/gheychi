@@ -5,6 +5,7 @@
 <script setup lang="ts">
 import { computed, useId } from 'vue'
 import Multiselect from 'vue-multiselect'
+import 'vue-multiselect/dist/vue-multiselect.css'
 
 export interface SelectOption {
   value: string | number

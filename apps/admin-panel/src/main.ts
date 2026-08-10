@@ -3,7 +3,6 @@ import { createPinia } from 'pinia'
 import { createWebHistory } from 'vue-router'
 import App from './App.vue'
 import { createAppRouter } from './router'
-import 'vue-multiselect/dist/vue-multiselect.css'
 import './assets/css/main.css'
 
 const app = createApp(App)
