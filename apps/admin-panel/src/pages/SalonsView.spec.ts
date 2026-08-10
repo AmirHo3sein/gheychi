@@ -23,13 +23,32 @@ const salon = {
   createdAt: '2026-07-10T08:00:00.000Z',
 }
 
+// The city filter's useCities fires its own GET /cities on mount, in parallel with this
+// page's GET /admin/salons -- every test needs both endpoints answered, or the unmocked
+// one falls through to a bare `undefined` response and throws when the composable tries
+// to destructure it.
+const CITIES_RESPONSE = {
+  data: [
+    { name: 'تهران', lat: 35.6892, lng: 51.389 },
+    { name: 'مشهد', lat: 36.2605, lng: 59.6168 },
+  ],
+  error: null,
+}
+
+// Dispatches by URL so GET /cities always gets its own well-shaped response instead of
+// accidentally reusing whatever a test set up for GET /admin/salons (mirrors ReportsView
+// .spec.ts's url-aware mockImplementation convention).
+function mockSalons(response: unknown) {
+  fetchMock.mockImplementation((url: string) => (url === '/cities' ? Promise.resolve(CITIES_RESPONSE) : Promise.resolve(response)))
+}
+
 describe('SalonsView', () => {
   beforeEach(() => {
     fetchMock.mockReset()
   })
 
   it('loads salons and renders name, city, gender, and status', async () => {
-    fetchMock.mockResolvedValue({ data: { items: [{ ...salon }], total: 1, page: 1, pageSize: 20 }, error: null })
+    mockSalons({ data: { items: [{ ...salon }], total: 1, page: 1, pageSize: 20 }, error: null })
     const wrapper = mount(SalonsView, mountOptions)
     await flushPromises()
 
@@ -38,8 +57,46 @@ describe('SalonsView', () => {
     expect(wrapper.text()).toContain('تهران')
   })
 
+  // City-list source of truth: the filter's options must come from the live GET /cities
+  // response, not a hardcoded duplicate -- a backend-only city addition must reach here
+  // with no code change.
+  it('fetches the city filter options from GET /cities', async () => {
+    mockSalons({ data: { items: [{ ...salon }], total: 1, page: 1, pageSize: 20 }, error: null })
+    const wrapper = mount(SalonsView, mountOptions)
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith('/cities', { silent: true })
+    const citySelect = wrapper.findAllComponents(AppSelect).find((c) => c.props('label') === 'شهر')!
+    const cityValues = citySelect.props('options').map((o: { value: string | number }) => o.value)
+    expect(cityValues).toEqual(['', 'تهران', 'مشهد'])
+  })
+
+  // A GET /cities failure must not silently repaint the city filter as "no cities exist" --
+  // it gets its own error state with a retry action, same idiom as the page's own
+  // load-error block.
+  it('shows a retry affordance for the city filter when GET /cities fails, and retry repopulates it', async () => {
+    let citiesResponse: unknown = { data: null, error: { status: 500, message: 'Something went wrong' } }
+    fetchMock.mockImplementation((url: string) =>
+      url === '/cities'
+        ? Promise.resolve(citiesResponse)
+        : Promise.resolve({ data: { items: [{ ...salon }], total: 1, page: 1, pageSize: 20 }, error: null }),
+    )
+    const wrapper = mount(SalonsView, mountOptions)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="retry-cities"]').exists()).toBe(true)
+    expect(wrapper.findAllComponents(AppSelect).find((c) => c.props('label') === 'شهر')).toBeUndefined()
+
+    citiesResponse = CITIES_RESPONSE
+    await wrapper.get('[data-testid="retry-cities"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="retry-cities"]').exists()).toBe(false)
+    expect(wrapper.findAllComponents(AppSelect).find((c) => c.props('label') === 'شهر')).toBeDefined()
+  })
+
   it('shows a featured badge only for salons flagged isFeatured', async () => {
-    fetchMock.mockResolvedValue({
+    mockSalons({
       data: {
         items: [
           { ...salon, id: 's1', isFeatured: true },
@@ -61,7 +118,7 @@ describe('SalonsView', () => {
   // The badge must mirror SearchService's boost predicate -- is_featured alone is not the
   // public truth once featured_until has elapsed.
   it('keeps the featured badge for an open-ended window and for one still in the future', async () => {
-    fetchMock.mockResolvedValue({
+    mockSalons({
       data: {
         items: [
           { ...salon, id: 's1', isFeatured: true, featuredUntil: null },
@@ -81,7 +138,7 @@ describe('SalonsView', () => {
   })
 
   it('marks an elapsed featured window as expired instead of still calling it ویژه', async () => {
-    fetchMock.mockResolvedValue({
+    mockSalons({
       data: {
         items: [{ ...salon, id: 's1', isFeatured: true, featuredUntil: '2020-01-01T00:00:00.000Z' }],
         total: 1,
@@ -101,7 +158,7 @@ describe('SalonsView', () => {
   })
 
   it('shows no featured badge at all for a salon that was never featured, even with a stale featuredUntil', async () => {
-    fetchMock.mockResolvedValue({
+    mockSalons({
       data: {
         items: [{ ...salon, id: 's1', isFeatured: false, featuredUntil: '2099-01-01T00:00:00.000Z' }],
         total: 1,
@@ -120,7 +177,8 @@ describe('SalonsView', () => {
   // Finding 1: a fetch failure must not be silently repainted as "no results" -- it needs
   // its own state, distinct from the genuine-empty-results EmptyState, with a retry action.
   it('shows a distinct error state (not the empty state) when the fetch fails, and retry reloads', async () => {
-    fetchMock.mockResolvedValueOnce({ data: null, error: { status: 500, message: 'Something went wrong' } })
+    let salonsResponse: unknown = { data: null, error: { status: 500, message: 'Something went wrong' } }
+    fetchMock.mockImplementation((url: string) => (url === '/cities' ? Promise.resolve(CITIES_RESPONSE) : Promise.resolve(salonsResponse)))
     const wrapper = mount(SalonsView, mountOptions)
     await flushPromises()
 
@@ -128,17 +186,18 @@ describe('SalonsView', () => {
     // Never conflated with the genuine-empty-results copy.
     expect(wrapper.text()).not.toContain('آرایشگاهی با این فیلترها یافت نشد.')
 
-    fetchMock.mockResolvedValueOnce({ data: { items: [{ ...salon }], total: 1, page: 1, pageSize: 20 }, error: null })
+    salonsResponse = { data: { items: [{ ...salon }], total: 1, page: 1, pageSize: 20 }, error: null }
     await wrapper.get('[data-testid="retry-load"]').trigger('click')
     await flushPromises()
 
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const salonsCalls = fetchMock.mock.calls.filter(([url]) => (url as string).startsWith('/admin/salons'))
+    expect(salonsCalls).toHaveLength(2)
     expect(wrapper.find('[data-testid="load-error"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('سالن نمونه')
   })
 
   it('still shows the genuine empty-results state when the fetch succeeds with zero items', async () => {
-    fetchMock.mockResolvedValue({ data: { items: [], total: 0, page: 1, pageSize: 20 }, error: null })
+    mockSalons({ data: { items: [], total: 0, page: 1, pageSize: 20 }, error: null })
     const wrapper = mount(SalonsView, mountOptions)
     await flushPromises()
 
@@ -147,12 +206,13 @@ describe('SalonsView', () => {
   })
 
   it('a later successful load clears a prior error state', async () => {
-    fetchMock.mockResolvedValueOnce({ data: null, error: { status: 500, message: 'Something went wrong' } })
+    let salonsResponse: unknown = { data: null, error: { status: 500, message: 'Something went wrong' } }
+    fetchMock.mockImplementation((url: string) => (url === '/cities' ? Promise.resolve(CITIES_RESPONSE) : Promise.resolve(salonsResponse)))
     const wrapper = mount(SalonsView, mountOptions)
     await flushPromises()
     expect(wrapper.find('[data-testid="load-error"]').exists()).toBe(true)
 
-    fetchMock.mockResolvedValueOnce({ data: { items: [{ ...salon }], total: 1, page: 1, pageSize: 20 }, error: null })
+    salonsResponse = { data: { items: [{ ...salon }], total: 1, page: 1, pageSize: 20 }, error: null }
     await wrapper.findComponent(AppSelect).vm.$emit('update:modelValue', 'approved')
     await flushPromises()
 
@@ -162,15 +222,17 @@ describe('SalonsView', () => {
   // Finding 4: a loading affordance must be visible during the initial load, a page change,
   // and a filter change -- all three are driven by the same `loading` ref.
   it('shows a loading indicator while the request is in flight', async () => {
-    let resolveFetch!: (value: unknown) => void
-    fetchMock.mockReturnValue(new Promise((resolve) => { resolveFetch = resolve }))
+    let resolveSalons!: (value: unknown) => void
+    fetchMock.mockImplementation((url: string) =>
+      url === '/cities' ? Promise.resolve(CITIES_RESPONSE) : new Promise((resolve) => { resolveSalons = resolve }),
+    )
     const wrapper = mount(SalonsView, mountOptions)
 
     // Still pending -- the loading affordance should already be visible synchronously,
     // before the response ever resolves.
     expect(wrapper.find('[data-testid="table-loading"]').exists()).toBe(true)
 
-    resolveFetch({ data: { items: [{ ...salon }], total: 1, page: 1, pageSize: 20 }, error: null })
+    resolveSalons({ data: { items: [{ ...salon }], total: 1, page: 1, pageSize: 20 }, error: null })
     await flushPromises()
 
     expect(wrapper.find('[data-testid="table-loading"]').exists()).toBe(false)
@@ -180,9 +242,7 @@ describe('SalonsView', () => {
   // both resets page.value to 1 (which the page watcher reacts to) and would otherwise also
   // call load() directly.
   it('resets to page 1 with a single fetch when a filter changes from page > 1', async () => {
-    fetchMock.mockImplementation(() =>
-      Promise.resolve({ data: { items: [{ ...salon }], total: 50, page: 1, pageSize: 20 }, error: null }),
-    )
+    mockSalons({ data: { items: [{ ...salon }], total: 50, page: 1, pageSize: 20 }, error: null })
     const wrapper = mount(SalonsView, mountOptions)
     await flushPromises()
 
@@ -197,13 +257,14 @@ describe('SalonsView', () => {
     await flushPromises()
 
     // Exactly ONE request: the page reset rides along with the filter change, not as a
-    // second, redundant concurrent fetch.
+    // second, redundant concurrent fetch. (GET /cities isn't re-fetched on a filter change,
+    // so this stays a single call.)
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock).toHaveBeenCalledWith('/admin/salons?status=approved&page=1&pageSize=20', { silent: true })
   })
 
   it('fires a single fetch when a filter changes while already on page 1', async () => {
-    fetchMock.mockResolvedValue({ data: { items: [{ ...salon }], total: 1, page: 1, pageSize: 20 }, error: null })
+    mockSalons({ data: { items: [{ ...salon }], total: 1, page: 1, pageSize: 20 }, error: null })
     const wrapper = mount(SalonsView, mountOptions)
     await flushPromises()
 
@@ -221,7 +282,7 @@ describe('SalonsView', () => {
   // scrolled to. The wrapper has to stay the table's DIRECT parent -- an overflow-x-auto further
   // up the tree would let an intermediate box overflow first and defeat the point.
   it('keeps the table inside its own horizontal scroll container', async () => {
-    fetchMock.mockResolvedValue({ data: { items: [{ ...salon }], total: 1, page: 1, pageSize: 20 }, error: null })
+    mockSalons({ data: { items: [{ ...salon }], total: 1, page: 1, pageSize: 20 }, error: null })
     const wrapper = mount(SalonsView, mountOptions)
     await flushPromises()
 

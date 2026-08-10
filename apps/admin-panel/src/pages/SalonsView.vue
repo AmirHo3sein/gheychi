@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
+import { useCities } from '@/composables/useCities'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -10,7 +11,6 @@ import AppSelect from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
-import { CITIES } from '@/utils/cities'
 import { debounce } from '@/utils/debounce'
 import { genderTargetLabel, salonStatusLabel } from '@/utils/labels'
 
@@ -26,7 +26,11 @@ const STATUS_OPTIONS = [
   { value: 'rejected', label: 'رد شده' },
   { value: 'suspended', label: 'معلق' },
 ]
-const CITY_OPTIONS = [{ value: '', label: 'همه شهرها' }, ...CITIES.map((c) => ({ value: c, label: c }))]
+
+// Live, canonical GET /cities (via useCities), not a hand-maintained static duplicate --
+// see useCities.ts for the full rationale.
+const { cityOptions, loading: citiesLoading, error: citiesError, load: loadCities } = useCities()
+const CITY_OPTIONS = computed(() => [{ value: '', label: 'همه شهرها' }, ...cityOptions.value])
 
 interface SalonRow {
   id: string
@@ -130,7 +134,10 @@ const hasActiveFilters = computed(
   () => statusFilter.value !== 'all' || !!cityFilter.value || !!nameFilter.value || !!genderFilter.value,
 )
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadCities()
+})
 // nameFilter is free-text (fires on every keystroke) -- debounced so it doesn't hammer the
 // API mid-word. The dropdown filters are discrete clicks, so they still trigger immediately.
 watch(nameFilter, debounce(loadFromFilterChange, 350))
@@ -143,7 +150,20 @@ watch(page, load)
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
         <AppInput v-model="nameFilter" icon="search" label="جست‌وجو" placeholder="نام آرایشگاه" class="w-52" />
-        <AppSelect v-model="cityFilter" :options="CITY_OPTIONS" label="شهر" width="10rem" searchable />
+        <div v-if="citiesError" class="flex items-end gap-2">
+          <AppIcon name="warning" :size="14" class="mb-2.5 shrink-0 text-(--tone-danger-text)" />
+          <AppButton type="button" variant="secondary" data-testid="retry-cities" @click="loadCities">تلاش دوباره</AppButton>
+        </div>
+        <AppSelect
+          v-else
+          v-model="cityFilter"
+          :options="CITY_OPTIONS"
+          label="شهر"
+          width="10rem"
+          searchable
+          :disabled="citiesLoading"
+          :placeholder="citiesLoading ? 'در حال بارگذاری…' : undefined"
+        />
         <AppSelect v-model="genderFilter" :options="GENDER_OPTIONS" label="مخاطب" width="11rem" />
         <div data-testid="status-filter">
           <AppSelect v-model="statusFilter" :options="STATUS_OPTIONS" label="وضعیت" width="11rem" />
