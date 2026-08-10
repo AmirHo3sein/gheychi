@@ -65,7 +65,10 @@ describe('BookingReminderJob', () => {
     expect(count).toBe(1);
     expect(bookingsUpdate).toHaveBeenCalledWith({ id: 'booking-1', remindedAt: IsNull() }, { remindedAt: NOW });
     expect(smsSend).toHaveBeenCalledWith(CUSTOMER.phone, expect.stringContaining(SALON.name));
-    expect(pushSendToUser).toHaveBeenCalled();
+    expect(pushSendToUser).toHaveBeenCalledWith(
+      CUSTOMER.id,
+      expect.objectContaining({ data: { type: 'booking', bookingId: BOOKING.id } }),
+    );
     expect(alertsRaise).not.toHaveBeenCalled();
   });
 

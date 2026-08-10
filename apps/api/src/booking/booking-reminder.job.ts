@@ -6,6 +6,7 @@ import { AlertsService } from '../alerts/alerts.service';
 import { CronJobRunner } from '../common/cron-job-runner.service';
 import { formatIranDateTimeFa } from '../common/iran-time.util';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
+import { PushNotificationData } from '../push/push.provider';
 import { PushService } from '../push/push.service';
 import { SalonsService } from '../salons/salons.service';
 import { SMS_PROVIDER, SmsProvider } from '../sms/sms.provider';
@@ -82,8 +83,9 @@ export class BookingReminderJob {
         // before this fix, an SMS failure was swallowed via a blind `.catch(() => {})`
         // with zero logging or alerting, while the booking was still permanently marked
         // reminded (see the claim above) -- silently losing the reminder for good.
+        const data: PushNotificationData = { type: 'booking', bookingId: booking.id };
         await this.push
-          .sendToUser(customer.id, { title: 'یادآوری نوبت', body: `${salon.name} — ${when}` })
+          .sendToUser(customer.id, { title: 'یادآوری نوبت', body: `${salon.name} — ${when}`, data })
           .catch(() => {});
 
         const smsOk = await this.sms

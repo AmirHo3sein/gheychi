@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { formatIranDateTimeFa } from '../common/iran-time.util';
+import { PushNotificationData } from '../push/push.provider';
 import { PushService } from '../push/push.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { SMS_PROVIDER, SmsProvider } from '../sms/sms.provider';
@@ -391,16 +392,20 @@ export class PaymentsService {
 
     await Promise.all([
       customer
-        ? this.notifyOne(customer, `نوبت شما در ${salon.name}، ${when} لغو شد.`, {
-            title: 'لغو نوبت',
-            body: `${salon.name} — ${when}`,
-          })
+        ? this.notifyOne(
+            customer,
+            `نوبت شما در ${salon.name}، ${when} لغو شد.`,
+            { title: 'لغو نوبت', body: `${salon.name} — ${when}` },
+            bookingId,
+          )
         : Promise.resolve(),
       owner
-        ? this.notifyOne(owner, `یک نوبت در ${salon.name} برای ${when} لغو شد.`, {
-            title: 'لغو نوبت',
-            body: `${salon.name} — ${when}`,
-          })
+        ? this.notifyOne(
+            owner,
+            `یک نوبت در ${salon.name} برای ${when} لغو شد.`,
+            { title: 'لغو نوبت', body: `${salon.name} — ${when}` },
+            bookingId,
+          )
         : Promise.resolve(),
     ]);
   }
@@ -410,10 +415,12 @@ export class PaymentsService {
     if (!booking) return;
     const customer = await this.usersService.findById(booking.userId);
     if (!customer) return;
-    await this.notifyOne(customer, 'مبلغ ودیعه نوبت شما بازگردانده شد.', {
-      title: 'بازگشت وجه',
-      body: 'مبلغ ودیعه نوبت شما بازگردانده شد.',
-    });
+    await this.notifyOne(
+      customer,
+      'مبلغ ودیعه نوبت شما بازگردانده شد.',
+      { title: 'بازگشت وجه', body: 'مبلغ ودیعه نوبت شما بازگردانده شد.' },
+      bookingId,
+    );
   }
 
   // Only called for a payment still at 'initiated' whose gateway outcome was a real
@@ -454,22 +461,35 @@ export class PaymentsService {
     // run concurrently to avoid stacking their latency onto the payment-callback response.
     await Promise.all([
       customer
-        ? this.notifyOne(customer, `نوبت شما در ${salon.name}، ${when} تایید شد. آدرس: ${salon.address}`, {
-            title: 'تایید نوبت',
-            body: `${salon.name} — ${when}`,
-          })
+        ? this.notifyOne(
+            customer,
+            `نوبت شما در ${salon.name}، ${when} تایید شد. آدرس: ${salon.address}`,
+            { title: 'تایید نوبت', body: `${salon.name} — ${when}` },
+            bookingId,
+          )
         : Promise.resolve(),
       owner
-        ? this.notifyOne(owner, `یک نوبت جدید در ${salon.name} برای ${when} ثبت شد.`, {
-            title: 'نوبت جدید',
-            body: `${salon.name} — ${when}`,
-          })
+        ? this.notifyOne(
+            owner,
+            `یک نوبت جدید در ${salon.name} برای ${when} ثبت شد.`,
+            { title: 'نوبت جدید', body: `${salon.name} — ${when}` },
+            bookingId,
+          )
         : Promise.resolve(),
     ]);
   }
 
-  private async notifyOne(user: User, smsBody: string, push: { title: string; body: string }): Promise<void> {
+  // `bookingId` is threaded through separately from `push` (rather than folded into its
+  // caller-built object) so every call site here -- all of which are booking notifications --
+  // gets the structured deep-link data attached the same way, in one place.
+  private async notifyOne(
+    user: User,
+    smsBody: string,
+    push: { title: string; body: string },
+    bookingId: string,
+  ): Promise<void> {
     await this.sms.send(user.phone, smsBody).catch(() => {});
-    await this.push.sendToUser(user.id, push).catch(() => {});
+    const data: PushNotificationData = { type: 'booking', bookingId };
+    await this.push.sendToUser(user.id, { ...push, data }).catch(() => {});
   }
 }

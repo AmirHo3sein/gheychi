@@ -75,7 +75,10 @@ describe('PaymentsService.attemptRefund', () => {
       expect.objectContaining({ status: 'refunded', refundRefId: 'RR-1', refundedAt: expect.any(Date) }),
     );
     expect(smsSend).toHaveBeenCalledWith('09120000000', expect.any(String));
-    expect(pushSend).toHaveBeenCalledWith('user-1', expect.objectContaining({ title: expect.any(String) }));
+    expect(pushSend).toHaveBeenCalledWith(
+      'user-1',
+      expect.objectContaining({ title: expect.any(String), data: { type: 'booking', bookingId: 'booking-1' } }),
+    );
     expect(raise).not.toHaveBeenCalled();
     expect(reverseIfNeeded).toHaveBeenCalledWith('booking-1');
   });
@@ -196,7 +199,10 @@ describe('PaymentsService.notifyCancelled', () => {
     expect(smsSend).toHaveBeenCalledTimes(1);
     expect(smsSend).toHaveBeenCalledWith('09120000000', expect.stringContaining('لغو شد'));
     expect(pushSend).toHaveBeenCalledTimes(1);
-    expect(pushSend).toHaveBeenCalledWith('user-1', expect.objectContaining({ title: expect.any(String) }));
+    expect(pushSend).toHaveBeenCalledWith(
+      'user-1',
+      expect.objectContaining({ title: expect.any(String), data: { type: 'booking', bookingId: 'booking-1' } }),
+    );
   });
 
   it('notifies BOTH the customer and the owner when the CUSTOMER cancelled -- the owner sees the slot freed up', async () => {
@@ -205,6 +211,15 @@ describe('PaymentsService.notifyCancelled', () => {
     expect(smsSend).toHaveBeenCalledTimes(2);
     expect(smsSend).toHaveBeenCalledWith('09120000000', expect.any(String));
     expect(smsSend).toHaveBeenCalledWith('09121111111', expect.any(String));
+    expect(pushSend).toHaveBeenCalledTimes(2);
+    expect(pushSend).toHaveBeenCalledWith(
+      'user-1',
+      expect.objectContaining({ data: { type: 'booking', bookingId: 'booking-1' } }),
+    );
+    expect(pushSend).toHaveBeenCalledWith(
+      'owner-1',
+      expect.objectContaining({ data: { type: 'booking', bookingId: 'booking-1' } }),
+    );
   });
 
   it('no-ops without throwing when the booking no longer exists', async () => {
@@ -219,6 +234,63 @@ describe('PaymentsService.notifyCancelled', () => {
 
     await expect(service.notifyCancelled('booking-1', 'user')).resolves.toBeUndefined();
     expect(smsSend).not.toHaveBeenCalled();
+  });
+});
+
+describe('PaymentsService.notifyConfirmed', () => {
+  let service: PaymentsService;
+  let bookingsFindOneBy: jest.Mock;
+  let salonsFindById: jest.Mock;
+  let usersFindById: jest.Mock;
+  let smsSend: jest.Mock;
+  let pushSend: jest.Mock;
+
+  const BOOKING = { id: 'booking-1', userId: 'user-1', salonId: 'salon-1', startsAt: new Date('2026-09-01T09:00:00.000Z') };
+  const SALON = { id: 'salon-1', name: 'سالن آرا', ownerId: 'owner-1', address: 'تهران' };
+  const CUSTOMER = { id: 'user-1', phone: '09120000000' };
+  const OWNER = { id: 'owner-1', phone: '09121111111' };
+
+  beforeEach(async () => {
+    bookingsFindOneBy = jest.fn().mockResolvedValue({ ...BOOKING });
+    salonsFindById = jest.fn().mockResolvedValue({ ...SALON });
+    usersFindById = jest.fn().mockImplementation((id: string) =>
+      Promise.resolve(id === 'user-1' ? { ...CUSTOMER } : id === 'owner-1' ? { ...OWNER } : null),
+    );
+    smsSend = jest.fn().mockResolvedValue(undefined);
+    pushSend = jest.fn().mockResolvedValue(undefined);
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PaymentsService,
+        { provide: getRepositoryToken(Payment), useValue: {} },
+        { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy } },
+        { provide: DataSource, useValue: {} },
+        { provide: SalonsService, useValue: { findById: salonsFindById } },
+        { provide: UsersService, useValue: { findById: usersFindById } },
+        { provide: SMS_PROVIDER, useValue: { send: smsSend } },
+        { provide: PAYMENT_GATEWAY, useValue: {} },
+        { provide: PushService, useValue: { sendToUser: pushSend } },
+        { provide: AlertsService, useValue: { raise: jest.fn() } },
+        { provide: ReferralsService, useValue: {} },
+        { provide: WalletService, useValue: {} },
+      ],
+    }).compile();
+
+    service = moduleRef.get(PaymentsService);
+  });
+
+  it('sends the customer and owner push notifications with structured deep-link data pointing at the confirmed booking', async () => {
+    await service.notifyConfirmed('booking-1');
+
+    expect(pushSend).toHaveBeenCalledTimes(2);
+    expect(pushSend).toHaveBeenCalledWith(
+      'user-1',
+      expect.objectContaining({ title: 'تایید نوبت', data: { type: 'booking', bookingId: 'booking-1' } }),
+    );
+    expect(pushSend).toHaveBeenCalledWith(
+      'owner-1',
+      expect.objectContaining({ title: 'نوبت جدید', data: { type: 'booking', bookingId: 'booking-1' } }),
+    );
   });
 });
 
