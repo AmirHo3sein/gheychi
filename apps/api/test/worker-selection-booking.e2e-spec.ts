@@ -128,6 +128,32 @@ describe('Per-staff booking selection (e2e)', () => {
       .expect(201);
   });
 
+  it('concurrency: two simultaneous bookings for the SAME worker at overlapping times -- exactly one succeeds', async () => {
+    const startsAt = futureIso(504);
+    const racerE = await loginAs(app, '09141110027');
+    const racerF = await loginAs(app, '09141110028');
+
+    // Real concurrent createHold calls (not the mocked unit test in
+    // bookings.service.spec.ts, and not the sequential "409s a second customer..."
+    // test above, which awaits the first request to fully complete before firing the
+    // second). Salon capacity is 5 -- spare enough that only the shared worker's own
+    // overlap check, guarded by the same per-salon Redis lock createHold takes for
+    // every request, can be the thing that rejects the loser.
+    const [first, second] = await Promise.all([
+      request(app.getHttpServer())
+        .post('/api/bookings')
+        .set('Cookie', racerE)
+        .send({ salonId, serviceId, startsAt, workerId: worker1Id }),
+      request(app.getHttpServer())
+        .post('/api/bookings')
+        .set('Cookie', racerF)
+        .send({ salonId, serviceId, startsAt, workerId: worker1Id }),
+    ]);
+
+    const statuses = [first.status, second.status].sort();
+    expect(statuses).toEqual([201, 409]);
+  });
+
   it('404s when the chosen worker does not belong to this salon', async () => {
     const customerCookie = await loginAs(app, '09141110016');
     await request(app.getHttpServer())

@@ -95,6 +95,26 @@ describe('Bookings — create hold (e2e)', () => {
       .expect(409);
   });
 
+  it('concurrency: two simultaneous bookings for the same salon capacity slot -- exactly one succeeds', async () => {
+    const startsAt = futureIso(500);
+    const racerA = await loginAs(app, '09121110031');
+    const racerB = await loginAs(app, '09121110032');
+
+    // Real concurrent HTTP requests (not the mocked-Redis unit test in
+    // bookings.service.spec.ts, and not the sequential test above -- await-then-await
+    // never actually contends for createHold's own per-salon lock) hitting a real
+    // Postgres + Redis. Capacity is 1, so whichever request wins the lock's
+    // check-then-insert critical section first must be the only one that gets to
+    // insert; the other must see the slot already taken.
+    const [first, second] = await Promise.all([
+      request(app.getHttpServer()).post('/api/bookings').set('Cookie', racerA).send({ salonId, serviceId, startsAt }),
+      request(app.getHttpServer()).post('/api/bookings').set('Cookie', racerB).send({ salonId, serviceId, startsAt }),
+    ]);
+
+    const statuses = [first.status, second.status].sort();
+    expect(statuses).toEqual([201, 409]);
+  });
+
   it('lists the caller\'s own bookings via GET /bookings/mine', async () => {
     const res = await request(app.getHttpServer())
       .get('/api/bookings/mine')

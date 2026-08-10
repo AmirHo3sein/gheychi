@@ -124,6 +124,61 @@ describe('Payments — callback (e2e)', () => {
     expect(second.headers.location).toBe(`http://localhost:3003/booking/callback?status=success&bookingId=${created.body.booking.id}`);
   });
 
+  // The idempotency test above is sequential (await-then-await), which only proves
+  // resolveByAuthority's status check works once the first call has fully committed.
+  // The real risk this module documents (see handleCallback's own comment on the
+  // conditional-UPDATE capture transaction) is a genuinely concurrent double-delivery --
+  // a back-button + refresh or an in-app browser retry landing while the first call's
+  // gateway verify round-trip is still in flight. This fires two real concurrent
+  // callbacks for the same authority and proves the conditional UPDATE (not a mocked
+  // "lost CAS" like payments.service.spec.ts) actually serializes them: the booking is
+  // confirmed exactly once and the customer is notified exactly once, regardless of
+  // which request happens to win.
+  it('concurrency: two simultaneous callbacks for the same authority -- confirmed exactly once, notified exactly once', async () => {
+    const pushService = app.get(PushService);
+    const sendToUserSpy = jest.spyOn(pushService, 'sendToUser');
+
+    const created = await request(app.getHttpServer())
+      .post('/api/bookings')
+      .set('Cookie', customerCookie)
+      .send({ salonId, serviceId, startsAt: futureIso(220) })
+      .expect(201);
+    const bookingId = created.body.booking.id;
+    const authority = extractAuthority(created.body.paymentUrl);
+
+    const [first, second] = await Promise.all([
+      request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'OK' }),
+      request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'OK' }),
+    ]);
+
+    // Both requests must redirect to the SAME success page -- a customer who genuinely
+    // double-delivers the callback must see identical, successful results either way,
+    // not one success and one error.
+    const successLocation = `http://localhost:3003/booking/callback?status=success&bookingId=${bookingId}`;
+    expect(first.status).toBe(302);
+    expect(second.status).toBe(302);
+    expect(first.headers.location).toBe(successLocation);
+    expect(second.headers.location).toBe(successLocation);
+
+    const booking = await request(app.getHttpServer())
+      .get(`/api/bookings/${bookingId}`)
+      .set('Cookie', customerCookie)
+      .expect(200);
+    expect(booking.body.status).toBe('confirmed');
+
+    const ds = app.get(DataSource);
+    const [payment] = await ds.query(`SELECT status FROM payments WHERE booking_id = $1`, [bookingId]);
+    expect(payment.status).toBe('paid');
+
+    // Exactly one customer "booking confirmed" push for this booking -- the winner's
+    // notifyConfirmed call, never the loser's (it sees affected=0 on the conditional
+    // UPDATE and skips notifying entirely).
+    const confirmationCalls = sendToUserSpy.mock.calls.filter(
+      ([userId, data]) => userId === customerId && (data as { data?: { bookingId?: string } }).data?.bookingId === bookingId,
+    );
+    expect(confirmationCalls).toHaveLength(1);
+  });
+
   it('cancels the booking when Zarinpal reports Status=NOK', async () => {
     const created = await request(app.getHttpServer())
       .post('/api/bookings')

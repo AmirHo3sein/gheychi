@@ -258,4 +258,73 @@ describe('Coupons (e2e)', () => {
       expect(res.body.booking.priceSnapshot).toBe(700000); // 1,000,000 - 30%
     });
   });
+
+  // resolveAndValidate's own already-redeemed pre-check is a best-effort read that two
+  // concurrent requests can both pass -- UNIQUE(coupon_id, user_id) is the real backstop
+  // (see bookings.service.spec.ts's mocked proof that the resulting duplicate-key error
+  // is translated into COUPON_ALREADY_REDEEMED). This is the real-Postgres version: two
+  // genuinely concurrent bookings, same user, same code, against two DIFFERENT salons so
+  // createHold's own per-salon Redis lock can't be what serializes them -- only the DB
+  // constraint can.
+  describe('concurrency: same coupon code, same user, two different salons at once', () => {
+    it('redeems the code exactly once -- the loser gets the ordinary already-redeemed rejection, not a 500', async () => {
+      const owner2Cookie = await loginAs(app, '09125559991');
+      const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+      const salon2Res = await request(app.getHttpServer()).post('/api/salons').set('Cookie', owner2Cookie).send({
+        name: 'Coupon Race Salon 2',
+        genderTarget: 'women',
+        address: 'Somewhere St, No. 2',
+        city: 'Tehran',
+        lat: 35.71,
+        lng: 51.41,
+        capacity: 5,
+        categoryIds: [categoriesRes.body[0].id],
+      });
+      const salon2Id = salon2Res.body.id;
+
+      const service2Res = await request(app.getHttpServer())
+        .post('/api/salons/mine/services')
+        .set('Cookie', owner2Cookie)
+        .send({ categoryId: categoriesRes.body[0].id, name: 'Cut 2', price: 1000000, durationMin: 60 });
+      const service2Id = service2Res.body.id;
+
+      const ds = app.get(DataSource);
+      await ds.query(`UPDATE salons SET status = 'approved' WHERE id = $1`, [salon2Id]);
+      await ds.query(
+        `INSERT INTO working_hours (salon_id, weekday, open_time, close_time)
+         SELECT $1, generate_series(0, 6), '00:00', '23:00'`,
+        [salon2Id],
+      );
+
+      await request(app.getHttpServer())
+        .post('/api/admin/coupons')
+        .set('Cookie', await loginAsAdmin(app, '09121110000'))
+        .send({ code: 'RACE10', discountPercent: 10 })
+        .expect(201);
+
+      const racer = await loginAs(app, '09121119998');
+
+      const [first, second] = await Promise.all([
+        request(app.getHttpServer())
+          .post('/api/bookings')
+          .set('Cookie', racer)
+          .send({ salonId, serviceId, startsAt: futureIso(144), couponCode: 'RACE10' }),
+        request(app.getHttpServer())
+          .post('/api/bookings')
+          .set('Cookie', racer)
+          .send({ salonId: salon2Id, serviceId: service2Id, startsAt: futureIso(144), couponCode: 'RACE10' }),
+      ]);
+
+      const statuses = [first.status, second.status].sort();
+      expect(statuses).toEqual([201, 400]);
+      const loser = [first, second].find((r) => r.status === 400)!;
+      expect(loser.body.code).toBe('COUPON_ALREADY_REDEEMED');
+
+      const winner = [first, second].find((r) => r.status === 201)!;
+      expect(winner.body.couponApplied).toBe(true);
+
+      const redemptions = await ds.query(`SELECT cr.id FROM coupon_redemptions cr JOIN coupons c ON c.id = cr.coupon_id WHERE c.code = 'RACE10'`);
+      expect(redemptions).toHaveLength(1);
+    });
+  });
 });

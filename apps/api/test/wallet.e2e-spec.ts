@@ -164,4 +164,43 @@ describe('Wallet ledger + admin manual adjustment (e2e)', () => {
     const res = await request(app.getHttpServer()).get('/api/wallet/mine').set('Cookie', otherCookie).expect(200);
     expect(res.body).toEqual({ balances: [] });
   });
+
+  // WalletService.debit()'s row lock (.setLock('pessimistic_write'), proven invoked by
+  // the mocked unit test in wallet.service.spec.ts) is the only thing standing between
+  // two concurrent debits and a negative balance -- this is the real-Postgres proof it
+  // actually serializes them. Each debit below is individually within the seeded
+  // balance, but the two together are not.
+  it('concurrency: two simultaneous debits together exceeding the balance -- exactly one succeeds, balance never goes negative', async () => {
+    const racerCookie = await loginAs(app, '09122320099');
+    const racerUsers = await request(app.getHttpServer())
+      .get('/api/admin/users?phone=09122320099')
+      .set('Cookie', adminCookie)
+      .expect(200);
+    const racerId = racerUsers.body.items[0].id;
+
+    await request(app.getHttpServer())
+      .post('/api/admin/wallet/adjust')
+      .set('Cookie', adminCookie)
+      .send({ userId: racerId, amount: 100000, reason: 'race test seed' })
+      .expect(201);
+
+    const [first, second] = await Promise.all([
+      request(app.getHttpServer())
+        .post('/api/admin/wallet/adjust')
+        .set('Cookie', adminCookie)
+        .send({ userId: racerId, amount: -70000, reason: 'race debit A' }),
+      request(app.getHttpServer())
+        .post('/api/admin/wallet/adjust')
+        .set('Cookie', adminCookie)
+        .send({ userId: racerId, amount: -70000, reason: 'race debit B' }),
+    ]);
+
+    const statuses = [first.status, second.status].sort();
+    expect(statuses).toEqual([201, 400]);
+
+    const balances = await request(app.getHttpServer()).get('/api/wallet/mine').set('Cookie', racerCookie).expect(200);
+    const balance = balances.body.balances.find((b: { currency: string }) => b.currency === 'toman')?.balance ?? 0;
+    // Never negative, and never double-debited: exactly one 70,000 debit landed.
+    expect(balance).toBe(30000);
+  });
 });
