@@ -24,38 +24,83 @@ describe('HealthController', () => {
     controller = moduleRef.get(HealthController);
   });
 
-  it('returns ok for both dependencies when the DB and Redis both respond', async () => {
-    await expect(controller.check()).resolves.toEqual({ status: 'ok', db: 'ok', redis: 'ok' });
-  });
+  describe('check (GET /health)', () => {
+    it('returns ok for both dependencies when the DB and Redis both respond', async () => {
+      await expect(controller.check()).resolves.toEqual({ status: 'ok', db: 'ok', redis: 'ok' });
+    });
 
-  it('throws 503 with db=error when the DB query rejects', async () => {
-    dataSourceQuery.mockRejectedValue(new Error('connection refused'));
+    it('throws 503 with db=error when the DB query rejects', async () => {
+      dataSourceQuery.mockRejectedValue(new Error('connection refused'));
 
-    await expect(controller.check()).rejects.toMatchObject({
-      status: 503,
-      response: { status: 'error', db: 'error', redis: 'ok' },
+      await expect(controller.check()).rejects.toMatchObject({
+        status: 503,
+        response: { status: 'error', db: 'error', redis: 'ok' },
+      });
+    });
+
+    it('throws 503 with redis=error when the Redis ping rejects', async () => {
+      redisPing.mockRejectedValue(new Error('connection refused'));
+
+      await expect(controller.check()).rejects.toMatchObject({
+        status: 503,
+        response: { status: 'error', db: 'ok', redis: 'error' },
+      });
+    });
+
+    it('throws 503 with db=error when the DB query hangs past the check timeout', async () => {
+      jest.useFakeTimers();
+      dataSourceQuery.mockReturnValue(new Promise(() => {})); // never resolves
+
+      const resultPromise = controller.check().catch((err) => err);
+      await jest.advanceTimersByTimeAsync(2000);
+      const err = await resultPromise;
+
+      expect(err).toBeInstanceOf(ServiceUnavailableException);
+      expect(err.response).toEqual({ status: 'error', db: 'error', redis: 'ok' });
+      jest.useRealTimers();
     });
   });
 
-  it('throws 503 with redis=error when the Redis ping rejects', async () => {
-    redisPing.mockRejectedValue(new Error('connection refused'));
+  describe('liveness (GET /liveness)', () => {
+    it('returns ok without touching the DB or Redis', () => {
+      expect(controller.liveness()).toEqual({ status: 'ok' });
+      expect(dataSourceQuery).not.toHaveBeenCalled();
+      expect(redisPing).not.toHaveBeenCalled();
+    });
 
-    await expect(controller.check()).rejects.toMatchObject({
-      status: 503,
-      response: { status: 'error', db: 'ok', redis: 'error' },
+    it('stays ok even when the DB and Redis are both failing', () => {
+      dataSourceQuery.mockRejectedValue(new Error('connection refused'));
+      redisPing.mockRejectedValue(new Error('connection refused'));
+
+      expect(controller.liveness()).toEqual({ status: 'ok' });
     });
   });
 
-  it('throws 503 with db=error when the DB query hangs past the check timeout', async () => {
-    jest.useFakeTimers();
-    dataSourceQuery.mockReturnValue(new Promise(() => {})); // never resolves
+  describe('readiness (GET /readiness)', () => {
+    it('returns ok for both dependencies when the DB and Redis both respond', async () => {
+      await expect(controller.readiness()).resolves.toEqual({
+        status: 'ok',
+        db: 'ok',
+        redis: 'ok',
+      });
+    });
 
-    const resultPromise = controller.check().catch((err) => err);
-    await jest.advanceTimersByTimeAsync(2000);
-    const err = await resultPromise;
+    it('throws 503 with db=error when the DB query rejects', async () => {
+      dataSourceQuery.mockRejectedValue(new Error('connection refused'));
 
-    expect(err).toBeInstanceOf(ServiceUnavailableException);
-    expect(err.response).toEqual({ status: 'error', db: 'error', redis: 'ok' });
-    jest.useRealTimers();
+      await expect(controller.readiness()).rejects.toMatchObject({
+        status: 503,
+        response: { status: 'error', db: 'error', redis: 'ok' },
+      });
+    });
+
+    it('throws 503 with redis=error when the Redis ping rejects', async () => {
+      redisPing.mockRejectedValue(new Error('connection refused'));
+
+      await expect(controller.readiness()).rejects.toMatchObject({
+        status: 503,
+        response: { status: 'error', db: 'ok', redis: 'error' },
+      });
+    });
   });
 });

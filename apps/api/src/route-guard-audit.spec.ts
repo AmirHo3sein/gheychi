@@ -127,6 +127,8 @@ const PUBLIC_ROUTES: Array<[Function, string]> = [
   [BlogController, 'categories'],
   [SitemapBlogController, 'list'],
   [HealthController, 'check'],
+  [HealthController, 'liveness'], // orchestrator process-liveness probe, must be reachable with no session
+  [HealthController, 'readiness'], // orchestrator readiness probe, must be reachable with no session
   [PlatformConfigController, 'bookingTerms'],
   [ReferralsController, 'validate'], // IP-rate-limited separately, see referrals.controller.ts
   [SalonReviewsController, 'list'],
