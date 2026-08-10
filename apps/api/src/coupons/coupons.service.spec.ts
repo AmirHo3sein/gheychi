@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { EntityManager, QueryFailedError } from 'typeorm';
 import { UNIQUE_VIOLATION } from '../common/postgres-error-codes';
+import { MetricsService } from '../metrics/metrics.service';
 import { COUPON_ALREADY_REDEEMED, COUPON_EXPIRED, COUPON_INVALID, COUPON_LIMIT_REACHED } from './coupon-error-codes';
 import { CouponRedemption } from './coupon-redemption.entity';
 import { Coupon } from './coupon.entity';
@@ -44,7 +45,7 @@ describe('CouponsService create', () => {
       create: jest.fn((data: Partial<Coupon>) => data),
       save: jest.fn((data: Partial<Coupon>) => Promise.resolve(makeCoupon(data))),
     };
-    service = new CouponsService(couponsRepo as never, {} as never);
+    service = new CouponsService(couponsRepo as never, {} as never, new MetricsService());
   });
 
   // The create and list contracts must agree: the admin/provider coupon screens append the
@@ -76,12 +77,50 @@ describe('CouponsService create', () => {
 describe('CouponsService.resolveAndValidate', () => {
   let couponsRepo: { findOneBy: jest.Mock };
   let redemptionsRepo: { findOneBy: jest.Mock; count: jest.Mock };
+  let metrics: MetricsService;
   let service: CouponsService;
 
   beforeEach(() => {
     couponsRepo = { findOneBy: jest.fn() };
     redemptionsRepo = { findOneBy: jest.fn().mockResolvedValue(null), count: jest.fn().mockResolvedValue(0) };
-    service = new CouponsService(couponsRepo as never, redemptionsRepo as never);
+    metrics = new MetricsService();
+    service = new CouponsService(couponsRepo as never, redemptionsRepo as never, metrics);
+  });
+
+  // A few of the domain counters wired into this exact call site (see coupons.service.ts's
+  // resolveAndValidate wrapper) -- verifies they actually move on real success/rejection
+  // paths, not just that resolveAndValidate itself resolves/rejects (already covered by
+  // every other test in this describe block).
+  describe('coupon_validation_attempts_total / coupon_redemptions_total / coupon_rejections_total', () => {
+    async function metricValue(name: string, labels?: Record<string, string>): Promise<number | undefined> {
+      const metric = await metrics.registry.getSingleMetric(name)?.get();
+      const sample = metric?.values.find((v) =>
+        labels ? Object.entries(labels).every(([k, val]) => v.labels[k] === val) : true,
+      );
+      return sample?.value;
+    }
+
+    it('counts an attempt and a redemption on a successful validation', async () => {
+      const coupon = makeCoupon();
+      couponsRepo.findOneBy.mockResolvedValue(coupon);
+      await service.resolveAndValidate('SUMMER20', 'salon-1', 'user-1');
+
+      expect(await metricValue('coupon_validation_attempts_total')).toBe(1);
+      expect(await metricValue('coupon_redemptions_total')).toBe(1);
+      expect(await metricValue('coupon_rejections_total')).toBeUndefined();
+    });
+
+    it('counts an attempt and a rejection (labeled with the bounded error code) on an invalid code', async () => {
+      couponsRepo.findOneBy.mockResolvedValue(null);
+      await expect(service.resolveAndValidate('NOPE', 'salon-1', 'user-1')).rejects.toThrow(BadRequestException);
+
+      expect(await metricValue('coupon_validation_attempts_total')).toBe(1);
+      // coupon_redemptions_total has no labels, so prom-client pre-populates it with a
+      // single zero-value sample the moment it's registered -- 0, not "no sample at
+      // all", is the correct "never incremented" reading here.
+      expect(await metricValue('coupon_redemptions_total')).toBe(0);
+      expect(await metricValue('coupon_rejections_total', { reason: COUPON_INVALID })).toBe(1);
+    });
   });
 
   it('rejects a code that does not exist', async () => {

@@ -7,7 +7,6 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
 import { DataSource, Repository } from 'typeorm';
-import { AuthGuard } from '../auth/auth.guard';
 import {
   ALLOWED_IMAGE_MIME_TYPE_PATTERN, assertTrustedImageMimeType, EXTENSION_BY_IMAGE_MIME_TYPE,
 } from '../common/trusted-image-upload';
@@ -25,7 +24,7 @@ import { SalonPhoto } from './salon-photo.entity';
 const PHOTO_CAP = 30;
 
 @Controller('salons/mine/photos')
-@UseGuards(AuthGuard, SalonOwnerGuard)
+@UseGuards(SalonOwnerGuard)
 export class SalonPhotosController {
   private readonly logger = new Logger(SalonPhotosController.name);
 

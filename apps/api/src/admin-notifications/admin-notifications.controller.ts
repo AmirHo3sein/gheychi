@@ -1,6 +1,5 @@
 import { Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
-import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { User } from '../users/user.entity';
@@ -8,7 +7,7 @@ import { AdminNotificationsService } from './admin-notifications.service';
 import { AdminNotificationQueryDto } from './dto/admin-notification-query.dto';
 
 @Controller('admin/notifications')
-@UseGuards(AuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @Roles('admin')
 export class AdminNotificationsController {
   constructor(private readonly notifications: AdminNotificationsService) {}

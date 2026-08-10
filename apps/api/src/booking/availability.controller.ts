@@ -1,8 +1,10 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
+import { Public } from '../auth/public.decorator';
 import { AvailabilityService } from './availability.service';
 import { AvailabilityQueryDto } from './dto/booking.dto';
 
 @Controller('salons/:salonId/availability')
+@Public()
 export class AvailabilityController {
   constructor(private readonly availability: AvailabilityService) {}
 

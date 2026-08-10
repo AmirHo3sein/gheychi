@@ -3,7 +3,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuditAction } from '../audit/audit.decorator';
 import { AuditInterceptor } from '../audit/audit.interceptor';
-import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { AdminSalonQueryDto } from './dto/admin-salon-query.dto';
@@ -15,7 +14,7 @@ import { Salon } from './salon.entity';
 import { SalonsService } from './salons.service';
 
 @Controller('admin/salons')
-@UseGuards(AuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @Roles('admin')
 export class AdminSalonsController {
   constructor(

@@ -1,10 +1,9 @@
 import {
-  Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Req, UseGuards,
+  Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Req,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
 import { DataSource, Repository } from 'typeorm';
-import { AuthGuard } from '../auth/auth.guard';
 import { isUniqueViolation } from '../common/postgres-error-codes';
 import { User } from '../users/user.entity';
 import { Favorite } from './favorite.entity';
@@ -21,7 +20,6 @@ export interface FavoriteSalonItem {
 }
 
 @Controller()
-@UseGuards(AuthGuard)
 export class FavoritesController {
   constructor(
     @InjectRepository(Favorite) private readonly favorites: Repository<Favorite>,

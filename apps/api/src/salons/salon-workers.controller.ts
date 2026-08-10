@@ -5,7 +5,6 @@ import {
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
 import { DataSource, In, Repository } from 'typeorm';
-import { AuthGuard } from '../auth/auth.guard';
 import { isUniqueViolation } from '../common/postgres-error-codes';
 import { ReferralsService } from '../referrals/referrals.service';
 import { User } from '../users/user.entity';
@@ -17,7 +16,7 @@ import { Worker } from './worker.entity';
 import { WorkerService } from './worker-service.entity';
 
 @Controller('salons/mine/workers')
-@UseGuards(AuthGuard, SalonOwnerGuard)
+@UseGuards(SalonOwnerGuard)
 export class SalonWorkersController {
   constructor(
     @InjectRepository(Worker) private readonly workers: Repository<Worker>,

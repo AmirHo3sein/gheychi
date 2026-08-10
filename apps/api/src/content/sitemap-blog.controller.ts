@@ -1,6 +1,7 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { Public } from '../auth/public.decorator';
 import { SITEMAP_PAGE_SIZE, SitemapPage, SitemapPageQueryDto } from '../common/sitemap-pagination';
 import { BlogPost } from './blog-post.entity';
 
@@ -14,6 +15,7 @@ import { BlogPost } from './blog-post.entity';
  * counts from `total`/`pageSize`).
  */
 @Controller('sitemap')
+@Public()
 export class SitemapBlogController {
   constructor(@InjectRepository(BlogPost) private readonly posts: Repository<BlogPost>) {}
 

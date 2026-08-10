@@ -3,7 +3,6 @@ import {
 } from '@nestjs/common';
 import { AuditAction } from '../audit/audit.decorator';
 import { AuditInterceptor } from '../audit/audit.interceptor';
-import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { AdminReferralQueryDto, CancelReferralDto, UpdateReferralRewardTypeDto } from './dto/referral.dto';
@@ -11,7 +10,7 @@ import { ReferralType } from './referral-reward-type.entity';
 import { ReferralsService } from './referrals.service';
 
 @Controller('admin/referral-reward-types')
-@UseGuards(AuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @Roles('admin')
 export class AdminReferralRewardTypesController {
   constructor(private readonly referrals: ReferralsService) {}
@@ -30,7 +29,7 @@ export class AdminReferralRewardTypesController {
 }
 
 @Controller('admin/referrals')
-@UseGuards(AuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @Roles('admin')
 export class AdminReferralsController {
   constructor(private readonly referrals: ReferralsService) {}

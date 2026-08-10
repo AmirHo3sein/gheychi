@@ -1,10 +1,12 @@
 import { Controller, Get, Query, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
+import { Public } from '../auth/public.decorator';
 import { PAYMENT_FAILED } from './booking-error-codes';
 import { PaymentsService } from './payments.service';
 
 @Controller('payments')
+@Public()
 export class PaymentsController {
   constructor(
     private readonly payments: PaymentsService,

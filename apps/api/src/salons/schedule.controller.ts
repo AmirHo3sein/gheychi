@@ -5,7 +5,6 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
 import { DataSource, Repository } from 'typeorm';
-import { AuthGuard } from '../auth/auth.guard';
 import { isUniqueViolation } from '../common/postgres-error-codes';
 import { CreateExceptionDto, ReplaceHoursDto } from './dto/schedule.dto';
 import { findOverlappingHourRanges } from './schedule-hours.util';
@@ -15,7 +14,7 @@ import { Worker } from './worker.entity';
 import { WorkingHour } from './working-hour.entity';
 
 @Controller('salons/mine')
-@UseGuards(AuthGuard, SalonOwnerGuard)
+@UseGuards(SalonOwnerGuard)
 export class ScheduleController {
   constructor(
     @InjectRepository(WorkingHour) private readonly hours: Repository<WorkingHour>,

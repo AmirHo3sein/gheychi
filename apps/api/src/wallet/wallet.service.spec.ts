@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { EntityManager } from 'typeorm';
+import { MetricsService } from '../metrics/metrics.service';
 import { User } from '../users/user.entity';
 import { WalletBalance } from './wallet-balance.entity';
 import { WalletTransaction } from './wallet-transaction.entity';
@@ -80,17 +81,20 @@ function makeFakeEm(initialBalances: Record<string, number> = {}) {
 
 describe('WalletService', () => {
   let service: WalletService;
+  let metrics: MetricsService;
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         WalletService,
+        MetricsService,
         { provide: getRepositoryToken(WalletBalance), useValue: {} },
         { provide: getRepositoryToken(WalletTransaction), useValue: {} },
         { provide: getRepositoryToken(User), useValue: {} },
       ],
     }).compile();
     service = moduleRef.get(WalletService);
+    metrics = moduleRef.get(MetricsService);
   });
 
   describe('credit', () => {
@@ -129,6 +133,16 @@ describe('WalletService', () => {
       const { em } = makeFakeEm();
       await expect(service.credit(em, 'user-1', 'toman', amount, 'admin_adjustment')).rejects.toBeInstanceOf(
         BadRequestException,
+      );
+    });
+
+    it('wallet_credits_total{currency,type} increments on a real credit', async () => {
+      const { em } = makeFakeEm();
+      await service.credit(em, 'user-1', 'toman', 1000, 'referral_reward');
+
+      const credits = await metrics.registry.getSingleMetric('wallet_credits_total')?.get();
+      expect(credits?.values).toContainEqual(
+        expect.objectContaining({ labels: { currency: 'toman', type: 'referral_reward' }, value: 1 }),
       );
     });
   });
@@ -173,6 +187,24 @@ describe('WalletService', () => {
         BadRequestException,
       );
     });
+
+    it('wallet_debits_total{currency,type} increments only when a real debit happens, not on a zero-balance no-op', async () => {
+      const { em } = makeFakeEm({ 'user-1:toman': 1000 });
+      await service.debit(em, 'user-1', 'toman', 400, 'booking_spend');
+
+      const debits = await metrics.registry.getSingleMetric('wallet_debits_total')?.get();
+      expect(debits?.values).toContainEqual(
+        expect.objectContaining({ labels: { currency: 'toman', type: 'booking_spend' }, value: 1 }),
+      );
+
+      const { em: zeroEm } = makeFakeEm({ 'user-2:toman': 0 });
+      await service.debit(zeroEm, 'user-2', 'toman', 50, 'booking_spend');
+      const debitsAfter = await metrics.registry.getSingleMetric('wallet_debits_total')?.get();
+      // Still exactly 1 -- the no-op debit above must not have incremented it further.
+      expect(debitsAfter?.values).toContainEqual(
+        expect.objectContaining({ labels: { currency: 'toman', type: 'booking_spend' }, value: 1 }),
+      );
+    });
   });
 
   describe('concurrent-shaped usage (sequential calls sharing one em/transaction)', () => {
@@ -199,6 +231,7 @@ describe('WalletService', () => {
       const moduleRef = await Test.createTestingModule({
         providers: [
           WalletService,
+          MetricsService,
           { provide: getRepositoryToken(WalletBalance), useValue: { find } },
           { provide: getRepositoryToken(WalletTransaction), useValue: {} },
           { provide: getRepositoryToken(User), useValue: {} },
@@ -216,6 +249,7 @@ describe('WalletService', () => {
       const moduleRef = await Test.createTestingModule({
         providers: [
           WalletService,
+          MetricsService,
           { provide: getRepositoryToken(WalletBalance), useValue: {} },
           { provide: getRepositoryToken(WalletTransaction), useValue: { findAndCount } },
           { provide: getRepositoryToken(User), useValue: {} },

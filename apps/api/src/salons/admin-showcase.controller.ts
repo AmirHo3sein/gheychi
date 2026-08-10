@@ -5,7 +5,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuditAction } from '../audit/audit.decorator';
 import { AuditInterceptor } from '../audit/audit.interceptor';
-import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { UpdateShowcaseStatusDto } from './dto/admin-showcase-status.dto';
@@ -20,7 +19,7 @@ import { SalonStory } from './salon-story.entity';
  * target is the content row itself, not a salon-scoped collection.
  */
 @Controller('admin')
-@UseGuards(AuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @Roles('admin')
 export class AdminShowcaseController {
   constructor(

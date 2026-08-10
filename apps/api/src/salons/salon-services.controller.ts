@@ -4,13 +4,12 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
 import { Repository } from 'typeorm';
-import { AuthGuard } from '../auth/auth.guard';
 import { CreateServiceDto, UpdateServiceDto } from './dto/salon-service.dto';
 import { SalonOwnerGuard } from './salon-owner.guard';
 import { SalonService } from './salon-service.entity';
 
 @Controller('salons/mine/services')
-@UseGuards(AuthGuard, SalonOwnerGuard)
+@UseGuards(SalonOwnerGuard)
 export class SalonServicesController {
   constructor(
     @InjectRepository(SalonService) private readonly services: Repository<SalonService>,

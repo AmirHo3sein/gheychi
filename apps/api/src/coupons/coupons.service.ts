@@ -2,6 +2,8 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, IsNull, Repository } from 'typeorm';
 import { isUniqueViolation } from '../common/postgres-error-codes';
+import { httpExceptionReasonCode } from '../metrics/http-exception-reason.util';
+import { MetricsService } from '../metrics/metrics.service';
 import { COUPON_ALREADY_REDEEMED, COUPON_EXPIRED, COUPON_INVALID, COUPON_LIMIT_REACHED } from './coupon-error-codes';
 import { CouponRedemption } from './coupon-redemption.entity';
 import { Coupon } from './coupon.entity';
@@ -14,6 +16,10 @@ export class CouponsService {
   constructor(
     @InjectRepository(Coupon) private readonly coupons: Repository<Coupon>,
     @InjectRepository(CouponRedemption) private readonly redemptions: Repository<CouponRedemption>,
+    // Appended at the end, same convention as ReferralsService's own constructor
+    // comment -- every existing positional `new CouponsService(...)` call site only
+    // needs an arg added at the tail.
+    private readonly metrics: MetricsService,
   ) {}
 
   // Codes are normalized uppercase+trim on every write AND every lookup -- the
@@ -167,7 +173,28 @@ export class CouponsService {
    * but scoped to a different salon" in the message, to avoid leaking which codes
    * exist for other salons.
    */
+  // Public entry point: instruments coupon_validation_attempts_total/
+  // coupon_redemptions_total/coupon_rejections_total{reason} around
+  // resolveAndValidateImpl's real logic -- kept as a thin wrapper rather than metrics
+  // calls scattered across resolveAndValidateImpl's own several throw sites, so this
+  // can never fall out of sync with a future validation rule added there. "redemption"
+  // here means resolveAndValidateImpl accepted the code (returned rather than threw) --
+  // both the read-only preview call (coupon-validation.controller.ts) and the real,
+  // em-bound booking-time call reach it, since this is the one choke point named for
+  // this metric; see coupon_redemptions_total's own `help` text.
   async resolveAndValidate(code: string, salonId: string, userId: string, em?: EntityManager): Promise<Coupon> {
+    this.metrics.incCouponValidationAttempt();
+    try {
+      const coupon = await this.resolveAndValidateImpl(code, salonId, userId, em);
+      this.metrics.incCouponRedemption();
+      return coupon;
+    } catch (err) {
+      this.metrics.incCouponRejection(httpExceptionReasonCode(err));
+      throw err;
+    }
+  }
+
+  private async resolveAndValidateImpl(code: string, salonId: string, userId: string, em?: EntityManager): Promise<Coupon> {
     const normalized = this.normalize(code);
     const couponRepo = em ? em.getRepository(Coupon) : this.coupons;
     const redemptionRepo = em ? em.getRepository(CouponRedemption) : this.redemptions;

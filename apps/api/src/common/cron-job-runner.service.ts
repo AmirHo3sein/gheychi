@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { AlertsService } from '../alerts/alerts.service';
 import { ERROR_TRACKING_PROVIDER, ErrorTrackingService } from '../error-tracking/error-tracking.service';
+import { MetricsService } from '../metrics/metrics.service';
 import { CronLockService } from './cron-lock.service';
 
 // Most jobs run every 1-5 minutes; anything still running past this on that cadence is
@@ -45,6 +46,12 @@ export class CronJobRunner {
     private readonly cronLock: CronLockService,
     private readonly alerts: AlertsService,
     @Inject(ERROR_TRACKING_PROVIDER) private readonly errorTracking: ErrorTrackingService,
+    // Appended at the end, same convention as ReferralsService's own constructor
+    // comment -- every existing positional `new CronJobRunner(...)` call site only
+    // needs an arg added at the tail. The single most valuable wiring point for
+    // background-job metrics in this codebase: every cron job in the app already
+    // funnels through run() below, so this one class instruments all of them at once.
+    private readonly metrics: MetricsService,
   ) {}
 
   async run(jobName: string, fn: () => Promise<void>, options: CronJobRunOptions = {}): Promise<void> {
@@ -74,10 +81,16 @@ export class CronJobRunner {
         try {
           await fn();
           clearTimeout(slowTimer);
-          this.logger.log(`Cron job "${jobName}" completed in ${Date.now() - startedAt}ms`);
+          const durationMs = Date.now() - startedAt;
+          this.logger.log(`Cron job "${jobName}" completed in ${durationMs}ms`);
+          // Best-effort, see MetricsService's own doc comment. The single most
+          // valuable metrics wiring point in this codebase -- every cron job funnels
+          // through this one run() method.
+          this.metrics.observeCronJob(jobName, 'success', durationMs / 1000);
         } catch (err) {
           clearTimeout(slowTimer);
           const durationMs = Date.now() - startedAt;
+          this.metrics.observeCronJob(jobName, 'failure', durationMs / 1000);
           const message = err instanceof Error ? err.message : String(err);
           this.logger.error(
             `Cron job "${jobName}" failed after ${durationMs}ms: ${message}`,

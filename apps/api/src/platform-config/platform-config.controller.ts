@@ -1,7 +1,9 @@
 import { Controller, Get } from '@nestjs/common';
+import { Public } from '../auth/public.decorator';
 import { PlatformConfigService } from './platform-config.service';
 
 @Controller('platform-config')
+@Public()
 export class PlatformConfigController {
   constructor(private readonly config: PlatformConfigService) {}
 

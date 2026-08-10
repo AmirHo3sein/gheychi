@@ -1,12 +1,11 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
-import { AuthGuard } from '../auth/auth.guard';
 import { SalonOwnerGuard } from '../salons/salon-owner.guard';
 import { CouponsService } from './coupons.service';
 import { CreateCouponDto, UpdateCouponDto } from './dto/coupon.dto';
 
 @Controller('salons/mine/coupons')
-@UseGuards(AuthGuard, SalonOwnerGuard)
+@UseGuards(SalonOwnerGuard)
 export class SalonCouponsController {
   constructor(private readonly coupons: CouponsService) {}
 

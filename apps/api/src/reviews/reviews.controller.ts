@@ -1,14 +1,12 @@
 import {
-  Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, Req, UseGuards,
+  Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, Req,
 } from '@nestjs/common';
 import { Request } from 'express';
-import { AuthGuard } from '../auth/auth.guard';
 import { User } from '../users/user.entity';
 import { CreateReviewDto, UpdateReviewDto } from './dto/review.dto';
 import { ReviewsService } from './reviews.service';
 
 @Controller('reviews')
-@UseGuards(AuthGuard)
 export class ReviewsController {
   constructor(private readonly reviews: ReviewsService) {}
 

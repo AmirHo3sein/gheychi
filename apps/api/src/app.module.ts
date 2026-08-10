@@ -1,10 +1,11 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { APP_FILTER } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminNotificationsModule } from './admin-notifications/admin-notifications.module';
 import { AlertsModule } from './alerts/alerts.module';
+import { AuthGuard } from './auth/auth.guard';
 import { AuthModule } from './auth/auth.module';
 import { BookingModule } from './booking/booking.module';
 import { CatalogModule } from './catalog/catalog.module';
@@ -17,6 +18,7 @@ import { GlobalExceptionFilter } from './error-tracking/global-exception.filter'
 import { FavoritesModule } from './favorites/favorites.module';
 import { HealthController } from './health/health.controller';
 import { InvoicingModule } from './invoicing/invoicing.module';
+import { MetricsModule } from './metrics/metrics.module';
 import { PlatformConfigModule } from './platform-config/platform-config.module';
 import { PushModule } from './push/push.module';
 import { RedisModule } from './redis/redis.module';
@@ -50,6 +52,7 @@ import { WalletModule } from './wallet/wallet.module';
     ScheduleModule.forRoot(),
     RedisModule,
     CommonModule,
+    MetricsModule,
     ErrorTrackingModule,
     PlatformConfigModule,
     AlertsModule,
@@ -72,6 +75,13 @@ import { WalletModule } from './wallet/wallet.module';
     StorageModule,
   ],
   controllers: [HealthController],
-  providers: [{ provide: APP_FILTER, useClass: GlobalExceptionFilter }],
+  providers: [
+    { provide: APP_FILTER, useClass: GlobalExceptionFilter },
+    // Runs on every route by default now (see auth.guard.ts) -- a route opts out with
+    // @Public() instead of every protected route needing an explicit @UseGuards(AuthGuard).
+    // Resolvable here because AuthModule (imported below) exports UsersModule, and
+    // JwtModule is registered `global: true` inside AuthModule.
+    { provide: APP_GUARD, useClass: AuthGuard },
+  ],
 })
 export class AppModule {}

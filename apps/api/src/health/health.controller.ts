@@ -2,6 +2,7 @@ import { Controller, Get, Inject, ServiceUnavailableException } from '@nestjs/co
 import { InjectDataSource } from '@nestjs/typeorm';
 import Redis from 'ioredis';
 import { DataSource } from 'typeorm';
+import { Public } from '../auth/public.decorator';
 import { REDIS } from '../redis/redis.module';
 
 const CHECK_TIMEOUT_MS = 2000;
@@ -15,6 +16,7 @@ function withTimeout(promise: Promise<unknown>, ms: number): Promise<unknown> {
 }
 
 @Controller()
+@Public()
 export class HealthController {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,

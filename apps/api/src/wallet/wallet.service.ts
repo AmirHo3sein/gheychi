@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, EntityManager, In, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
+import { MetricsService } from '../metrics/metrics.service';
 import { User } from '../users/user.entity';
 import { WalletBalance, WalletCurrency } from './wallet-balance.entity';
 import { WalletTransaction, WalletTransactionType } from './wallet-transaction.entity';
@@ -53,6 +54,10 @@ export class WalletService {
     @InjectRepository(WalletBalance) private readonly balances: Repository<WalletBalance>,
     @InjectRepository(WalletTransaction) private readonly transactions: Repository<WalletTransaction>,
     @InjectRepository(User) private readonly users: Repository<User>,
+    // Appended at the end, same convention as ReferralsService's own constructor
+    // comment -- every existing positional `new WalletService(...)` call site only
+    // needs an arg added at the tail.
+    private readonly metrics: MetricsService,
   ) {}
 
   /**
@@ -110,6 +115,11 @@ export class WalletService {
     });
     await em.getRepository(WalletBalance).update({ userId, currency }, { balance: balanceAfter, updatedAt: new Date() });
 
+    // A real credit happened (the insert/update above are inside the caller's
+    // transaction, but this call only reaches here once both have been issued) --
+    // best-effort, see MetricsService's own doc comment.
+    this.metrics.incWalletCredit(currency, type);
+
     return { balanceAfter, transactionId: inserted.identifiers[0].id as string };
   }
 
@@ -151,6 +161,11 @@ export class WalletService {
       reason: opts.reason ?? null,
     });
     await em.getRepository(WalletBalance).update({ userId, currency }, { balance: balanceAfter, updatedAt: new Date() });
+
+    // Only reached when actualDebit > 0 (the actualDebit === 0 early return above
+    // skips this entirely) -- a real debit happened. Best-effort, see
+    // MetricsService's own doc comment.
+    this.metrics.incWalletDebit(currency, type);
 
     return { debited: actualDebit, shortfall, balanceAfter, transactionId: inserted.identifiers[0].id as string };
   }

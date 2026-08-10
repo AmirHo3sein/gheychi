@@ -15,7 +15,6 @@ import { Request } from 'express';
 import { Repository } from 'typeorm';
 import { AuditAction } from '../audit/audit.decorator';
 import { AuditInterceptor } from '../audit/audit.interceptor';
-import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { AdminUsersService } from './admin-users.service';
@@ -23,7 +22,7 @@ import { AdminUserQueryDto, UpdateUserStatusDto } from './dto/admin-user.dto';
 import { User } from './user.entity';
 
 @Controller('admin/users')
-@UseGuards(AuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @Roles('admin')
 export class AdminUsersController {
   constructor(

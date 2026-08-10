@@ -1,12 +1,11 @@
 import { Body, Controller, Param, ParseUUIDPipe, Patch, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
-import { AuthGuard } from '../auth/auth.guard';
 import { SalonOwnerGuard } from '../salons/salon-owner.guard';
 import { SalonReplyDto } from './dto/review.dto';
 import { ReviewsService } from './reviews.service';
 
 @Controller('salons/mine/reviews')
-@UseGuards(AuthGuard, SalonOwnerGuard)
+@UseGuards(SalonOwnerGuard)
 export class SalonReviewReplyController {
   constructor(private readonly reviews: ReviewsService) {}
 

@@ -1,8 +1,7 @@
-import { Body, Controller, NotFoundException, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, NotFoundException, Post, Req } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
 import { Repository } from 'typeorm';
-import { AuthGuard } from '../auth/auth.guard';
 import { DiscountCandidate, resolveBestPriceWithWinner } from '../booking/discount.util';
 import { calculateDeposit } from '../booking/deposit.util';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
@@ -13,7 +12,6 @@ import { CouponsService } from './coupons.service';
 import { ValidateCouponDto } from './dto/coupon.dto';
 
 @Controller('coupons')
-@UseGuards(AuthGuard)
 export class CouponValidationController {
   constructor(
     private readonly couponsService: CouponsService,

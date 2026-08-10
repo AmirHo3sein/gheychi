@@ -2,7 +2,6 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Query, Req, UseGuar
 import { Request } from 'express';
 import { AuditAction } from '../audit/audit.decorator';
 import { AuditInterceptor } from '../audit/audit.interceptor';
-import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { User } from '../users/user.entity';
@@ -10,7 +9,7 @@ import { AdminReportQueryDto, ResolveReportDto } from './dto/report.dto';
 import { ReportsService } from './reports.service';
 
 @Controller('admin/reports')
-@UseGuards(AuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @Roles('admin')
 export class AdminReportsController {
   constructor(private readonly reports: ReportsService) {}

@@ -1,6 +1,7 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { Public } from '../auth/public.decorator';
 import { iranDateString } from '../common/iran-time.util';
 import { ListWorkersQueryDto, WorkerRatingsQueryDto } from './dto/worker.dto';
 import { PortfolioItem } from './portfolio-item.entity';
@@ -15,6 +16,7 @@ import { WorkerRating } from '../reviews/worker-rating.entity';
 import { WorkingHour } from './working-hour.entity';
 
 @Controller('salons/:slug')
+@Public()
 export class PublicSalonContentController {
   constructor(
     private readonly salonsService: SalonsService,

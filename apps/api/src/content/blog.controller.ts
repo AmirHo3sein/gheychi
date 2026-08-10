@@ -1,9 +1,11 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Public } from '../auth/public.decorator';
 import { ContentService } from './content.service';
 import { PublicBlogPostsQueryDto } from './dto/blog.dto';
 
 /** Public, unauthenticated blog surface (spec §3.4) -- published content only. */
 @Controller('blog')
+@Public()
 export class BlogController {
   constructor(private readonly content: ContentService) {}
 

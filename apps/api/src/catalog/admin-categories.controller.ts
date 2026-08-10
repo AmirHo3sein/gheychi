@@ -4,7 +4,6 @@ import Redis from 'ioredis';
 import { Repository } from 'typeorm';
 import { AuditAction } from '../audit/audit.decorator';
 import { AuditInterceptor } from '../audit/audit.interceptor';
-import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { isForeignKeyViolation, isUniqueViolation } from '../common/postgres-error-codes';
@@ -14,7 +13,7 @@ import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
 import { ServiceCategory } from './service-category.entity';
 
 @Controller('admin/categories')
-@UseGuards(AuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @Roles('admin')
 export class AdminCategoriesController {
   constructor(

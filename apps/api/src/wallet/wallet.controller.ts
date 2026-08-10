@@ -1,12 +1,10 @@
-import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Req } from '@nestjs/common';
 import { Request } from 'express';
-import { AuthGuard } from '../auth/auth.guard';
 import { User } from '../users/user.entity';
 import { WalletTransactionQueryDto } from './dto/wallet-transaction-query.dto';
 import { WalletService } from './wallet.service';
 
 @Controller('wallet/mine')
-@UseGuards(AuthGuard)
 export class WalletController {
   constructor(private readonly wallet: WalletService) {}
 

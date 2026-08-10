@@ -20,6 +20,8 @@ import { Worker } from '../salons/worker.entity';
 import { WorkerEligibilityService } from '../salons/worker-eligibility.service';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
 import { InvoicingService } from '../invoicing/invoicing.service';
+import { httpExceptionReasonCode } from '../metrics/http-exception-reason.util';
+import { MetricsService } from '../metrics/metrics.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { User } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
@@ -97,7 +99,31 @@ export class BookingsService {
     private readonly invoicing: InvoicingService,
     private readonly usersService: UsersService,
     private readonly analytics: AnalyticsService,
+    // Appended at the end, same convention as ReferralsService's own constructor
+    // comment -- every existing positional `new BookingsService(...)` call site
+    // only needs an arg added at the tail, not threaded through the middle.
+    private readonly metrics: MetricsService,
   ) {}
+
+  // Wraps createHoldImpl/createManualImpl with the shared attempt/success/failure
+  // bookkeeping (booking_attempts_total/booking_successes_total/booking_failures_total)
+  // -- kept as one small wrapper here rather than instrumented inline at every one of
+  // createHold's/createManual's many scattered throw sites, so this can never fall out
+  // of sync with a future validation branch added to either method. Metrics
+  // observation itself is best-effort (see MetricsService's own doc comment); only
+  // this wrapper's bookkeeping can ever run twice for the same logical attempt, never
+  // the real booking logic in `fn`.
+  private async trackBookingAttempt<T>(flow: 'online' | 'manual', fn: () => Promise<T>): Promise<T> {
+    this.metrics.incBookingAttempt(flow);
+    try {
+      const result = await fn();
+      this.metrics.incBookingSuccess(flow);
+      return result;
+    } catch (err) {
+      this.metrics.incBookingFailure(flow, httpExceptionReasonCode(err));
+      throw err;
+    }
+  }
 
   // Shared by createHold/createManual/assignWorker -- every per-salon booking-lock
   // acquisition. Each call gets its OWN random token as the lock's value (never a
@@ -121,7 +147,18 @@ export class BookingsService {
     await this.redis.eval(RELEASE_LOCK_IF_OWNER_LUA, 1, `lock:booking:${salonId}`, token);
   }
 
-  async createHold(
+  // Public entry point: instruments booking_attempts_total/booking_successes_total/
+  // booking_failures_total{flow:'online'} around the real logic in createHoldImpl --
+  // see trackBookingAttempt's own doc comment for why this is a wrapper rather than
+  // metrics calls scattered across createHoldImpl's own many throw sites.
+  createHold(
+    userId: string,
+    dto: CreateBookingDto,
+  ): Promise<{ booking: Booking; paymentUrl: string; couponApplied: boolean; paymentRequired: boolean }> {
+    return this.trackBookingAttempt('online', () => this.createHoldImpl(userId, dto));
+  }
+
+  private async createHoldImpl(
     userId: string,
     dto: CreateBookingDto,
   ): Promise<{ booking: Booking; paymentUrl: string; couponApplied: boolean; paymentRequired: boolean }> {
@@ -425,7 +462,15 @@ export class BookingsService {
   // changes to handle this correctly later: a missing Payment row already degrades every
   // refund/hold-release path to a no-op everywhere that reads one. Discounts/coupons/wallet
   // don't apply here at all -- there is no checkout to apply them at.
-  async createManual(salonId: string, dto: CreateManualBookingDto): Promise<EnrichedBooking> {
+  //
+  // Public entry point: instruments booking_attempts_total/booking_successes_total/
+  // booking_failures_total{flow:'manual'} around createManualImpl -- see
+  // trackBookingAttempt's own doc comment.
+  createManual(salonId: string, dto: CreateManualBookingDto): Promise<EnrichedBooking> {
+    return this.trackBookingAttempt('manual', () => this.createManualImpl(salonId, dto));
+  }
+
+  private async createManualImpl(salonId: string, dto: CreateManualBookingDto): Promise<EnrichedBooking> {
     // Same funnel-entry event as createHold's own, fired before any validation here too
     // -- see that call's comment for the fire-and-forget/no-PII rationale, both apply
     // verbatim. No userId in context: the customer isn't resolved from dto.phone until
@@ -737,6 +782,10 @@ export class BookingsService {
         { userId: callerId },
       )
       .catch(() => {});
+    // Same "already committed, cannot fail the request" guarantee as the analytics
+    // call just above -- MetricsService.incBookingCancellation is itself best-effort
+    // (see its own doc comment) and this call is not awaited.
+    this.metrics.incBookingCancellation(isOwner ? 'salon' : 'user');
 
     // Best-effort, independent of the refund path below -- a bare cancel with no refund
     // owed (e.g. the customer cancelled outside the window) was previously silent to
@@ -950,6 +999,14 @@ export class BookingsService {
       // deduct the deposit the same way, per this method's own comment above).
       await this.invoicing.recordCommission(em, booking);
     });
+
+    // The transaction above has now genuinely committed -- record the outcome.
+    // Best-effort, see MetricsService's own doc comment.
+    if (status === 'completed') {
+      this.metrics.incBookingCompletion();
+    } else {
+      this.metrics.incBookingNoShow();
+    }
 
     // The first-completed-booking referral trigger (R6). Only on 'completed' -- a
     // no-show is not a qualifying event. tryGrantReward already never throws and

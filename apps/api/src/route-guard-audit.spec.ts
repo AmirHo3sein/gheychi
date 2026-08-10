@@ -1,9 +1,13 @@
 import 'reflect-metadata';
-import { readdirSync, statSync } from 'node:fs';
+import { ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { AdminNotificationsController } from './admin-notifications/admin-notifications.controller';
 import { AdminAuditController } from './audit/admin-audit.controller';
 import { AuthController } from './auth/auth.controller';
+import { AuthGuard } from './auth/auth.guard';
+import { IS_PUBLIC_KEY, Public } from './auth/public.decorator';
 import { AvailabilityController } from './booking/availability.controller';
 import { BookingsController } from './booking/bookings.controller';
 import { PaymentsController } from './booking/payments.controller';
@@ -22,6 +26,7 @@ import { FavoritesController } from './favorites/favorites.controller';
 import { HealthController } from './health/health.controller';
 import { AdminInvoicesController } from './invoicing/admin-invoices.controller';
 import { SalonInvoicesController } from './invoicing/salon-invoices.controller';
+import { MetricsController } from './metrics/metrics.controller';
 import { AdminConfigController } from './platform-config/admin-config.controller';
 import { PlatformConfigController } from './platform-config/platform-config.controller';
 import { PushController } from './push/push.controller';
@@ -50,15 +55,15 @@ import { AdminUsersController } from './users/admin-users.controller';
 import { AdminWalletController } from './wallet/admin-wallet.controller';
 import { WalletController } from './wallet/wallet.controller';
 
-// Nest stores these under fixed string keys (see GUARDS_METADATA/PATH_METADATA in
+// Nest stores route paths under this fixed string key (see PATH_METADATA in
 // @nestjs/common/constants) -- hardcoded here rather than imported, matching the existing
 // precedent in audit/audit-wiring.spec.ts (INTERCEPTORS_METADATA).
-const GUARDS_METADATA = '__guards__';
 const PATH_METADATA = 'path';
 
 // Every controller in the app, so a newly-added controller file that forgets to be imported
-// here fails loudly (via the "every route is guarded or explicitly public" assertion below
-// simply never running for it) is caught by the companion "controller count" sanity check.
+// here fails loudly (via the "every route is either public or must reject an anonymous
+// caller" assertion below simply never running for it) is caught by the companion
+// "controller count" sanity check.
 const ALL_CONTROLLERS: Function[] = [
   AdminNotificationsController,
   AdminAuditController,
@@ -81,6 +86,7 @@ const ALL_CONTROLLERS: Function[] = [
   HealthController,
   AdminInvoicesController,
   SalonInvoicesController,
+  MetricsController,
   AdminConfigController,
   PlatformConfigController,
   PushController,
@@ -115,6 +121,13 @@ const ALL_CONTROLLERS: Function[] = [
 // SECURITY DECISION, not a formality -- it is asserting "this data/action is safe for anyone
 // on the internet to reach with no session at all." Cross-reference docs/phase1-audit.md
 // section 1 for why each of these is intentionally public before adding a new one.
+//
+// This is now a regression pin for the @Public() mechanism, not the safety net itself: the
+// safety net is AuthGuard running globally via APP_GUARD (app.module.ts) -- every route is
+// protected by default and must opt OUT with @Public() to be reachable anonymously. What
+// this file verifies is narrower but still valuable: (1) every route below actually carries
+// the @Public() metadata the guard reads, so a route can't silently drift off the allowlist
+// while still being reachable, and (2) AuthGuard itself correctly honours that metadata.
 const PUBLIC_ROUTES: Array<[Function, string]> = [
   [AuthController, 'requestOtp'],
   [AuthController, 'verifyOtp'],
@@ -129,6 +142,7 @@ const PUBLIC_ROUTES: Array<[Function, string]> = [
   [HealthController, 'check'],
   [HealthController, 'liveness'], // orchestrator process-liveness probe, must be reachable with no session
   [HealthController, 'readiness'], // orchestrator readiness probe, must be reachable with no session
+  [MetricsController, 'metrics'], // Prometheus scraper target, must be reachable with no session (scrapers don't authenticate)
   [PlatformConfigController, 'bookingTerms'],
   [ReferralsController, 'validate'], // IP-rate-limited separately, see referrals.controller.ts
   [SalonReviewsController, 'list'],
@@ -145,21 +159,6 @@ const PUBLIC_ROUTES: Array<[Function, string]> = [
   [SearchController, 'run'],
 ];
 
-function hasClassGuards(controller: Function): boolean {
-  const guards = Reflect.getMetadata(GUARDS_METADATA, controller);
-  return Array.isArray(guards) && guards.length > 0;
-}
-
-function hasMethodGuards(controller: Function, methodName: string): boolean {
-  const handler = (controller.prototype as Record<string, unknown>)[methodName];
-  const guards = Reflect.getMetadata(GUARDS_METADATA, handler as object);
-  return Array.isArray(guards) && guards.length > 0;
-}
-
-function isPublicRoute(controller: Function, methodName: string): boolean {
-  return PUBLIC_ROUTES.some(([c, m]) => c === controller && m === methodName);
-}
-
 function routeHandlerNames(controller: Function): string[] {
   const proto = controller.prototype as Record<string, unknown>;
   return Object.getOwnPropertyNames(proto).filter((name) => {
@@ -169,6 +168,28 @@ function routeHandlerNames(controller: Function): string[] {
     // private helper method on a controller class must not be mistaken for a route.
     return Reflect.getMetadata(PATH_METADATA, proto[name] as object) !== undefined;
   });
+}
+
+// Mirrors exactly what AuthGuard itself does (reflector.getAllAndOverride over handler then
+// class) -- deliberately reimplemented here rather than imported, so this test independently
+// exercises the real Reflector/SetMetadata wiring instead of trusting the guard's own logic.
+function isMarkedPublic(controller: Function, methodName: string): boolean {
+  const reflector = new Reflector();
+  const proto = controller.prototype as Record<string, unknown>;
+  const handler = proto[methodName] as Function;
+  return reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [handler, controller]) ?? false;
+}
+
+function isPublicRoute(controller: Function, methodName: string): boolean {
+  return PUBLIC_ROUTES.some(([c, m]) => c === controller && m === methodName);
+}
+
+function mockExecutionContext(handler: object, controllerClass: Function): ExecutionContext {
+  return {
+    switchToHttp: () => ({ getRequest: () => ({ cookies: {} }) }),
+    getHandler: () => handler,
+    getClass: () => controllerClass,
+  } as unknown as ExecutionContext;
 }
 
 describe('route guard audit (security regression test)', () => {
@@ -203,18 +224,61 @@ describe('route guard audit (security regression test)', () => {
     }
   });
 
-  const violations: string[] = [];
-  for (const controller of ALL_CONTROLLERS) {
-    const classGuarded = hasClassGuards(controller);
-    for (const methodName of routeHandlerNames(controller)) {
-      if (classGuarded || hasMethodGuards(controller, methodName) || isPublicRoute(controller, methodName)) {
-        continue;
+  it('every PUBLIC_ROUTES entry actually carries the @Public() metadata AuthGuard reads', () => {
+    // The forward direction: nothing on the allowlist was left unmarked (which would mean
+    // it's actually still guarded despite being "documented" as public here).
+    const missing: string[] = [];
+    for (const [controller, methodName] of PUBLIC_ROUTES) {
+      if (!isMarkedPublic(controller, methodName)) {
+        missing.push(`${controller.name}.${methodName}`);
       }
-      violations.push(`${controller.name}.${methodName}`);
     }
-  }
+    expect(missing).toEqual([]);
+  });
 
-  it('every route handler is either guarded (class- or method-level @UseGuards) or on the explicit PUBLIC_ROUTES allowlist', () => {
-    expect(violations).toEqual([]);
+  it('no route outside PUBLIC_ROUTES is marked @Public() (catches an accidental over-broad decorator)', () => {
+    // The reverse direction: nothing became reachable anonymously without a corresponding,
+    // reviewed PUBLIC_ROUTES entry. This is the actual security backstop now that AuthGuard
+    // runs globally -- @Public() is the only way to open a route, so a stray/mistaken
+    // @Public() is the only way this mechanism can regress into an unintentional exposure.
+    const unexpectedlyPublic: string[] = [];
+    for (const controller of ALL_CONTROLLERS) {
+      for (const methodName of routeHandlerNames(controller)) {
+        if (isMarkedPublic(controller, methodName) && !isPublicRoute(controller, methodName)) {
+          unexpectedlyPublic.push(`${controller.name}.${methodName}`);
+        }
+      }
+    }
+    expect(unexpectedlyPublic).toEqual([]);
+  });
+
+  describe('AuthGuard honours @Public() end-to-end (real Reflector + real decorator metadata)', () => {
+    @Public()
+    class PublicDummyController {
+      handler() {}
+    }
+
+    class ProtectedDummyController {
+      handler() {}
+    }
+
+    it('skips the auth check for a class marked @Public()', async () => {
+      const jwt = { verifyAsync: jest.fn() } as any;
+      const users = { findById: jest.fn() } as any;
+      const guard = new AuthGuard(jwt, users, new Reflector());
+
+      const context = mockExecutionContext(PublicDummyController.prototype.handler, PublicDummyController);
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+      expect(jwt.verifyAsync).not.toHaveBeenCalled();
+    });
+
+    it('still enforces auth (throws with no session cookie) for a route with no @Public()', async () => {
+      const jwt = { verifyAsync: jest.fn() } as any;
+      const users = { findById: jest.fn() } as any;
+      const guard = new AuthGuard(jwt, users, new Reflector());
+
+      const context = mockExecutionContext(ProtectedDummyController.prototype.handler, ProtectedDummyController);
+      await expect(guard.canActivate(context)).rejects.toThrow();
+    });
   });
 });

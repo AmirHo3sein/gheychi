@@ -2,11 +2,13 @@ import { Controller, Get, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import Redis from 'ioredis';
 import { Repository } from 'typeorm';
+import { Public } from '../auth/public.decorator';
 import { REDIS } from '../redis/redis.module';
 import { CATEGORIES_CACHE_KEY, CATEGORIES_CACHE_TTL_SEC } from './categories-cache.util';
 import { ServiceCategory } from './service-category.entity';
 
 @Controller('categories')
+@Public()
 export class CatalogController {
   constructor(
     @InjectRepository(ServiceCategory) private readonly categories: Repository<ServiceCategory>,

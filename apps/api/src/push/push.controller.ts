@@ -1,15 +1,13 @@
-import { Body, Controller, Delete, HttpCode, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, HttpCode, Post, Req } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
 import { Repository } from 'typeorm';
-import { AuthGuard } from '../auth/auth.guard';
 import { isUniqueViolation } from '../common/postgres-error-codes';
 import { User } from '../users/user.entity';
 import { SubscribePushDto, UnsubscribePushDto } from './dto/push.dto';
 import { PushSubscription } from './push-subscription.entity';
 
 @Controller('push')
-@UseGuards(AuthGuard)
 export class PushController {
   constructor(
     @InjectRepository(PushSubscription) private readonly subs: Repository<PushSubscription>,

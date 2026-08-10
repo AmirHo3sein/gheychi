@@ -1,5 +1,6 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { EntityManager, QueryFailedError } from 'typeorm';
+import { MetricsService } from '../metrics/metrics.service';
 import { Salon } from '../salons/salon.entity';
 import { Worker } from '../salons/worker.entity';
 import { ReferralCode } from './referral-code.entity';
@@ -249,6 +250,7 @@ describe('ReferralsService', () => {
   let dataSource: { transaction: jest.Mock };
   let wallet: { credit: jest.Mock; debit: jest.Mock };
   let alerts: { raise: jest.Mock };
+  let metrics: MetricsService;
   let service: ReferralsService;
 
   beforeEach(() => {
@@ -267,6 +269,7 @@ describe('ReferralsService', () => {
       debit: jest.fn().mockResolvedValue({ debited: 0, shortfall: 0, balanceAfter: 0 }),
     };
     alerts = { raise: jest.fn().mockResolvedValue(undefined) };
+    metrics = new MetricsService();
 
     service = new ReferralsService(
       referralCodesRepo as never,
@@ -279,6 +282,7 @@ describe('ReferralsService', () => {
       dataSource as never,
       wallet as never,
       alerts as never,
+      metrics,
     );
   });
 
@@ -750,6 +754,13 @@ describe('ReferralsService', () => {
       const grantUpdate = referralUpdates.find((u) => u.sql.includes("'reward_granted'"));
       expect(grantUpdate).toBeDefined();
       expect(grantUpdate!.params).toEqual(['referral-1', 'booking-1']);
+
+      // referral_events_total{outcome:'granted'} increments once per side actually
+      // granted -- see tryGrantReward's own per-side metrics call.
+      const referralEvents = await metrics.registry.getSingleMetric('referral_events_total')?.get();
+      const grantedSamples = referralEvents?.values.filter((v) => v.labels.outcome === 'granted');
+      expect(grantedSamples?.map((v) => v.labels.role).sort()).toEqual(['referred', 'referrer']);
+      expect(grantedSamples?.every((v) => v.value === 1)).toBe(true);
     });
 
     it('one wallet-kind + one fixed_discount side (Slice 6 -- now supported) -> grants BOTH, status -> reward_granted', async () => {

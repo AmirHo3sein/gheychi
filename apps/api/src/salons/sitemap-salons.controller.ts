@@ -1,10 +1,12 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { Public } from '../auth/public.decorator';
 import { SITEMAP_PAGE_SIZE, SitemapPage, SitemapPageQueryDto } from '../common/sitemap-pagination';
 import { Salon } from './salon.entity';
 
 @Controller('sitemap')
+@Public()
 export class SitemapSalonsController {
   constructor(@InjectRepository(Salon) private readonly salons: Repository<Salon>) {}
 

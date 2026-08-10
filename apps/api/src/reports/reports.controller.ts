@@ -1,12 +1,10 @@
-import { Body, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Req } from '@nestjs/common';
 import { Request } from 'express';
-import { AuthGuard } from '../auth/auth.guard';
 import { User } from '../users/user.entity';
 import { CreateReportDto, ReportEligibilityQueryDto } from './dto/report.dto';
 import { ReportsService } from './reports.service';
 
 @Controller('reports')
-@UseGuards(AuthGuard)
 export class ReportsController {
   constructor(private readonly reports: ReportsService) {}
 

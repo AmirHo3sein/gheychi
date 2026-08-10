@@ -10,6 +10,7 @@ import { COUPON_ALREADY_REDEEMED } from '../coupons/coupon-error-codes';
 import { CouponRedemption } from '../coupons/coupon-redemption.entity';
 import { CouponsService } from '../coupons/coupons.service';
 import { InvoicingService } from '../invoicing/invoicing.service';
+import { MetricsService } from '../metrics/metrics.service';
 import { REDIS } from '../redis/redis.module';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
 import { ReferralsService } from '../referrals/referrals.service';
@@ -47,6 +48,7 @@ describe('BookingsService.getEarnings', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         BookingsService,
+        MetricsService,
         { provide: getRepositoryToken(Booking), useValue: {} },
         { provide: getRepositoryToken(Payment), useValue: {} },
         { provide: getRepositoryToken(Salon), useValue: {} },
@@ -120,6 +122,7 @@ describe('BookingsService.getEarnings', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         BookingsService,
+        MetricsService,
         { provide: getRepositoryToken(Booking), useValue: {} },
         { provide: getRepositoryToken(Payment), useValue: {} },
         { provide: getRepositoryToken(Salon), useValue: {} },
@@ -159,6 +162,7 @@ describe('BookingsService.getEarnings', () => {
 
 describe('BookingsService.createHold -- deposit is capped at the price being charged', () => {
   let service: BookingsService;
+  let metrics: MetricsService;
   let emCount: jest.Mock;
   let emSave: jest.Mock;
   let emUpdate: jest.Mock;
@@ -211,6 +215,7 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
     const moduleRef = await Test.createTestingModule({
       providers: [
         BookingsService,
+        MetricsService,
         { provide: getRepositoryToken(Booking), useValue: {} },
         { provide: getRepositoryToken(Payment), useValue: {} },
         {
@@ -270,6 +275,7 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
     }).compile();
 
     service = moduleRef.get(BookingsService);
+    metrics = moduleRef.get(MetricsService);
   });
 
   it('409s with BOOKING_UNAVAILABLE when the salon is already at capacity for that time', async () => {
@@ -278,6 +284,30 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
     await expect(service.createHold('customer-1', DTO)).rejects.toMatchObject({
       response: { message: 'Slot no longer available', code: BOOKING_UNAVAILABLE },
     });
+  });
+
+  it('booking_attempts_total/booking_failures_total{reason:BOOKING_UNAVAILABLE} move on a rejected attempt', async () => {
+    emCount.mockResolvedValue(1); // salon.capacity is 1
+
+    await expect(service.createHold('customer-1', DTO)).rejects.toBeDefined();
+
+    const attempts = await metrics.registry.getSingleMetric('booking_attempts_total')?.get();
+    expect(attempts?.values).toContainEqual(expect.objectContaining({ labels: { flow: 'online' }, value: 1 }));
+    const failures = await metrics.registry.getSingleMetric('booking_failures_total')?.get();
+    expect(failures?.values).toContainEqual(
+      expect.objectContaining({ labels: { flow: 'online', reason: BOOKING_UNAVAILABLE }, value: 1 }),
+    );
+    const successes = await metrics.registry.getSingleMetric('booking_successes_total')?.get();
+    expect(successes?.values).toEqual([]);
+  });
+
+  it('booking_attempts_total/booking_successes_total move on a genuinely successful createHold', async () => {
+    await service.createHold('customer-1', DTO);
+
+    const attempts = await metrics.registry.getSingleMetric('booking_attempts_total')?.get();
+    expect(attempts?.values).toContainEqual(expect.objectContaining({ labels: { flow: 'online' }, value: 1 }));
+    const successes = await metrics.registry.getSingleMetric('booking_successes_total')?.get();
+    expect(successes?.values).toContainEqual(expect.objectContaining({ labels: { flow: 'online' }, value: 1 }));
   });
 
   it('409s with BOOKING_UNAVAILABLE, without opening a transaction, when the per-salon lock is already held', async () => {
@@ -517,6 +547,7 @@ describe('BookingsService.createManual', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         BookingsService,
+        MetricsService,
         { provide: getRepositoryToken(Booking), useValue: {} },
         { provide: getRepositoryToken(Payment), useValue: {} },
         {
@@ -726,6 +757,7 @@ describe('BookingsService.cancel', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         BookingsService,
+        MetricsService,
         { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy } },
         { provide: getRepositoryToken(Payment), useValue: {} },
         { provide: getRepositoryToken(Salon), useValue: { findOneBy: salonsFindOneBy } },
@@ -915,6 +947,7 @@ describe('BookingsService.retryPayment authority persist failure', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         BookingsService,
+        MetricsService,
         { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy } },
         { provide: getRepositoryToken(Payment), useValue: {} },
         { provide: getRepositoryToken(Salon), useValue: { findOneBy: salonsFindOneBy } },
@@ -1007,6 +1040,7 @@ describe('BookingsService.assignWorker', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         BookingsService,
+        MetricsService,
         { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy } },
         { provide: getRepositoryToken(Payment), useValue: {} },
         { provide: getRepositoryToken(Salon), useValue: { find: jest.fn().mockResolvedValue([]) } },
@@ -1258,6 +1292,7 @@ describe('BookingsService.listMine / findMine -- workerName enrichment', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         BookingsService,
+        MetricsService,
         { provide: getRepositoryToken(Booking), useValue: { find: bookingsFind, findOneBy: bookingsFindOneBy } },
         { provide: getRepositoryToken(Payment), useValue: { findOneBy: paymentsFindOneBy } },
         { provide: getRepositoryToken(Salon), useValue: { find: salonsFind } },
@@ -1359,6 +1394,7 @@ describe('BookingsService.updateStatus -- first-completed-booking referral trigg
     const moduleRef = await Test.createTestingModule({
       providers: [
         BookingsService,
+        MetricsService,
         { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy } },
         { provide: getRepositoryToken(Payment), useValue: {} },
         { provide: getRepositoryToken(Salon), useValue: {} },

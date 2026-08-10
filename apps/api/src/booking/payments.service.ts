@@ -4,6 +4,7 @@ import { DataSource, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { formatIranDateTimeFa } from '../common/iran-time.util';
+import { MetricsService } from '../metrics/metrics.service';
 import { PushNotificationData } from '../push/push.provider';
 import { PushService } from '../push/push.service';
 import { ReferralsService } from '../referrals/referrals.service';
@@ -60,6 +61,10 @@ export class PaymentsService {
     private readonly referralsService: ReferralsService,
     private readonly walletService: WalletService,
     private readonly analytics: AnalyticsService,
+    // Appended at the end, same convention as ReferralsService's own constructor
+    // comment -- every existing positional `new PaymentsService(...)` call site only
+    // needs an arg added at the tail.
+    private readonly metrics: MetricsService,
   ) {}
 
   async handleCallback(authority: string, status: string): Promise<{ status: CallbackOutcome; bookingId: string | null }> {
@@ -93,8 +98,16 @@ export class PaymentsService {
     // recovery as every other captured-money-on-a-dead-booking case.
     const wasAlreadyFailed = payment.status === 'failed';
 
+    // A genuine, fresh attempt to resolve this payment's outcome via this callback --
+    // not a replay of an already-terminal one (those returned above: already-confirmed,
+    // refund_pending/refunded). Best-effort, see MetricsService's own doc comment.
+    this.metrics.incPaymentAttempt(payment.gateway);
+
     if (status !== 'OK') {
-      if (!wasAlreadyFailed) await this.markFailed(payment.id, payment.bookingId);
+      if (!wasAlreadyFailed) {
+        await this.markFailed(payment.id, payment.bookingId);
+        this.metrics.incPaymentFailure(payment.gateway);
+      }
       return { status: 'failed', bookingId: payment.bookingId };
     }
 
@@ -114,7 +127,10 @@ export class PaymentsService {
       throw err;
     }
     if (!verify.success) {
-      if (!wasAlreadyFailed) await this.markFailed(payment.id, payment.bookingId);
+      if (!wasAlreadyFailed) {
+        await this.markFailed(payment.id, payment.bookingId);
+        this.metrics.incPaymentFailure(payment.gateway);
+      }
       return { status: 'failed', bookingId: payment.bookingId };
     }
 
@@ -200,6 +216,9 @@ export class PaymentsService {
       void this.analytics
         .track('payment_succeeded', { bookingId: payment.bookingId, amount: payment.amount, gateway: payment.gateway })
         .catch(() => {});
+      // Same "genuine first-time capture only" scope as the analytics call just above
+      // -- best-effort, see MetricsService's own doc comment.
+      this.metrics.incPaymentSuccess(payment.gateway);
       return { status: 'success', bookingId: payment.bookingId };
     }
     if (outcome === 'duplicate') {
@@ -361,6 +380,10 @@ export class PaymentsService {
     // A losing concurrent attempt (inline cancel vs retry job) sees affected=0;
     // the winner already recorded the refund and sent the notification.
     if (!updated.affected) return 'skipped';
+
+    // A real refund was just recorded (the conditional UPDATE above is what makes
+    // this the winning attempt) -- best-effort, see MetricsService's own doc comment.
+    this.metrics.incPaymentRefund(payment.gateway);
 
     await this.notifyRefunded(payment.bookingId);
 

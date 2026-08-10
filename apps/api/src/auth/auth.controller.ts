@@ -1,6 +1,5 @@
 import {
   Body, Controller, ForbiddenException, Get, HttpCode, Inject, Logger, Patch, Post, Req, Res, UnauthorizedException,
-  UseGuards,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Request, Response } from 'express';
@@ -9,9 +8,10 @@ import { ReferralApplyStatus, ReferralsService } from '../referrals/referrals.se
 import { SMS_PROVIDER, SmsProvider } from '../sms/sms.provider';
 import { User } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
-import { AuthGuard, SESSION_COOKIE } from './auth.guard';
+import { SESSION_COOKIE } from './auth.guard';
 import { RequestOtpDto, UpdateProfileDto, VerifyOtpDto } from './dto/auth.dto';
 import { OtpService } from './otp.service';
+import { Public } from './public.decorator';
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -34,6 +34,7 @@ export class AuthController {
   ) {}
 
   @Post('request-otp')
+  @Public()
   async requestOtp(@Body() dto: RequestOtpDto, @Req() req: Request) {
     const { code, expiresInSec, resendsRemaining } = await this.otp.issue(dto.phone, req.ip ?? 'unknown');
     await this.sms.sendOtp(dto.phone, code);
@@ -43,6 +44,7 @@ export class AuthController {
   }
 
   @Post('verify-otp')
+  @Public()
   async verifyOtp(@Body() dto: VerifyOtpDto, @Res({ passthrough: true }) res: Response) {
     const valid = await this.otp.verify(dto.phone, dto.code);
     if (!valid) throw new UnauthorizedException('Invalid or expired code');
@@ -109,20 +111,17 @@ export class AuthController {
   }
 
   @Get('me')
-  @UseGuards(AuthGuard)
   me(@Req() req: Request) {
     return publicUser(req.user as User);
   }
 
   @Patch('profile')
-  @UseGuards(AuthGuard)
   async updateProfile(@Req() req: Request, @Body() dto: UpdateProfileDto) {
     const updated = await this.users.updateProfile((req.user as User).id, dto);
     return publicUser(updated);
   }
 
   @Post('logout')
-  @UseGuards(AuthGuard)
   @HttpCode(204)
   logout(@Res({ passthrough: true }) res: Response) {
     res.clearCookie(SESSION_COOKIE);

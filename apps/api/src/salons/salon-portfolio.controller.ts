@@ -8,7 +8,6 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
 import { Repository } from 'typeorm';
-import { AuthGuard } from '../auth/auth.guard';
 import {
   ALLOWED_IMAGE_MIME_TYPE_PATTERN, assertTrustedImageMimeType, EXTENSION_BY_IMAGE_MIME_TYPE,
 } from '../common/trusted-image-upload';
@@ -21,7 +20,7 @@ import { SalonService } from './salon-service.entity';
 const PORTFOLIO_CAP = 40;
 
 @Controller('salons/mine/portfolio')
-@UseGuards(AuthGuard, SalonOwnerGuard)
+@UseGuards(SalonOwnerGuard)
 export class SalonPortfolioController {
   private readonly logger = new Logger(SalonPortfolioController.name);
 

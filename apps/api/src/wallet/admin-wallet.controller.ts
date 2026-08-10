@@ -2,7 +2,6 @@ import { BadRequestException, Body, Controller, Get, Post, Query, UseGuards, Use
 import { DataSource } from 'typeorm';
 import { AuditAction } from '../audit/audit.decorator';
 import { AuditInterceptor } from '../audit/audit.interceptor';
-import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { AdminWalletQueryDto } from './dto/admin-wallet-query.dto';
@@ -10,7 +9,7 @@ import { AdjustWalletDto } from './dto/adjust-wallet.dto';
 import { WalletService } from './wallet.service';
 
 @Controller('admin/wallet')
-@UseGuards(AuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @Roles('admin')
 export class AdminWalletController {
   constructor(

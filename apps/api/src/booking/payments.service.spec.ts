@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { CouponRedemption } from '../coupons/coupon-redemption.entity';
+import { MetricsService } from '../metrics/metrics.service';
 import { PushService } from '../push/push.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { WalletService } from '../wallet/wallet.service';
@@ -17,6 +18,7 @@ import { PaymentsService } from './payments.service';
 
 describe('PaymentsService.attemptRefund', () => {
   let service: PaymentsService;
+  let metrics: MetricsService;
   let paymentsFindOneBy: jest.Mock;
   let paymentsUpdate: jest.Mock;
   let bookingsFindOneBy: jest.Mock;
@@ -31,6 +33,7 @@ describe('PaymentsService.attemptRefund', () => {
     bookingId: 'booking-1',
     authority: 'AUTH123',
     status: 'refund_pending',
+    gateway: 'zarinpal',
   };
 
   beforeEach(async () => {
@@ -46,6 +49,7 @@ describe('PaymentsService.attemptRefund', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         PaymentsService,
+        MetricsService,
         { provide: getRepositoryToken(Payment), useValue: { findOneBy: paymentsFindOneBy, update: paymentsUpdate } },
         { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy } },
         { provide: DataSource, useValue: {} },
@@ -62,6 +66,7 @@ describe('PaymentsService.attemptRefund', () => {
     }).compile();
 
     service = moduleRef.get(PaymentsService);
+    metrics = moduleRef.get(MetricsService);
   });
 
   it('refunds a refund_pending payment: gateway call, race-safe update, customer notification', async () => {
@@ -83,6 +88,10 @@ describe('PaymentsService.attemptRefund', () => {
     );
     expect(raise).not.toHaveBeenCalled();
     expect(reverseIfNeeded).toHaveBeenCalledWith('booking-1');
+
+    // payment_refunds_total{gateway} increments on the exact same winning-attempt path.
+    const refunds = await metrics.registry.getSingleMetric('payment_refunds_total')?.get();
+    expect(refunds?.values).toContainEqual(expect.objectContaining({ labels: { gateway: 'zarinpal' }, value: 1 }));
   });
 
   it('still reports a successful refund even if the referral-reversal check throws', async () => {
@@ -178,6 +187,7 @@ describe('PaymentsService.notifyCancelled', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         PaymentsService,
+        MetricsService,
         { provide: getRepositoryToken(Payment), useValue: {} },
         { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy } },
         { provide: DataSource, useValue: {} },
@@ -267,6 +277,7 @@ describe('PaymentsService.notifyConfirmed', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         PaymentsService,
+        MetricsService,
         { provide: getRepositoryToken(Payment), useValue: {} },
         { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy } },
         { provide: DataSource, useValue: {} },
@@ -341,6 +352,7 @@ describe('PaymentsService.handleCallback lost-CAS recovery', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         PaymentsService,
+        MetricsService,
         { provide: getRepositoryToken(Payment), useValue: { findOneBy: paymentsFindOneBy, update: paymentsUpdate } },
         { provide: getRepositoryToken(Booking), useValue: { findOneBy: jest.fn() } },
         {
@@ -405,6 +417,7 @@ describe('PaymentsService.handleCallback lost-CAS recovery', () => {
 
 describe('PaymentsService.handleCallback — capture, dead bookings and unknown authorities', () => {
   let service: PaymentsService;
+  let metrics: MetricsService;
   let paymentsFindOneBy: jest.Mock;
   let paymentsUpdate: jest.Mock;
   // Raw read of the append-only payment_authorities ledger (no ORM entity by design).
@@ -439,6 +452,7 @@ describe('PaymentsService.handleCallback — capture, dead bookings and unknown 
     const moduleRef = await Test.createTestingModule({
       providers: [
         PaymentsService,
+        MetricsService,
         {
           provide: getRepositoryToken(Payment),
           useValue: {
@@ -483,6 +497,25 @@ describe('PaymentsService.handleCallback — capture, dead bookings and unknown 
     }).compile();
 
     service = moduleRef.get(PaymentsService);
+    metrics = moduleRef.get(MetricsService);
+  });
+
+  it('payment_attempts_total/payment_successes_total{gateway} move on a genuine capture', async () => {
+    await service.handleCallback('AUTH123', 'OK');
+
+    const attempts = await metrics.registry.getSingleMetric('payment_attempts_total')?.get();
+    expect(attempts?.values).toContainEqual(expect.objectContaining({ labels: { gateway: 'zarinpal' }, value: 1 }));
+    const successes = await metrics.registry.getSingleMetric('payment_successes_total')?.get();
+    expect(successes?.values).toContainEqual(expect.objectContaining({ labels: { gateway: 'zarinpal' }, value: 1 }));
+  });
+
+  it('payment_failures_total{gateway} moves when the gateway declines (Status=NOK), without a success', async () => {
+    await service.handleCallback('AUTH123', 'NOK');
+
+    const failures = await metrics.registry.getSingleMetric('payment_failures_total')?.get();
+    expect(failures?.values).toContainEqual(expect.objectContaining({ labels: { gateway: 'zarinpal' }, value: 1 }));
+    const successes = await metrics.registry.getSingleMetric('payment_successes_total')?.get();
+    expect(successes?.values).toEqual([]);
   });
 
   it('confirms only a booking still in pending_payment, and records the session that paid', async () => {
@@ -697,6 +730,7 @@ describe('PaymentsService.handleCallback verify-persist failure', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         PaymentsService,
+        MetricsService,
         {
           provide: getRepositoryToken(Payment),
           useValue: {

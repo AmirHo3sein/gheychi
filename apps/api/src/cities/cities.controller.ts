@@ -1,4 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
+import { Public } from '../auth/public.decorator';
 import { CitiesService } from './cities.service';
 
 // Kept as the same {name, lat, lng} shape the old static-array response had, plus id/slug/
@@ -16,6 +17,7 @@ export interface PublicCity {
 }
 
 @Controller('cities')
+@Public()
 export class CitiesController {
   constructor(private readonly cities: CitiesService) {}
 

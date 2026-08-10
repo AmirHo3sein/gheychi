@@ -1,14 +1,23 @@
+// Must be the very first import in the process -- see tracing.ts's own doc comment for
+// why (OTel auto-instrumentation has to patch 'http'/'pg'/'ioredis' before anything else
+// requires them). `reflect-metadata` below has no interaction with any instrumented
+// module, so its position relative to this import doesn't matter, but this stays first
+// regardless to keep the ordering obviously correct at a glance rather than relying on
+// that fact.
+import './tracing';
 import 'reflect-metadata';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
+import { NextFunction, Request, Response } from 'express';
 import { join } from 'path';
 import { AppModule } from './app.module';
 import { RequestContextConsoleLogger } from './common/request-context-logger.service';
 import { requestLoggingMiddleware } from './common/request-logging.middleware';
 import { buildAllowedOrigins } from './cors-origins.util';
+import { HttpMetricsMiddleware } from './metrics/http-metrics.middleware';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -19,6 +28,14 @@ async function bootstrap() {
   app.useLogger(new RequestContextConsoleLogger());
   const nestConfig = app.get(ConfigService);
   app.use(requestLoggingMiddleware);
+  // A separate, DI-backed middleware (see http-metrics.middleware.ts's own doc
+  // comment for why it's not merged into requestLoggingMiddleware above) -- resolved
+  // from the app's DI container (MetricsModule is @Global(), so this is reachable
+  // even though nothing here imports MetricsModule directly) and registered the same
+  // way, before routing, so it can time every request via the same res.on('finish')
+  // idiom requestLoggingMiddleware uses.
+  const httpMetricsMiddleware = app.get(HttpMetricsMiddleware);
+  app.use((req: Request, res: Response, next: NextFunction) => httpMetricsMiddleware.use(req, res, next));
   app.use(cookieParser());
   app.useStaticAssets(join(process.cwd(), 'uploads'), {
     prefix: '/uploads',

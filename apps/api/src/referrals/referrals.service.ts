@@ -5,6 +5,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, IsNull, Not, Repository, SelectQueryBuilder } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { isUniqueViolation } from '../common/postgres-error-codes';
+import { MetricsService } from '../metrics/metrics.service';
 import { Salon } from '../salons/salon.entity';
 import { Worker } from '../salons/worker.entity';
 import { User } from '../users/user.entity';
@@ -204,6 +205,7 @@ export class ReferralsService {
     private readonly dataSource: DataSource,
     private readonly wallet: WalletService,
     private readonly alerts: AlertsService,
+    private readonly metrics: MetricsService,
   ) {}
 
   private normalizeCode(code: string): string {
@@ -847,6 +849,13 @@ export class ReferralsService {
             });
             await em.query(`UPDATE referral_rewards SET wallet_transaction_id = $2 WHERE id = $1`, [rewardId, transactionId]);
           }
+          // This side's reward row (and its coupon/wallet payout) is fully written --
+          // best-effort, see MetricsService's own doc comment. Still inside the
+          // transaction, same as every write above; a later rollback (rare -- nothing
+          // past this point in the loop throws under normal operation) would leave the
+          // count very slightly over, which is an acceptable, known limitation of a
+          // Prometheus counter, not a correctness issue for the real grant.
+          this.metrics.incReferralEvent(side.role, 'granted');
         }
 
         const countRows: Array<{ c: string }> = await em.query(
@@ -882,6 +891,12 @@ export class ReferralsService {
         // as it was; nothing was granted, so nothing to record yet.
       });
     } catch (err) {
+      // Whichever side(s) were mid-grant when this threw aren't individually known
+      // here (the per-side loop above already records its own 'granted' event as each
+      // side succeeds) -- 'unknown' is the honest label for "the two-sided grant
+      // transaction itself failed", not a specific side's rejection. Best-effort, see
+      // MetricsService's own doc comment.
+      this.metrics.incReferralEvent('unknown', 'failed');
       this.logger.error(
         `tryGrantReward failed for referred user ${referredUserId} (triggering booking ${triggeringBookingId}, event ${eventType}): ${err instanceof Error ? err.message : String(err)}`,
       );

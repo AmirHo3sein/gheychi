@@ -19,7 +19,6 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AuditAction } from '../audit/audit.decorator';
 import { AuditInterceptor } from '../audit/audit.interceptor';
-import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { ALLOWED_IMAGE_MIME_TYPE_PATTERN } from '../common/trusted-image-upload';
@@ -33,7 +32,7 @@ import {
 } from './dto/blog.dto';
 
 @Controller('admin/blog')
-@UseGuards(AuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @Roles('admin')
 export class AdminBlogController {
   constructor(private readonly content: ContentService) {}

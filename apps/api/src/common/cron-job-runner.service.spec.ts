@@ -1,9 +1,11 @@
+import { MetricsService } from '../metrics/metrics.service';
 import { CronJobRunner } from './cron-job-runner.service';
 
 describe('CronJobRunner', () => {
   let runExclusive: jest.Mock;
   let raise: jest.Mock;
   let captureException: jest.Mock;
+  let metrics: MetricsService;
   let runner: CronJobRunner;
 
   beforeEach(() => {
@@ -13,7 +15,8 @@ describe('CronJobRunner', () => {
     runExclusive = jest.fn((_name: string, fn: () => Promise<void>, _ttl?: number) => fn());
     raise = jest.fn().mockResolvedValue(undefined);
     captureException = jest.fn();
-    runner = new CronJobRunner({ runExclusive } as never, { raise } as never, { captureException } as never);
+    metrics = new MetricsService();
+    runner = new CronJobRunner({ runExclusive } as never, { raise } as never, { captureException } as never, metrics);
   });
 
   afterEach(() => {
@@ -38,6 +41,18 @@ describe('CronJobRunner', () => {
     expect(startedCallIndex).toBeGreaterThanOrEqual(0);
     expect(startedCallIndex).toBeLessThan(completedCallIndex);
     expect(raise).not.toHaveBeenCalled();
+
+    // cron_job_runs_total{job,outcome:'success'} and cron_job_duration_seconds{job}
+    // both move on a real successful run -- see run()'s own metrics.observeCronJob call.
+    const runs = await metrics.registry.getSingleMetric('cron_job_runs_total')?.get();
+    expect(runs?.values).toContainEqual(
+      expect.objectContaining({ labels: { job: 'booking-expiry', outcome: 'success' }, value: 1 }),
+    );
+    const duration = await metrics.registry.getSingleMetric('cron_job_duration_seconds')?.get();
+    // A Histogram.observe() call produces several samples (buckets + sum + count),
+    // all labeled with `job` -- just prove at least one landed, without depending on
+    // prom-client's internal per-sample naming.
+    expect(duration?.values.some((v) => v.labels.job === 'booking-expiry')).toBe(true);
   });
 
   it('logs start even when fn subsequently fails', async () => {
@@ -48,6 +63,13 @@ describe('CronJobRunner', () => {
     await runner.run('refund-retry', fn);
 
     expect(logSpy).toHaveBeenCalledWith('Cron job "refund-retry" started');
+
+    // cron_job_runs_total{job,outcome:'failure'} moves on a failed run too -- see
+    // run()'s own catch branch.
+    const runs = await metrics.registry.getSingleMetric('cron_job_runs_total')?.get();
+    expect(runs?.values).toContainEqual(
+      expect.objectContaining({ labels: { job: 'refund-retry', outcome: 'failure' }, value: 1 }),
+    );
   });
 
   it('forwards a custom lockTtlMs to CronLockService', async () => {
