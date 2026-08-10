@@ -96,6 +96,19 @@ describe('Favorites (e2e)', () => {
     expect(ids).toContain(salonId);
     expect(ids).not.toContain(suspendedSalonId);
 
+    // The technical-debt fix here is a *response* filter, not a data deletion -- the
+    // underlying salon_favorites row for the suspended salon must survive untouched, so
+    // that a later re-approval makes it reappear without the customer re-favoriting it.
+    // Verify that directly against the DB rather than trusting the response's absence.
+    const ds = testDataSource();
+    await ds.initialize();
+    const rows = await ds.query(
+      `SELECT 1 FROM salon_favorites WHERE user_id = (SELECT id FROM users WHERE phone = $1) AND salon_id = $2`,
+      ['09140000001', suspendedSalonId],
+    );
+    await ds.destroy();
+    expect(rows).toHaveLength(1);
+
     // Cleanup so this test's effects don't leak into a re-run of the earlier ones.
     await request(app.getHttpServer()).delete(`/api/salons/${salonId}/favorite`).set('Cookie', cookie).expect(204);
     await request(app.getHttpServer())
