@@ -109,15 +109,15 @@ const { titleId } = useDialog(dialogRoot, { onClose: close })
       <p :id="counterId" data-testid="report-reason-counter" aria-live="polite" class="text-xs opacity-70">
         {{ reasonLength.toLocaleString('fa-IR') }} / ۵۰۰
       </p>
-      <button
-        type="button"
+      <BaseButton
+        block
         data-testid="submit-report-button"
-        :disabled="submitting || !isValid"
-        class="min-h-11 w-full rounded-lg bg-(--color-accent) text-(--color-fill-text) p-2 font-semibold disabled:opacity-50"
+        :disabled="!isValid"
+        :loading="submitting"
         @click="submit"
       >
         ثبت گزارش
-      </button>
+      </BaseButton>
       <button type="button" data-testid="report-close-button" class="min-h-11 w-full text-sm" @click="close">بستن</button>
     </div>
   </div>
