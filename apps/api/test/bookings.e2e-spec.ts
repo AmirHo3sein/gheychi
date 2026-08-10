@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
+import { BOOKING_UNAVAILABLE } from '../src/booking/booking-error-codes';
 import { loginAs } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
@@ -88,11 +89,12 @@ describe('Bookings — create hold (e2e)', () => {
       .expect(201);
 
     const secondCustomer = await loginAs(app, '09127770003');
-    await request(app.getHttpServer())
+    const res = await request(app.getHttpServer())
       .post('/api/bookings')
       .set('Cookie', secondCustomer)
       .send({ salonId, serviceId, startsAt })
       .expect(409);
+    expect(res.body.code).toBe(BOOKING_UNAVAILABLE);
   });
 
   it('concurrency: two simultaneous bookings for the same salon capacity slot -- exactly one succeeds', async () => {

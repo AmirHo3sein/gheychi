@@ -17,6 +17,7 @@ import { WalletTransaction } from '../wallet/wallet-transaction.entity';
 import { WalletService } from '../wallet/wallet.service';
 import { PAYMENT_GATEWAY } from './payment-gateway';
 import { Booking } from './booking.entity';
+import { BOOKING_UNAVAILABLE, WORKER_UNAVAILABLE } from './booking-error-codes';
 import { Payment } from './payment.entity';
 import { BookingsService } from './bookings.service';
 import { PaymentsService } from './payments.service';
@@ -271,6 +272,22 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
     service = moduleRef.get(BookingsService);
   });
 
+  it('409s with BOOKING_UNAVAILABLE when the salon is already at capacity for that time', async () => {
+    emCount.mockResolvedValue(1); // salon.capacity is 1
+
+    await expect(service.createHold('customer-1', DTO)).rejects.toMatchObject({
+      response: { message: 'Slot no longer available', code: BOOKING_UNAVAILABLE },
+    });
+  });
+
+  it('409s with BOOKING_UNAVAILABLE, without opening a transaction, when the per-salon lock is already held', async () => {
+    redisSet.mockResolvedValueOnce(null); // NX failed -- someone else holds the lock
+
+    await expect(service.createHold('customer-1', DTO)).rejects.toMatchObject({
+      response: { message: 'This slot is being booked by someone else, try again', code: BOOKING_UNAVAILABLE },
+    });
+  });
+
   it('charges the whole price rather than the higher configured minimum on a cheap service', async () => {
     const result = await service.createHold('customer-1', DTO);
 
@@ -417,14 +434,14 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
       expect(emSave).not.toHaveBeenCalledWith(Booking, expect.anything());
     });
 
-    it('409s when the chosen worker already has an overlapping booking, even with spare salon capacity', async () => {
+    it('409s with WORKER_UNAVAILABLE when the chosen worker already has an overlapping booking, even with spare salon capacity', async () => {
       // The FIRST em.count call is the salon-wide capacity check (kept under capacity);
       // the SECOND is the per-worker overlap check, keyed on the same overlap shape.
       emCount.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
 
-      await expect(service.createHold('customer-1', { ...DTO, workerId: 'worker-1' })).rejects.toBeInstanceOf(
-        ConflictException,
-      );
+      await expect(service.createHold('customer-1', { ...DTO, workerId: 'worker-1' })).rejects.toMatchObject({
+        response: { message: 'این کارمند در این زمان نوبت دیگری دارد', code: WORKER_UNAVAILABLE },
+      });
       expect(emSave).not.toHaveBeenCalledWith(Booking, expect.anything());
     });
 
@@ -586,10 +603,24 @@ describe('BookingsService.createManual', () => {
     expect(savedBooking().notes).toBe('تماس تلفنی');
   });
 
-  it('409s when the salon is already at capacity for that time', async () => {
+  it('409s with BOOKING_UNAVAILABLE when the salon is already at capacity for that time', async () => {
     emCount.mockResolvedValue(1); // salon.capacity is 1
 
-    await expect(service.createManual('salon-1', { ...DTO })).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.createManual('salon-1', { ...DTO })).rejects.toMatchObject({
+      response: { message: 'این زمان قبلا پر شده است', code: BOOKING_UNAVAILABLE },
+    });
+    expect(emSave).not.toHaveBeenCalledWith(Booking, expect.anything());
+  });
+
+  it('409s with BOOKING_UNAVAILABLE, without opening a transaction, when the per-salon lock is already held', async () => {
+    redisSet.mockResolvedValueOnce(null); // NX failed -- someone else holds the lock
+
+    await expect(service.createManual('salon-1', { ...DTO })).rejects.toMatchObject({
+      response: {
+        message: 'این عملیات توسط درخواست دیگری در حال انجام است، دوباره تلاش کنید',
+        code: BOOKING_UNAVAILABLE,
+      },
+    });
     expect(emSave).not.toHaveBeenCalledWith(Booking, expect.anything());
   });
 
@@ -617,12 +648,14 @@ describe('BookingsService.createManual', () => {
     await expect(service.createManual('salon-1', { ...DTO, workerId: 'worker-1' })).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('409s when the chosen worker already has an overlapping booking, even with spare salon capacity', async () => {
+  it('409s with WORKER_UNAVAILABLE when the chosen worker already has an overlapping booking, even with spare salon capacity', async () => {
     // The FIRST em.count call is the salon-wide capacity check; the SECOND is the
     // per-worker overlap check, same shape as createHold's own equivalent test.
     emCount.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
 
-    await expect(service.createManual('salon-1', { ...DTO, workerId: 'worker-1' })).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.createManual('salon-1', { ...DTO, workerId: 'worker-1' })).rejects.toMatchObject({
+      response: { message: 'این کارمند در این زمان نوبت دیگری دارد', code: WORKER_UNAVAILABLE },
+    });
     expect(emSave).not.toHaveBeenCalledWith(Booking, expect.anything());
   });
 
@@ -1006,12 +1039,15 @@ describe('BookingsService.assignWorker', () => {
     service = moduleRef.get(BookingsService);
   });
 
-  it('409s immediately, without opening a transaction, when the per-salon lock is already held', async () => {
+  it('409s with BOOKING_UNAVAILABLE immediately, without opening a transaction, when the per-salon lock is already held', async () => {
     redisSet.mockResolvedValueOnce(null); // NX failed -- someone else holds the lock
 
-    await expect(service.assignWorker('salon-1', 'booking-1', 'worker-1')).rejects.toBeInstanceOf(
-      ConflictException,
-    );
+    await expect(service.assignWorker('salon-1', 'booking-1', 'worker-1')).rejects.toMatchObject({
+      response: {
+        message: 'این عملیات توسط درخواست دیگری در حال انجام است، دوباره تلاش کنید',
+        code: BOOKING_UNAVAILABLE,
+      },
+    });
     expect(dataSourceTransaction).not.toHaveBeenCalled();
   });
 
@@ -1074,12 +1110,12 @@ describe('BookingsService.assignWorker', () => {
   // The bug this whole describe block's newest cases exist to close: assignWorker used to
   // write workerId with no availability check at all, so a provider could double-book a
   // worker across two overlapping appointments just by assigning them from the bookings list.
-  it('409s when the worker already has another overlapping confirmed/pending booking at that time', async () => {
+  it('409s with WORKER_UNAVAILABLE when the worker already has another overlapping confirmed/pending booking at that time', async () => {
     emCount.mockResolvedValueOnce(1);
 
-    await expect(service.assignWorker('salon-1', 'booking-1', 'worker-1')).rejects.toBeInstanceOf(
-      ConflictException,
-    );
+    await expect(service.assignWorker('salon-1', 'booking-1', 'worker-1')).rejects.toMatchObject({
+      response: { message: 'این کارمند در این زمان نوبت دیگری دارد', code: WORKER_UNAVAILABLE },
+    });
     expect(emUpdate).not.toHaveBeenCalled();
   });
 

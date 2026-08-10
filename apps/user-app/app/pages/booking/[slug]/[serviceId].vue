@@ -211,6 +211,21 @@ function mentionsCoupon(error: ApiError | null, message: string): boolean {
   return message.includes('کد تخفیف')
 }
 
+// A booking-conflict rejection from POST /bookings also now carries a stable `code`
+// (see apps/api's booking-error-codes.ts): BOOKING_UNAVAILABLE for the salon-capacity/
+// slot-overlap and lock-contention conflicts, WORKER_UNAVAILABLE for the narrower case
+// where the chosen worker specifically is double-booked. Both currently get the exact
+// same generic "this slot was just taken" copy below, but checking `code` first (rather
+// than the bare HTTP status) is what lets that copy diverge later without silently
+// falling out of sync with whichever conflicts the API actually distinguishes. The
+// plain `status === 409` check is kept ONLY as a fallback for a response with no
+// structured body at all, same reasoning as mentionsCoupon above.
+const BOOKING_CONFLICT_CODES = new Set(['BOOKING_UNAVAILABLE', 'WORKER_UNAVAILABLE'])
+function isBookingConflict(error: ApiError | null): boolean {
+  if (error?.code) return BOOKING_CONFLICT_CODES.has(error.code)
+  return error?.status === 409
+}
+
 async function applyCoupon() {
   const code = couponCode.value.trim()
   if (!code || !page.value) return
@@ -263,7 +278,7 @@ async function confirmBooking() {
     // a local error message would just flash "an error occurred" right as the user is
     // being navigated away.
     if (error?.status === 401) return
-    if (error?.status === 409) {
+    if (isBookingConflict(error)) {
       submitError.value = 'این نوبت همین الان رزرو شد، لطفا زمان دیگری را انتخاب کنید'
       selectedSlot.value = null
       return

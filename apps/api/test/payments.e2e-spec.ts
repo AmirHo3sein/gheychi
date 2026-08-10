@@ -191,7 +191,9 @@ describe('Payments — callback (e2e)', () => {
       .get('/api/payments/callback')
       .query({ Authority: authority, Status: 'NOK' })
       .expect(302);
-    expect(res.headers.location).toBe(`http://localhost:3003/booking/callback?status=failed&bookingId=${created.body.booking.id}`);
+    expect(res.headers.location).toBe(
+      `http://localhost:3003/booking/callback?status=failed&code=PAYMENT_FAILED&bookingId=${created.body.booking.id}`,
+    );
 
     const booking = await request(app.getHttpServer())
       .get(`/api/bookings/${created.body.booking.id}`)
@@ -306,6 +308,8 @@ describe('Payments — callback (e2e)', () => {
     const res = await request(app.getHttpServer())
       .get(`/api/payments/callback?Authority=${authority}&Status=NOK`)
       .expect(302);
-    expect(res.headers.location).toBe(`http://localhost:3003/booking/callback?status=failed&bookingId=${bookingId}`);
+    expect(res.headers.location).toBe(
+      `http://localhost:3003/booking/callback?status=failed&code=PAYMENT_FAILED&bookingId=${bookingId}`,
+    );
   });
 });

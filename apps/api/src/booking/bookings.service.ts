@@ -26,6 +26,7 @@ import { UsersService } from '../users/users.service';
 import { WalletTransaction } from '../wallet/wallet-transaction.entity';
 import { WalletService } from '../wallet/wallet.service';
 import { Booking, BookingStatus } from './booking.entity';
+import { BOOKING_UNAVAILABLE, WORKER_UNAVAILABLE } from './booking-error-codes';
 import { releaseBookingHold } from './booking-hold-release.util';
 import { CreateBookingDto, CreateManualBookingDto } from './dto/booking.dto';
 import { calculateDeposit } from './deposit.util';
@@ -171,7 +172,12 @@ export class BookingsService {
     // fully serialized per salon regardless of duration or capacity, which is what
     // actually backs the "double booking is impossible" guarantee.
     const lockToken = await this.acquireSalonLock(dto.salonId);
-    if (!lockToken) throw new ConflictException('This slot is being booked by someone else, try again');
+    if (!lockToken) {
+      throw new ConflictException({
+        message: 'This slot is being booked by someone else, try again',
+        code: BOOKING_UNAVAILABLE,
+      });
+    }
 
     let booking: Booking;
     let depositAmount: number;
@@ -186,7 +192,9 @@ export class BookingsService {
             endsAt: MoreThan(startsAt),
           },
         });
-        if (overlapping >= salon.capacity) throw new ConflictException('Slot no longer available');
+        if (overlapping >= salon.capacity) {
+          throw new ConflictException({ message: 'Slot no longer available', code: BOOKING_UNAVAILABLE });
+        }
 
         // A specific worker is never merely "one more unit of salon capacity" -- they can
         // only be in one place at a time regardless of how many chairs are free, so this is
@@ -211,7 +219,12 @@ export class BookingsService {
               endsAt: MoreThan(startsAt),
             },
           });
-          if (workerOverlapping > 0) throw new ConflictException('این کارمند در این زمان نوبت دیگری دارد');
+          if (workerOverlapping > 0) {
+            throw new ConflictException({
+              message: 'این کارمند در این زمان نوبت دیگری دارد',
+              code: WORKER_UNAVAILABLE,
+            });
+          }
         }
 
         // Passing `em` activates the row-lock/race-safety path inside
@@ -448,7 +461,12 @@ export class BookingsService {
 
     // Same per-salon lock, same reasoning, as createHold's own comment above.
     const lockToken = await this.acquireSalonLock(salonId);
-    if (!lockToken) throw new ConflictException('این عملیات توسط درخواست دیگری در حال انجام است، دوباره تلاش کنید');
+    if (!lockToken) {
+      throw new ConflictException({
+        message: 'این عملیات توسط درخواست دیگری در حال انجام است، دوباره تلاش کنید',
+        code: BOOKING_UNAVAILABLE,
+      });
+    }
 
     let booking: Booking;
     try {
@@ -464,7 +482,9 @@ export class BookingsService {
             endsAt: MoreThan(startsAt),
           },
         });
-        if (overlapping >= salon.capacity) throw new ConflictException('این زمان قبلا پر شده است');
+        if (overlapping >= salon.capacity) {
+          throw new ConflictException({ message: 'این زمان قبلا پر شده است', code: BOOKING_UNAVAILABLE });
+        }
 
         if (dto.workerId) {
           const worker = await this.workers.findOneBy({ id: dto.workerId, salonId });
@@ -482,7 +502,12 @@ export class BookingsService {
               endsAt: MoreThan(startsAt),
             },
           });
-          if (workerOverlapping > 0) throw new ConflictException('این کارمند در این زمان نوبت دیگری دارد');
+          if (workerOverlapping > 0) {
+            throw new ConflictException({
+              message: 'این کارمند در این زمان نوبت دیگری دارد',
+              code: WORKER_UNAVAILABLE,
+            });
+          }
         }
 
         return em.save(
@@ -801,7 +826,10 @@ export class BookingsService {
     // both pass the overlap count below before either commits its UPDATE.
     const lockToken = await this.acquireSalonLock(salonId);
     if (!lockToken) {
-      throw new ConflictException('این عملیات توسط درخواست دیگری در حال انجام است، دوباره تلاش کنید');
+      throw new ConflictException({
+        message: 'این عملیات توسط درخواست دیگری در حال انجام است، دوباره تلاش کنید',
+        code: BOOKING_UNAVAILABLE,
+      });
     }
 
     try {
@@ -830,7 +858,12 @@ export class BookingsService {
             endsAt: MoreThan(booking.startsAt),
           },
         });
-        if (workerOverlapping > 0) throw new ConflictException('این کارمند در این زمان نوبت دیگری دارد');
+        if (workerOverlapping > 0) {
+          throw new ConflictException({
+            message: 'این کارمند در این زمان نوبت دیگری دارد',
+            code: WORKER_UNAVAILABLE,
+          });
+        }
 
         await em.update(Booking, { id: bookingId }, { workerId });
       });

@@ -53,13 +53,16 @@ describe('PaymentsController.callback -- redirect status', () => {
     );
   });
 
-  it('redirects a genuine decline to status=failed', async () => {
+  it('redirects a genuine decline to status=failed with a PAYMENT_FAILED code', async () => {
     expect(await callbackFor('failed', 'booking-1')).toBe(
-      'http://front.example/booking/callback?status=failed&bookingId=booking-1',
+      'http://front.example/booking/callback?status=failed&code=PAYMENT_FAILED&bookingId=booking-1',
     );
   });
 
-  it('redirects an unattributable authority to status=failed with no bookingId at all', async () => {
+  // 'unknown-authority' also renders as the plain failure page for the customer, but it's
+  // a distinct failure (an authority attributable to no payment at all) rather than a
+  // resolved decline, so it deliberately does NOT get PAYMENT_FAILED.
+  it('redirects an unattributable authority to status=failed with no code and no bookingId at all', async () => {
     expect(await callbackFor('unknown-authority', null)).toBe('http://front.example/booking/callback?status=failed');
   });
 });

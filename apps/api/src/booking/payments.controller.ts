@@ -1,6 +1,7 @@
 import { Controller, Get, Query, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
+import { PAYMENT_FAILED } from './booking-error-codes';
 import { PaymentsService } from './payments.service';
 
 @Controller('payments')
@@ -34,6 +35,11 @@ export class PaymentsController {
     // customer gets the normal failure page instead; the booking-callback page already
     // renders without a bookingId, so it is simply omitted rather than sent as "null".
     const query = new URLSearchParams({ status: redirectStatus });
+    // Only the genuine-decline outcome gets a code: 'unknown-authority' also redirects
+    // as status=failed for the customer, but it's a distinct failure (an authority this
+    // platform cannot attribute to any payment at all), not a resolved decline -- see
+    // booking-error-codes.ts's own doc comment.
+    if (outcome === 'failed') query.set('code', PAYMENT_FAILED);
     if (bookingId) query.set('bookingId', bookingId);
     res.redirect(302, `${frontendBase}/booking/callback?${query.toString()}`);
   }

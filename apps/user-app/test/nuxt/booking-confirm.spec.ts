@@ -245,7 +245,10 @@ describe('booking confirm page', () => {
     expect(bookingCall?.[1]).toMatchObject({ body: expect.objectContaining({ workerId: 'w1' }) })
   })
 
-  it('on a 409 from POST /bookings, shows the conflict message and clears the selected slot', async () => {
+  // No structured body at all (e.g. a bare 409 with no JSON, or defensively an
+  // older/unexpected API response) -- exercises the plain status===409 fallback,
+  // same reasoning as mentionsCoupon's own fallback test above.
+  it('on a 409 from POST /bookings with no `code`, shows the conflict message and clears the selected slot', async () => {
     stubPageLoad({ rejectWith: { response: { status: 409 } } })
     wrapper = await mountSuspended(BookingConfirmPage)
 
@@ -259,6 +262,45 @@ describe('booking confirm page', () => {
     // The confirm sheet is only rendered while a slot is selected -- asserting it's gone
     // confirms selectedSlot was actually reset to null, not just that the message showed.
     expect(wrapper.find('[data-testid="confirm-booking-button"]').exists()).toBe(false)
+  })
+
+  // The booking-availability counterpart of the coupon `code` migration: POST /bookings now
+  // carries BOOKING_UNAVAILABLE/WORKER_UNAVAILABLE on its 409 body (apps/api's
+  // booking-error-codes.ts). Both are read via `code` first, not the bare HTTP status.
+  it.each([
+    ['BOOKING_UNAVAILABLE', 'Slot no longer available'],
+    ['WORKER_UNAVAILABLE', 'این کارمند در این زمان نوبت دیگری دارد'],
+  ])('on a 409 with code=%s from POST /bookings, shows the conflict message and clears the selected slot', async (code, message) => {
+    stubPageLoad(apiError(409, message, code))
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+
+    await wrapper.find('[data-testid="confirm-booking-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('این نوبت همین الان رزرو شد')
+    expect(wrapper.find('[data-testid="confirm-booking-button"]').exists()).toBe(false)
+  })
+
+  // A `code` that isn't one of the booking-conflict codes must not be treated as one just
+  // because SOME code is present -- mirrors the equivalent coupon test above.
+  it('does not treat a non-booking-conflict `code` on a 409 as a booking conflict', async () => {
+    stubPageLoad(apiError(409, 'یک تداخل دیگر', 'SOME_OTHER_CODE'))
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+
+    await wrapper.find('[data-testid="confirm-booking-button"]').trigger('click')
+    await flushPromises()
+
+    // Falls through to the generic non-coupon-400 handling; a 409 with no matching code
+    // and no Persian-detectable customer message (customerFacingMessage only runs for
+    // status 400) still lands on the generic fallback copy, not the booking-conflict one.
+    expect(wrapper.text()).not.toContain('این نوبت همین الان رزرو شد')
+    expect(wrapper.text()).toContain('خطایی رخ داد، لطفا دوباره تلاش کنید')
   })
 
   it('throws the standard 404 for an unknown salon/service pair', async () => {
