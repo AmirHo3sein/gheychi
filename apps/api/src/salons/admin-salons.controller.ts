@@ -30,7 +30,9 @@ export class AdminSalonsController {
     const qb = this.salons
       .createQueryBuilder('salon')
       .select(['salon.id', 'salon.name', 'salon.city', 'salon.status', 'salon.genderTarget', 'salon.isFeatured', 'salon.featuredUntil', 'salon.createdAt'])
-      .orderBy('salon.name', 'ASC');
+      // Oldest-pending-first: this is a moderation queue, so admins should clear the
+      // longest-waiting requests first rather than see them alphabetically by name.
+      .orderBy('salon.createdAt', 'ASC');
 
     const status = query.status ?? 'pending';
     if (status !== 'all') qb.andWhere('salon.status = :status', { status });

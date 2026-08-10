@@ -55,6 +55,21 @@ describe('Admin salon list filters (e2e)', () => {
     expect(res.body.items.every((s: { status: string }) => s.status === 'pending')).toBe(true);
   });
 
+  it('orders the default pending queue oldest-createdAt-first, not alphabetically by name', async () => {
+    // Tehran was created before Shiraz in beforeAll, so createdAt-ASC puts Tehran
+    // first -- the opposite of the old name-ASC order, which put Shiraz first.
+    const res = await request(app.getHttpServer())
+      .get('/api/admin/salons')
+      .set('Cookie', adminCookie)
+      .expect(200);
+    expect(res.body.items.map((s: { name: string }) => s.name)).toEqual([
+      'Pending Salon Tehran',
+      'Pending Salon Shiraz',
+    ]);
+    const createdAts = res.body.items.map((s: { createdAt: string }) => new Date(s.createdAt).getTime());
+    expect(createdAts[0]).toBeLessThanOrEqual(createdAts[1]);
+  });
+
   it('filters by city', async () => {
     const res = await request(app.getHttpServer())
       .get('/api/admin/salons?city=Shiraz')

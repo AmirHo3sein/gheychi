@@ -13,18 +13,46 @@ import { SalonsService } from './salons.service';
 describe('AdminSalonsController (delegates to SalonsService)', () => {
   let controller: AdminSalonsController;
   let salonsService: { setStatus: jest.Mock; setFeatured: jest.Mock };
+  let qb: {
+    select: jest.Mock;
+    orderBy: jest.Mock;
+    andWhere: jest.Mock;
+    skip: jest.Mock;
+    take: jest.Mock;
+    getManyAndCount: jest.Mock;
+  };
+  let salons: { createQueryBuilder: jest.Mock };
 
   beforeEach(() => {
     salonsService = {
       setStatus: jest.fn().mockResolvedValue({ id: 's1', status: 'approved' }),
       setFeatured: jest.fn().mockResolvedValue({ id: 's1', isFeatured: true }),
     };
+    qb = {
+      select: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+    };
+    salons = { createQueryBuilder: jest.fn(() => qb) };
     controller = new AdminSalonsController(
-      {} as unknown as Repository<Salon>,
+      salons as unknown as Repository<Salon>,
       {} as unknown as Repository<SalonStory>,
       {} as unknown as Repository<PortfolioItem>,
       salonsService as unknown as SalonsService,
     );
+  });
+
+  // Regression test for the alphabetical-queue bug (docs/technical-overview/24-technical-debt.md):
+  // GET /admin/salons must order the moderation queue oldest-pending-first (createdAt ASC),
+  // not alphabetically by name, so admins clear the longest-waiting requests first.
+  it('orders the salon list by createdAt ASC, not by name', async () => {
+    await controller.list({});
+
+    expect(qb.orderBy).toHaveBeenCalledWith('salon.createdAt', 'ASC');
+    expect(qb.orderBy).not.toHaveBeenCalledWith('salon.name', 'ASC');
   });
 
   it('setStatus passes the id and dto through to SalonsService.setStatus and returns its result', async () => {
