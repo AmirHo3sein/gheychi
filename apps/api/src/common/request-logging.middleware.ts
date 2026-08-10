@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { Logger } from '@nestjs/common';
 import { NextFunction, Request, Response } from 'express';
+import { requestContextStorage } from './request-context';
 
 const logger = new Logger('HTTP');
 
@@ -14,9 +15,14 @@ const TRUSTED_REQUEST_ID_PATTERN = /^[a-zA-Z0-9-]{1,64}$/;
  * Ties one request's log lines together via a single id (generated here, or
  * reused from an incoming X-Request-Id set by a fronting proxy/load balancer),
  * echoed back on the response so a client/support ticket can reference it, and
- * appended to a per-request access-log line -- the only cross-cutting log
- * correlation this app has today (see CLAUDE.md's "no global exception filter"
- * choice; NestJS's own default logger still covers uncaught-exception stacks).
+ * appended to a per-request access-log line. The rest of the request -- routing,
+ * guards, controller, and every downstream service call it triggers (e.g. a
+ * booking creation that also touches payments and notifications) -- runs inside
+ * `requestContextStorage.run()`, so `getRequestId()` (and, via
+ * `RequestContextConsoleLogger`, every `Logger.log()`/`.error()`/etc. call anywhere
+ * in that chain) automatically has this same id available without it being passed
+ * as an explicit parameter. See `request-context.ts` and
+ * `request-context-logger.service.ts`.
  */
 export function requestLoggingMiddleware(req: Request, res: Response, next: NextFunction): void {
   const incoming = req.headers['x-request-id'];
@@ -30,5 +36,5 @@ export function requestLoggingMiddleware(req: Request, res: Response, next: Next
     logger.log(`${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - startedAt}ms [${requestId}]`);
   });
 
-  next();
+  requestContextStorage.run({ requestId }, next);
 }

@@ -107,12 +107,13 @@ Every third-party integration follows the same interface → injection-token →
 | Payments | `PaymentGateway` | `PAYMENT_GATEWAY` | `MockPaymentGateway`, `ZarinpalGateway` | `PAYMENT_GATEWAY=mock\|zarinpal` |
 | Push | `PushProvider` | `PUSH_PROVIDER` | `ConsolePushProvider`, `WebPushProvider` | `PUSH_PROVIDER=console\|webpush` |
 | Storage | `StorageProvider` | `STORAGE_PROVIDER` | `LocalDiskStorageProvider`, `S3StorageProvider` | `STORAGE_PROVIDER=local\|s3` |
+| Error tracking | `ErrorTrackingService` | `ERROR_TRACKING_PROVIDER` | `LoggerErrorTrackingService` (only implementation; no real Sentry/APM account exists) | none yet |
 
 Full detail per integration in [19-third-party-services.md](./19-third-party-services.md). Any new external integration should follow this exact pattern.
 
 ### Error handling & config
 
-- Services throw NestJS built-ins directly (`NotFoundException`, `BadRequestException`, `ConflictException`, `ForbiddenException`) — there is no global exception filter; NestJS's default HTTP-status mapping is relied on.
+- Services throw NestJS built-ins directly (`NotFoundException`, `BadRequestException`, `ConflictException`, `ForbiddenException`) — NestJS's default HTTP-status mapping is relied on. A global catch-all filter (`GlobalExceptionFilter`, `error-tracking/global-exception.filter.ts`, registered via `APP_FILTER`) now sits in front of that default handling, but only as a side-effecting observer: it subclasses `BaseExceptionFilter` and delegates to `super.catch()`, so the response body/status for every existing case is unchanged. Its only job is calling `ErrorTrackingService.captureException()` for 5xx/unknown exceptions before that response is sent — see [19-third-party-services.md](./19-third-party-services.md) and [21-security.md](./21-security.md).
 - `@nestjs/config` is global, env file picked by `NODE_ENV` (`.env.test` vs `.env`). **There is no schema validation on env vars** — code calls `config.getOrThrow('KEY')` (throws only when the code path actually runs) or `config.get('KEY', default)`. A missing required env var is invisible until the first request that needs it.
 - Platform-tunable business constants (deposit %, commission %, cancellation window, etc.) live in the `platform_config` key/value table, not env vars — see [04-database.md](./04-database.md) and [20-business-rules.md](./20-business-rules.md).
 

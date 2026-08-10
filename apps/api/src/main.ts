@@ -6,11 +6,17 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
 import { join } from 'path';
 import { AppModule } from './app.module';
+import { RequestContextConsoleLogger } from './common/request-context-logger.service';
 import { requestLoggingMiddleware } from './common/request-logging.middleware';
 import { buildAllowedOrigins } from './cors-origins.util';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // Makes every `new Logger(context)` call site app-wide automatically include the
+  // current request's id (see request-context-logger.service.ts) -- must be set before
+  // any meaningful logging happens, and pairs with requestLoggingMiddleware below,
+  // which seeds the AsyncLocalStorage store this logger reads from.
+  app.useLogger(new RequestContextConsoleLogger());
   const nestConfig = app.get(ConfigService);
   app.use(requestLoggingMiddleware);
   app.use(cookieParser());

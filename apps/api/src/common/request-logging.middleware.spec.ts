@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import { Logger } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { getRequestId } from './request-context';
 import { requestLoggingMiddleware } from './request-logging.middleware';
 
 function fakeReqRes(headers: Record<string, string> = {}) {
@@ -47,6 +48,37 @@ describe('requestLoggingMiddleware', () => {
     requestLoggingMiddleware(req, res, jest.fn());
 
     expect(req.requestId).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('makes the request id available via getRequestId() to code invoked downstream of next() (e.g. the route handler and any service it calls)', () => {
+    const { req, res } = fakeReqRes();
+    let observedDuringNext: string | undefined;
+    let observedAfterAsyncTick: string | undefined;
+    const next = jest.fn(async () => {
+      observedDuringNext = getRequestId();
+      // Proves propagation survives an async continuation, not just the synchronous
+      // portion of next() -- this is what makes an `await` deep inside a service call
+      // (e.g. BookingsService awaiting a repository query) still see the request id.
+      await Promise.resolve();
+      observedAfterAsyncTick = getRequestId();
+    });
+
+    requestLoggingMiddleware(req, res, next);
+
+    expect(observedDuringNext).toBe(req.requestId);
+    const nextReturnValue = next.mock.results[0]!.value as Promise<void>;
+    return nextReturnValue.then(() => {
+      expect(observedAfterAsyncTick).toBe(req.requestId);
+    });
+  });
+
+  it('does not leak the request id into code that runs outside of next() (before the middleware ran, or after a synchronous next() returns)', () => {
+    expect(getRequestId()).toBeUndefined();
+    const { req, res } = fakeReqRes();
+
+    requestLoggingMiddleware(req, res, jest.fn());
+
+    expect(getRequestId()).toBeUndefined();
   });
 
   it('logs one access-log line, including the method, url, status, and request id, when the response finishes', () => {

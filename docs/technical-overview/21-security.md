@@ -65,6 +65,10 @@ sequenceDiagram
 
 Every third-party credential (JWT secret, Kavenegar key, Zarinpal access token, S3 keys, VAPID keys) is an env var, loaded via `@nestjs/config`. `docs/deployment/DEPLOY.md` explicitly warns that `docker compose config` inlines every `env_file` secret in its output and must be redacted before ever being shared/pasted anywhere.
 
+## Error-tracking redaction
+
+`ErrorTrackingService.captureException(error, context)` (`error-tracking/`) is the one place an exception's contextual metadata leaves the request-handling code and gets logged (today) / will eventually leave the process to a real APM. `ErrorTrackingContext` only exposes three explicitly-safe typed fields (`requestId`, `userId`, `route`) plus a free-form `extra` bag. **Never pass a JWT, session cookie, OTP code, card/payment credential, or password/secret into `context` or `extra`.** As a defense-in-depth backstop (not a substitute for call-site discipline), `extra` is recursively redacted by `redact-context.ts` before anything is logged: any key that normalizes to contain `password`, `token`, `jwt`, `cookie`, `session`, `secret`, `otp`, `cvv`, `card`, `authorization`, `apikey`, or `privatekey` — however deeply nested — is replaced with `'[redacted]'`. An `Error`'s own `.message`/`.stack` string is **not** scanned (same boundary `CronJobRunner`/`AlertsService` already rely on elsewhere — they log `err.message` directly); call sites must not construct an error message that embeds a raw secret.
+
 ## Rate limiting & abuse controls
 
 Redis-backed, narrowly scoped to the two genuinely abusable surfaces: OTP request/verify (see [05-authentication.md](./05-authentication.md)) and the public referral-code-validation endpoint (20/hour per IP — a code-enumeration surface). No general-purpose rate limiting exists on any other endpoint.
