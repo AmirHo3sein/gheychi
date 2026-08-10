@@ -336,6 +336,34 @@ describe('Per-staff booking selection (e2e)', () => {
         .send({ serviceIds: [serviceId] })
         .expect(200);
     });
+
+    it("404s a different owner restricting/updating this salon's worker services (IDOR)", async () => {
+      const otherOwnerCookie = await loginAs(app, '09141110099');
+      const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+      await request(app.getHttpServer()).post('/api/salons').set('Cookie', otherOwnerCookie).send({
+        name: 'Stranger Worker-Services Salon',
+        genderTarget: 'women',
+        address: 'Nowhere St, No. 9',
+        city: 'Tehran',
+        lat: 35.72,
+        lng: 51.42,
+        categoryIds: [categoriesRes.body[0].id],
+      });
+
+      await request(app.getHttpServer())
+        .patch(`/api/salons/mine/workers/${worker1Id}/services`)
+        .set('Cookie', otherOwnerCookie)
+        .send({ serviceIds: [] })
+        .expect(404);
+
+      // worker1's real restriction (set back to [serviceId] just above) survives the
+      // rejected cross-tenant attempt untouched.
+      const forColor = await request(app.getHttpServer())
+        .get(`/api/salons/${salonSlug}/workers`)
+        .query({ serviceId: colorServiceId })
+        .expect(200);
+      expect(forColor.body.map((w: { name: string }) => w.name)).not.toContain('Sara');
+    });
   });
 
   describe('assign-worker rejects a double-booking', () => {

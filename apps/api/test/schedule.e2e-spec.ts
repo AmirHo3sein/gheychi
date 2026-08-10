@@ -155,6 +155,43 @@ describe('Schedule (e2e)', () => {
       .send({ date: '2026-08-04', startTime: '14:00', endTime: '13:00' })
       .expect(400));
 
+  it("404s a different owner deleting this salon's exception (IDOR)", async () => {
+    const created = await request(app.getHttpServer())
+      .post('/api/salons/mine/exceptions')
+      .set('Cookie', cookie)
+      .send({ date: '2026-08-05' })
+      .expect(201);
+
+    const otherCookie = await loginAs(app, '09123330098');
+    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+    await request(app.getHttpServer()).post('/api/salons').set('Cookie', otherCookie).send({
+      name: 'Stranger Sched Salon',
+      genderTarget: 'women',
+      address: 'Elsewhere St, No. 6',
+      city: 'Tehran',
+      lat: 35.71,
+      lng: 51.36,
+      categoryIds: [categoriesRes.body[0].id],
+    });
+
+    await request(app.getHttpServer())
+      .delete(`/api/salons/mine/exceptions/${created.body.id}`)
+      .set('Cookie', otherCookie)
+      .expect(404);
+
+    const list = await request(app.getHttpServer())
+      .get('/api/salons/mine/exceptions')
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(list.body.some((e: { id: string }) => e.id === created.body.id)).toBe(true);
+
+    // Cleanup so this test's own row doesn't leak into later exact-count assertions.
+    await request(app.getHttpServer())
+      .delete(`/api/salons/mine/exceptions/${created.body.id}`)
+      .set('Cookie', cookie)
+      .expect(204);
+  });
+
   describe('per-worker time off', () => {
     let worker1Id: string;
     let worker2Id: string;

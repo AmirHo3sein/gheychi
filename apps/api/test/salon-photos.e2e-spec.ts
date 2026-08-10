@@ -141,6 +141,42 @@ describe('Salon photos (e2e)', () => {
     expect(second.isCover).toBe(true);
   });
 
+  it("404s a different owner editing/deleting this salon's photo (IDOR)", async () => {
+    const uploadRes = await request(app.getHttpServer())
+      .post('/api/salons/mine/photos')
+      .set('Cookie', cookie)
+      .attach('file', MINIMAL_PNG, { filename: 'owned.jpg', contentType: 'image/jpeg' })
+      .expect(201);
+    const ownedPhotoId = uploadRes.body.id;
+
+    const otherCookie = await loginAs(app, '09122220098');
+    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+    await request(app.getHttpServer()).post('/api/salons').set('Cookie', otherCookie).send({
+      name: 'Stranger Photo Test Salon',
+      genderTarget: 'women',
+      address: 'Elsewhere St, No. 9',
+      city: 'Tehran',
+      lat: 35.71,
+      lng: 51.41,
+      categoryIds: [categoriesRes.body[0].id],
+    });
+
+    await request(app.getHttpServer())
+      .patch(`/api/salons/mine/photos/${ownedPhotoId}`)
+      .set('Cookie', otherCookie)
+      .send({ sortOrder: 9 })
+      .expect(404);
+
+    await request(app.getHttpServer())
+      .delete(`/api/salons/mine/photos/${ownedPhotoId}`)
+      .set('Cookie', otherCookie)
+      .expect(404);
+
+    // The rejected cross-tenant attempts left the photo untouched.
+    const listRes = await request(app.getHttpServer()).get('/api/salons/mine/photos').set('Cookie', cookie).expect(200);
+    expect(listRes.body.find((p: { id: string }) => p.id === ownedPhotoId)).toBeDefined();
+  });
+
   it('enforces the 30-photo cap', async () => {
     const before = await request(app.getHttpServer()).get('/api/salons/mine/photos').set('Cookie', cookie).expect(200);
     for (let i = before.body.length; i < 30; i++) {

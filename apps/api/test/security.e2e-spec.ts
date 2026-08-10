@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import request from 'supertest';
 import { DataSource, Repository } from 'typeorm';
+import { Review } from '../src/reviews/review.entity';
 import { User } from '../src/users/user.entity';
 import { loginAs, loginAsAdmin, verifyOtpAndLogin } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
@@ -45,6 +46,17 @@ describe('Security regression suite (e2e)', () => {
       customerCookie = await loginAs(app, '09150000001');
     });
 
+    // One route per distinct @Roles('admin')-guarded controller class (all 16 currently
+    // in src/, verified by grepping `@Roles('admin')` -- see the audit that added this
+    // comment). Every one of those controllers uses the exact same class-level
+    // `@UseGuards(AuthGuard, RolesGuard)` + `@Roles('admin')` wiring (no method carries a
+    // different combination), and RolesGuard itself has zero per-controller branching --
+    // it only reads the reflected metadata and compares it to req.user.role. So this list
+    // is deliberately exhaustive per-controller (not just "a sample of routes"): it is
+    // proof the one shared guard rejects a real non-admin session on every controller that
+    // relies on it, which route-guard-audit.spec.ts's static reflection check cannot show
+    // by itself (it only proves *a* guard is attached, not that the guard's runtime
+    // behavior is correct end-to-end over HTTP).
     const ADMIN_ROUTES: Array<{ method: 'get' | 'patch' | 'post'; path: string; body?: unknown }> = [
       { method: 'get', path: '/api/admin/salons' },
       { method: 'get', path: '/api/admin/users' },
@@ -53,6 +65,15 @@ describe('Security regression suite (e2e)', () => {
       { method: 'get', path: '/api/admin/wallet/transactions' },
       { method: 'post', path: '/api/admin/coupons', body: { code: 'X', discountPercent: 10 } },
       { method: 'patch', path: '/api/admin/config', body: { entries: [] } },
+      { method: 'get', path: '/api/admin/referral-reward-types' },
+      { method: 'get', path: '/api/admin/referrals' },
+      { method: 'post', path: '/api/admin/categories', body: { name: 'X', icon: 'scissors' } },
+      { method: 'get', path: '/api/admin/blog/posts' },
+      { method: 'patch', path: '/api/admin/stories/00000000-0000-0000-0000-000000000000/status', body: { status: 'removed' } },
+      { method: 'get', path: '/api/admin/notifications' },
+      { method: 'get', path: '/api/admin/invoices' },
+      { method: 'get', path: '/api/admin/worker-ratings' },
+      { method: 'get', path: '/api/admin/reviews' },
     ];
 
     it.each(ADMIN_ROUTES)('401s $method $path with no session at all', async ({ method, path, body }) => {
@@ -70,6 +91,11 @@ describe('Security regression suite (e2e)', () => {
     let serviceIdA: string;
     let workerIdA: string;
     let bookingIdA: string;
+    let couponIdA: string;
+    let portfolioIdA: string;
+    let photoIdA: string;
+    let storyIdA: string;
+    let reviewIdA: string;
 
     beforeAll(async () => {
       ownerACookie = await loginAs(app, '09150000010');
@@ -113,6 +139,42 @@ describe('Security regression suite (e2e)', () => {
         .set('Cookie', customerCookie)
         .send({ salonId: salonA.body.id, serviceId: serviceIdA, startsAt: new Date(Date.now() + 48 * 3_600_000).toISOString() });
       bookingIdA = bookingRes.body.booking.id;
+
+      const couponRes = await request(app.getHttpServer())
+        .post('/api/salons/mine/coupons')
+        .set('Cookie', ownerACookie)
+        .send({ code: 'TENANTA10', discountPercent: 10 });
+      couponIdA = couponRes.body.id;
+
+      const portfolioRes = await request(app.getHttpServer())
+        .post('/api/salons/mine/portfolio')
+        .set('Cookie', ownerACookie)
+        .attach('file', MINIMAL_PNG, { filename: 'a.png', contentType: 'image/png' });
+      portfolioIdA = portfolioRes.body.id;
+
+      const photoRes = await request(app.getHttpServer())
+        .post('/api/salons/mine/photos')
+        .set('Cookie', ownerACookie)
+        .attach('file', MINIMAL_PNG, { filename: 'a.png', contentType: 'image/png' });
+      photoIdA = photoRes.body.id;
+
+      const storyRes = await request(app.getHttpServer())
+        .post('/api/salons/mine/stories')
+        .set('Cookie', ownerACookie)
+        .attach('file', MINIMAL_PNG, { filename: 'a.png', contentType: 'image/png' });
+      storyIdA = storyRes.body.id;
+
+      // Inserted directly rather than through the full booking-completion + POST /reviews
+      // flow -- this test only needs a real review row scoped to salon A to exercise
+      // SalonReviewReplyController's ownership check, not the review-creation business
+      // rules (which are exercised elsewhere).
+      const reviews = app.get<Repository<Review>>(getRepositoryToken(Review));
+      const users = app.get<Repository<User>>(getRepositoryToken(User));
+      const customer = await users.findOneByOrFail({ phone: '09150000013' });
+      const review = await reviews.save(
+        reviews.create({ bookingId: bookingIdA, salonId: salonA.body.id, userId: customer.id, rating: 5 }),
+      );
+      reviewIdA = review.id;
     });
 
     it("404s owner B assigning a worker onto owner A's booking (id guessed/known, but scoped away by SalonOwnerGuard)", () =>
@@ -141,6 +203,53 @@ describe('Security regression suite (e2e)', () => {
         .patch(`/api/salons/mine/bookings/${bookingIdA}`)
         .set('Cookie', ownerBCookie)
         .send({ status: 'completed' })
+        .expect(404));
+
+    it("404s owner B updating owner A's coupon", () =>
+      request(app.getHttpServer())
+        .patch(`/api/salons/mine/coupons/${couponIdA}`)
+        .set('Cookie', ownerBCookie)
+        .send({ discountPercent: 99 })
+        .expect(404));
+
+    it("404s owner B deactivating owner A's coupon", () =>
+      request(app.getHttpServer())
+        .delete(`/api/salons/mine/coupons/${couponIdA}`)
+        .set('Cookie', ownerBCookie)
+        .expect(404));
+
+    it("404s owner B editing owner A's portfolio item", () =>
+      request(app.getHttpServer())
+        .patch(`/api/salons/mine/portfolio/${portfolioIdA}`)
+        .set('Cookie', ownerBCookie)
+        .send({ caption: 'hijacked' })
+        .expect(404));
+
+    it("404s owner B editing owner A's photo", () =>
+      request(app.getHttpServer())
+        .patch(`/api/salons/mine/photos/${photoIdA}`)
+        .set('Cookie', ownerBCookie)
+        .send({ isCover: true })
+        .expect(404));
+
+    it("404s owner B deleting owner A's story", () =>
+      request(app.getHttpServer())
+        .delete(`/api/salons/mine/stories/${storyIdA}`)
+        .set('Cookie', ownerBCookie)
+        .expect(404));
+
+    it("404s owner B replying to owner A's review", () =>
+      request(app.getHttpServer())
+        .patch(`/api/salons/mine/reviews/${reviewIdA}/reply`)
+        .set('Cookie', ownerBCookie)
+        .send({ reply: 'hijacked reply' })
+        .expect(404));
+
+    it("404s owner B creating a schedule exception that references owner A's worker id (id manipulation via body, not URL param)", () =>
+      request(app.getHttpServer())
+        .post('/api/salons/mine/exceptions')
+        .set('Cookie', ownerBCookie)
+        .send({ date: '2099-01-01', workerId: workerIdA })
         .expect(404));
 
     it("owner A's own data is untouched by every rejected cross-tenant attempt above", async () => {

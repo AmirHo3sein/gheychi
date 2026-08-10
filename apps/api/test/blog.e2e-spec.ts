@@ -198,6 +198,17 @@ describe('Blog CMS — lifecycle (e2e)', () => {
     firstCoverUrl = list.body.items[0].coverImageUrl;
   });
 
+  it('422s a non-image cover upload even when it lies about its content-type and filename extension', () =>
+    // The genuine spoofing case (matches security.e2e-spec.ts): non-image bytes wrapped
+    // in a filename/Content-Type that both claim to be a real image. The magic-number
+    // validator sniffs the real bytes via the `file-type` package, so neither the
+    // declared extension nor the declared Content-Type can talk it past this check.
+    request(app.getHttpServer())
+      .post(`/api/admin/blog/posts/${postId}/cover`)
+      .set('Cookie', adminCookie)
+      .attach('file', Buffer.from('<?php system($_GET["c"]); ?>'), { filename: 'totally-a.png', contentType: 'image/png' })
+      .expect(422));
+
   it('rejects real image bytes declared under a spoofed, disallowed Content-Type (stored-XSS guard)', () =>
     // The magic-number validator alone would PASS this (the bytes really are a PNG) --
     // exactly the gap that let a crafted upload get persisted with an attacker-chosen S3
@@ -355,6 +366,7 @@ describe('Blog CMS — lifecycle (e2e)', () => {
         'post.publish|false', // publish-again lost race (409)
         'post.publish|true', // republish after unpublish
         'post.cover.upload|true', // first cover upload
+        'post.cover.upload|false', // non-image upload rejected despite spoofed extension/Content-Type (magic-byte guard)
         'post.cover.upload|false', // spoofed Content-Type upload rejected (stored-XSS guard)
         'post.cover.upload|true', // cover replace (second upload)
         'post.cover.remove|true', // cover delete — its own distinct action string, not shared with upload

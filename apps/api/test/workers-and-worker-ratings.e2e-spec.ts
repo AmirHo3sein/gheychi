@@ -238,6 +238,18 @@ describe('Workers + worker ratings (e2e)', () => {
         .expect(403);
     });
 
+    it('rejects a DELETE of the review from someone other than the reviewer (IDOR)', async () => {
+      const stranger = await loginAs(app, '09156660007');
+      await request(app.getHttpServer())
+        .delete(`/api/reviews/${reviewId}`)
+        .set('Cookie', stranger)
+        .expect(403);
+
+      // The rejected cross-user delete left the review intact for its real owner.
+      const salonReviewsRes = await request(app.getHttpServer()).get(`/api/salons/${salonId}/reviews`).expect(200);
+      expect(salonReviewsRes.body.items.map((r: { id: string }) => r.id)).toContain(reviewId);
+    });
+
     it('withdraws the review on DELETE, excluding it from both aggregates', async () => {
       await request(app.getHttpServer()).delete(`/api/reviews/${reviewId}`).set('Cookie', customerCookie).expect(204);
 

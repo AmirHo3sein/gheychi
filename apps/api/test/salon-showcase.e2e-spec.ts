@@ -99,6 +99,17 @@ describe('Salon showcase: stories, portfolio, profile (e2e)', () => {
       .attach('file', Buffer.from('not an image'), { filename: 'a.txt', contentType: 'text/plain' })
       .expect(422));
 
+  it('422s a non-image story upload even when it lies about its content-type and filename extension', () =>
+    // The genuine spoofing case (matches security.e2e-spec.ts): non-image bytes wrapped
+    // in a filename/Content-Type that both claim to be a real image. The magic-number
+    // validator sniffs the real bytes via the `file-type` package, so neither the
+    // declared extension nor the declared Content-Type can talk it past this check.
+    request(app.getHttpServer())
+      .post('/api/salons/mine/stories')
+      .set('Cookie', ownerCookie)
+      .attach('file', Buffer.from('<?php system($_GET["c"]); ?>'), { filename: 'totally-a.png', contentType: 'image/png' })
+      .expect(422));
+
   it('rejects real image bytes declared under a spoofed, disallowed Content-Type (stored-XSS guard)', () =>
     // The magic-number validator alone would PASS this (the bytes really are a PNG) --
     // exactly the gap that let a crafted upload get persisted with an attacker-chosen S3
@@ -236,6 +247,17 @@ describe('Salon showcase: stories, portfolio, profile (e2e)', () => {
 
   it('rejects a portfolio serviceId that does not belong to the caller salon', () =>
     uploadPortfolioItem({ serviceId: '3f8a72fe-0000-4000-8000-000000000009' }).expect(400));
+
+  it('422s a non-image portfolio upload even when it lies about its content-type and filename extension', () =>
+    // The genuine spoofing case (matches security.e2e-spec.ts): non-image bytes wrapped
+    // in a filename/Content-Type that both claim to be a real image. The magic-number
+    // validator sniffs the real bytes via the `file-type` package, so neither the
+    // declared extension nor the declared Content-Type can talk it past this check.
+    request(app.getHttpServer())
+      .post('/api/salons/mine/portfolio')
+      .set('Cookie', ownerCookie)
+      .attach('file', Buffer.from('<?php system($_GET["c"]); ?>'), { filename: 'totally-a.png', contentType: 'image/png' })
+      .expect(422));
 
   it('rejects real image bytes declared under a spoofed, disallowed Content-Type (stored-XSS guard)', () =>
     // The magic-number validator alone would PASS this (the bytes really are a PNG) --
@@ -541,5 +563,95 @@ describe('Salon showcase: stories, portfolio, profile (e2e)', () => {
     const orders = mine.body.map((i: { sortOrder: number }) => i.sortOrder);
     expect(orders).toEqual([1, 2, 3]);
     expect(new Set(orders).size).toBe(orders.length);
+  });
+});
+
+describe('Salon showcase: cross-tenant ownership (e2e)', () => {
+  let app: INestApplication;
+  let ownerACookie: string;
+  let ownerBCookie: string;
+  let storyId: string;
+  let portfolioItemId: string;
+
+  beforeAll(async () => {
+    await resetDatabase();
+    app = await createTestApp();
+    ownerACookie = await loginAs(app, '09166600010');
+    ownerBCookie = await loginAs(app, '09166600011');
+
+    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+    const categoryId = categoriesRes.body[0].id;
+
+    await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerACookie).send({
+      name: 'Tenant A Showcase Salon',
+      genderTarget: 'women',
+      address: 'Addr A, No. 1',
+      city: 'Tehran',
+      lat: 35.7,
+      lng: 51.4,
+      categoryIds: [categoryId],
+    });
+    await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerBCookie).send({
+      name: 'Tenant B Showcase Salon',
+      genderTarget: 'women',
+      address: 'Addr B, No. 2',
+      city: 'Tehran',
+      lat: 35.72,
+      lng: 51.42,
+      categoryIds: [categoryId],
+    });
+
+    const storyRes = await request(app.getHttpServer())
+      .post('/api/salons/mine/stories')
+      .set('Cookie', ownerACookie)
+      .attach('file', MINIMAL_PNG, { filename: 'story.jpg', contentType: 'image/jpeg' })
+      .expect(201);
+    storyId = storyRes.body.id;
+
+    const portfolioRes = await request(app.getHttpServer())
+      .post('/api/salons/mine/portfolio')
+      .set('Cookie', ownerACookie)
+      .attach('file', MINIMAL_PNG, { filename: 'work.jpg', contentType: 'image/jpeg' })
+      .expect(201);
+    portfolioItemId = portfolioRes.body.id;
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it("404s owner B deleting owner A's story", async () => {
+    await request(app.getHttpServer())
+      .delete(`/api/salons/mine/stories/${storyId}`)
+      .set('Cookie', ownerBCookie)
+      .expect(404);
+
+    const mine = await request(app.getHttpServer())
+      .get('/api/salons/mine/stories')
+      .set('Cookie', ownerACookie)
+      .expect(200);
+    expect(mine.body.map((s: { id: string }) => s.id)).toContain(storyId);
+  });
+
+  it("404s owner B editing owner A's portfolio item", async () => {
+    await request(app.getHttpServer())
+      .patch(`/api/salons/mine/portfolio/${portfolioItemId}`)
+      .set('Cookie', ownerBCookie)
+      .send({ caption: 'hijacked' })
+      .expect(404);
+  });
+
+  it("404s owner B deleting owner A's portfolio item", async () => {
+    await request(app.getHttpServer())
+      .delete(`/api/salons/mine/portfolio/${portfolioItemId}`)
+      .set('Cookie', ownerBCookie)
+      .expect(404);
+
+    const mine = await request(app.getHttpServer())
+      .get('/api/salons/mine/portfolio')
+      .set('Cookie', ownerACookie)
+      .expect(200);
+    expect(mine.body.map((i: { id: string }) => i.id)).toContain(portfolioItemId);
+    expect(mine.body.find((i: { id: string }) => i.id === portfolioItemId).caption).not.toBe('hijacked');
   });
 });
