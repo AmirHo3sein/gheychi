@@ -110,24 +110,32 @@ describe('SalonsService', () => {
       expect(serviceCategoriesRepo.count).not.toHaveBeenCalled();
     });
 
-    it('resolves and stores cityId when the submitted city matches a canonical name', async () => {
+    it('resolves and stores cityId when the submitted city matches a canonical name, without warning', async () => {
       repo.findOneBy.mockResolvedValue(null);
       citiesService.findIdByName.mockResolvedValue(7);
+      const warnSpy = jest.spyOn(service['logger'], 'warn');
 
       await service.createForOwner('u1', DTO);
 
       expect(citiesService.findIdByName).toHaveBeenCalledWith('تهران');
       expect(emCreate).toHaveBeenCalledWith(Salon, expect.objectContaining({ cityId: 7 }));
+      expect(warnSpy).not.toHaveBeenCalled();
     });
 
-    it('leaves cityId null (never blocks creation) when the city has no canonical match', async () => {
+    it('leaves cityId null (never blocks creation) and logs a warning when the city has no canonical match', async () => {
       repo.findOneBy.mockResolvedValue(null);
       citiesService.findIdByName.mockResolvedValue(null);
+      const warnSpy = jest.spyOn(service['logger'], 'warn').mockImplementation();
 
       const result = await service.createForOwner('u1', DTO);
 
       expect(emCreate).toHaveBeenCalledWith(Salon, expect.objectContaining({ cityId: null }));
       expect(result).toBeTruthy();
+      // Non-blocking by design (see resolveCityId's own comment): a non-canonical city
+      // still creates the salon fine, but is no longer purely silent -- it's now an
+      // ops-visible warning naming both the bad value and the owner.
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('تهران'));
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('u1'));
     });
   });
 
@@ -141,11 +149,25 @@ describe('SalonsService', () => {
     it('re-resolves cityId when city is included in the update', async () => {
       repo.findOneBy.mockResolvedValue({ id: 's1', ownerId: 'u1', city: 'اصفهان', cityId: 3 } as unknown as Salon);
       citiesService.findIdByName.mockResolvedValue(9);
+      const warnSpy = jest.spyOn(service['logger'], 'warn');
 
       const result = await service.updateMine('u1', { city: 'مشهد' });
 
       expect(citiesService.findIdByName).toHaveBeenCalledWith('مشهد');
       expect(result.cityId).toBe(9);
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it('leaves cityId null (never blocks the update) and logs a warning when the new city has no canonical match', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 's1', ownerId: 'u1', city: 'اصفهان', cityId: 3 } as unknown as Salon);
+      citiesService.findIdByName.mockResolvedValue(null);
+      const warnSpy = jest.spyOn(service['logger'], 'warn').mockImplementation();
+
+      const result = await service.updateMine('u1', { city: 'یک شهر نامعتبر' });
+
+      expect(result.cityId).toBeNull();
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('یک شهر نامعتبر'));
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('s1'));
     });
 
     it('never touches cityId when city is omitted from the update', async () => {

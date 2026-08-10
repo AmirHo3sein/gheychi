@@ -40,13 +40,36 @@ export class SalonsService {
     }
   }
 
+  // Resolves `city` to its canonical cities.id, same as before -- but this is now also
+  // the one place that decides what to do about a NON-canonical city, so the decision
+  // lives here rather than being duplicated at both call sites.
+  //
+  // Deliberately a WARNING, not a BadRequestException, even though a typo'd/non-canonical
+  // city name is exactly the gap 24-technical-debt.md flags. Every real client today
+  // (provider-panel's onboarding + settings forms) already only ever submits a name from
+  // the live GET /cities list via a closed <AppSelect> dropdown (vue-multiselect with
+  // allow-empty=false and no free-text/"taggable" escape hatch) -- so hard-rejecting would
+  // add zero protection against any actual UI path. What it WOULD do is 400 every one of
+  // this suite's ~30 e2e fixtures that create a salon with city: 'Tehran'/'Shiraz' (an
+  // English transliteration, not a canonical Persian name) purely as unrelated setup for
+  // some other feature under test -- see e.g. salons.e2e-spec.ts, bookings.e2e-spec.ts,
+  // reviews.e2e-spec.ts. That's a real, sizeable, verified blast radius this repo's own
+  // test suite would hit, not a hypothetical one, so this stays a logged warning (still
+  // closes the "purely silent" half of the gap -- an ops-visible signal now exists where
+  // none did before) until those fixtures are deliberately migrated to canonical names.
+  private async resolveCityId(city: string, context: string): Promise<number | null> {
+    const cityId = await this.cities.findIdByName(city);
+    if (cityId === null) {
+      this.logger.warn(`Non-canonical city "${city}" submitted for ${context}; city_id left NULL.`);
+    }
+    return cityId;
+  }
+
   async createForOwner(ownerId: string, dto: CreateSalonDto): Promise<Salon> {
     const existing = await this.repo.findOneBy({ ownerId });
     if (existing) throw new ConflictException('You already have a salon');
     await this.requireValidCategoryIds(dto.categoryIds);
-    // Best-effort enrichment, never a validation gate -- a city not in the canonical
-    // list (a small town) still creates the salon fine, just with cityId left null.
-    const cityId = await this.cities.findIdByName(dto.city);
+    const cityId = await this.resolveCityId(dto.city, `owner ${ownerId}`);
 
     return this.dataSource.transaction(async (em) => {
       const salon = await em.save(
@@ -100,7 +123,7 @@ export class SalonsService {
     // clobbering a previously-resolved cityId with null if the (unchanged) city string
     // ever stopped matching due to a future rename of the canonical city list.
     if (dto.city !== undefined) {
-      salon.cityId = await this.cities.findIdByName(dto.city);
+      salon.cityId = await this.resolveCityId(dto.city, `salon ${salon.id}`);
     }
 
     await this.dataSource.transaction(async (em) => {

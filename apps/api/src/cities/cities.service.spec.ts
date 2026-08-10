@@ -44,6 +44,20 @@ describe('CitiesService', () => {
       await expect(service.findIdByName('یک روستای کوچک')).resolves.toBeNull();
     });
 
+    it('normalizes leading/trailing whitespace before matching', async () => {
+      const find = jest.fn().mockResolvedValue([TEHRAN, MASHHAD]);
+      const service = new CitiesService({ find } as unknown as Repository<City>);
+
+      await expect(service.findIdByName('  تهران  ')).resolves.toBe(1);
+    });
+
+    it('still resolves to null for a non-canonical name even after trimming (no fuzzy/transliteration matching)', async () => {
+      const find = jest.fn().mockResolvedValue([TEHRAN, MASHHAD]);
+      const service = new CitiesService({ find } as unknown as Repository<City>);
+
+      await expect(service.findIdByName('  Tehran  ')).resolves.toBeNull();
+    });
+
     it('shares the same cache as list() -- never issues its own separate query', async () => {
       const find = jest.fn().mockResolvedValue([TEHRAN, MASHHAD]);
       const service = new CitiesService({ find } as unknown as Repository<City>);

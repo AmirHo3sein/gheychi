@@ -21,14 +21,20 @@ export class CitiesService {
 
   /**
    * Best-effort resolution of a free-text city name to its canonical row id, used by
-   * SalonsService to populate salons.city_id on create/update. Exact match only -- a name
-   * that doesn't match any canonical city (a small town not in the curated list) resolves
-   * to null, which is a normal, expected outcome, not an error: salons.city stays exactly
-   * the free text the owner typed either way. Resolved against the same cached list as
-   * list() rather than a separate query -- one cache, two read shapes.
+   * SalonsService to populate salons.city_id on create/update (and, since the API-level
+   * validation this backs, to decide whether a submitted city is "canonical" at all).
+   * Match is exact on the trimmed name -- leading/trailing whitespace only. Persian has
+   * no case-folding question the way Latin scripts do, and full transliteration/glyph
+   * normalization (e.g. ك/ک, ي/ی) is deliberately out of scope: guessing at those would
+   * risk silently linking to the wrong city. A name that still doesn't match any
+   * canonical city (a small town not in the curated list, or a genuinely different name)
+   * resolves to null, which is a normal, expected outcome, not an error: salons.city
+   * stays exactly the free text the owner typed either way. Resolved against the same
+   * cached list as list() rather than a separate query -- one cache, two read shapes.
    */
   async findIdByName(name: string): Promise<number | null> {
+    const normalized = name.trim();
     const cities = await this.list();
-    return cities.find((city) => city.name === name)?.id ?? null;
+    return cities.find((city) => city.name === normalized)?.id ?? null;
   }
 }
