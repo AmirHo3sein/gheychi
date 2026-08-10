@@ -1,0 +1,2 @@
+# Real pg_dump output contains real data (e.g. user phone numbers) -- never commit it.
+backups/
