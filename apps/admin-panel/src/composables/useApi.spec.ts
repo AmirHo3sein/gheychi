@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetToast, useToast } from './useToast'
-import { useApi } from './useApi'
+import { normalizeApiMessage, useApi } from './useApi'
 
 describe('useApi', () => {
   const originalFetch = global.fetch
@@ -84,5 +84,50 @@ describe('useApi', () => {
     const { data, error } = await apiFetch('/ping')
     expect(data).toBeNull()
     expect(error).toEqual({ status: 0, message: 'خطا در ارتباط با سرور' })
+  })
+
+  // Nest's ValidationPipe answers a failed DTO check with `message: string[]` of English
+  // sentences. Toasting that array raw rendered it as `[ "serviceId must be a UUID" ]` in a
+  // Persian-only panel -- the one thing an admin saw when a client-side check was missed.
+  it('replaces a 400 validation array with Persian copy instead of toasting English validator text', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({ message: ['durationMin must not be less than 5', 'name must be a string'] }),
+        { status: 400 },
+      ),
+    )
+    const { apiFetch } = useApi()
+    const { error } = await apiFetch('/services', { method: 'POST', body: {} })
+
+    expect(error?.message).toBe('اطلاعات واردشده معتبر نیست. مقادیر فرم را بررسی کنید.')
+    expect(useToast().toasts.value.at(-1)?.message).toBe('اطلاعات واردشده معتبر نیست. مقادیر فرم را بررسی کنید.')
+    expect(useToast().toasts.value.at(-1)?.message).not.toContain('durationMin')
+  })
+
+  it('keeps surfacing a hand-thrown (already Persian) 400 message verbatim', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ message: 'کد تخفیف منقضی شده است' }), { status: 400 }),
+    )
+    const { apiFetch } = useApi()
+    const { error } = await apiFetch('/coupons/validate', { method: 'POST', body: {} })
+
+    expect(error?.message).toBe('کد تخفیف منقضی شده است')
+  })
+})
+
+describe('normalizeApiMessage', () => {
+  it('maps any 400 array to the Persian validation fallback', () => {
+    expect(normalizeApiMessage(400, ['a must be a UUID'])).toBe('اطلاعات واردشده معتبر نیست. مقادیر فرم را بررسی کنید.')
+    expect(normalizeApiMessage(400, [])).toBe('اطلاعات واردشده معتبر نیست. مقادیر فرم را بررسی کنید.')
+  })
+
+  it('joins an array on any other status rather than letting it render as [ "…" ]', () => {
+    expect(normalizeApiMessage(422, ['یک', 'دو'])).toBe('یک؛ دو')
+  })
+
+  it('returns null for a missing or empty message so the caller keeps its own default', () => {
+    expect(normalizeApiMessage(500, undefined)).toBeNull()
+    expect(normalizeApiMessage(500, '')).toBeNull()
+    expect(normalizeApiMessage(500, { nested: true })).toBeNull()
   })
 })
