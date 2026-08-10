@@ -28,6 +28,36 @@ export const REQUIRED_PLATFORM_CONFIG_KEYS = [
   'review_edit_window_hours',
 ] as const;
 
+interface ConfigBounds {
+  min: number;
+  max: number | null;
+}
+
+// Mirrors admin-panel's ConfigView.vue boundsFor(): percent-shaped keys get a 0-100
+// ceiling, every other key just gets a >= 0 floor. That frontend copy is UX-only (keeps an
+// obviously-bad value off the confirm screen); this is the authoritative check -- enforced
+// at startup below, and again as defense-in-depth inside getNumber() for a bad value written
+// directly against the DB after a successful boot.
+const PERCENT_KEYS = new Set<string>(['deposit_percent', 'commission_percent']);
+function boundsFor(key: string): ConfigBounds {
+  return PERCENT_KEYS.has(key) ? { min: 0, max: 100 } : { min: 0, max: null };
+}
+
+// Returns a human-readable problem description if `rawValue` isn't a finite number within
+// `key`'s bounds, or null if it's fine. Centralized so onApplicationBootstrap (startup) and
+// getNumber (runtime defense-in-depth) can never validate a value inconsistently.
+function describeInvalidConfigValue(key: string, rawValue: unknown): string | null {
+  const numeric = Number(rawValue);
+  if (rawValue === null || rawValue === undefined || rawValue === '' || !Number.isFinite(numeric)) {
+    return `${key}=${JSON.stringify(rawValue)} is not a valid number`;
+  }
+  const { min, max } = boundsFor(key);
+  if (numeric < min || (max !== null && numeric > max)) {
+    return `${key}=${numeric} is out of bounds (expected ${min}..${max === null ? '∞' : max})`;
+  }
+  return null;
+}
+
 @Injectable()
 export class PlatformConfigService implements OnApplicationBootstrap {
   constructor(
@@ -39,22 +69,32 @@ export class PlatformConfigService implements OnApplicationBootstrap {
   // Runs once, after every module has initialized (DB connection included) but before the
   // HTTP server starts accepting traffic -- a NestJS lifecycle hook throwing here rejects
   // NestFactory.create() in main.ts, so the process never reaches app.listen(). This turns
-  // a missing required config row from "the first booking/availability/review request after
-  // deploy 500s with a raw Error" into "the deploy itself fails loudly, before serving any
-  // traffic at all."
+  // a missing OR malformed/out-of-bounds required config row from "the first
+  // booking/availability/review request after deploy 500s (or silently misbehaves on a bad
+  // number)" into "the deploy itself fails loudly, before serving any traffic at all."
   async onApplicationBootstrap(): Promise<void> {
     const rows = await this.repo.find({
       where: { key: In([...REQUIRED_PLATFORM_CONFIG_KEYS]) },
-      select: ['key'],
+      select: ['key', 'value'],
     });
-    const present = new Set(rows.map((row) => row.key));
-    const missing = REQUIRED_PLATFORM_CONFIG_KEYS.filter((key) => !present.has(key));
-    if (missing.length > 0) {
-      throw new Error(
-        `Missing required platform_config row(s): ${missing.join(', ')}. ` +
-          'Seed these via the initial-schema migration (or an admin PATCH /admin/config call) before starting the API.',
-      );
-    }
+    const byKey = new Map(rows.map((row) => [row.key, row.value]));
+
+    const missing = REQUIRED_PLATFORM_CONFIG_KEYS.filter((key) => !byKey.has(key));
+    const invalid = REQUIRED_PLATFORM_CONFIG_KEYS.filter((key) => byKey.has(key))
+      .map((key) => describeInvalidConfigValue(key, byKey.get(key)))
+      .filter((problem): problem is string => problem !== null);
+
+    if (missing.length === 0 && invalid.length === 0) return;
+
+    const problems = [
+      ...(missing.length > 0 ? [`Missing required platform_config row(s): ${missing.join(', ')}.`] : []),
+      ...(invalid.length > 0 ? [`Invalid platform_config value(s): ${invalid.join('; ')}.`] : []),
+    ];
+    throw new Error(
+      `${problems.join(' ')} ` +
+        'Fix these platform_config row(s) via the initial-schema migration (or an admin PATCH ' +
+        '/admin/config call) before starting the API.',
+    );
   }
 
   private async getNumber(key: string): Promise<number> {
@@ -69,11 +109,16 @@ export class PlatformConfigService implements OnApplicationBootstrap {
 
     const row = await this.repo.findOneBy({ key });
     // Defense-in-depth: onApplicationBootstrap already refuses to let the process start
-    // without every required key present, so reaching this branch means a required row
-    // was deleted directly against the database after a successful boot (outside the
-    // app's own setMany()/set(), which never delete rows). A clear, typed NestJS
-    // exception here still beats an unhandled raw Error turning into an opaque 500.
+    // without every required key present and valid, so reaching either branch below means a
+    // required row was deleted or overwritten with a bad value directly against the database
+    // after a successful boot (outside the app's own set()/setMany(), which validate keys and
+    // -- for numeric config -- are themselves only ever fed already-validated values via the
+    // admin config endpoints). A clear, typed NestJS exception here still beats an unhandled
+    // raw Error (missing row) or a silently-wrong numeric result (malformed/out-of-bounds
+    // value) turning into an opaque or subtly-incorrect 500.
     if (!row) throw new InternalServerErrorException(`Missing platform_config key: ${key}`);
+    const problem = describeInvalidConfigValue(key, row.value);
+    if (problem) throw new InternalServerErrorException(`Invalid platform_config value: ${problem}`);
     await this.redis.set(cacheKey, String(row.value), 'EX', CACHE_TTL_SEC);
     return Number(row.value);
   }

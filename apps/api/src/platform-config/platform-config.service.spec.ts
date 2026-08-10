@@ -99,6 +99,19 @@ describe('PlatformConfigService.setMany', () => {
   });
 });
 
+// A full set of in-bounds sample values for every required key -- mirrors the documented
+// defaults in docs/technical-overview/20-business-rules.md. Reused by any test that needs a
+// "the DB row for this key is present and valid" fixture.
+const VALID_CONFIG_VALUES: Record<string, number> = {
+  deposit_percent: 20,
+  deposit_min_toman: 200_000,
+  cancellation_window_hours: 24,
+  commission_percent: 10,
+  booking_hold_ttl_minutes: 15,
+  reminder_lead_hours: 3,
+  review_edit_window_hours: 72,
+};
+
 describe('PlatformConfigService -- getter failure handling', () => {
   let service: PlatformConfigService;
   let repo: { findOneBy: jest.Mock };
@@ -133,6 +146,35 @@ describe('PlatformConfigService -- getter failure handling', () => {
 
     await expect(attempt).rejects.toBeInstanceOf(InternalServerErrorException);
     await expect(attempt).rejects.toThrow('Missing platform_config key: deposit_percent');
+  });
+
+  // Defense-in-depth mirror of the malformed-value startup check below, for a row that was
+  // valid at boot but got overwritten with garbage directly against the database afterwards.
+  it('throws a typed NestJS exception with a clear message when the stored value is non-numeric', async () => {
+    repo.findOneBy.mockResolvedValue({ key: 'commission_percent', value: 'not-a-number' });
+
+    const attempt = service.getCommissionPercent();
+
+    await expect(attempt).rejects.toBeInstanceOf(InternalServerErrorException);
+    await expect(attempt).rejects.toThrow(/commission_percent.*not a valid number/);
+  });
+
+  // Same defense-in-depth idea, but for a numeric value that's outside the key's sane bounds
+  // (e.g. a percent field overwritten with 150) rather than non-numeric outright.
+  it('throws a typed NestJS exception with a clear message when the stored value is out of bounds', async () => {
+    repo.findOneBy.mockResolvedValue({ key: 'commission_percent', value: 150 });
+
+    const attempt = service.getCommissionPercent();
+
+    await expect(attempt).rejects.toBeInstanceOf(InternalServerErrorException);
+    await expect(attempt).rejects.toThrow(/commission_percent=150 is out of bounds/);
+  });
+
+  it('does not cache a malformed or out-of-bounds value', async () => {
+    repo.findOneBy.mockResolvedValue({ key: 'commission_percent', value: 'nope' });
+
+    await expect(service.getCommissionPercent()).rejects.toBeInstanceOf(InternalServerErrorException);
+    expect(redis.set).not.toHaveBeenCalled();
   });
 });
 
@@ -211,15 +253,22 @@ describe('PlatformConfigService.onApplicationBootstrap -- startup validation', (
     service = moduleRef.get(PlatformConfigService);
   });
 
-  it('boots cleanly when every required key is present', async () => {
-    repoFind.mockResolvedValue(REQUIRED_PLATFORM_CONFIG_KEYS.map((key) => ({ key })));
+  it('boots cleanly when every required key is present with a valid, in-bounds value', async () => {
+    repoFind.mockResolvedValue(
+      REQUIRED_PLATFORM_CONFIG_KEYS.map((key) => ({ key, value: VALID_CONFIG_VALUES[key] })),
+    );
 
     await expect(service.onApplicationBootstrap()).resolves.toBeUndefined();
   });
 
   it('fails boot with a clear message naming every missing key when some are absent', async () => {
-    // Only 2 of the 7 required rows exist -- simulates a fresh/incomplete seed.
-    repoFind.mockResolvedValue([{ key: 'deposit_percent' }, { key: 'commission_percent' }]);
+    // Only 2 of the 7 required rows exist -- simulates a fresh/incomplete seed. The two
+    // present rows carry valid values so this test isolates the "missing key" path from the
+    // "invalid value" path exercised separately below.
+    repoFind.mockResolvedValue([
+      { key: 'deposit_percent', value: VALID_CONFIG_VALUES.deposit_percent },
+      { key: 'commission_percent', value: VALID_CONFIG_VALUES.commission_percent },
+    ]);
 
     await expect(service.onApplicationBootstrap()).rejects.toThrow(
       /Missing required platform_config row\(s\): .*deposit_min_toman/,
@@ -231,5 +280,66 @@ describe('PlatformConfigService.onApplicationBootstrap -- startup validation', (
 
     const attempt = service.onApplicationBootstrap();
     await expect(attempt).rejects.toThrow(new RegExp(REQUIRED_PLATFORM_CONFIG_KEYS.join('.*')));
+  });
+
+  it('fails boot with a clear message naming a present key whose value is non-numeric/malformed', async () => {
+    repoFind.mockResolvedValue(
+      REQUIRED_PLATFORM_CONFIG_KEYS.map((key) =>
+        key === 'deposit_percent' ? { key, value: 'twenty' } : { key, value: VALID_CONFIG_VALUES[key] },
+      ),
+    );
+
+    await expect(service.onApplicationBootstrap()).rejects.toThrow(
+      /Invalid platform_config value\(s\): deposit_percent="twenty" is not a valid number/,
+    );
+  });
+
+  it('fails boot with a clear message naming a present key whose value is null', async () => {
+    repoFind.mockResolvedValue(
+      REQUIRED_PLATFORM_CONFIG_KEYS.map((key) =>
+        key === 'booking_hold_ttl_minutes' ? { key, value: null } : { key, value: VALID_CONFIG_VALUES[key] },
+      ),
+    );
+
+    await expect(service.onApplicationBootstrap()).rejects.toThrow(
+      /Invalid platform_config value\(s\): booking_hold_ttl_minutes=null is not a valid number/,
+    );
+  });
+
+  it('fails boot with a clear message naming a present percent-shaped key whose value exceeds 100', async () => {
+    repoFind.mockResolvedValue(
+      REQUIRED_PLATFORM_CONFIG_KEYS.map((key) =>
+        key === 'commission_percent' ? { key, value: 150 } : { key, value: VALID_CONFIG_VALUES[key] },
+      ),
+    );
+
+    await expect(service.onApplicationBootstrap()).rejects.toThrow(
+      /Invalid platform_config value\(s\): commission_percent=150 is out of bounds \(expected 0\.\.100\)/,
+    );
+  });
+
+  it('fails boot with a clear message naming a present non-percent key whose value is negative', async () => {
+    repoFind.mockResolvedValue(
+      REQUIRED_PLATFORM_CONFIG_KEYS.map((key) =>
+        key === 'cancellation_window_hours' ? { key, value: -5 } : { key, value: VALID_CONFIG_VALUES[key] },
+      ),
+    );
+
+    await expect(service.onApplicationBootstrap()).rejects.toThrow(
+      /Invalid platform_config value\(s\): cancellation_window_hours=-5 is out of bounds \(expected 0\.\.∞\)/,
+    );
+  });
+
+  it('reports both missing and invalid keys together when both problems exist', async () => {
+    repoFind.mockResolvedValue([
+      // deposit_min_toman, cancellation_window_hours, booking_hold_ttl_minutes,
+      // reminder_lead_hours, review_edit_window_hours are all absent from this list.
+      { key: 'deposit_percent', value: VALID_CONFIG_VALUES.deposit_percent },
+      { key: 'commission_percent', value: 'garbage' },
+    ]);
+
+    const attempt = service.onApplicationBootstrap();
+    await expect(attempt).rejects.toThrow(/Missing required platform_config row\(s\): .*deposit_min_toman/);
+    await expect(attempt).rejects.toThrow(/Invalid platform_config value\(s\): commission_percent="garbage"/);
   });
 });
