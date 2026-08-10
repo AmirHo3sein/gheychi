@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 import { CouponRedemption } from '../coupons/coupon-redemption.entity';
 import { PushService } from '../push/push.service';
 import { ReferralsService } from '../referrals/referrals.service';
@@ -56,6 +57,7 @@ describe('PaymentsService.attemptRefund', () => {
         { provide: AlertsService, useValue: { raise } },
         { provide: ReferralsService, useValue: { reverseIfNeeded } },
         { provide: WalletService, useValue: { debit: jest.fn(), credit: jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' }) } },
+        { provide: AnalyticsService, useValue: { track: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
@@ -187,6 +189,7 @@ describe('PaymentsService.notifyCancelled', () => {
         { provide: AlertsService, useValue: { raise: jest.fn() } },
         { provide: ReferralsService, useValue: {} },
         { provide: WalletService, useValue: {} },
+        { provide: AnalyticsService, useValue: { track: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
@@ -244,6 +247,7 @@ describe('PaymentsService.notifyConfirmed', () => {
   let usersFindById: jest.Mock;
   let smsSend: jest.Mock;
   let pushSend: jest.Mock;
+  let analyticsTrack: jest.Mock;
 
   const BOOKING = { id: 'booking-1', userId: 'user-1', salonId: 'salon-1', startsAt: new Date('2026-09-01T09:00:00.000Z') };
   const SALON = { id: 'salon-1', name: 'سالن آرا', ownerId: 'owner-1', address: 'تهران' };
@@ -258,6 +262,7 @@ describe('PaymentsService.notifyConfirmed', () => {
     );
     smsSend = jest.fn().mockResolvedValue(undefined);
     pushSend = jest.fn().mockResolvedValue(undefined);
+    analyticsTrack = jest.fn().mockResolvedValue(undefined);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -273,6 +278,7 @@ describe('PaymentsService.notifyConfirmed', () => {
         { provide: AlertsService, useValue: { raise: jest.fn() } },
         { provide: ReferralsService, useValue: {} },
         { provide: WalletService, useValue: {} },
+        { provide: AnalyticsService, useValue: { track: analyticsTrack } },
       ],
     }).compile();
 
@@ -291,6 +297,23 @@ describe('PaymentsService.notifyConfirmed', () => {
       'owner-1',
       expect.objectContaining({ title: 'نوبت جدید', data: { type: 'booking', bookingId: 'booking-1' } }),
     );
+  });
+
+  it('tracks booking_confirmed with no PII beyond bare id references', async () => {
+    await service.notifyConfirmed('booking-1');
+
+    expect(analyticsTrack).toHaveBeenCalledWith(
+      'booking_confirmed',
+      { bookingId: 'booking-1', salonId: 'salon-1' },
+      { userId: 'user-1' },
+    );
+  });
+
+  it('still sends notifications when the analytics provider fails (never affects the real notification flow)', async () => {
+    analyticsTrack.mockRejectedValue(new Error('analytics vendor down'));
+
+    await expect(service.notifyConfirmed('booking-1')).resolves.toBeUndefined();
+    expect(pushSend).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -339,6 +362,7 @@ describe('PaymentsService.handleCallback lost-CAS recovery', () => {
         { provide: AlertsService, useValue: { raise } },
         { provide: ReferralsService, useValue: { reverseIfNeeded: jest.fn().mockResolvedValue(undefined) } },
         { provide: WalletService, useValue: { debit: jest.fn(), credit: jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' }) } },
+        { provide: AnalyticsService, useValue: { track: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
@@ -390,12 +414,14 @@ describe('PaymentsService.handleCallback — capture, dead bookings and unknown 
   let emDelete: jest.Mock;
   let smsSend: jest.Mock;
   let raise: jest.Mock;
+  let analyticsTrack: jest.Mock;
 
   const INITIATED_PAYMENT = {
     id: 'pay-1',
     bookingId: 'booking-1',
     authority: 'AUTH123',
     amount: 200_000,
+    gateway: 'zarinpal',
     status: 'initiated',
   };
 
@@ -408,6 +434,7 @@ describe('PaymentsService.handleCallback — capture, dead bookings and unknown 
     emDelete = jest.fn().mockResolvedValue({ affected: 0 });
     smsSend = jest.fn().mockResolvedValue(undefined);
     raise = jest.fn().mockResolvedValue(undefined);
+    analyticsTrack = jest.fn().mockResolvedValue(undefined);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -451,6 +478,7 @@ describe('PaymentsService.handleCallback — capture, dead bookings and unknown 
         { provide: AlertsService, useValue: { raise } },
         { provide: ReferralsService, useValue: { reverseIfNeeded: jest.fn().mockResolvedValue(undefined) } },
         { provide: WalletService, useValue: { debit: jest.fn(), credit: jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' }) } },
+        { provide: AnalyticsService, useValue: { track: analyticsTrack } },
       ],
     }).compile();
 
@@ -471,6 +499,44 @@ describe('PaymentsService.handleCallback — capture, dead bookings and unknown 
       { id: 'pay-1', status: 'initiated' },
       expect.objectContaining({ status: 'paid', refId: 'REF-1', paidAt: expect.any(Date), authority: 'AUTH123' }),
     );
+  });
+
+  it('tracks payment_succeeded on a genuine capture, with no PII beyond bare id references', async () => {
+    await service.handleCallback('AUTH123', 'OK');
+
+    expect(analyticsTrack).toHaveBeenCalledWith('payment_succeeded', {
+      bookingId: 'booking-1',
+      amount: 200_000,
+      gateway: 'zarinpal',
+    });
+    // The same capture also confirms the booking -- notifyConfirmed's own
+    // booking_confirmed call fires too, since it's the shared choke point every
+    // confirm path (including this one) already goes through.
+    expect(analyticsTrack).toHaveBeenCalledWith(
+      'booking_confirmed',
+      { bookingId: 'booking-1', salonId: 'salon-1' },
+      { userId: 'user-1' },
+    );
+  });
+
+  it('does not double-track payment_succeeded on the defensive "duplicate" capture outcome (payment CAS lost after the booking CAS won)', async () => {
+    // Booking CAS succeeds, Payment CAS is lost -- per handleCallback's own comment,
+    // some other writer already recorded the capture and notified, so this call must
+    // not notify (or track) a second time.
+    emUpdate.mockImplementation(async (entity: unknown) => ({ affected: entity === Payment ? 0 : 1 }));
+
+    const result = await service.handleCallback('AUTH123', 'OK');
+
+    expect(result).toEqual({ status: 'success', bookingId: 'booking-1' });
+    expect(analyticsTrack).not.toHaveBeenCalledWith('payment_succeeded', expect.anything());
+  });
+
+  it('still confirms the booking when the analytics provider fails (never affects the real payment flow)', async () => {
+    analyticsTrack.mockRejectedValue(new Error('analytics vendor down'));
+
+    const result = await service.handleCallback('AUTH123', 'OK');
+
+    expect(result).toEqual({ status: 'success', bookingId: 'booking-1' });
   });
 
   it('never resurrects a booking that already left pending_payment -- refunds the late capture instead', async () => {
@@ -660,6 +726,7 @@ describe('PaymentsService.handleCallback verify-persist failure', () => {
         { provide: AlertsService, useValue: { raise } },
         { provide: ReferralsService, useValue: { reverseIfNeeded: jest.fn().mockResolvedValue(undefined) } },
         { provide: WalletService, useValue: { debit: jest.fn(), credit: jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' }) } },
+        { provide: AnalyticsService, useValue: { track: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
     const service = moduleRef.get(PaymentsService);

@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, In, LessThan, MoreThan, Not, QueryFailedError } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 import { UNIQUE_VIOLATION } from '../common/postgres-error-codes';
 import { COUPON_ALREADY_REDEEMED } from '../coupons/coupon-error-codes';
 import { CouponRedemption } from '../coupons/coupon-redemption.entity';
@@ -52,6 +53,7 @@ describe('BookingsService.getEarnings', () => {
         { provide: getRepositoryToken(Worker), useValue: {} },
         { provide: getRepositoryToken(User), useValue: usersRepoStub() },
         { provide: UsersService, useValue: usersServiceStub() },
+        { provide: AnalyticsService, useValue: { track: jest.fn().mockResolvedValue(undefined) } },
         { provide: DataSource, useValue: { query: dataSourceQuery } },
         { provide: PlatformConfigService, useValue: { getCommissionPercent: jest.fn().mockResolvedValue(10) } },
         { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
@@ -124,6 +126,7 @@ describe('BookingsService.getEarnings', () => {
         { provide: getRepositoryToken(Worker), useValue: {} },
         { provide: getRepositoryToken(User), useValue: usersRepoStub() },
         { provide: UsersService, useValue: usersServiceStub() },
+        { provide: AnalyticsService, useValue: { track: jest.fn().mockResolvedValue(undefined) } },
         { provide: DataSource, useValue: { query: dataSourceQuery } },
         { provide: PlatformConfigService, useValue: config },
         { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
@@ -166,6 +169,7 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
   let redisEval: jest.Mock;
   let walletDebit: jest.Mock;
   let workersFindOneBy: jest.Mock;
+  let analyticsTrack: jest.Mock;
 
   // Cheap enough that the live config's 200,000-toman minimum would otherwise exceed it.
   const SERVICE = {
@@ -201,6 +205,7 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
     // applyWalletBalance and overrides this to actually debit something.
     walletDebit = jest.fn().mockResolvedValue({ debited: 0, shortfall: 0, balanceAfter: 0, transactionId: null });
     workersFindOneBy = jest.fn().mockResolvedValue({ id: 'worker-1', salonId: 'salon-1', active: true });
+    analyticsTrack = jest.fn().mockResolvedValue(undefined);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -215,6 +220,7 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
         { provide: getRepositoryToken(Worker), useValue: { findOneBy: workersFindOneBy } },
         { provide: getRepositoryToken(User), useValue: usersRepoStub() },
         { provide: UsersService, useValue: usersServiceStub() },
+        { provide: AnalyticsService, useValue: { track: analyticsTrack } },
         {
           provide: DataSource,
           useValue: {
@@ -429,6 +435,26 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
       expect(emCount).toHaveBeenCalledTimes(1); // salon capacity only
     });
   });
+
+  describe('analytics', () => {
+    it('tracks booking_started before any validation, with no PII beyond bare id references', async () => {
+      await service.createHold('customer-1', { ...DTO, workerId: 'worker-1' });
+
+      expect(analyticsTrack).toHaveBeenCalledWith(
+        'booking_started',
+        { salonId: 'salon-1', serviceId: 'service-1', workerId: 'worker-1', hasCoupon: false, flow: 'online' },
+        { userId: 'customer-1' },
+      );
+    });
+
+    it('still creates the booking when the analytics provider fails (never affects the real booking flow)', async () => {
+      analyticsTrack.mockRejectedValue(new Error('analytics vendor down'));
+
+      const result = await service.createHold('customer-1', DTO);
+
+      expect(result.booking.id).toBe('booking-1');
+    });
+  });
 });
 
 describe('BookingsService.createManual', () => {
@@ -443,6 +469,7 @@ describe('BookingsService.createManual', () => {
   let workersFindOneBy: jest.Mock;
   let isWorkerEligibleForService: jest.Mock;
   let usersFind: jest.Mock;
+  let analyticsTrack: jest.Mock;
 
   const SALON = { id: 'salon-1', status: 'approved', capacity: 1, name: 'Test Salon' };
   const SERVICE = { id: 'service-1', salonId: 'salon-1', price: 150_000, durationMin: 30, isActive: true };
@@ -468,6 +495,7 @@ describe('BookingsService.createManual', () => {
     workersFindOneBy = jest.fn().mockResolvedValue({ id: 'worker-1', salonId: 'salon-1', active: true });
     isWorkerEligibleForService = jest.fn().mockResolvedValue(true);
     usersFind = jest.fn().mockResolvedValue([{ ...CUSTOMER }]);
+    analyticsTrack = jest.fn().mockResolvedValue(undefined);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -485,6 +513,7 @@ describe('BookingsService.createManual', () => {
         { provide: getRepositoryToken(Worker), useValue: { findOneBy: workersFindOneBy, find: jest.fn().mockResolvedValue([]) } },
         { provide: getRepositoryToken(User), useValue: { find: usersFind } },
         { provide: UsersService, useValue: { findOrCreateByPhone, updateProfile, findById: jest.fn() } },
+        { provide: AnalyticsService, useValue: { track: analyticsTrack } },
         {
           provide: DataSource,
           useValue: {
@@ -611,6 +640,27 @@ describe('BookingsService.createManual', () => {
     await expect(service.createManual('salon-1', { ...DTO })).rejects.toBeInstanceOf(ConflictException);
     expect(redisEval).toHaveBeenCalled();
   });
+
+  describe('analytics', () => {
+    it('tracks booking_started before any validation, with no customer PII (the phone is not yet resolved to a user)', async () => {
+      await service.createManual('salon-1', { ...DTO, workerId: 'worker-1' });
+
+      expect(analyticsTrack).toHaveBeenCalledWith('booking_started', {
+        salonId: 'salon-1',
+        serviceId: 'service-1',
+        workerId: 'worker-1',
+        flow: 'manual',
+      });
+    });
+
+    it('still creates the booking when the analytics provider fails (never affects the real booking flow)', async () => {
+      analyticsTrack.mockRejectedValue(new Error('analytics vendor down'));
+
+      const result = await service.createManual('salon-1', { ...DTO });
+
+      expect(result.id).toBe('booking-1');
+    });
+  });
 });
 
 describe('BookingsService.cancel', () => {
@@ -621,6 +671,7 @@ describe('BookingsService.cancel', () => {
   let emDelete: jest.Mock;
   let attemptRefund: jest.Mock;
   let notifyCancelled: jest.Mock;
+  let analyticsTrack: jest.Mock;
 
   const BOOKING = {
     id: 'booking-1',
@@ -637,6 +688,7 @@ describe('BookingsService.cancel', () => {
     notifyCancelled = jest.fn().mockResolvedValue(undefined);
     bookingsFindOneBy = jest.fn();
     salonsFindOneBy = jest.fn().mockResolvedValue({ id: 'salon-1', ownerId: 'owner-1' });
+    analyticsTrack = jest.fn().mockResolvedValue(undefined);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -648,6 +700,7 @@ describe('BookingsService.cancel', () => {
         { provide: getRepositoryToken(Worker), useValue: {} },
         { provide: getRepositoryToken(User), useValue: usersRepoStub() },
         { provide: UsersService, useValue: usersServiceStub() },
+        { provide: AnalyticsService, useValue: { track: analyticsTrack } },
         {
           provide: DataSource,
           useValue: {
@@ -764,6 +817,41 @@ describe('BookingsService.cancel', () => {
     expect(result).toBeDefined();
     expect(attemptRefund).toHaveBeenCalledWith('booking-1');
   });
+
+  describe('analytics', () => {
+    it('tracks booking_cancelled once cancel() has succeeded, with no PII beyond bare id references', async () => {
+      bookingsFindOneBy.mockResolvedValue({ ...BOOKING });
+
+      await service.cancel('booking-1', 'owner-1');
+
+      expect(analyticsTrack).toHaveBeenCalledWith(
+        'booking_cancelled',
+        { bookingId: 'booking-1', salonId: 'salon-1', cancelledBy: 'salon', refundOwed: true },
+        { userId: 'owner-1' },
+      );
+    });
+
+    it('reports the customer as the canceller and no refund owed when the customer cancels inside the window', async () => {
+      bookingsFindOneBy.mockResolvedValue({ ...BOOKING, startsAt: new Date(Date.now() + 2 * 60 * 60_000) });
+
+      await service.cancel('booking-1', 'customer-1');
+
+      expect(analyticsTrack).toHaveBeenCalledWith(
+        'booking_cancelled',
+        { bookingId: 'booking-1', salonId: 'salon-1', cancelledBy: 'user', refundOwed: false },
+        { userId: 'customer-1' },
+      );
+    });
+
+    it('still cancels successfully when the analytics provider fails (never affects the real cancellation)', async () => {
+      bookingsFindOneBy.mockResolvedValue({ ...BOOKING });
+      analyticsTrack.mockRejectedValue(new Error('analytics vendor down'));
+
+      const result = await service.cancel('booking-1', 'owner-1');
+
+      expect(result.id).toBe('booking-1');
+    });
+  });
 });
 
 describe('BookingsService.retryPayment authority persist failure', () => {
@@ -801,6 +889,7 @@ describe('BookingsService.retryPayment authority persist failure', () => {
         { provide: getRepositoryToken(Worker), useValue: {} },
         { provide: getRepositoryToken(User), useValue: usersRepoStub() },
         { provide: UsersService, useValue: usersServiceStub() },
+        { provide: AnalyticsService, useValue: { track: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: DataSource,
           useValue: {
@@ -892,6 +981,7 @@ describe('BookingsService.assignWorker', () => {
         { provide: getRepositoryToken(Worker), useValue: { find: workersFind } },
         { provide: getRepositoryToken(User), useValue: usersRepoStub() },
         { provide: UsersService, useValue: usersServiceStub() },
+        { provide: AnalyticsService, useValue: { track: jest.fn().mockResolvedValue(undefined) } },
         { provide: DataSource, useValue: { transaction: dataSourceTransaction } },
         { provide: PlatformConfigService, useValue: {} },
         { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
@@ -1139,6 +1229,7 @@ describe('BookingsService.listMine / findMine -- workerName enrichment', () => {
         { provide: getRepositoryToken(Worker), useValue: { find: workersFind } },
         { provide: getRepositoryToken(User), useValue: usersRepoStub() },
         { provide: UsersService, useValue: usersServiceStub() },
+        { provide: AnalyticsService, useValue: { track: jest.fn().mockResolvedValue(undefined) } },
         { provide: DataSource, useValue: {} },
         { provide: PlatformConfigService, useValue: {} },
         { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
@@ -1239,6 +1330,7 @@ describe('BookingsService.updateStatus -- first-completed-booking referral trigg
         { provide: getRepositoryToken(Worker), useValue: {} },
         { provide: getRepositoryToken(User), useValue: usersRepoStub() },
         { provide: UsersService, useValue: usersServiceStub() },
+        { provide: AnalyticsService, useValue: { track: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: DataSource,
           useValue: { transaction: jest.fn((cb: (em: unknown) => unknown) => cb({ update: emUpdate })) },

@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import Redis from 'ioredis';
 import { DataSource, In, LessThan, MoreThan, Not, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 import { isUniqueViolation } from '../common/postgres-error-codes';
 import { resolveNamesById } from '../common/resolve-names-by-id';
 import { COUPON_ALREADY_REDEEMED } from '../coupons/coupon-error-codes';
@@ -94,6 +95,7 @@ export class BookingsService {
     private readonly walletService: WalletService,
     private readonly invoicing: InvoicingService,
     private readonly usersService: UsersService,
+    private readonly analytics: AnalyticsService,
   ) {}
 
   // Shared by createHold/createManual/assignWorker -- every per-salon booking-lock
@@ -122,6 +124,27 @@ export class BookingsService {
     userId: string,
     dto: CreateBookingDto,
   ): Promise<{ booking: Booking; paymentUrl: string; couponApplied: boolean; paymentRequired: boolean }> {
+    // Fired before any validation -- the funnel's entry point, regardless of whether the
+    // request goes on to succeed. Best-effort and genuinely fire-and-forget (never
+    // awaited): an analytics outage must add zero latency and zero failure risk to the
+    // booking path, unlike the SMS/push notifications later in this flow which ARE
+    // awaited (with their own .catch(() => {})) because their ordering relative to the
+    // response matters. No PII: salonId/serviceId/workerId are bare id references, and
+    // hasCoupon is a boolean, never the code itself.
+    void this.analytics
+      .track(
+        'booking_started',
+        {
+          salonId: dto.salonId,
+          serviceId: dto.serviceId,
+          workerId: dto.workerId ?? null,
+          hasCoupon: Boolean(dto.couponCode),
+          flow: 'online',
+        },
+        { userId },
+      )
+      .catch(() => {});
+
     // Independent, indexed single-row lookups -- run concurrently rather than
     // sequentially on this hot write path. Error precedence (salon checked before
     // service) is preserved below even though both queries have already completed.
@@ -390,6 +413,15 @@ export class BookingsService {
   // refund/hold-release path to a no-op everywhere that reads one. Discounts/coupons/wallet
   // don't apply here at all -- there is no checkout to apply them at.
   async createManual(salonId: string, dto: CreateManualBookingDto): Promise<EnrichedBooking> {
+    // Same funnel-entry event as createHold's own, fired before any validation here too
+    // -- see that call's comment for the fire-and-forget/no-PII rationale, both apply
+    // verbatim. No userId in context: the customer isn't resolved from dto.phone until
+    // findOrCreateByPhone below, and the caller (the salon owner) isn't passed into this
+    // method at all today.
+    void this.analytics
+      .track('booking_started', { salonId, serviceId: dto.serviceId, workerId: dto.workerId ?? null, flow: 'manual' })
+      .catch(() => {});
+
     const [salon, service] = await Promise.all([
       this.salons.findOneBy({ id: salonId, status: 'approved' }),
       this.services.findOneBy({ id: dto.serviceId, salonId, isActive: true }),
@@ -667,6 +699,19 @@ export class BookingsService {
         await releaseBookingHold(em, this.walletService, booking.id);
       }
     });
+
+    // cancel() has now genuinely succeeded (the transaction above committed) --
+    // fire-and-forget, never awaited, same rationale as createHold/createManual's own
+    // booking_started call. No PII: bookingId/salonId are bare id references, and
+    // cancelledBy/refundOwed are booleans/enums describing the outcome, never anything
+    // identifying about the caller beyond the userId already on the event's context.
+    void this.analytics
+      .track(
+        'booking_cancelled',
+        { bookingId: booking.id, salonId: booking.salonId, cancelledBy: isOwner ? 'salon' : 'user', refundOwed: refund },
+        { userId: callerId },
+      )
+      .catch(() => {});
 
     // Best-effort, independent of the refund path below -- a bare cancel with no refund
     // owed (e.g. the customer cancelled outside the window) was previously silent to

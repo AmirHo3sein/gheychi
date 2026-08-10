@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { AlertsModule } from '../alerts/alerts.module';
+import { AnalyticsModule } from '../analytics/analytics.module';
 import { AuthModule } from '../auth/auth.module';
 import { CouponsModule } from '../coupons/coupons.module';
 import { InvoicingModule } from '../invoicing/invoicing.module';
@@ -39,6 +40,7 @@ import { ZarinpalGateway } from './zarinpal-payment.gateway';
     CouponsModule,
     PlatformConfigModule,
     AlertsModule,
+    AnalyticsModule,
     AuthModule,
     SmsModule,
     PushModule,

@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 import { formatIranDateTimeFa } from '../common/iran-time.util';
 import { PushNotificationData } from '../push/push.provider';
 import { PushService } from '../push/push.service';
@@ -58,6 +59,7 @@ export class PaymentsService {
     private readonly alerts: AlertsService,
     private readonly referralsService: ReferralsService,
     private readonly walletService: WalletService,
+    private readonly analytics: AnalyticsService,
   ) {}
 
   async handleCallback(authority: string, status: string): Promise<{ status: CallbackOutcome; bookingId: string | null }> {
@@ -188,6 +190,16 @@ export class PaymentsService {
 
     if (outcome === 'captured') {
       await this.notifyConfirmed(payment.bookingId);
+      // Fire-and-forget, never awaited, same rationale as every other analytics call
+      // site (see BookingsService.createHold's own comment). Only on the genuine
+      // first-time capture -- 'duplicate' below is a replayed callback for a payment
+      // already recorded and already notified, so tracking it again would double-count
+      // a single real payment in the funnel, exactly the reason notifyConfirmed itself
+      // is skipped on that branch. No PII: amount/gateway describe the transaction, not
+      // the payer, and bookingId is a bare id reference.
+      void this.analytics
+        .track('payment_succeeded', { bookingId: payment.bookingId, amount: payment.amount, gateway: payment.gateway })
+        .catch(() => {});
       return { status: 'success', bookingId: payment.bookingId };
     }
     if (outcome === 'duplicate') {
@@ -447,6 +459,16 @@ export class PaymentsService {
   async notifyConfirmed(bookingId: string): Promise<void> {
     const booking = await this.bookings.findOneBy({ id: bookingId });
     if (!booking) return;
+    // The single choke point every "a booking just became confirmed" path already
+    // funnels through (a zero-deposit createHold, a manual walk-in, and a paid
+    // handleCallback capture all call this) -- so this is also the one place that
+    // needs a booking_confirmed track() call, rather than duplicating it at each of
+    // those three call sites. Fire-and-forget, never awaited, same rationale as every
+    // other analytics call site in this module. No PII: bookingId/salonId are bare id
+    // references.
+    void this.analytics
+      .track('booking_confirmed', { bookingId: booking.id, salonId: booking.salonId }, { userId: booking.userId })
+      .catch(() => {});
     const salon = await this.salonsService.findById(booking.salonId);
     if (!salon) return;
     const [customer, owner] = await Promise.all([
