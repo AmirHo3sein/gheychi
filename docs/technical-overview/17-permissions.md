@@ -40,7 +40,7 @@ A salon owner is never granted a special `role` — they're a plain `customer`-t
 
 | App | Mechanism |
 |---|---|
-| `user-app` | `middleware/auth.global.ts` (session required except `isPublicRoute()`), `middleware/admin.ts` (role check for `/admin/featured` only) |
+| `user-app` | `middleware/auth.global.ts` (session required except `isPublicRoute()`) — no role-based middleware; the admin-only `/admin/featured` tool that used to require one has moved to `admin-panel` |
 | `provider-panel` | Router guard branches entirely on `GET /salons/mine` resolving + its `status` — **no role check at all** |
 | `admin-panel` | Router guard checks `session.user?.role === 'admin'`, redirects non-admins to `/forbidden` — an explicit, real role check unlike provider-panel's |
 

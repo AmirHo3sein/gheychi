@@ -6,6 +6,7 @@ import AppIcon, { type IconName } from '@/components/ui/AppIcon.vue'
 const LINKS: { to: string; label: string; icon: IconName }[] = [
   { to: '/', label: 'داشبورد', icon: 'dashboard' },
   { to: '/salons', label: 'آرایشگاه‌ها', icon: 'salons' },
+  { to: '/featured', label: 'سالن‌های ویژه', icon: 'star' },
   { to: '/reviews', label: 'نظرات', icon: 'reviews' },
   { to: '/worker-ratings', label: 'امتیاز کارمندان', icon: 'worker-ratings' },
   { to: '/reports', label: 'گزارش‌ها', icon: 'flag' },

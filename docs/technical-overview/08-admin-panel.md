@@ -22,6 +22,7 @@ This is real client-side defense-in-depth on top of the backend's own `RolesGuar
 | `DashboardView.vue` | ECharts pie/bar charts (salon status, gender split, user roles, review rating distribution) + stat tiles + quick-links |
 | `SalonsView.vue` | Paginated/filterable (status/city/gender/name) salon table, featured-badge logic |
 | `SalonDetailView.vue` | Tabbed detail (info/stories/portfolio) for one salon; hosts status-change and showcase-moderation actions |
+| `FeaturedView.vue` | Paginated table of approved salons; toggles a salon's featured flag and its (optional) expiry via `PATCH /admin/salons/:id/featured` — moved here from `user-app`'s `/admin/featured`, see [24-technical-debt.md](./24-technical-debt.md) |
 | `ReviewsView.vue` | Review moderation queue, distinguishes `withdrawn` (customer self-deleted) from admin `rejected` |
 | `WorkerRatingsView.vue` | Same pattern for worker ratings |
 | `ReportsView.vue` | Trust & safety report queue (salon/review/story/portfolio targets), graceful fallback rendering when the target content was since deleted/expired |

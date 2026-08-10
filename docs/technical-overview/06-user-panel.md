@@ -18,9 +18,10 @@ File-based routing under `app/pages/`. `components: [{ path: '~/components', pat
 | `/bookings`, `/bookings/[id]` | Auth required | list: no; detail: `useAsyncData` | Booking list/detail, cancel with refund-outcome preview, retry-payment, review prompt |
 | `/account/referral` | Auth required | — | Referral code/share link, referral + reward history |
 | `/account/wallet` | Auth required | — | Wallet balances + paginated transaction history |
-| `/admin/featured` | Auth + `admin` middleware | — | Admin-only tool, embedded inside the customer app, to toggle a salon's featured flag/expiry — an architectural oddity (admin functionality living outside `admin-panel`), see [24-technical-debt.md](./24-technical-debt.md) |
 
 Only `/salons/*` and `/blog*` (plus `/login`) are in `isPublicRoute()` (`app/utils/route-guard.ts`); every other route requires a session.
+
+The admin-only tool that toggles a salon's featured flag/expiry used to live here as `/admin/featured` — an architectural oddity (admin functionality inside the customer-facing app). It has since moved to `admin-panel` as `/featured`; see [08-admin-panel.md](./08-admin-panel.md).
 
 ## Route guard — `middleware/auth.global.ts`
 
@@ -28,8 +29,6 @@ Runs on every navigation:
 1. If `!session.checked`, probes `GET /auth/me` (`silent:true, redirectOn401:false`) — probed even on public routes so the UI reflects a logged-in visitor's state everywhere. Guards against a stale-probe race with a `!session.checked` re-check.
 2. `!isLoggedIn && !isPublicRoute` → `navigateTo('/login')`.
 3. `needsProfileCompletion && path !== '/profile' && !isPublicRoute` → `navigateTo('/profile')`.
-
-`middleware/admin.ts` is a trivial synchronous `role !== 'admin' → navigateTo('/')`, relying on `auth.global.ts` having already hydrated `session.user`.
 
 ## Composables (`app/composables/`)
 
@@ -77,4 +76,4 @@ Three tiers, all under `apps/user-app`:
 
 - [09-booking-engine.md](./09-booking-engine.md), [10-scheduling.md](./10-scheduling.md), [11-payment-system.md](./11-payment-system.md) — what the booking pages drive
 - [16-notifications.md](./16-notifications.md) — push mechanism in full
-- [24-technical-debt.md](./24-technical-debt.md) — the `/admin/featured` placement, dual-Vite typecheck workaround, and other findings specific to this app
+- [24-technical-debt.md](./24-technical-debt.md) — the dual-Vite typecheck workaround and other findings specific to this app

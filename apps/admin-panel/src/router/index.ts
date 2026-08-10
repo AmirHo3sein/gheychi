@@ -14,6 +14,7 @@ const routes = [
       { path: '', name: 'dashboard', component: () => import('@/pages/DashboardView.vue'), meta: { title: 'داشبورد' } },
       { path: 'salons', name: 'salons', component: () => import('@/pages/SalonsView.vue'), meta: { title: 'آرایشگاه‌ها' } },
       { path: 'salons/:id', name: 'salon-detail', component: () => import('@/pages/SalonDetailView.vue'), meta: { title: 'جزئیات آرایشگاه' } },
+      { path: 'featured', name: 'featured', component: () => import('@/pages/FeaturedView.vue'), meta: { title: 'سالن‌های ویژه' } },
       { path: 'reviews', name: 'reviews', component: () => import('@/pages/ReviewsView.vue'), meta: { title: 'نظرات' } },
       { path: 'worker-ratings', name: 'worker-ratings', component: () => import('@/pages/WorkerRatingsView.vue'), meta: { title: 'امتیاز کارمندان' } },
       { path: 'reports', name: 'reports', component: () => import('@/pages/ReportsView.vue'), meta: { title: 'گزارش‌ها' } },
