@@ -1,5 +1,6 @@
-import { Body, ConflictException, Controller, Delete, HttpCode, Inject, NotFoundException, Param, ParseIntPipe, Patch, Post, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, ConflictException, Controller, Delete, HttpCode, Inject, NotFoundException, Param, ParseIntPipe, Patch, Post, Req, UseGuards, UseInterceptors } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Request } from 'express';
 import Redis from 'ioredis';
 import { Repository } from 'typeorm';
 import { AuditAction } from '../audit/audit.decorator';
@@ -40,7 +41,14 @@ export class AdminCategoriesController {
   @Patch(':id')
   @UseInterceptors(AuditInterceptor)
   @AuditAction('category.update', 'category')
-  async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCategoryDto) {
+  async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCategoryDto, @Req() req: Request) {
+    // Real before/after diff for AuditInterceptor (see its doc comment). Left unset
+    // (falls back to the raw request body) when the category doesn't exist -- the
+    // update below still 404s exactly as before, this fetch just can't contribute a
+    // "before" snapshot in that case.
+    const before = await this.categories.findOneBy({ id });
+    if (before) req.auditBefore = { name: before.name, icon: before.icon };
+
     let result;
     try {
       result = await this.categories.update({ id }, dto);
@@ -52,14 +60,24 @@ export class AdminCategoriesController {
     }
     if (!result.affected) throw new NotFoundException();
     await this.redis.del(CATEGORIES_CACHE_KEY);
-    return this.categories.findOneBy({ id });
+    const updated = await this.categories.findOneBy({ id });
+    if (updated) req.auditAfter = { name: updated.name, icon: updated.icon };
+    return updated;
   }
 
   @Delete(':id')
   @HttpCode(204)
   @UseInterceptors(AuditInterceptor)
   @AuditAction('category.delete', 'category')
-  async remove(@Param('id', ParseIntPipe) id: number) {
+  async remove(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    // Real "before" snapshot for AuditInterceptor (see its doc comment). A hard delete
+    // has no post-write state to report (req.auditAfter stays unset -> null), so this
+    // is the only record of what the row looked like right before it was removed --
+    // DELETE requests carry no body, so without this the payload would otherwise be
+    // bare `null`.
+    const before = await this.categories.findOneBy({ id });
+    if (before) req.auditBefore = { name: before.name, icon: before.icon };
+
     let result;
     try {
       result = await this.categories.delete({ id });
