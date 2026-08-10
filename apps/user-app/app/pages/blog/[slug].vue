@@ -54,6 +54,9 @@ useSeoMeta({
   ogType: 'article',
   ogUrl: canonicalUrl,
   ogImage: post.value.coverImageUrl ?? undefined,
+  // 'summary_large_image' only makes sense once there's actually a cover image; with none,
+  // 'summary' is the correct (and still valid) fallback card type.
+  twitterCard: post.value.coverImageUrl ? 'summary_large_image' : 'summary',
 })
 
 useHead({

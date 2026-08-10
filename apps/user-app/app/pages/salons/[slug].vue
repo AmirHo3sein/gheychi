@@ -77,13 +77,18 @@ if (!page.value) {
 
 // about-excerpt ?? tagline ?? description ?? name—address (empty strings fall through).
 const seoDescription = resolveSalonDescription(page.value.salon)
+// Falls back to the first portfolio image when the salon has no gallery photos.
+const seoImage = page.value.photos[0]?.url ?? page.value.portfolio[0]?.url
 
 useSeoMeta({
   title: page.value.salon.name,
   description: seoDescription,
   ogTitle: page.value.salon.name,
-  // Falls back to the first portfolio image when the salon has no gallery photos.
-  ogImage: page.value.photos[0]?.url ?? page.value.portfolio[0]?.url,
+  ogDescription: seoDescription,
+  ogImage: seoImage,
+  // 'summary_large_image' only makes sense once there's actually an image to show large;
+  // with none, 'summary' is the correct (and still valid) fallback card type.
+  twitterCard: seoImage ? 'summary_large_image' : 'summary',
 })
 
 useHead({

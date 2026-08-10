@@ -7,6 +7,51 @@ import type { SelectOption } from '../components/ui/AppSelect.client.vue'
 
 interface IranCity { name: string; lat: number; lng: number }
 
+// Same absolute-URL-from-request pattern as blog/[slug].vue's canonicalUrl -- og:image and
+// og:url must be fully-qualified for social crawlers, and this page has no other source of
+// the site's own origin to build them from.
+const requestUrl = useRequestURL()
+const homeDescription = 'با قیچی، نزدیک‌ترین سالن‌های زیبایی تایید‌شده به خودت را پیدا می‌کنی و نوبتت را به‌صورت آنلاین رزرو می‌کنی.'
+// brand-icon.png is the same logo asset AppHeader/login.vue already render as the site's
+// identity elsewhere -- not a dedicated 1200x630 OG asset (none exists in public/ yet), so
+// 'summary' (not 'summary_large_image') is the twitter card type that actually matches its
+// 192x192 dimensions.
+const homeImage = `${requestUrl.origin}/brand-icon.png`
+
+useSeoMeta({
+  title: 'رزرو آنلاین نوبت سالن‌های زیبایی نزدیک شما',
+  description: homeDescription,
+  ogTitle: 'قیچی — رزرو آنلاین نوبت سالن زیبایی',
+  ogDescription: homeDescription,
+  ogType: 'website',
+  ogUrl: requestUrl.origin,
+  ogImage: homeImage,
+  twitterCard: 'summary',
+})
+
+useHead({
+  script: [
+    {
+      type: 'application/ld+json',
+      // The < escaping matters: stringify does NOT escape a closing script tag -- see the
+      // same guard on salon/[slug].vue and blog/[slug].vue's own JSON-LD blocks.
+      innerHTML: JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'WebSite',
+        name: 'قیچی',
+        url: requestUrl.origin,
+        description: homeDescription,
+        inLanguage: 'fa-IR',
+        publisher: {
+          '@type': 'Organization',
+          name: 'قیچی',
+          logo: { '@type': 'ImageObject', url: homeImage },
+        },
+      }).replace(/[<]/g, '\\u003c'),
+    },
+  ],
+})
+
 const session = useSessionStore()
 const { apiFetch } = useApi()
 
