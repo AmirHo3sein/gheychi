@@ -114,7 +114,7 @@ describe('Blog CMS — lifecycle (e2e)', () => {
     await request(app.getHttpServer()).get(`/api/blog/posts/${postSlug}`).expect(404);
 
     const sitemap = await request(app.getHttpServer()).get(SITEMAP_BLOG_PATH).expect(200);
-    expect(sitemap.body).toEqual([]);
+    expect(sitemap.body.items).toEqual([]);
 
     const adminList = await request(app.getHttpServer())
       .get('/api/admin/blog/posts')
@@ -259,9 +259,10 @@ describe('Blog CMS — lifecycle (e2e)', () => {
 
   it('appears in the blog sitemap once published, with an updatedAt', async () => {
     const res = await request(app.getHttpServer()).get(SITEMAP_BLOG_PATH).expect(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].slug).toBe(postSlug);
-    expect(Number.isNaN(new Date(res.body[0].updatedAt).getTime())).toBe(false);
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.total).toBe(1);
+    expect(res.body.items[0].slug).toBe(postSlug);
+    expect(Number.isNaN(new Date(res.body.items[0].updatedAt).getTime())).toBe(false);
   });
 
   it('keeps the original published_at across unpublish → republish', async () => {
@@ -295,7 +296,7 @@ describe('Blog CMS — lifecycle (e2e)', () => {
     expect(list.body.total).toBe(0);
     await request(app.getHttpServer()).get(`/api/blog/posts/${postSlug}`).expect(404);
     const sitemap = await request(app.getHttpServer()).get(SITEMAP_BLOG_PATH).expect(200);
-    expect(sitemap.body).toEqual([]);
+    expect(sitemap.body.items).toEqual([]);
 
     // Conditional update WHERE status='published': unpublishing a draft is a lost race.
     await request(app.getHttpServer())

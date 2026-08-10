@@ -22,10 +22,6 @@ This document consolidates every self-declared or observed scaling limit in the 
 
 `user-app`'s `index.vue` issues one `GET /salons/:slug` request **per visible search result** to backfill map coordinates for the map view — explicitly self-acknowledged in code as an "accepted tradeoff at today's scale... revisit if result-set sizes grow."
 
-## No pagination on two sitemap sources
-
-`GET /sitemap/salon-slugs` and `GET /sitemap/blog-posts` are both fetch-all, capped only at a hardcoded 50,000-row safety ceiling (Google's single-sitemap-file limit) — a real sitemap-index (multi-file) replacement is flagged as needed before the platform approaches that many rows in either domain.
-
 ## Database indexing
 
 Every hot-path query reviewed during this audit has a supporting index: `salons_location_gist` (PostGIS GIST, backs `ST_DWithin`), `bookings (salon_id, starts_at, ends_at)` + `(user_id)` + `(status)`, `reviews_salon_status_idx`, `admin_notifications_unread_idx` (partial), `worker_services_service_idx`, `salon_categories(category_id)`, etc. — see [04-database.md](./04-database.md) for the full migration-by-migration list. No missing-index issue was identified during this audit.

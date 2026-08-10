@@ -22,10 +22,6 @@ Adding a worker today requires the owner to already know a phone number that res
 
 Wallet balance can currently only be applied toward a booking's deposit at creation time (`applyWalletBalance`). Any broader "pay for anything with wallet balance" flow would build on the existing `booking_spend`/`booking_spend_reversal` transaction types and the `debit()`/`credit()` primitives already in place — see [12-wallet.md](./12-wallet.md).
 
-## Multi-file sitemaps
-
-Both sitemap sources (salon slugs, blog posts) are capped at a hardcoded 50,000-row safety ceiling with a comment noting a real sitemap-index (multi-file) replacement is needed before the platform approaches that many rows in either domain.
-
 ## Before/after portfolio comparison slider
 
 Named explicitly as a fast-follow in the salon-showcase design spec (`docs/superpowers/specs/2026-07-17-salon-showcase-design.md`) — not built, no code scaffolding exists for it yet.

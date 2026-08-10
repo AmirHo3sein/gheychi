@@ -1,4 +1,6 @@
+import { fileURLToPath } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
+import { MAX_SITEMAP_PAGES } from './server/utils/sitemap'
 
 /**
  * The plugin-array type Nuxt itself expects, derived from its own config signature rather
@@ -6,6 +8,20 @@ import tailwindcss from '@tailwindcss/vite'
  * adding it would risk pinning a third copy of the very package this works around.
  */
 type NuxtVitePlugins = NonNullable<NonNullable<Parameters<typeof defineNuxtConfig>[0]['vite']>['plugins']>
+
+// The sitemap-salons-N.xml / sitemap-posts-N.xml sub-sitemaps (see server/handlers/) can't
+// be a single file-based dynamic route (`server/routes/sitemap-salons-[page].xml.ts`):
+// verified empirically that h3's router (rou3) only matches a `:param` segment when it's the
+// *entire* path segment, not embedded alongside literal text -- a `[page]` bracket file
+// named `sitemap-salons-[page].xml.ts` resolves to the route pattern
+// `/sitemap-salons-:page.xml`, which rou3 silently never matches against a real request like
+// `/sitemap-salons-1.xml` (it falls through to Nuxt's page renderer instead, with no error).
+// @nuxtjs/sitemap's own chunking support hits this exact wall and works around it the same
+// way: pre-register a bounded range of *static* routes at startup, all pointing at one
+// shared handler that recovers the page number by parsing the request path itself
+// (parsePageFromSitemapPath in server/utils/sitemap.ts) rather than relying on a route param.
+const sitemapSalonsHandler = fileURLToPath(new URL('./server/handlers/sitemap-salons-page.ts', import.meta.url))
+const sitemapPostsHandler = fileURLToPath(new URL('./server/handlers/sitemap-posts-page.ts', import.meta.url))
 
 export default defineNuxtConfig({
   compatibilityDate: '2026-07-05',
@@ -15,13 +31,7 @@ export default defineNuxtConfig({
   // the app across the microtask boundary and throws "useNuxtApp called outside of a
   // plugin/hook/setup function".
   experimental: { asyncContext: true },
-  modules: ['@pinia/nuxt', '@nuxt/test-utils/module', '@nuxt/image', '@vite-pwa/nuxt', '@nuxtjs/sitemap'],
-  site: {
-    url: process.env.NUXT_PUBLIC_SITE_URL ?? 'http://localhost:3003',
-  },
-  sitemap: {
-    sources: ['/api/__sitemap__/urls', '/api/__sitemap__/blog'],
-  },
+  modules: ['@pinia/nuxt', '@nuxt/test-utils/module', '@nuxt/image', '@vite-pwa/nuxt'],
   css: ['~/assets/css/main.css'],
   // Nested components/<dir>/*.vue would otherwise auto-register with a directory-name
   // prefix (e.g. <LayoutAppHeader>); disabling it lets AppHeader/ThemeToggle/ToastStack
@@ -62,6 +72,12 @@ export default defineNuxtConfig({
     public: {
       apiBase: process.env.NUXT_PUBLIC_API_BASE ?? 'http://localhost:3002/api',
       vapidPublicKey: process.env.NUXT_PUBLIC_VAPID_PUBLIC_KEY ?? '',
+      // Base URL used to build absolute <loc> entries in the hand-rolled sitemap routes
+      // (server/routes/sitemap*.ts) -- the sitemap protocol requires fully-qualified URLs,
+      // not paths. Same env var @nuxtjs/sitemap's `site.url` used to read before this app
+      // dropped that module in favor of a paginated, multi-file sitemap (see
+      // server/utils/sitemap.ts).
+      siteUrl: process.env.NUXT_PUBLIC_SITE_URL ?? 'http://localhost:3003',
     },
   },
   pwa: {
@@ -104,6 +120,19 @@ export default defineNuxtConfig({
           innerHTML: `(function(){try{var m=document.cookie.match(/(?:^|; )theme=([^;]*)/);var p=m?decodeURIComponent(m[1]):'system';var d=p==='dark'||(p==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.classList.add('dark');}catch(e){}})();`,
         },
       ],
+    },
+  },
+  hooks: {
+    // See the sitemapSalonsHandler/sitemapPostsHandler comment above for why these are
+    // pre-registered static routes rather than a file-based dynamic one.
+    'nitro:config': (nitroConfig) => {
+      nitroConfig.handlers ??= []
+      for (let page = 1; page <= MAX_SITEMAP_PAGES; page++) {
+        nitroConfig.handlers.push(
+          { route: `/sitemap-salons-${page}.xml`, handler: sitemapSalonsHandler, lazy: true, middleware: false },
+          { route: `/sitemap-posts-${page}.xml`, handler: sitemapPostsHandler, lazy: true, middleware: false },
+        )
+      }
     },
   },
 })

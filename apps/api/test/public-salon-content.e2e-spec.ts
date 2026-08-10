@@ -113,11 +113,21 @@ describe('Public salon content (e2e)', () => {
 
   it('lists all approved salon slugs for the sitemap, unfiltered by location', async () => {
     const res = await request(app.getHttpServer()).get('/api/sitemap/salon-slugs').expect(200);
-    expect(res.body).toContain(slug);
+    expect(res.body.items).toContain(slug);
+    expect(res.body.page).toBe(1);
   });
 
   it('excludes non-approved salons from the sitemap', async () => {
     const res = await request(app.getHttpServer()).get('/api/sitemap/salon-slugs').expect(200);
-    expect(res.body).not.toContain(pendingSlug);
+    expect(res.body.items).not.toContain(pendingSlug);
+  });
+
+  it('returns an empty-but-valid page past the real last page', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/sitemap/salon-slugs')
+      .query({ page: 99 })
+      .expect(200);
+    expect(res.body.items).toEqual([]);
+    expect(res.body.total).toBeGreaterThan(0);
   });
 });

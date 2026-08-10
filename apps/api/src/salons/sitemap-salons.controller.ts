@@ -1,25 +1,29 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { SITEMAP_PAGE_SIZE, SitemapPage, SitemapPageQueryDto } from '../common/sitemap-pagination';
 import { Salon } from './salon.entity';
-
-// Google's sitemap protocol caps a single sitemap file at 50,000 URLs. This source is
-// unpaginated (fetch-all), so the cap exists purely as a safety ceiling against ever
-// emitting an invalid oversized file -- if the platform ever approaches this many
-// approved salons, replace this with a real sitemap index (multiple files).
-const SITEMAP_URL_CAP = 50_000;
 
 @Controller('sitemap')
 export class SitemapSalonsController {
   constructor(@InjectRepository(Salon) private readonly salons: Repository<Salon>) {}
 
+  // Paginated -- the user-app's sitemap-salons-N.xml route requests exactly the page it
+  // needs (never the whole table), and its sitemap-index route reads `total`/`pageSize`
+  // from a single page-1 call to know how many sub-sitemap files to list.
   @Get('salon-slugs')
-  async list(): Promise<string[]> {
-    const rows = await this.salons.find({
+  async list(@Query() query: SitemapPageQueryDto): Promise<SitemapPage<string>> {
+    const page = query.page ?? 1;
+    const [rows, total] = await this.salons.findAndCount({
       where: { status: 'approved' },
       select: ['slug'],
-      take: SITEMAP_URL_CAP,
+      // Deterministic order is required for skip/take to yield a stable, non-overlapping
+      // partition across separately-requested pages -- id is the primary key, so it's
+      // always a valid, cheap tiebreak.
+      order: { id: 'ASC' },
+      skip: (page - 1) * SITEMAP_PAGE_SIZE,
+      take: SITEMAP_PAGE_SIZE,
     });
-    return rows.map((r) => r.slug);
+    return { items: rows.map((r) => r.slug), total, page, pageSize: SITEMAP_PAGE_SIZE };
   }
 }

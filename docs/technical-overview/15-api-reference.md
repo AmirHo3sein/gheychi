@@ -54,7 +54,7 @@ Guard shorthand: **Auth** = `AuthGuard` (valid session). **Admin** = `AuthGuard,
 | `salons/public-salon-content.controller.ts` | `GET /salons/:slug/services`, `/hours`, `/photos`, `/stories` (unexpired+published only), `/portfolio` (published only), `/workers?serviceId=` (eligibility-filtered), `/workers/:id/ratings` |
 | `reviews/salon-reviews.controller.ts` | `GET /salons/:salonId/reviews` |
 | `booking/availability.controller.ts` | `GET /salons/:salonId/availability?serviceId=&workerId=` |
-| `salons/sitemap-salons.controller.ts` | `GET /sitemap/salon-slugs` (cap 50,000) |
+| `salons/sitemap-salons.controller.ts` | `GET /sitemap/salon-slugs?page=` (paginated, 5,000/page) |
 
 ## Salons — admin (Admin)
 
@@ -147,7 +147,7 @@ Guard shorthand: **Auth** = `AuthGuard` (valid session). **Admin** = `AuthGuard,
 |---|---|
 | `blog.controller.ts` (Public) | `GET /blog/posts`, `GET /blog/posts/:slug`, `GET /blog/categories` |
 | `admin-blog.controller.ts` (Admin, all mutations audited) | `GET /admin/blog/posts`, `GET /admin/blog/posts/:id`, `POST /admin/blog/posts`, `PATCH /admin/blog/posts/:id`, `POST /admin/blog/posts/:id/publish`, `/unpublish`, `DELETE /admin/blog/posts/:id`, `POST /admin/blog/posts/:id/cover`, `DELETE .../cover`, `POST/PATCH/DELETE /admin/blog/categories(/:id)` |
-| `sitemap-blog.controller.ts` (Public) | `GET /sitemap/blog-posts` (cap 50,000) |
+| `sitemap-blog.controller.ts` (Public) | `GET /sitemap/blog-posts?page=` (paginated, 5,000/page) |
 
 ## Catalog (`catalog/`)
 
