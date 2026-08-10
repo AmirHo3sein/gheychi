@@ -2,9 +2,9 @@
 
 This document consolidates every self-declared or observed scaling limit in the codebase. None of these are urgent at current traffic; all are worth knowing about before the platform grows meaningfully.
 
-## Search has no pagination
+## Search pagination re-fetches, rather than seeks, on every page
 
-`SearchService.search()` — hard `LIMIT 50`, explicitly commented as an "MVP cap, no pagination yet. Revisit if a single search radius can plausibly exceed 50 approved salons." In a dense city with a small radius, results silently truncate with no `hasMore`/cursor for the client to continue from. See [10-scheduling.md](./10-scheduling.md)... actually see the salons/search domain in [20-business-rules.md](./20-business-rules.md).
+`SearchService.search()` is now cursor-paginated (`{items, nextCursor, hasMore}`, 50/page default, 1000-row `MAX_FETCH_ROWS` ceiling — see [23-known-limitations.md](./23-known-limitations.md)), not the old flat `LIMIT 50` with no continuation. The pagination mechanism itself has a real cost, though: because the featured-boost re-ranking (`FEATURED_CAP`) has to run over the *whole* fetched set to stay correct, each page request re-fetches every row from page 1 through the requested page (`page * pageSize`, capped at `MAX_FETCH_ROWS`) and re-derives the full order from scratch, rather than seeking directly to an offset. Fine at today's per-radius row counts (bounded by the 1000-row ceiling either way), but page *N* is genuinely *N* times the query cost of page 1, not constant — worth knowing before assuming "paginated" means "cheap at any page depth."
 
 ## Availability computation loads the full booking set into memory
 
@@ -26,22 +26,14 @@ This document consolidates every self-declared or observed scaling limit in the 
 
 `GET /sitemap/salon-slugs` and `GET /sitemap/blog-posts` are both fetch-all, capped only at a hardcoded 50,000-row safety ceiling (Google's single-sitemap-file limit) — a real sitemap-index (multi-file) replacement is flagged as needed before the platform approaches that many rows in either domain.
 
-## Duplicate SQL for worker eligibility
-
-The exact same "opt-out" worker-eligibility predicate (`NOT EXISTS(worker_services) OR EXISTS(worker_services WHERE service_id=...)`) is hand-written independently in `BookingsService.createHold`, `AvailabilityService.computeFor`, and `PublicSalonContentController.listWorkers` — not a performance issue per se, but a maintenance-cost multiplier that makes future rule changes error-prone across three call sites. See [09-booking-engine.md](./09-booking-engine.md) and [24-technical-debt.md](./24-technical-debt.md).
-
-## Storage cleanup has no reconciliation pass (except stories)
-
-Salon photos and portfolio items have **no GC/reconciliation job** for orphaned storage objects left behind by a failed best-effort delete — only the stories domain has this, because it already needed an hourly cron for TTL expiry. Over a long platform lifetime this accumulates orphaned S3/disk objects with real (if small) storage cost and zero automated cleanup.
-
 ## Database indexing
 
 Every hot-path query reviewed during this audit has a supporting index: `salons_location_gist` (PostGIS GIST, backs `ST_DWithin`), `bookings (salon_id, starts_at, ends_at)` + `(user_id)` + `(status)`, `reviews_salon_status_idx`, `admin_notifications_unread_idx` (partial), `worker_services_service_idx`, `salon_categories(category_id)`, etc. — see [04-database.md](./04-database.md) for the full migration-by-migration list. No missing-index issue was identified during this audit.
 
 ## Horizontal scaling considerations
 
-- The API is a single NestJS process reading `@nestjs/schedule` cron jobs **in-process** — running more than one API instance in production would need an external scheduler lock (e.g. a Redis-based leader-election) to avoid every instance running every cron job redundantly. **No such mechanism currently exists** — this is worth flagging before ever scaling the API horizontally.
-- The booking-hold Redis lock is correctly cluster-safe as written (a shared Redis instance), so horizontal API scaling would not break booking correctness on its own — only the cron-duplication concern above.
+- Every cron job (`@nestjs/schedule`) now runs through `CronJobRunner`/`CronLockService` (`common/cron-job-runner.service.ts`, `common/cron-lock.service.ts`), which wraps each tick in the same `SET NX PX` Redis primitive the booking-hold lock uses (`cron-lock:{jobName}`, self-healing TTL, no queuing/retry — a losing instance just skips that tick). Running more than one API instance no longer risks every instance running every cron job redundantly; this was the one horizontal-scaling gap flagged in an earlier pass and it's now closed.
+- The booking-hold Redis lock is correctly cluster-safe as written (a shared Redis instance), so horizontal API scaling does not break booking correctness on its own either. With the cron-duplication concern above also closed, nothing self-declared in the codebase currently blocks running more than one API instance.
 
 ## Related documents
 

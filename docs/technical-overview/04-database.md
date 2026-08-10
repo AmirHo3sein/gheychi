@@ -2,7 +2,7 @@
 
 PostgreSQL 16 + PostGIS. TypeORM 0.3 with `synchronize: false` — the migration files under `apps/api/src/migrations/` are the sole source of truth for schema. Migrations run via `pnpm --filter @gheychi/api migration:run` and are **never** run automatically on deploy/boot (a deliberate manual step — see [25-future-improvements.md](./25-future-improvements.md) / deployment docs).
 
-**Codebase-wide convention: no ORM relations.** Every entity file declares foreign keys as bare `@Column({ name: 'xxx_id' }) xxxId: string`, never a TypeORM `@ManyToOne`/`@OneToMany`/`@JoinColumn`. All joins are done by hand in service code — either a manual batched `In(...)` lookup (e.g. `SalonsService.attachCategories`, `BookingsService.attachNames`, `SalonWorkersController.attachServiceIds`) or a raw `QueryBuilder`. This is confirmed with zero exceptions across all 33 entity files.
+**Codebase-wide convention: no ORM relations.** Every entity file declares foreign keys as bare `@Column({ name: 'xxx_id' }) xxxId: string`, never a TypeORM `@ManyToOne`/`@OneToMany`/`@JoinColumn`. All joins are done by hand in service code — either a manual batched `In(...)` lookup (e.g. `SalonsService.attachCategories`, `BookingsService.attachNames`, `SalonWorkersController.attachServiceIds`) or a raw `QueryBuilder`. This is confirmed with zero exceptions across all 37 entity files.
 
 ## Full ER diagram
 
@@ -102,6 +102,9 @@ All under `apps/api/src/migrations/`, filename-timestamp-ordered. This list doub
 | `1753900000000-commission-invoicing-ledger` | Creates `financial_transactions`, `invoices` (unique `(salon_id,jalali_year,jalali_month)`), `invoice_items` (unique `financial_transaction_id`), `invoice_payments`. |
 | `1754000000000-salon-categories` | Creates `salon_categories` (composite PK), backfilled from distinct `salon_services.category_id`. |
 | `1754200000000-worker-services` | Creates `worker_services` (composite PK), no backfill (empty = unrestricted). |
+| `1754300000000-cities-table` | Creates `cities` (retires the static `iran-cities.ts` array). Adds `salons.city_id`, a nullable FK to `cities(id)` best-effort-backfilled by exact name match; `salons.city` itself stays free text and remains the actual source of truth (see [24-technical-debt.md](./24-technical-debt.md)). |
+| `1754400000000-admin-notification-reads` | Creates `admin_notification_reads` (composite PK `(notification_id, admin_id)`) for per-admin read state. |
+| `1754500000000-audit-log-filter-indexes` | Adds `audit_log (action, created_at DESC)` and `audit_log (target_type, created_at DESC)` composite indexes. |
 
 ## Table-by-table reference
 
@@ -109,7 +112,7 @@ All under `apps/api/src/migrations/`, filename-timestamp-ordered. This list doub
 `id (uuid PK)`, `phone (unique)`, `name?`, `gender? ('female'|'male')`, `role ('customer'|'provider'|'admin', default customer)`, `status ('active'|'suspended', default active)`, `created_at`. Referenced by nearly every other table.
 
 ### `salons`
-`id`, `owner_id (unique — 1 salon/owner)`, `name`, `slug (unique)`, `description?`, `tagline? (≤120)`, `about? (≤2000)`, `instagram_handle? (≤30, strict charset)`, `gender_target ('women'|'men')`, `status ('pending'→'approved'|'rejected'|'suspended')`, `rejection_reason?`, `suspended_cause? ('admin'|'owner_suspended')`, `address`, `city` (**free text, no FK to any city table**), `location geography(Point,4326)` (GIST-indexed), `capacity (default 1)`, `rating_avg numeric(3,2)` / `rating_count`, `is_featured` / `featured_until?`, `created_at`.
+`id`, `owner_id (unique — 1 salon/owner)`, `name`, `slug (unique)`, `description?`, `tagline? (≤120)`, `about? (≤2000)`, `instagram_handle? (≤30, strict charset)`, `gender_target ('women'|'men')`, `status ('pending'→'approved'|'rejected'|'suspended')`, `rejection_reason?`, `suspended_cause? ('admin'|'owner_suspended')`, `address`, `city` (**free text — still the actual source of truth, no validation against `cities`**), `city_id? (nullable FK to `cities(id)`, best-effort exact-name match on create/update — see [24-technical-debt.md](./24-technical-debt.md))`, `location geography(Point,4326)` (GIST-indexed), `capacity (default 1)`, `rating_avg numeric(3,2)` / `rating_count`, `is_featured` / `featured_until?`, `created_at`.
 
 ### `salon_services`
 `id`, `salon_id (cascade)`, `category_id (restrict)`, `name`, `description?`, `price bigint`, `duration_min`, `is_active (default true)`, `discount_percent? (1–100)`, `created_at`.
@@ -166,13 +169,19 @@ Composite PK `(user_id, salon_id)`, both cascade.
 `id`, `user_id (cascade)`, `endpoint (unique)`, `p256dh`, `auth`, `created_at`.
 
 ### `audit_log`
-`id`, `actor_id`, `action (≤60)`, `target_type (≤30)`, `target_id? (≤64, polymorphic, not FK'd)`, `payload? jsonb`, `success bool`, `created_at`. Indexed on `created_at DESC` and `actor_id`.
+`id`, `actor_id`, `action (≤60)`, `target_type (≤30)`, `target_id? (≤64, polymorphic, not FK'd)`, `payload? jsonb`, `success bool`, `created_at`. Indexed on `created_at DESC`, `actor_id`, and composite `(action, created_at DESC)` / `(target_type, created_at DESC)` (support `AuditService.listForAdmin`'s action-only/type-only filters without falling back to a full scan).
 
 ### `reports`
 `id`, `reporter_id`, `salon_id (not null)`, `review_id? (SET NULL)`, `story_id? (SET NULL)`, `portfolio_item_id? (SET NULL)`, `target_type ('salon'|'review'|'story'|'portfolio')`, `reason (5–500 chars)`, `status ('open'|...)`, `resolution_note?`, `resolved_by?`, `resolved_at?`, `created_at`. Partial unique index `reports_open_target_uidx` dedupes one open report per reporter per target, deliberately excluding orphaned story/portfolio reports (see [08-admin-panel.md](./08-admin-panel.md)).
 
 ### `admin_notifications`
-`id`, `type (≤40)`, `title`, `body?`, `link?`, `read_at?` (**one shared column — not per-admin**), `created_at`.
+`id`, `type (≤40)`, `title`, `body?`, `link?`, `read_at?` (legacy shared column, kept for rollback safety but no longer the source of truth — see `admin_notification_reads` below), `created_at`.
+
+### `admin_notification_reads` — join table
+Composite PK `(notification_id, admin_id)`, both cascade. `read_at`. The real per-admin read state as of `1754400000000-admin-notification-reads`: one admin marking a notification read no longer marks it read for every admin. No backfill on introduction — every notification starts unread for every admin under the new model.
+
+### `cities`
+`id (serial PK)`, `name (unique)`, `slug (unique)`, `province`, `lat`/`lng (double precision)`, `sort_order`, `created_at`. DB-backed replacement for the old static `iran-cities.ts` array, seeded once by `1754300000000-cities-table` and read through an in-process cache (`CitiesService`, no admin mutation endpoint exists). See `salons.city_id` below and [24-technical-debt.md](./24-technical-debt.md) for why `salons.city` itself still isn't validated against it.
 
 ### `platform_config`
 `key (varchar PK)` → `value (jsonb)`. Generic key/value store for tunable business constants — see [20-business-rules.md](./20-business-rules.md).
@@ -212,15 +221,15 @@ PK `referral_type ('user'|'salon_owner'|'worker')` — exactly 3 fixed rows. `en
 
 ## Composite-PK join tables (no surrogate `id`)
 
-`salon_favorites (user_id, salon_id)`, `salon_categories (salon_id, category_id)`, `worker_services (worker_id, service_id)`, `wallet_balances (user_id, currency)`. Two other "one-per-pair" tables use a uuid surrogate PK plus a DB-level `UNIQUE` constraint instead of a composite PK: `coupon_redemptions` (`UNIQUE(coupon_id,user_id)`) and `worker_ratings` (`UNIQUE(review_id)`) — an inconsistent pattern worth knowing about, not a bug.
+`salon_favorites (user_id, salon_id)`, `salon_categories (salon_id, category_id)`, `worker_services (worker_id, service_id)`, `wallet_balances (user_id, currency)`, `admin_notification_reads (notification_id, admin_id)`. Two other "one-per-pair" tables use a uuid surrogate PK plus a DB-level `UNIQUE` constraint instead of a composite PK: `coupon_redemptions` (`UNIQUE(coupon_id,user_id)`) and `worker_ratings` (`UNIQUE(review_id)`) — an inconsistent pattern worth knowing about, not a bug.
 
 ## `bigint` transformers
 
-Postgres returns `bigint` columns as JS strings by default; every money/amount column gets a local `bigintToNumber` (or `nullableBigintToNumber`) TypeORM transformer, **copy-pasted independently into 10 separate entity files** rather than shared from one utility (see [24-technical-debt.md](./24-technical-debt.md)): `SalonService.price`, `Booking.priceSnapshot/depositAmount/discountFixedAmount/originalPriceSnapshot/walletAmountUsed`, `Payment.amount`, `Coupon.discountFixedAmount`, `CouponRedemption.discountAmount`, `WalletBalance.balance`, `WalletTransaction.amount/balanceAfter`, `FinancialTransaction.grossAmount/commissionAmount/netAmount`, `Invoice.*`, `InvoiceItem.*`, `InvoicePayment.amount`. Referral `numeric(12,2)` columns get a parallel `numericToNumber` transformer. **Three rating/rate `numeric` columns deliberately have no transformer** (`Salon.ratingAvg`, `Worker.ratingAvg`, `FinancialTransaction.commissionRate`) — callers coerce with `Number()` manually.
+Postgres returns `bigint` columns as JS strings by default; every money/amount column gets a `bigintToNumber` (or `nullableBigintToNumber`) TypeORM transformer, imported from the single shared `common/numeric-transformers.ts` (previously copy-pasted independently into 10 separate entity files — see [24-technical-debt.md](./24-technical-debt.md), now resolved): `SalonService.price`, `Booking.priceSnapshot/depositAmount/discountFixedAmount/originalPriceSnapshot/walletAmountUsed`, `Payment.amount`, `Coupon.discountFixedAmount`, `CouponRedemption.discountAmount`, `WalletBalance.balance`, `WalletTransaction.amount/balanceAfter`, `FinancialTransaction.grossAmount/commissionAmount/netAmount`, `Invoice.*`, `InvoiceItem.*`, `InvoicePayment.amount`. Referral `numeric(12,2)` columns get a parallel `numericToNumber`/`nullableNumericToNumber` transformer from the same file. **Three rating/rate `numeric` columns deliberately have no transformer** (`Salon.ratingAvg`, `Worker.ratingAvg`, `FinancialTransaction.commissionRate`) — callers coerce with `Number()` manually.
 
 ## Known schema oddities
 
-- **No `cities` table.** `salons.city` is free text with no FK/lookup table and no validation against the canonical `GET /cities` static list (`apps/api/src/cities/iran-cities.ts`) — city-name drift/typos are possible and unguarded against.
+- **`cities` is a real table now, but `salons.city` still isn't validated against it.** `1754300000000-cities-table` promoted the old static `iran-cities.ts` array into a `cities` table and added `salons.city_id` as a nullable, best-effort FK — but `salons.city` (the actual free-text source of truth for a salon's address) is still unenforced against it, so city-name drift/typos on that column remain possible. See the `cities`/`salons` entries above and [24-technical-debt.md](./24-technical-debt.md).
 - **`payment_authorities` has no TypeORM entity** — the only table in the schema accessed exclusively via raw SQL.
 - **PostGIS**: `salons.location geography(Point,4326)`, typed in TypeScript as a hand-rolled `GeoPoint { type:'Point', coordinates:[lng,lat] }` interface, not a TypeORM-provided geometry type. GeoJSON/PostGIS convention is `[lng, lat]` — easy to get backwards.
 - **Data-correction migrations exist in the history**: `1753600000000-shift-bookings-to-real-utc-instants` (pure data fix for a timezone bug, no DDL) and `1752400000000-localize-service-categories` (reconciling a category set that had been hand-edited directly on a local DB outside of migrations at some point) — both worth knowing about as operational history, not schema to memorize.

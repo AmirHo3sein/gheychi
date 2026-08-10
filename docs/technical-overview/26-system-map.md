@@ -21,7 +21,8 @@ A cross-cutting reference: the development timeline mapped to the files each sta
 | — Coupons & discounts (2026-07-19) | Coupon codes, per-service discounts | `coupons/`, `booking/discount.util.ts` |
 | — Referrals & ratings (2026-07-22) | Workers, worker ratings, wallet, referral program | `salons/worker.entity.ts`, `reviews/worker-rating.entity.ts`, `wallet/`, `referrals/` |
 | — Commission & invoicing | Per-booking commission, monthly invoices | `invoicing/` |
-| — Multi-category + worker restrictions (most recent) | Salon category tagging, per-worker service eligibility | `salons/salon-category.entity.ts`, `salons/worker-service.entity.ts` |
+| — Multi-category + worker restrictions | Salon category tagging, per-worker service eligibility | `salons/salon-category.entity.ts`, `salons/worker-service.entity.ts`, `salons/worker-eligibility.service.ts` |
+| — Production-readiness hardening (2026-08-07, most recent) | Cron job distributed locking/failure paging, cursor-paginated search, categories cache, cities promoted to a real DB table, stored-XSS closed, OTP per-IP rate limiting, N+1 fixes | `common/cron-job-runner.service.ts`, `common/cron-lock.service.ts`, `search/search.service.ts`, `cities/`, `common/trusted-image-upload.ts`, `auth/otp.service.ts` |
 
 Design specs live in `docs/superpowers/specs/`, execution records in `docs/superpowers/plans/`, one file per plan — treat these as the historical "why," while this documentation set is the current "what."
 
@@ -31,7 +32,7 @@ Design specs live in `docs/superpowers/specs/`, execution records in `docs/super
 |---|---|---|
 | Auth | `apps/api/src/auth/` | `auth.controller.ts`, `auth.service.ts` (OtpService), `auth.guard.ts`, `roles.guard.ts` |
 | Users | `apps/api/src/users/` | `user.entity.ts`, `users.service.ts`, `admin-users.controller.ts`, `admin-users.service.ts` |
-| Salons | `apps/api/src/salons/` | `salon.entity.ts`, `salons.service.ts`, `salon-owner.guard.ts`, `worker.entity.ts`, `worker-service.entity.ts`, `salon-category.entity.ts` |
+| Salons | `apps/api/src/salons/` | `salon.entity.ts`, `salons.service.ts`, `salon-owner.guard.ts`, `worker.entity.ts`, `worker-service.entity.ts`, `worker-eligibility.service.ts`, `salon-category.entity.ts` |
 | Booking | `apps/api/src/booking/` | `booking.entity.ts`, `bookings.service.ts`, `availability.service.ts`/`.util.ts`, `deposit.util.ts`, jobs |
 | Payments | `apps/api/src/booking/` (same module) | `payment.entity.ts`, `payment-gateway.ts`, `zarinpal-payment.gateway.ts`, `payments.service.ts` |
 | Reviews | `apps/api/src/reviews/` | `review.entity.ts`, `worker-rating.entity.ts`, `reviews.service.ts` |
@@ -45,7 +46,7 @@ Design specs live in `docs/superpowers/specs/`, execution records in `docs/super
 | Content/Blog | `apps/api/src/content/` | `blog-post.entity.ts`, `blog-category.entity.ts`, `content.service.ts` |
 | Search | `apps/api/src/search/` | `search.service.ts` |
 | Catalog | `apps/api/src/catalog/` | `service-category.entity.ts` |
-| Cities | `apps/api/src/cities/` | `iran-cities.ts` (static, no DB) |
+| Cities | `apps/api/src/cities/` | `city.entity.ts`, `cities.service.ts` (DB-backed, in-process cached; retired the old static `iran-cities.ts`) |
 | Favorites | `apps/api/src/favorites/` | `favorite.entity.ts` |
 | Push | `apps/api/src/push/` | `push-subscription.entity.ts`, `push.service.ts`, `web-push.provider.ts` |
 | SMS | `apps/api/src/sms/` | `sms.provider.ts`, `kavenegar-sms.provider.ts` |
@@ -53,7 +54,7 @@ Design specs live in `docs/superpowers/specs/`, execution records in `docs/super
 | Alerts | `apps/api/src/alerts/` | `alerts.service.ts` |
 | Platform config | `apps/api/src/platform-config/` | `platform-config.entity.ts`, `platform-config.service.ts` |
 | Redis | `apps/api/src/redis/` | `redis.module.ts` |
-| Common utils | `apps/api/src/common/` + top-level | `postgres-error-codes.ts`, `slug.util.ts`, `cors-origins.util.ts` |
+| Common utils | `apps/api/src/common/` + top-level | `postgres-error-codes.ts`, `slug.util.ts`, `cors-origins.util.ts`, `numeric-transformers.ts`, `cron-job-runner.service.ts`/`cron-lock.service.ts`, `trusted-image-upload.ts`, `request-logging.middleware.ts` |
 
 | Frontend app | Directory | Entry points |
 |---|---|---|
