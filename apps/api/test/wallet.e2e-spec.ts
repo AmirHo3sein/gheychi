@@ -100,7 +100,7 @@ describe('Wallet ledger + admin manual adjustment (e2e)', () => {
     });
   });
 
-  it('a successful admin adjustment writes a real audit_log row with the reason in the payload', async () => {
+  it('a successful admin adjustment writes a real audit_log row with the reason and a before/after balance diff', async () => {
     const log = await request(app.getHttpServer())
       .get('/api/admin/audit-log')
       .set('Cookie', adminCookie)
@@ -114,6 +114,10 @@ describe('Wallet ledger + admin manual adjustment (e2e)', () => {
     expect(row).toBeDefined();
     expect(row.targetType).toBe('wallet');
     expect(row.success).toBe(true);
+    // Fresh user had no wallet_balances row at all, so "before" reports 0 --
+    // "after" reports the real post-credit balance, not just the requested amount.
+    expect(row.payload.before).toEqual({ userId: customerUserId, currency: 'toman', balance: 0 });
+    expect(row.payload.after).toEqual({ userId: customerUserId, currency: 'toman', balance: 100000 });
   });
 
   it('admin attempts to debit more than the balance and gets a clean 400, balance unchanged', async () => {

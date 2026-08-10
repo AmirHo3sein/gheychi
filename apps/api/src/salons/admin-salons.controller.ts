@@ -1,5 +1,6 @@
-import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Patch, Query, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Patch, Query, Req, UseGuards, UseInterceptors } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Request } from 'express';
 import { Repository } from 'typeorm';
 import { AuditAction } from '../audit/audit.decorator';
 import { AuditInterceptor } from '../audit/audit.interceptor';
@@ -75,8 +76,20 @@ export class AdminSalonsController {
   @Patch(':id/status')
   @UseInterceptors(AuditInterceptor)
   @AuditAction('salon.status.set', 'salon')
-  setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateSalonStatusDto) {
-    return this.salonsService.setStatus(id, dto);
+  async setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateSalonStatusDto, @Req() req: Request) {
+    // Real before/after diff for AuditInterceptor (see its doc comment). Left
+    // unset (falls back to the raw request body) when the salon doesn't exist --
+    // SalonsService.setStatus below still owns the 404, this fetch just can't
+    // contribute a "before" snapshot in that case. Deliberately not touching
+    // salons.service.ts itself here (see task scope note on concurrent edits).
+    const before = await this.salons.findOneBy({ id });
+    if (before) {
+      req.auditBefore = { status: before.status, rejectionReason: before.rejectionReason, suspendedCause: before.suspendedCause };
+    }
+
+    const updated = await this.salonsService.setStatus(id, dto);
+    req.auditAfter = { status: updated.status, rejectionReason: updated.rejectionReason, suspendedCause: updated.suspendedCause };
+    return updated;
   }
 
   @Patch(':id/featured')

@@ -43,7 +43,7 @@ describe('Admin audit log (e2e)', () => {
     await app.close();
   });
 
-  it('captures an admin salon approval as a success row with actor identity', async () => {
+  it('captures an admin salon approval as a success row with actor identity and a real before/after diff', async () => {
     await request(app.getHttpServer())
       .patch(`/api/admin/salons/${salonId}/status`)
       .set('Cookie', adminCookie)
@@ -62,10 +62,18 @@ describe('Admin audit log (e2e)', () => {
     expect(row.targetType).toBe('salon');
     expect(row.actorId).toBe(adminId);
     expect(row.actorPhone).toBe('09127770001');
-    expect(row.payload).toEqual({ status: 'approved' });
+    // Payload carries the raw request body (unchanged from before diff capture
+    // existed) plus a real before/after snapshot of the fields that actually
+    // moved -- a freshly-created salon starts 'pending' with no rejection reason
+    // or suspension cause.
+    expect(row.payload).toEqual({
+      status: 'approved',
+      before: { status: 'pending', rejectionReason: null, suspendedCause: null },
+      after: { status: 'approved', rejectionReason: null, suspendedCause: null },
+    });
   });
 
-  it('captures the request body verbatim, including Farsi text', async () => {
+  it('captures the request body verbatim, including Farsi text, alongside the before/after diff', async () => {
     await request(app.getHttpServer())
       .patch(`/api/admin/salons/${salonId}/status`)
       .set('Cookie', adminCookie)
@@ -82,7 +90,12 @@ describe('Admin audit log (e2e)', () => {
       (item: { payload: { status?: string } | null }) => item.payload?.status === 'suspended',
     );
     expect(row).toBeDefined();
-    expect(row.payload).toEqual({ status: 'suspended', reason: 'شکایت مشتری از بهداشت سالن' });
+    expect(row.payload).toEqual({
+      status: 'suspended',
+      reason: 'شکایت مشتری از بهداشت سالن',
+      before: { status: 'approved', rejectionReason: null, suspendedCause: null },
+      after: { status: 'suspended', rejectionReason: 'شکایت مشتری از بهداشت سالن', suspendedCause: 'admin' },
+    });
   });
 
   it('writes a success:false row when the mutation 404s, and still returns the 404', async () => {
@@ -101,6 +114,10 @@ describe('Admin audit log (e2e)', () => {
     const row = res.body.items.find((item: { targetId: string | null }) => item.targetId === ZERO_UUID);
     expect(row).toBeDefined();
     expect(row.success).toBe(false);
+    // Salon doesn't exist, so the controller never had a "before" snapshot to
+    // stash -- payload falls back to the plain request body, same as every
+    // other (non-diff-capturing) audited route.
+    expect(row.payload).toEqual({ status: 'approved' });
   });
 
   it('filters by action', async () => {

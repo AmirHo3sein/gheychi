@@ -11,19 +11,26 @@ describe('AdminWalletController', () => {
   let credit: jest.Mock;
   let debit: jest.Mock;
   let getTransactionsForAdmin: jest.Mock;
+  let getBalances: jest.Mock;
   let dataSource: { transaction: jest.Mock };
+  // Real controller logic (not the interceptor -- see audit.interceptor.spec.ts for
+  // that) stashes the wallet's before/after balance on this plain object, mirroring
+  // what AuditInterceptor would read off the real Express request.
+  let req: { auditBefore?: unknown; auditAfter?: unknown };
 
   beforeEach(() => {
     credit = jest.fn();
     debit = jest.fn();
     getTransactionsForAdmin = jest.fn();
+    getBalances = jest.fn().mockResolvedValue([]);
     // transaction() just invokes the callback with a fake `em` and returns its result
     // (or lets it throw), mirroring DataSource.transaction's real contract closely
     // enough to exercise the controller's dispatch/validation logic.
     dataSource = { transaction: jest.fn((cb: (em: unknown) => unknown) => cb({})) };
+    req = {};
 
     controller = new AdminWalletController(
-      { credit, debit, getTransactionsForAdmin } as unknown as WalletService,
+      { credit, debit, getTransactionsForAdmin, getBalances } as unknown as WalletService,
       dataSource as unknown as DataSource,
     );
   });
@@ -39,14 +46,14 @@ describe('AdminWalletController', () => {
   describe('POST /adjust', () => {
     it('rejects amount === 0 with 400, without opening a transaction', async () => {
       await expect(
-        controller.adjust({ userId: 'u1', amount: 0, reason: 'oops' }),
+        controller.adjust({ userId: 'u1', amount: 0, reason: 'oops' }, req as never),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(dataSource.transaction).not.toHaveBeenCalled();
     });
 
     it('routes a positive amount to WalletService.credit with the reason and default currency', async () => {
       credit.mockResolvedValue({ balanceAfter: 1500 });
-      const result = await controller.adjust({ userId: 'u1', amount: 500, reason: 'goodwill credit' });
+      const result = await controller.adjust({ userId: 'u1', amount: 500, reason: 'goodwill credit' }, req as never);
 
       expect(credit).toHaveBeenCalledWith(expect.anything(), 'u1', 'toman', 500, 'admin_adjustment', {
         reason: 'goodwill credit',
@@ -57,7 +64,7 @@ describe('AdminWalletController', () => {
 
     it('routes a negative amount to WalletService.debit with the positive magnitude', async () => {
       debit.mockResolvedValue({ debited: 300, shortfall: 0, balanceAfter: 700 });
-      const result = await controller.adjust({ userId: 'u1', amount: -300, reason: 'correcting a mistake' });
+      const result = await controller.adjust({ userId: 'u1', amount: -300, reason: 'correcting a mistake' }, req as never);
 
       expect(debit).toHaveBeenCalledWith(expect.anything(), 'u1', 'toman', 300, 'admin_adjustment', {
         reason: 'correcting a mistake',
@@ -68,7 +75,7 @@ describe('AdminWalletController', () => {
 
     it('honors an explicit currency', async () => {
       credit.mockResolvedValue({ balanceAfter: 10 });
-      await controller.adjust({ userId: 'u1', amount: 10, currency: 'points', reason: 'loyalty fix' });
+      await controller.adjust({ userId: 'u1', amount: 10, currency: 'points', reason: 'loyalty fix' }, req as never);
       expect(credit).toHaveBeenCalledWith(expect.anything(), 'u1', 'points', 10, 'admin_adjustment', {
         reason: 'loyalty fix',
       });
@@ -78,8 +85,30 @@ describe('AdminWalletController', () => {
       debit.mockResolvedValue({ debited: 40, shortfall: 60, balanceAfter: 0 });
 
       await expect(
-        controller.adjust({ userId: 'u1', amount: -100, reason: 'correcting a mistake' }),
+        controller.adjust({ userId: 'u1', amount: -100, reason: 'correcting a mistake' }, req as never),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('stashes the pre- and post-adjustment balance on req for AuditInterceptor to diff', async () => {
+      getBalances.mockResolvedValue([{ userId: 'u1', currency: 'toman', balance: 1000 }]);
+      credit.mockResolvedValue({ balanceAfter: 1500 });
+
+      await controller.adjust({ userId: 'u1', amount: 500, reason: 'goodwill credit' }, req as never);
+
+      expect(req.auditBefore).toEqual({ userId: 'u1', currency: 'toman', balance: 1000 });
+      expect(req.auditAfter).toEqual({ userId: 'u1', currency: 'toman', balance: 1500 });
+    });
+
+    it('leaves req.auditAfter unset when a debit is rejected for insufficient balance', async () => {
+      getBalances.mockResolvedValue([{ userId: 'u1', currency: 'toman', balance: 40 }]);
+      debit.mockResolvedValue({ debited: 40, shortfall: 60, balanceAfter: 0 });
+
+      await expect(
+        controller.adjust({ userId: 'u1', amount: -100, reason: 'correcting a mistake' }, req as never),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(req.auditBefore).toEqual({ userId: 'u1', currency: 'toman', balance: 40 });
+      expect(req.auditAfter).toBeUndefined();
     });
   });
 });

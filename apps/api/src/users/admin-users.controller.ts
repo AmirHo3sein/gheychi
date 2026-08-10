@@ -54,7 +54,16 @@ export class AdminUsersController {
   @Patch(':id/status')
   @UseInterceptors(AuditInterceptor)
   @AuditAction('user.status.set', 'user')
-  setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateUserStatusDto, @Req() req: Request) {
-    return this.adminUsers.setStatus((req.user as User).id, id, dto.status);
+  async setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateUserStatusDto, @Req() req: Request) {
+    // Real before/after status diff for AuditInterceptor (see its doc comment).
+    // Left unset (falls back to the raw request body) when the target user
+    // doesn't exist -- AdminUsersService.setStatus below still 404s exactly as
+    // before, this fetch just can't contribute a "before" snapshot in that case.
+    const before = await this.users.findOne({ where: { id }, select: ['id', 'status'] });
+    if (before) req.auditBefore = { status: before.status };
+
+    const updated = await this.adminUsers.setStatus((req.user as User).id, id, dto.status);
+    req.auditAfter = { status: updated.status };
+    return updated;
   }
 }

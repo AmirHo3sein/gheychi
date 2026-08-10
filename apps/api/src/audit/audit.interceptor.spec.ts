@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { ExecutionContext, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ExecutionContext, Logger, NotFoundException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { lastValueFrom, of, throwError } from 'rxjs';
 import { Repository } from 'typeorm';
@@ -116,6 +116,80 @@ describe('AuditInterceptor', () => {
       payload: { status: 'approved' },
       success: false,
     });
+  });
+
+  it('folds an explicit req.auditBefore/auditAfter into a {...body, before, after} payload on success', async () => {
+    const interceptor = new AuditInterceptor(
+      reflectorReturning({ action: 'salon.status.set', targetType: 'salon', targetIdParam: 'id' }),
+      audit,
+    );
+    const req = {
+      user: { id: 'admin-1' },
+      params: { id: 'salon-9' },
+      body: { status: 'approved' },
+      auditBefore: { status: 'pending' },
+      auditAfter: { status: 'approved' },
+    };
+
+    await lastValueFrom(interceptor.intercept(mockContext(req), { handle: () => of({ id: 'salon-9' }) }));
+
+    expect(record).toHaveBeenCalledWith({
+      actorId: 'admin-1',
+      action: 'salon.status.set',
+      targetType: 'salon',
+      targetId: 'salon-9',
+      payload: { status: 'approved', before: { status: 'pending' }, after: { status: 'approved' } },
+      success: true,
+    });
+  });
+
+  it('records after: null when req.auditBefore is set but the handler rejects before computing auditAfter', async () => {
+    const interceptor = new AuditInterceptor(
+      reflectorReturning({ action: 'wallet.adjust', targetType: 'wallet', targetIdParam: 'id' }),
+      audit,
+    );
+    const req = {
+      user: { id: 'admin-1' },
+      params: {},
+      body: { userId: 'u1', amount: -999999, reason: 'oops' },
+      auditBefore: { userId: 'u1', currency: 'toman', balance: 40 },
+      // auditAfter deliberately left unset -- the debit was rejected before it was computed.
+    };
+
+    await expect(
+      lastValueFrom(
+        interceptor.intercept(mockContext(req), { handle: () => throwError(() => new BadRequestException()) }),
+      ),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(record).toHaveBeenCalledWith({
+      actorId: 'admin-1',
+      action: 'wallet.adjust',
+      targetType: 'wallet',
+      targetId: null,
+      payload: {
+        userId: 'u1',
+        amount: -999999,
+        reason: 'oops',
+        before: { userId: 'u1', currency: 'toman', balance: 40 },
+        after: null,
+      },
+      success: false,
+    });
+  });
+
+  it('falls back to the plain request body when req.auditBefore is left unset (every other @AuditAction call site)', async () => {
+    const interceptor = new AuditInterceptor(
+      reflectorReturning({ action: 'category.update', targetType: 'category', targetIdParam: 'id' }),
+      audit,
+    );
+    const req = { user: { id: 'admin-1' }, params: { id: 'cat-1' }, body: { name: 'مو' } };
+
+    await lastValueFrom(interceptor.intercept(mockContext(req), { handle: () => of({ id: 'cat-1' }) }));
+
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: { name: 'مو' } }),
+    );
   });
 
   it('reads targetId off a custom targetIdParam for a route whose param is not named :id', async () => {

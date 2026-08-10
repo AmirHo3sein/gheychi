@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Patch, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Req, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Request } from 'express';
 import { AuditAction } from '../audit/audit.decorator';
 import { AuditInterceptor } from '../audit/audit.interceptor';
 import { Roles } from '../auth/roles.decorator';
@@ -20,8 +21,15 @@ export class AdminConfigController {
   @Patch()
   @UseInterceptors(AuditInterceptor)
   @AuditAction('config.update', 'config')
-  async update(@Body() dto: UpdateConfigDto) {
+  async update(@Body() dto: UpdateConfigDto, @Req() req: Request) {
+    // Real before/after diff for AuditInterceptor (see its doc comment). Full
+    // snapshots rather than just the changed keys -- listAll() is already cheap
+    // (one small table) and a full snapshot lets an auditor see the config's
+    // whole state at the time of the change, not just the delta.
+    req.auditBefore = await this.config.listAll();
     await this.config.setMany(dto.updates);
-    return this.config.listAll();
+    const after = await this.config.listAll();
+    req.auditAfter = after;
+    return after;
   }
 }
