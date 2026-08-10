@@ -128,18 +128,21 @@ watch(page, load)
       <AppIcon name="spinner" :size="24" class="animate-spin text-(--color-text-muted)" />
     </div>
 
-    <div
+    <AppCard
       v-else-if="loadError"
+      :padded="false"
       data-testid="reports-error"
-      class="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-(--tone-danger-text) py-16 text-center"
+      class="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center"
     >
-      <AppIcon name="warning" :size="22" class="text-(--tone-danger-text)" />
-      <p class="text-sm text-(--tone-danger-text)">بارگذاری گزارش‌ها با خطا مواجه شد. ممکن است گزارش‌های باز دیده‌نشده وجود داشته باشند.</p>
+      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)">
+        <AppIcon name="warning" :size="22" />
+      </div>
+      <p class="text-sm text-(--color-text-muted)">بارگذاری گزارش‌ها با خطا مواجه شد. ممکن است گزارش‌های باز دیده‌نشده وجود داشته باشند.</p>
       <AppButton type="button" variant="secondary" data-testid="reports-retry" @click="load">
         <template #icon><AppIcon name="reset" :size="15" /></template>
         تلاش مجدد
       </AppButton>
-    </div>
+    </AppCard>
 
     <EmptyState v-else-if="reports.length === 0" icon="flag" message="گزارشی با این وضعیت وجود ندارد." />
 

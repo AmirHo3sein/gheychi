@@ -162,15 +162,21 @@ onMounted(load)
       در حال بارگذاری تنظیمات…
     </div>
 
-    <div v-else-if="loadError" data-testid="config-load-error" role="alert" class="space-y-3 rounded-xl bg-(--tone-danger-bg) p-5 text-center">
-      <p class="flex items-center justify-center gap-2 text-sm text-(--tone-danger-text)">
-        <AppIcon name="warning" :size="16" />
-        بارگذاری تنظیمات پلتفرم با خطا مواجه شد.
-      </p>
+    <AppCard
+      v-else-if="loadError"
+      :padded="false"
+      data-testid="config-load-error"
+      role="alert"
+      class="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center"
+    >
+      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)">
+        <AppIcon name="warning" :size="22" />
+      </div>
+      <p class="text-sm text-(--color-text-muted)">بارگذاری تنظیمات پلتفرم با خطا مواجه شد.</p>
       <AppButton type="button" variant="secondary" data-testid="config-retry-button" @click="load">
         تلاش مجدد
       </AppButton>
-    </div>
+    </AppCard>
 
     <template v-else-if="!confirming">
       <p class="text-sm text-(--color-text-muted)">
