@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ApiError } from '~/composables/useApi'
 import { applyDiscount } from '../../../utils/discount'
 import { formatToman } from '../../../utils/format-toman'
 
@@ -191,12 +192,22 @@ function customerFacingMessage(message: string | undefined): string | null {
   return message && PERSIAN_TEXT.test(message) ? message : null
 }
 
-// A coupon rejection from POST /bookings arrives as a plain 400 with no machine-readable
-// code, so the only signal available is that the message names the coupon -- "کد تخفیف"
-// appears in every one of CouponsService.resolveAndValidate's rejections and in createHold's
-// own duplicate-redemption catch. Copy-coupled by necessity; an error code on the response
-// body would make this robust (reported upstream).
-function mentionsCoupon(message: string): boolean {
+// A coupon rejection from POST /bookings now carries a stable, machine-readable `code`
+// (see apps/api's coupon-error-codes.ts) whenever the API returned a real, structured
+// JSON body -- CouponsService.resolveAndValidate's four rejections and createHold's own
+// duplicate-redemption race backstop all set one. Checking `code` against that fixed set
+// is the primary signal here, immune to any future rewording of the Persian message.
+// The substring check on the message is kept ONLY as a fallback for a response with no
+// structured body at all (e.g. a network-level failure, or -- defensively -- an older/
+// unexpected API response that never carried a code), not as the primary signal anymore.
+const COUPON_ERROR_CODES = new Set([
+  'COUPON_INVALID',
+  'COUPON_EXPIRED',
+  'COUPON_ALREADY_REDEEMED',
+  'COUPON_LIMIT_REACHED',
+])
+function mentionsCoupon(error: ApiError | null, message: string): boolean {
+  if (error?.code) return COUPON_ERROR_CODES.has(error.code)
   return message.includes('کد تخفیف')
 }
 
@@ -267,7 +278,7 @@ async function confirmBooking() {
     // no way to learn that the coupon was the blocker. The dead code is dropped instead and
     // the slot is deliberately KEPT: the slot was never the problem, and the retry now
     // succeeds without the code.
-    if (appliedCoupon.value && reason && mentionsCoupon(reason)) {
+    if (appliedCoupon.value && reason && mentionsCoupon(error, reason)) {
       appliedCoupon.value = null
       couponError.value = reason
       submitError.value = 'کد تخفیف از این رزرو برداشته شد؛ می‌توانید بدون آن پرداخت را ادامه دهید'

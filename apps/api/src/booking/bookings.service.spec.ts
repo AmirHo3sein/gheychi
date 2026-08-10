@@ -2,8 +2,10 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource, In, LessThan, MoreThan, Not } from 'typeorm';
+import { DataSource, In, LessThan, MoreThan, Not, QueryFailedError } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
+import { UNIQUE_VIOLATION } from '../common/postgres-error-codes';
+import { COUPON_ALREADY_REDEEMED } from '../coupons/coupon-error-codes';
 import { CouponRedemption } from '../coupons/coupon-redemption.entity';
 import { CouponsService } from '../coupons/coupons.service';
 import { InvoicingService } from '../invoicing/invoicing.service';
@@ -360,6 +362,26 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
     // The booking is already committed; failing the request would invite a double-book.
     expect(result.booking.id).toBe('booking-1');
     expect(result.paymentRequired).toBe(false);
+  });
+
+  // resolveAndValidate's own already-used check is a best-effort pre-check that can lose
+  // a genuine concurrent-request race -- UNIQUE(coupon_id, user_id) is the real backstop,
+  // caught and translated at the CouponRedemption em.save() call site. This must surface
+  // the exact same code as the ordinary (non-race) already-redeemed rejection above, since
+  // it's the same real-world failure from a caller's point of view.
+  it('translates a concurrent duplicate-redemption race into the same code as the ordinary already-redeemed rejection', async () => {
+    resolveAndValidate.mockResolvedValue({ id: 'coupon-1', discountPercent: 10, discountFixedAmount: null });
+    const raceErr = new QueryFailedError('query', [], new Error('duplicate key'));
+    (raceErr as unknown as { code: string }).code = UNIQUE_VIOLATION;
+    emSave.mockImplementation(async (entity: unknown, obj: Record<string, unknown>) => {
+      if (entity === CouponRedemption) throw raceErr;
+      return { id: entity === Payment ? 'pay-1' : 'booking-1', ...obj };
+    });
+
+    const promise = service.createHold('customer-1', { ...DTO, couponCode: 'WELCOME10' });
+    await expect(promise).rejects.toThrow(BadRequestException);
+    await expect(promise).rejects.toThrow('شما قبلا از این کد تخفیف استفاده کرده‌اید');
+    await expect(promise).rejects.toMatchObject({ response: { code: COUPON_ALREADY_REDEEMED } });
   });
 
   describe('customer-chosen worker', () => {

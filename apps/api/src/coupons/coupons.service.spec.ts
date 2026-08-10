@@ -1,9 +1,23 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { EntityManager, QueryFailedError } from 'typeorm';
 import { UNIQUE_VIOLATION } from '../common/postgres-error-codes';
+import { COUPON_ALREADY_REDEEMED, COUPON_EXPIRED, COUPON_INVALID, COUPON_LIMIT_REACHED } from './coupon-error-codes';
 import { CouponRedemption } from './coupon-redemption.entity';
 import { Coupon } from './coupon.entity';
 import { CouponsService } from './coupons.service';
+
+// Every coupon-validation rejection is a BadRequestException whose response body now
+// carries a stable `code` alongside the existing Persian `message` (see
+// coupon-error-codes.ts) -- this reads that `code` back off the rejected promise so
+// each test below can assert on it without duplicating the whole rejection setup.
+async function rejectionCode(promise: Promise<unknown>): Promise<string | undefined> {
+  try {
+    await promise;
+  } catch (err) {
+    return (err as { response?: { code?: string } }).response?.code;
+  }
+  throw new Error('expected promise to reject');
+}
 
 function makeCoupon(overrides: Partial<Coupon> = {}): Coupon {
   return {
@@ -74,11 +88,13 @@ describe('CouponsService.resolveAndValidate', () => {
     couponsRepo.findOneBy.mockResolvedValue(null);
     await expect(service.resolveAndValidate('NOPE', 'salon-1', 'user-1')).rejects.toThrow(BadRequestException);
     await expect(service.resolveAndValidate('NOPE', 'salon-1', 'user-1')).rejects.toThrow('کد تخفیف نامعتبر است');
+    expect(await rejectionCode(service.resolveAndValidate('NOPE', 'salon-1', 'user-1'))).toBe(COUPON_INVALID);
   });
 
   it('rejects an inactive coupon with the same generic message', async () => {
     couponsRepo.findOneBy.mockResolvedValue(makeCoupon({ isActive: false }));
     await expect(service.resolveAndValidate('SUMMER20', 'salon-1', 'user-1')).rejects.toThrow('کد تخفیف نامعتبر است');
+    expect(await rejectionCode(service.resolveAndValidate('SUMMER20', 'salon-1', 'user-1'))).toBe(COUPON_INVALID);
   });
 
   it('rejects a salon-scoped code when used against a different salon, without leaking that it exists', async () => {
@@ -86,6 +102,7 @@ describe('CouponsService.resolveAndValidate', () => {
     await expect(service.resolveAndValidate('SUMMER20', 'salon-other', 'user-1')).rejects.toThrow(
       'کد تخفیف نامعتبر است',
     );
+    expect(await rejectionCode(service.resolveAndValidate('SUMMER20', 'salon-other', 'user-1'))).toBe(COUPON_INVALID);
   });
 
   it('accepts a salon-scoped code when used against its own salon', async () => {
@@ -106,6 +123,7 @@ describe('CouponsService.resolveAndValidate', () => {
     await expect(service.resolveAndValidate('SUMMER20', 'salon-1', 'user-1')).rejects.toThrow(
       'کد تخفیف منقضی شده است',
     );
+    expect(await rejectionCode(service.resolveAndValidate('SUMMER20', 'salon-1', 'user-1'))).toBe(COUPON_EXPIRED);
   });
 
   it('accepts a coupon whose expiry is still in the future', async () => {
@@ -119,6 +137,9 @@ describe('CouponsService.resolveAndValidate', () => {
     redemptionsRepo.findOneBy.mockResolvedValue({ id: 'redemption-1' } as CouponRedemption);
     await expect(service.resolveAndValidate('SUMMER20', 'salon-1', 'user-1')).rejects.toThrow(
       'شما قبلا از این کد تخفیف استفاده کرده‌اید',
+    );
+    expect(await rejectionCode(service.resolveAndValidate('SUMMER20', 'salon-1', 'user-1'))).toBe(
+      COUPON_ALREADY_REDEEMED,
     );
   });
 
@@ -142,6 +163,7 @@ describe('CouponsService.resolveAndValidate', () => {
       await expect(service.resolveAndValidate('SUMMER20', 'salon-1', 'user-2')).rejects.toThrow(
         'کد تخفیف نامعتبر است',
       );
+      expect(await rejectionCode(service.resolveAndValidate('SUMMER20', 'salon-1', 'user-2'))).toBe(COUPON_INVALID);
     });
   });
 
@@ -158,6 +180,9 @@ describe('CouponsService.resolveAndValidate', () => {
       redemptionsRepo.count.mockResolvedValue(2);
       await expect(service.resolveAndValidate('SUMMER20', 'salon-1', 'user-1')).rejects.toThrow(
         'ظرفیت استفاده از این کد تخفیف تکمیل شده است',
+      );
+      expect(await rejectionCode(service.resolveAndValidate('SUMMER20', 'salon-1', 'user-1'))).toBe(
+        COUPON_LIMIT_REACHED,
       );
     });
 
@@ -197,6 +222,9 @@ describe('CouponsService.resolveAndValidate', () => {
         'ظرفیت استفاده از این کد تخفیف تکمیل شده است',
       );
       expect(qb.setLock).toHaveBeenCalledWith('pessimistic_write');
+      expect(await rejectionCode(service.resolveAndValidate('SUMMER20', 'salon-1', 'user-1', makeEm(coupon, 1).em))).toBe(
+        COUPON_LIMIT_REACHED,
+      );
     });
 
     it('row-locks the coupon and accepts when still below the cap', async () => {

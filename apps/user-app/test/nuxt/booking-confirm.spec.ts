@@ -22,9 +22,11 @@ const TERMS = { depositPercent: 20, depositMinToman: 200_000, cancellationWindow
 const SLOT_ISO = '2026-07-10T09:00:00.000Z'
 
 // Shape matches how ofetch surfaces an HTTP error response: the status hangs off
-// `response`, and the API's own JSON body (with its Persian `message`) off `data`.
-function apiError(status: number, message?: string) {
-  return { rejectWith: { response: { status }, data: message ? { message } : undefined } }
+// `response`, and the API's own JSON body (with its Persian `message` and, since the
+// error-code migration, an optional machine-readable `code`) off `data`.
+function apiError(status: number, message?: string, code?: string) {
+  const data = message || code ? { ...(message ? { message } : {}), ...(code ? { code } : {}) } : undefined
+  return { rejectWith: { response: { status }, data } }
 }
 
 // Drives the coupon field exactly as a customer would -- type the code, press "اعمال" --
@@ -413,8 +415,10 @@ describe('booking confirm page', () => {
   // createHold re-validates the coupon inside its own transaction, so a code that passed the
   // preview can still be refused at submit time. That used to surface as "an error occurred,
   // try again" AND wipe the selected slot -- leaving the dead coupon applied, so re-picking a
-  // slot failed identically forever with no hint that the code was the blocker.
-  it('drops the coupon, keeps the slot, and explains the retry when POST /bookings rejects the code', async () => {
+  // slot failed identically forever with no hint that the code was the blocker. This response
+  // carries no `code` (as an older/uncoded API response would), so it exercises the
+  // message-substring fallback specifically.
+  it('drops the coupon, keeps the slot, and explains the retry when POST /bookings rejects the code (no `code`, fallback path)', async () => {
     stubPageLoad(apiError(400, 'ظرفیت استفاده از این کد تخفیف تکمیل شده است'), {
       valid: true,
       couponDiscountPercent: 30,
@@ -445,6 +449,67 @@ describe('booking confirm page', () => {
     expect(wrapper.text()).not.toContain('صرفه‌جویی کردید')
     // ...and the slot -- which was never the problem -- survives, so that retry is one tap away.
     expect(wrapper.find('[data-testid="confirm-booking-button"]').exists()).toBe(true)
+  })
+
+  // The whole point of the error-code migration: a coupon rejection is now identified by
+  // `code`, not by string-matching the Persian message -- so this passes even with wording
+  // that shares no substring with "کد تخفیف" at all, which the old mentionsCoupon() would
+  // have missed entirely.
+  it('drops the coupon via its `code`, keeps the slot, even when the message is reworded away from "کد تخفیف"', async () => {
+    stubPageLoad(apiError(400, 'این کد دیگر در دسترس نیست', 'COUPON_LIMIT_REACHED'), {
+      valid: true,
+      couponDiscountPercent: 30,
+      couponDiscountKind: 'percent',
+      couponDiscountValue: 30,
+      serviceDiscountPercent: null,
+      appliedDiscountPercent: 30,
+      originalPrice: 300_000,
+      finalPrice: 210_000,
+      estimatedDeposit: 200_000,
+    })
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+    await applyCouponCode(wrapper, 'CAPPED')
+
+    await wrapper.find('[data-testid="confirm-booking-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('این کد دیگر در دسترس نیست')
+    expect(wrapper.text()).toContain('می‌توانید بدون آن پرداخت را ادامه دهید')
+    expect(wrapper.text()).not.toContain('صرفه‌جویی کردید')
+    expect(wrapper.find('[data-testid="confirm-booking-button"]').exists()).toBe(true)
+  })
+
+  // A `code` that isn't one of the four coupon codes (e.g. a startsAt validation error that
+  // happened to also carry a code from some other future feature) must not be treated as a
+  // coupon failure just because a code is present at all.
+  it('does not treat a non-coupon `code` as a coupon failure', async () => {
+    stubPageLoad(apiError(400, 'رزرو دیگر امکان‌پذیر نیست', 'SOME_OTHER_CODE'), {
+      valid: true,
+      couponDiscountPercent: 30,
+      couponDiscountKind: 'percent',
+      couponDiscountValue: 30,
+      serviceDiscountPercent: null,
+      appliedDiscountPercent: 30,
+      originalPrice: 300_000,
+      finalPrice: 210_000,
+      estimatedDeposit: 200_000,
+    })
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+    await applyCouponCode(wrapper, 'SAVE30')
+
+    await wrapper.find('[data-testid="confirm-booking-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('رزرو دیگر امکان‌پذیر نیست')
+    // Treated as a generic (slot-invalidating) failure, not the coupon-dropped path.
+    expect(wrapper.text()).not.toContain('می‌توانید بدون آن پرداخت را ادامه دهید')
+    expect(wrapper.find('[data-testid="confirm-booking-button"]').exists()).toBe(false)
   })
 
   // The counterpart: a 400 with no coupon involved (createHold's only other one is a

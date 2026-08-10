@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, IsNull, Repository } from 'typeorm';
 import { isUniqueViolation } from '../common/postgres-error-codes';
+import { COUPON_ALREADY_REDEEMED, COUPON_EXPIRED, COUPON_INVALID, COUPON_LIMIT_REACHED } from './coupon-error-codes';
 import { CouponRedemption } from './coupon-redemption.entity';
 import { Coupon } from './coupon.entity';
 import { CreateCouponDto, UpdateCouponDto } from './dto/coupon.dto';
@@ -173,22 +174,22 @@ export class CouponsService {
 
     const coupon = await couponRepo.findOneBy({ code: normalized });
     if (!coupon || !coupon.isActive || (coupon.salonId !== null && coupon.salonId !== salonId)) {
-      throw new BadRequestException('کد تخفیف نامعتبر است');
+      throw new BadRequestException({ message: 'کد تخفیف نامعتبر است', code: COUPON_INVALID });
     }
     // Referral-issued coupons (coupons.issued_to_user_id, Slice 5) are restricted to
-    // their intended recipient -- same generic message as "doesn't exist" so a caller
-    // can never learn a code exists but belongs to someone else. NULL (every
+    // their intended recipient -- same generic message (and code) as "doesn't exist" so
+    // a caller can never learn a code exists but belongs to someone else. NULL (every
     // non-referral coupon, unchanged behavior) is unrestricted.
     if (coupon.issuedToUserId !== null && coupon.issuedToUserId !== userId) {
-      throw new BadRequestException('کد تخفیف نامعتبر است');
+      throw new BadRequestException({ message: 'کد تخفیف نامعتبر است', code: COUPON_INVALID });
     }
     if (coupon.expiresAt && coupon.expiresAt.getTime() < Date.now()) {
-      throw new BadRequestException('کد تخفیف منقضی شده است');
+      throw new BadRequestException({ message: 'کد تخفیف منقضی شده است', code: COUPON_EXPIRED });
     }
 
     const alreadyUsed = await redemptionRepo.findOneBy({ couponId: coupon.id, userId });
     if (alreadyUsed) {
-      throw new BadRequestException('شما قبلا از این کد تخفیف استفاده کرده‌اید');
+      throw new BadRequestException({ message: 'شما قبلا از این کد تخفیف استفاده کرده‌اید', code: COUPON_ALREADY_REDEEMED });
     }
 
     if (coupon.maxRedemptions !== null) {
@@ -211,7 +212,10 @@ export class CouponsService {
       }
       const count = await redemptionRepo.count({ where: { couponId: coupon.id } });
       if (count >= coupon.maxRedemptions) {
-        throw new BadRequestException('ظرفیت استفاده از این کد تخفیف تکمیل شده است');
+        throw new BadRequestException({
+          message: 'ظرفیت استفاده از این کد تخفیف تکمیل شده است',
+          code: COUPON_LIMIT_REACHED,
+        });
       }
     }
 

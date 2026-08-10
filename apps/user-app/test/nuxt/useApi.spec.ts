@@ -98,6 +98,38 @@ describe('useApi', () => {
     expect(result.error?.message).toBe('کد تخفیف منقضی شده است')
   })
 
+  it('surfaces a structured code off data.code alongside the message, when the API sends one', async () => {
+    fetchMock.mockRejectedValue({
+      response: { status: 400 },
+      statusMessage: 'Bad Request',
+      data: { message: 'کد تخفیف منقضی شده است', code: 'COUPON_EXPIRED' },
+    })
+    const { apiFetch } = useApi()
+    const result = await apiFetch('/coupons/validate', { method: 'POST', silent: true })
+    expect(result.error?.code).toBe('COUPON_EXPIRED')
+  })
+
+  it('reads the code off response._data too, same as the message fallback', async () => {
+    fetchMock.mockRejectedValue({
+      response: { status: 400, _data: { message: 'کد تخفیف نامعتبر است', code: 'COUPON_INVALID' } },
+      statusMessage: 'Bad Request',
+    })
+    const { apiFetch } = useApi()
+    const result = await apiFetch('/coupons/validate', { method: 'POST', silent: true })
+    expect(result.error?.code).toBe('COUPON_INVALID')
+  })
+
+  it('leaves code undefined when the response body carries none', async () => {
+    fetchMock.mockRejectedValue({
+      response: { status: 400 },
+      statusMessage: 'Bad Request',
+      data: { message: 'این بازه زمانی دیگر آزاد نیست' },
+    })
+    const { apiFetch } = useApi()
+    const result = await apiFetch('/bookings', { method: 'POST', silent: true })
+    expect(result.error?.code).toBeUndefined()
+  })
+
   it('falls back to Persian copy -- never an English phrase -- when the body carries no message', async () => {
     fetchMock.mockRejectedValue({ response: { status: 500 }, statusMessage: 'Internal Server Error' })
     const { apiFetch } = useApi()

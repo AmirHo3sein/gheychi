@@ -123,19 +123,24 @@ describe('Coupons (e2e)', () => {
       expect(booking.depositAmount).toBe(360000);
     });
 
-    it('rejects booking again with the same code as the same user (already redeemed)', () =>
-      request(app.getHttpServer())
+    it('rejects booking again with the same code as the same user (already redeemed)', async () => {
+      const res = await request(app.getHttpServer())
         .post('/api/bookings')
         .set('Cookie', customerCookie)
         .send({ salonId, serviceId, startsAt: futureIso(48), couponCode: 'welcome10' })
-        .expect(400));
+        .expect(400);
+      // Machine-readable code alongside the Persian message -- see coupon-error-codes.ts.
+      expect(res.body.code).toBe('COUPON_ALREADY_REDEEMED');
+    });
 
-    it('rejects the preview endpoint for the same already-used code too', () =>
-      request(app.getHttpServer())
+    it('rejects the preview endpoint for the same already-used code too', async () => {
+      const res = await request(app.getHttpServer())
         .post('/api/coupons/validate')
         .set('Cookie', customerCookie)
         .send({ code: 'welcome10', salonId, serviceId })
-        .expect(400));
+        .expect(400);
+      expect(res.body.code).toBe('COUPON_ALREADY_REDEEMED');
+    });
 
     it('a different customer can still redeem the same code once', async () => {
       const otherCustomer = await loginAs(app, '09127773003');
@@ -162,11 +167,12 @@ describe('Coupons (e2e)', () => {
         .expect(204);
 
       const freshCustomer = await loginAs(app, '09128884004');
-      await request(app.getHttpServer())
+      const res = await request(app.getHttpServer())
         .post('/api/coupons/validate')
         .set('Cookie', freshCustomer)
         .send({ code: 'welcome10', salonId, serviceId })
         .expect(400);
+      expect(res.body.code).toBe('COUPON_INVALID');
     });
 
     it('rejects a provider trying to touch another salon\'s coupon id via a fresh scoped coupon', async () => {

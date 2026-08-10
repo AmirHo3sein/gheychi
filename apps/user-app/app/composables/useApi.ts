@@ -2,6 +2,14 @@ export interface ApiError {
   /** 0 means a network/DNS/timeout failure with no HTTP response at all, not a real status code */
   status: number
   message: string
+  /**
+   * The API's stable, machine-readable error code, when the response body carried one
+   * (e.g. coupon-validation failures -- see apps/api's coupon-error-codes.ts). Undefined
+   * for responses with no structured `code` field at all, including every
+   * network/DNS/timeout failure (status 0), which never reaches a JSON body to read one
+   * from.
+   */
+  code?: string
 }
 
 export interface ApiResult<T> {
@@ -49,8 +57,8 @@ export function useApi() {
       // English "Conflict" instead of the real explanation, and over HTTP/2 (no reason
       // phrases exist in the protocol) it surfaced as an empty toast.
       const fetchErr = err as {
-        data?: { message?: unknown }
-        response?: { _data?: { message?: unknown } }
+        data?: { message?: unknown; code?: unknown }
+        response?: { _data?: { message?: unknown; code?: unknown } }
         statusMessage?: string
       }
       const bodyMessage = fetchErr.data?.message ?? fetchErr.response?._data?.message
@@ -60,7 +68,8 @@ export function useApi() {
           : status === 0
             ? 'خطا در ارتباط با سرور'
             : 'خطایی رخ داد'
-      const apiError: ApiError = { status, message }
+      const bodyCode = fetchErr.data?.code ?? fetchErr.response?._data?.code
+      const apiError: ApiError = { status, message, code: typeof bodyCode === 'string' ? bodyCode : undefined }
 
       if (status === 401) {
         if (options.redirectOn401 !== false) {

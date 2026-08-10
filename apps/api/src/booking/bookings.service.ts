@@ -9,6 +9,7 @@ import { DataSource, In, LessThan, MoreThan, Not, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { isUniqueViolation } from '../common/postgres-error-codes';
 import { resolveNamesById } from '../common/resolve-names-by-id';
+import { COUPON_ALREADY_REDEEMED } from '../coupons/coupon-error-codes';
 import { CouponRedemption } from '../coupons/coupon-redemption.entity';
 import { CouponsService } from '../coupons/coupons.service';
 import { REDIS } from '../redis/redis.module';
@@ -330,7 +331,12 @@ export class BookingsService {
             // own already-used check above is a best-effort pre-check that can lose a
             // genuine concurrent-request race, so this insert is where that race is
             // finally, authoritatively closed.
-            if (isUniqueViolation(err)) throw new BadRequestException('شما قبلا از این کد تخفیف استفاده کرده‌اید');
+            if (isUniqueViolation(err)) {
+              throw new BadRequestException({
+                message: 'شما قبلا از این کد تخفیف استفاده کرده‌اید',
+                code: COUPON_ALREADY_REDEEMED,
+              });
+            }
             throw err;
           }
         }
