@@ -1,16 +1,40 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { getRepositoryToken, TypeOrmModule } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { AdminAnalyticsController } from './admin-analytics.controller';
+import { AnalyticsAggregationService } from './analytics-aggregation.service';
+import { AnalyticsEventRecord } from './analytics-event.entity';
 import { ANALYTICS_PROVIDER } from './analytics.provider';
 import { AnalyticsService } from './analytics.service';
 import { ConsoleAnalyticsProvider } from './console-analytics.provider';
+import { PostgresAnalyticsProvider } from './postgres-analytics.provider';
 
-// Only ConsoleAnalyticsProvider exists today -- no real analytics vendor account
-// exists in this environment. Mirrors SmsModule/PushModule's own registration shape
-// (a plain object provider bound to the injection token) so a real vendor later
-// slots in the exact same way those did: swap this single `provide` entry for a
-// useFactory that picks the vendor implementation by config, the way
-// SmsModule/PushModule already gate Kavenegar/WebPush behind an env var.
+// PostgresAnalyticsProvider is now the real default, persisting every tracked event to
+// `analytics_events` (see migrations/1754900000000-analytics-events.ts) -- the same
+// interface/token/factory-picks-the-implementation shape SmsModule/PushModule already
+// use for SMS_PROVIDER/PUSH_PROVIDER (see CLAUDE.md's "External service abstractions"
+// table), except here there's no external vendor credential to be missing: Postgres is
+// already this app's own primary datastore (DB_HOST/etc. are already required just to
+// boot at all), so unlike Kavenegar/WebPush there's no reason to keep Console as the
+// fallback default. ANALYTICS_PROVIDER=console still opts back into the old log-only
+// behavior (e.g. for a throwaway local run that shouldn't write rows) --
+// ConsoleAnalyticsProvider is kept around for exactly that, not deleted.
 @Module({
-  providers: [AnalyticsService, { provide: ANALYTICS_PROVIDER, useClass: ConsoleAnalyticsProvider }],
+  imports: [TypeOrmModule.forFeature([AnalyticsEventRecord])],
+  controllers: [AdminAnalyticsController],
+  providers: [
+    AnalyticsService,
+    AnalyticsAggregationService,
+    {
+      provide: ANALYTICS_PROVIDER,
+      inject: [ConfigService, getRepositoryToken(AnalyticsEventRecord)],
+      useFactory: (config: ConfigService, events: Repository<AnalyticsEventRecord>) =>
+        config.get('ANALYTICS_PROVIDER', 'postgres') === 'console'
+          ? new ConsoleAnalyticsProvider()
+          : new PostgresAnalyticsProvider(events),
+    },
+  ],
   exports: [AnalyticsService],
 })
 export class AnalyticsModule {}
