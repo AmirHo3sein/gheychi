@@ -158,4 +158,41 @@ describe('Wallet spend at checkout (e2e)', () => {
     const wallet = await request(app.getHttpServer()).get('/api/wallet/mine').set('Cookie', customerCookie).expect(200);
     expect(wallet.body.balances.find((b: { currency: string }) => b.currency === 'toman').balance).toBe(50_000);
   });
+
+  // releaseBookingHold's wallet credit-back reads bookings.wallet_amount_used, which is
+  // never cleared afterward -- a second, concurrent call for the same booking (a
+  // back-button + refresh double-delivering a declined Zarinpal callback, exactly the
+  // scenario payments.e2e-spec.ts's own "two simultaneous callbacks" test exercises for
+  // the SUCCESS path) would credit the wallet back a second time for money that was
+  // already returned once. This proves it against the real DB, not a mock.
+  it('concurrency: two simultaneous declined callbacks for a wallet-funded hold -- the wallet is credited back exactly once', async () => {
+    const customerCookie = await loginAs(app, '09131110014');
+    const userId = await userIdForPhone('09131110014');
+    await grantWallet(userId, 50_000);
+
+    const created = await request(app.getHttpServer())
+      .post('/api/bookings')
+      .set('Cookie', customerCookie)
+      .send({ salonId, serviceId, startsAt: futureIso(120), applyWalletBalance: true })
+      .expect(201);
+    expect(created.body.booking.walletAmountUsed).toBe(50_000);
+    const authority = new URL(created.body.paymentUrl).searchParams.get('Authority')!;
+
+    await Promise.all([
+      request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'NOK' }),
+      request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'NOK' }),
+    ]);
+
+    const wallet = await request(app.getHttpServer()).get('/api/wallet/mine').set('Cookie', customerCookie).expect(200);
+    const balance = wallet.body.balances.find((b: { currency: string }) => b.currency === 'toman')?.balance ?? 0;
+    // Must be exactly the original grant back -- NOT double-credited.
+    expect(balance).toBe(50_000);
+
+    const ds = app.get(DataSource);
+    const reversalTxs = await ds.query(
+      `SELECT amount FROM wallet_transactions WHERE user_id = $1 AND type = 'booking_spend_reversal'`,
+      [userId],
+    );
+    expect(reversalTxs).toHaveLength(1); // exactly one credit-back, never duplicated
+  });
 });

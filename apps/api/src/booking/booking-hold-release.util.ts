@@ -27,12 +27,18 @@ import { Booking } from './booking.entity';
  * documented refund-reversal boundary).
  *
  * Safe to call for a booking that never had a coupon or never used its wallet (both
- * degrade to a no-op), and safe to call twice for the same booking (the coupon delete
- * is a zero-row DELETE the second time; the wallet credit-back is skipped because
- * walletAmountUsed is only ever read off the still-pending_payment booking row, which
- * every real call site transitions out of pending_payment in the same transaction as
- * this call -- so a genuine double-release of the wallet portion can't happen via the
- * documented call sites above).
+ * degrade to a no-op), and safe to call twice for the same booking: the coupon delete
+ * is a zero-row DELETE the second time, and the wallet credit-back is guarded by its
+ * own conditional UPDATE (clearing wallet_amount_used to 0, matched against the value
+ * just read) -- only the call that actually wins that race credits the wallet. This is
+ * NOT merely "every real call site already guards itself before calling in" (that used
+ * to be the claim here, and it was wrong: PaymentsService.markFailed and
+ * PaymentReconciliationJob's verify-failed branch both call in unconditionally,
+ * regardless of whether their own booking-status CAS won, so two callers reaching this
+ * function for the same booking -- e.g. a back-button + refresh double-delivering a
+ * declined callback, or a declined callback racing the reconciliation job -- used to
+ * double-credit the wallet for money that was only ever spent once. The guard belongs
+ * here, once, rather than relying on every current and future call site to remember it.
  */
 export async function releaseBookingHold(
   em: EntityManager,
@@ -50,6 +56,16 @@ export async function releaseBookingHold(
   });
   for (const row of rows) {
     if (!row.walletAmountUsed) continue;
+    // Conditional UPDATE -- same status-guarded pattern as every other money-moving
+    // write in this codebase (PaymentsService's conditional payment/booking CAS,
+    // WalletService's row lock). Clears wallet_amount_used to 0 ONLY IF it still holds
+    // the value just read; a losing concurrent/duplicate call sees affected=0 (someone
+    // else already cleared it) and skips the credit entirely.
+    const cleared: unknown[] = await em.query(
+      `UPDATE bookings SET wallet_amount_used = 0 WHERE id = $1 AND wallet_amount_used = $2 RETURNING id`,
+      [row.id, row.walletAmountUsed],
+    );
+    if (cleared.length === 0) continue;
     await walletService.credit(em, row.userId, 'toman', row.walletAmountUsed, 'booking_spend_reversal', {
       referenceType: 'booking',
       referenceId: row.id,
