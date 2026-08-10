@@ -275,8 +275,12 @@ async function copyReferralCode(code: string) {
          lone (or odd) card at the tail lands in the RTL start (right) column and strands
          empty space beside it -- the exact "not centered" mismatch this was fixed for. This
          still lays out into a multi-column grid once there are enough members to fill a row,
-         but centers the actual populated tracks as a group when there aren't. -->
-    <div v-else class="grid items-start justify-center gap-4 [grid-template-columns:repeat(auto-fit,minmax(280px,320px))]">
+         but centers the actual populated tracks as a group when there aren't.
+         max: 1fr, not a fixed px cap -- a fixed max lets each column size independently off
+         its own content up to that cap, producing visibly uneven column widths when cards
+         differ (the bug BookingsView.vue had); 1fr splits the row's leftover space equally
+         across every populated column instead. -->
+    <div v-else class="grid items-start justify-center gap-4 [grid-template-columns:repeat(auto-fit,minmax(280px,1fr))]">
       <AppCard v-for="w in workers" :key="w.id" :padded="false" class="space-y-3 p-4">
         <div class="flex items-center justify-between gap-2">
           <div class="min-w-0">

@@ -227,8 +227,12 @@ async function deactivate(coupon: Coupon) {
         <!-- auto-fit + justify-center, not a fixed md:/xl: column count: a lone or odd
              trailing card in a fixed grid strands in the RTL start (right) column with
              visibly empty space beside it. This still lays out multi-column once there are
-             enough coupons to fill a row, but centers the populated tracks when there aren't. -->
-        <div v-else class="grid items-start justify-center gap-3 [grid-template-columns:repeat(auto-fit,minmax(280px,340px))]">
+             enough coupons to fill a row, but centers the populated tracks when there aren't.
+             max: 1fr, not a fixed px cap -- a fixed max lets each column size independently
+             off its own content up to that cap, producing visibly uneven column widths when
+             cards differ (the exact bug BookingsView.vue had); 1fr splits the row's leftover
+             space equally across every populated column instead. -->
+        <div v-else class="grid items-start justify-center gap-3 [grid-template-columns:repeat(auto-fit,minmax(280px,1fr))]">
           <AppCard v-for="c in coupons" :key="c.id" :padded="false" class="space-y-2 p-4">
             <!--
               The code is owner-supplied and has no break opportunities («SUMMERSPECIAL2026»),

@@ -151,8 +151,12 @@ async function move(index: number, direction: -1 | 1) {
              laptop/desktop viewport -- but a FIXED column count strands a lone/odd trailing
              item in the RTL start (right) column with visibly empty space beside it. This
              still lays out two-up once there's enough for a second column, but centers the
-             populated tracks when there isn't. -->
-        <div v-else class="grid items-start justify-center gap-3 [grid-template-columns:repeat(auto-fit,minmax(320px,480px))]">
+             populated tracks when there isn't.
+             max: 1fr, not a fixed px cap -- a fixed max lets each column size independently
+             off its own content up to that cap, producing visibly uneven column widths when
+             items differ (the bug BookingsView.vue had); 1fr splits the row's leftover space
+             equally across every populated column instead. -->
+        <div v-else class="grid items-start justify-center gap-3 [grid-template-columns:repeat(auto-fit,minmax(320px,1fr))]">
           <div
             v-for="(p, index) in items"
             :key="p.id"
