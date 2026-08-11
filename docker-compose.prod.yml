@@ -63,6 +63,12 @@ services:
     image: ghcr.io/amirho3sein/gheychi-user-app:latest
     restart: unless-stopped
     env_file: .env
+    # Overrides the shared .env's PORT=3002 (meant for api, which reads process.env.PORT
+    # directly) -- env_file values otherwise win over this image's own Dockerfile-baked
+    # ENV PORT=3003 default, so without this override user-app silently listens on 3002
+    # instead of 3003, and Caddy's user-app:3003 reverse_proxy 502s with connection refused.
+    environment:
+      PORT: 3003
     depends_on: [api]
     mem_limit: 512m
     memswap_limit: 512m
