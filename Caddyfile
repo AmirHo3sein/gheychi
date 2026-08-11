@@ -11,9 +11,19 @@
 	}
 }
 
-{$DOMAIN_APEX}, www.{$DOMAIN_APEX} {
+{$DOMAIN_APEX} {
 	import security_headers
 	reverse_proxy user-app:3003
+}
+
+# www is an alias, not a second copy of the site -- serving both identically lets Google
+# index the same content under two hosts with no canonical signal between them (the
+# customer app's own canonical/OG URLs are built from the actual request's Host header via
+# useRequestURL(), so each host would self-referentially "confirm" itself as canonical).
+# A 301 here is the one place that actually resolves that instead of leaving it to chance.
+www.{$DOMAIN_APEX} {
+	import security_headers
+	redir https://{$DOMAIN_APEX}{uri} permanent
 }
 
 {$DOMAIN_API} {

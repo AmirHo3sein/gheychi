@@ -21,6 +21,15 @@ import { HttpMetricsMiddleware } from './metrics/http-metrics.middleware';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // In production this process only ever receives connections from the Caddy reverse
+  // proxy container (docker-compose.prod.yml gives it no published port of its own), so the
+  // one hop it should trust is exactly right -- without this, Express's req.ip is Caddy's
+  // own address for every request, not the real client's. That silently breaks every
+  // IP-keyed rate limit in this app (OtpService.issue's per-IP cap, referrals.controller's
+  // GET /referrals/validate cap): once behind a real reverse proxy, all real visitors would
+  // share one bucket and lock each other out. Local dev has no proxy in front of it, so this
+  // is a no-op there (req.ip is already the real, direct connection).
+  app.set('trust proxy', 1);
   // Makes every `new Logger(context)` call site app-wide automatically include the
   // current request's id (see request-context-logger.service.ts) -- must be set before
   // any meaningful logging happens, and pairs with requestLoggingMiddleware below,
