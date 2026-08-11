@@ -5,6 +5,17 @@ on:
     branches: ['**']
   pull_request:
 
+# A push to a branch with an open PR fires both `push` and `pull_request` for the same
+# commit, running this whole (~15+ minute) job twice; a second push before the first run
+# finishes previously left the now-superseded first run going to completion instead of
+# being cancelled. Group key is workflow+ref, so this also cancels a main-branch run
+# superseded by a newer push to main -- safe there too: a stale build-and-push for a
+# commit that's no longer the tip of main is exactly the kind of work that should stop,
+# not race the newer one to `latest`.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -45,6 +56,26 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # Migrations previously applied only as a side effect of prepare-db.cjs scripts and
+      # webServer boot -- no dedicated, clearly-attributed step existed. This makes a
+      # duplicate migration timestamp (two branches independently picking the same leading
+      # timestamp -- TypeORM applies migrations in filename-sort order regardless) or a
+      # broken/non-idempotent migration fail here, with an obvious "Validate migrations"
+      # label, instead of surfacing later as a confusing e2e failure.
+      - name: Validate migrations
+        env:
+          PGPASSWORD: gheychi
+        run: |
+          dupes=$(ls apps/api/src/migrations | sed -E 's/^([0-9]+)-.*/\1/' | sort | uniq -d)
+          if [ -n "$dupes" ]; then
+            echo "Duplicate migration timestamp(s): $dupes"
+            exit 1
+          fi
+
+          psql -h localhost -p 5544 -U gheychi -d postgres -c "CREATE DATABASE gheychi_migration_check;"
+          psql -h localhost -p 5544 -U gheychi -d gheychi_migration_check -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          DB_NAME=gheychi_migration_check pnpm --filter @gheychi/api migration:run
 
       - name: Prepare Postgres databases
         env:
