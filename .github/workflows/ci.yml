@@ -63,9 +63,19 @@ jobs:
       # timestamp -- TypeORM applies migrations in filename-sort order regardless) or a
       # broken/non-idempotent migration fail here, with an obvious "Validate migrations"
       # label, instead of surfacing later as a confusing e2e failure.
+      #
+      # Runs before "Create apps/api/.env" below, so apps/api/.env does not exist yet --
+      # data-source.ts's own DB_* defaults (DB_PORT ?? 5432) would otherwise silently miss
+      # this job's Postgres service, which is mapped to 5544, not 5432. DB_HOST/DB_USER/
+      # DB_PASS are set explicitly for the same reason, even though their defaults happen
+      # to already match.
       - name: Validate migrations
         env:
           PGPASSWORD: gheychi
+          DB_HOST: localhost
+          DB_PORT: 5544
+          DB_USER: gheychi
+          DB_PASS: gheychi
         run: |
           dupes=$(ls apps/api/src/migrations | sed -E 's/^([0-9]+)-.*/\1/' | sort | uniq -d)
           if [ -n "$dupes" ]; then
