@@ -10,8 +10,14 @@ describe('isPublicRoute', () => {
     expect(isPublicRoute('/salons/best-salon-tehran')).toBe(true)
   })
 
-  it('treats home and account pages as private', () => {
-    expect(isPublicRoute('/')).toBe(false)
+  it('treats the home page as public', () => {
+    // Real public discovery/marketing content (search, salon browsing, the site's own
+    // OG/JSON-LD-carrying landing page) -- an unauthenticated visitor must be able to
+    // land on it directly, not get bounced to /login first.
+    expect(isPublicRoute('/')).toBe(true)
+  })
+
+  it('treats account pages as private', () => {
     expect(isPublicRoute('/profile')).toBe(false)
     expect(isPublicRoute('/bookings')).toBe(false)
     expect(isPublicRoute('/admin/featured')).toBe(false)

@@ -35,8 +35,16 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // set the session cookie by the time login.vue shows its profile step, so abandoning the
   // tab there (or arriving from the provider panel, which never asks for a gender) leaves an
   // account stuck this way. /profile is the completion screen; public routes stay reachable
-  // so an incomplete account can still browse salons and read the blog.
-  if (session.needsProfileCompletion && to.path !== PROFILE_COMPLETION_PATH && !isPublicRoute(to.path)) {
+  // so an incomplete account can still browse salons and read the blog -- home is the one
+  // exception: isPublicRoute('/') is true (an anonymous visitor must be able to land on it),
+  // but a logged-in, incomplete-profile visitor still can't be exempted here, since the page
+  // itself cannot render without gender.
+  const homeNeedsCompleteProfileToRender = to.path === '/'
+  if (
+    session.needsProfileCompletion &&
+    to.path !== PROFILE_COMPLETION_PATH &&
+    (homeNeedsCompleteProfileToRender || !isPublicRoute(to.path))
+  ) {
     return navigateTo(PROFILE_COMPLETION_PATH)
   }
 })

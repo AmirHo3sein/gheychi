@@ -42,9 +42,18 @@ describe('auth.global middleware', () => {
     expect(useSessionStore().isLoggedIn).toBe(false)
   })
 
-  it('redirects exactly once to /login for a private route with no session', async () => {
+  it('does not redirect an anonymous visitor landing on the home page itself', async () => {
+    // Real discovery/marketing content -- an unauthenticated visitor must be able to land
+    // directly on '/', not get bounced to /login before ever seeing it.
     fetchMock.mockRejectedValue({ response: { status: 401 } })
     await authMiddleware(toRoute('/'), toRoute('/'))
+
+    expect(navigateToMock).not.toHaveBeenCalled()
+  })
+
+  it('redirects exactly once to /login for a private route with no session', async () => {
+    fetchMock.mockRejectedValue({ response: { status: 401 } })
+    await authMiddleware(toRoute('/profile'), toRoute('/'))
 
     expect(navigateToMock).toHaveBeenCalledTimes(1)
     expect(navigateToMock).toHaveBeenCalledWith('/login')
