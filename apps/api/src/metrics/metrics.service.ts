@@ -165,6 +165,13 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  private readonly backupReportsTotal = new Counter({
+    name: 'backup_reports_total',
+    help: 'Total backup completion reports received from docker/backup/backup.sh via POST /internal/backup-report, labeled by outcome',
+    labelNames: ['outcome'] as const,
+    registers: [this.registry],
+  });
+
   // Every public method below funnels through this -- see class doc for why. Logged
   // (not silently swallowed) so a genuine bug here is still discoverable, but never
   // rethrown: metrics observation must never be able to fail the real operation.
@@ -253,5 +260,9 @@ export class MetricsService {
       this.cronJobRunsTotal.inc({ job, outcome });
       this.cronJobDurationSeconds.observe({ job }, durationSeconds);
     });
+  }
+
+  observeBackupReport(outcome: 'success' | 'failure'): void {
+    this.safe(() => this.backupReportsTotal.inc({ outcome }));
   }
 }

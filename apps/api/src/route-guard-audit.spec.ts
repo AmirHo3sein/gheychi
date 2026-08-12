@@ -8,6 +8,7 @@ import { AdminAuditController } from './audit/admin-audit.controller';
 import { AuthController } from './auth/auth.controller';
 import { AuthGuard } from './auth/auth.guard';
 import { IS_PUBLIC_KEY, Public } from './auth/public.decorator';
+import { BackupReportController } from './backup-monitoring/backup-report.controller';
 import { AvailabilityController } from './booking/availability.controller';
 import { BookingsController } from './booking/bookings.controller';
 import { PaymentsController } from './booking/payments.controller';
@@ -69,6 +70,7 @@ const ALL_CONTROLLERS: Function[] = [
   AdminNotificationsController,
   AdminAuditController,
   AuthController,
+  BackupReportController,
   AvailabilityController,
   BookingsController,
   PaymentsController,
@@ -133,6 +135,14 @@ const ALL_CONTROLLERS: Function[] = [
 const PUBLIC_ROUTES: Array<[Function, string]> = [
   [AuthController, 'requestOtp'],
   [AuthController, 'verifyOtp'],
+  // @Public() only to skip AuthGuard's session-cookie check (the caller is
+  // docker/backup/backup.sh, which has no user session) -- real access control is
+  // BackupReportSecretGuard's shared-secret comparison, applied via @UseGuards on the
+  // controller. See backup-report-secret.guard.ts's doc comment for why that secret is
+  // load-bearing (Caddy's reverse_proxy for {$DOMAIN_API} has no path restriction, so
+  // this route is reachable from the public internet today, not just in a hypothetical
+  // misconfiguration).
+  [BackupReportController, 'report'],
   [AvailabilityController, 'get'],
   [PaymentsController, 'callback'], // Zarinpal's own browser redirect target, not a webhook
   [CatalogController, 'list'],

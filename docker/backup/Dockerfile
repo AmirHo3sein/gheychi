@@ -17,6 +17,13 @@ RUN apk add --no-cache curl \
 
 FROM postgres:16-alpine
 
+# curl is used by backup.sh to POST the run's outcome to the api container's internal
+# /internal/backup-report endpoint (best-effort telemetry, see that script's own
+# comments) -- postgres:16-alpine does not include it by default, unlike the mc-builder
+# stage above, which only had curl to fetch the mc binary at build time and doesn't
+# carry it into this final stage.
+RUN apk add --no-cache curl
+
 COPY --from=mc-builder /tmp/mc /usr/local/bin/mc
 
 COPY docker/backup/backup.sh /backup.sh

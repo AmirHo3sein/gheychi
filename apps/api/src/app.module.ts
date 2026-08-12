@@ -7,6 +7,7 @@ import { AdminNotificationsModule } from './admin-notifications/admin-notificati
 import { AlertsModule } from './alerts/alerts.module';
 import { AuthGuard } from './auth/auth.guard';
 import { AuthModule } from './auth/auth.module';
+import { BackupMonitoringModule } from './backup-monitoring/backup-monitoring.module';
 import { BookingModule } from './booking/booking.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { CitiesModule } from './cities/cities.module';
@@ -59,6 +60,7 @@ import { WalletModule } from './wallet/wallet.module';
     PlatformConfigModule,
     AlertsModule,
     AuthModule,
+    BackupMonitoringModule,
     CatalogModule,
     CitiesModule,
     SalonsModule,

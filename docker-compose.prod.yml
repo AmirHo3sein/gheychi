@@ -115,7 +115,17 @@ services:
       context: .
       dockerfile: docker/backup/Dockerfile
     restart: unless-stopped
+    # Already shares the root .env with every other service -- this is how BACKUP_REPORT_SECRET
+    # (see .env.example) reaches this container without a separate `environment:` entry.
+    # backup.sh addresses the api container by its compose service name (`api`, on this same
+    # `internal` network) on port 3002, exactly like every other service-to-service call in
+    # this stack (see api's own healthcheck above) -- no explicit BACKUP_REPORT_URL override
+    # is needed here; it only exists as an env var for local/non-compose testing.
     env_file: .env
+    # Deliberately NOT `depends_on: api`: this container's job (dump + verify + upload) must
+    # not be gated on api being up, and backup.sh's own POST to api is best-effort by design
+    # (see that script's report_backup() comment) -- a slow/down api container delays or
+    # skips telemetry, never the backup itself.
     depends_on:
       postgres:
         condition: service_healthy
