@@ -11,8 +11,29 @@
 	}
 }
 
+# Report-Only, not enforcing -- see docs/deployment/csp-proposal.md for the full research
+# behind each directive (live-browser-verified for user-app; static/build-output analysis
+# for the panels; api needs essentially none since it never serves HTML). All three send
+# violation reports to the same collector (csp-report/csp-report.controller.ts) regardless
+# of which site block triggered them -- report-uri POSTs are exempt from CORS, so a
+# cross-origin target here is fine. STORAGE_PROVIDER=local in production (confirmed on the
+# live host), so img-src does not need a separate S3 host -- api.gheychi.co already covers
+# /uploads/*.
+(csp_user_app) {
+	header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://api.gheychi.co https://*.basemaps.cartocdn.com; font-src 'self'; connect-src 'self' https://api.gheychi.co; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'; report-uri https://api.gheychi.co/api/csp-report"
+}
+
+(csp_panel) {
+	header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://api.gheychi.co; font-src 'self'; connect-src 'self' https://api.gheychi.co; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'; report-uri https://api.gheychi.co/api/csp-report"
+}
+
+(csp_api) {
+	header Content-Security-Policy-Report-Only "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; report-uri https://api.gheychi.co/api/csp-report"
+}
+
 {$DOMAIN_APEX} {
 	import security_headers
+	import csp_user_app
 	reverse_proxy user-app:3003
 }
 
@@ -28,15 +49,18 @@ www.{$DOMAIN_APEX} {
 
 {$DOMAIN_API} {
 	import security_headers
+	import csp_api
 	reverse_proxy api:3002
 }
 
 {$DOMAIN_PANEL} {
 	import security_headers
+	import csp_panel
 	reverse_proxy provider-panel:80
 }
 
 {$DOMAIN_ADMIN} {
 	import security_headers
+	import csp_panel
 	reverse_proxy admin-panel:80
 }
