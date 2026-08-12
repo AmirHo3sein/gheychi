@@ -23,6 +23,7 @@ import { SitemapBlogController } from './content/sitemap-blog.controller';
 import { AdminCouponsController } from './coupons/admin-coupons.controller';
 import { CouponValidationController } from './coupons/coupon-validation.controller';
 import { SalonCouponsController } from './coupons/salon-coupons.controller';
+import { CspReportController } from './csp-report/csp-report.controller';
 import { FavoritesController } from './favorites/favorites.controller';
 import { HealthController } from './health/health.controller';
 import { AdminInvoicesController } from './invoicing/admin-invoices.controller';
@@ -85,6 +86,7 @@ const ALL_CONTROLLERS: Function[] = [
   AdminCouponsController,
   CouponValidationController,
   SalonCouponsController,
+  CspReportController,
   FavoritesController,
   HealthController,
   AdminInvoicesController,
@@ -156,6 +158,7 @@ const PUBLIC_ROUTES: Array<[Function, string]> = [
   [HealthController, 'readiness'], // orchestrator readiness probe, must be reachable with no session
   [MetricsController, 'metrics'], // Prometheus scraper target, must be reachable with no session (scrapers don't authenticate)
   [VersionController, 'getVersion'], // deploy-identity endpoint (version/git SHA/build timestamp); no secrets, safe for anyone to read with no session
+  [CspReportController, 'report'], // browser-submitted CSP violation reports (report-uri) -- no session concept applies, any browser can send one
   [PlatformConfigController, 'bookingTerms'],
   [ReferralsController, 'validate'], // IP-rate-limited separately, see referrals.controller.ts
   [SalonReviewsController, 'list'],

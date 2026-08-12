@@ -11,7 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
-import { NextFunction, Request, Response } from 'express';
+import express, { NextFunction, Request, Response } from 'express';
 import { join } from 'path';
 import { AppModule } from './app.module';
 import { RequestContextConsoleLogger } from './common/request-context-logger.service';
@@ -46,6 +46,17 @@ async function bootstrap() {
   const httpMetricsMiddleware = app.get(HttpMetricsMiddleware);
   app.use((req: Request, res: Response, next: NextFunction) => httpMetricsMiddleware.use(req, res, next));
   app.use(cookieParser());
+  // Nest's default body parser only binds to `Content-Type: application/json`, but browsers
+  // send CSP violation reports (see csp-report/csp-report.controller.ts) as
+  // `application/csp-report` (the legacy report-uri mechanism) -- without this, req.body
+  // would be undefined for every real violation report and CspReportController would only
+  // ever see 'unknown'. Scoped to the one path that needs it, at the final external URL
+  // (setGlobalPrefix below doesn't affect raw express-level app.use path matching), rather
+  // than loosening body parsing app-wide.
+  app.use(
+    '/api/csp-report',
+    express.json({ type: ['application/json', 'application/csp-report', 'application/reports+json'], limit: '20kb' }),
+  );
   app.useStaticAssets(join(process.cwd(), 'uploads'), {
     prefix: '/uploads',
     // Defense-in-depth alongside the upload-time Content-Type validation (see

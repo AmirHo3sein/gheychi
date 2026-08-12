@@ -172,6 +172,19 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  // Labeled ONLY by the violated directive (a small, fixed set of real CSP directive
+  // names -- 'script-src', 'img-src', etc, never the reported blocked-uri/document-uri,
+  // which are arbitrary and unbounded) -- see the standing "avoid high-cardinality
+  // metrics" rule. Full report bodies still get logged (not just counted) by
+  // CspReportController for actual triage; this counter is only the "is this getting
+  // worse" trend signal.
+  private readonly cspViolationsTotal = new Counter({
+    name: 'csp_violations_total',
+    help: 'Total Content-Security-Policy violation reports received, labeled by the violated directive',
+    labelNames: ['directive'] as const,
+    registers: [this.registry],
+  });
+
   // Every public method below funnels through this -- see class doc for why. Logged
   // (not silently swallowed) so a genuine bug here is still discoverable, but never
   // rethrown: metrics observation must never be able to fail the real operation.
@@ -264,5 +277,35 @@ export class MetricsService {
 
   observeBackupReport(outcome: 'success' | 'failure'): void {
     this.safe(() => this.backupReportsTotal.inc({ outcome }));
+  }
+
+  // `directive` comes from a browser-submitted CSP violation report -- untrusted input,
+  // not a code-controlled label like every other metric in this file. Normalized against
+  // a fixed allowlist of real CSP directive names before it ever reaches a Prometheus
+  // label, so a malformed or deliberately hostile report body can't mint unbounded label
+  // values (a real cardinality-explosion vector, not a hypothetical one, for the one
+  // metric in this codebase whose label touches request-supplied data).
+  private static readonly KNOWN_CSP_DIRECTIVES = new Set([
+    'default-src',
+    'script-src',
+    'script-src-elem',
+    'script-src-attr',
+    'style-src',
+    'style-src-elem',
+    'style-src-attr',
+    'img-src',
+    'font-src',
+    'connect-src',
+    'worker-src',
+    'manifest-src',
+    'frame-ancestors',
+    'base-uri',
+    'form-action',
+    'object-src',
+  ]);
+
+  observeCspViolation(directive: string): void {
+    const normalized = MetricsService.KNOWN_CSP_DIRECTIVES.has(directive) ? directive : 'other';
+    this.safe(() => this.cspViolationsTotal.inc({ directive: normalized }));
   }
 }
