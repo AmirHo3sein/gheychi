@@ -52,6 +52,7 @@ import { ScheduleController } from './salons/schedule.controller';
 import { SitemapSalonsController } from './salons/sitemap-salons.controller';
 import { SearchController } from './search/search.controller';
 import { AdminUsersController } from './users/admin-users.controller';
+import { VersionController } from './version/version.controller';
 import { AdminWalletController } from './wallet/admin-wallet.controller';
 import { WalletController } from './wallet/wallet.controller';
 
@@ -113,6 +114,7 @@ const ALL_CONTROLLERS: Function[] = [
   SitemapSalonsController,
   SearchController,
   AdminUsersController,
+  VersionController,
   AdminWalletController,
   WalletController,
 ];
@@ -143,6 +145,7 @@ const PUBLIC_ROUTES: Array<[Function, string]> = [
   [HealthController, 'liveness'], // orchestrator process-liveness probe, must be reachable with no session
   [HealthController, 'readiness'], // orchestrator readiness probe, must be reachable with no session
   [MetricsController, 'metrics'], // Prometheus scraper target, must be reachable with no session (scrapers don't authenticate)
+  [VersionController, 'getVersion'], // deploy-identity endpoint (version/git SHA/build timestamp); no secrets, safe for anyone to read with no session
   [PlatformConfigController, 'bookingTerms'],
   [ReferralsController, 'validate'], // IP-rate-limited separately, see referrals.controller.ts
   [SalonReviewsController, 'list'],

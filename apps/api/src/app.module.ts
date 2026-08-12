@@ -28,6 +28,7 @@ import { ReviewsModule } from './reviews/reviews.module';
 import { SalonsModule } from './salons/salons.module';
 import { SearchModule } from './search/search.module';
 import { StorageModule } from './storage/storage.module';
+import { VersionModule } from './version/version.module';
 import { WalletModule } from './wallet/wallet.module';
 
 @Module({
@@ -54,6 +55,7 @@ import { WalletModule } from './wallet/wallet.module';
     CommonModule,
     MetricsModule,
     ErrorTrackingModule,
+    VersionModule,
     PlatformConfigModule,
     AlertsModule,
     AuthModule,
