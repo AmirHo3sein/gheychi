@@ -18,6 +18,16 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 --ingroup nodejs apiuser
 COPY --from=installer --chown=apiuser:nodejs /app .
+# Build-time facts baked into this specific image, surfaced at runtime via GET /version
+# (src/version/version.service.ts) -- these never change without a rebuild, so ARG->ENV is
+# the right mechanism (not a deploy-time .env value, which is why docker-compose.prod.yml's
+# shared .env does NOT set these -- see the root .env.example's own comment on this).
+ARG GIT_SHA=unknown
+ARG APP_VERSION=dev
+ARG BUILD_TIMESTAMP=
+ENV GIT_SHA=${GIT_SHA}
+ENV APP_VERSION=${APP_VERSION}
+ENV BUILD_TIMESTAMP=${BUILD_TIMESTAMP}
 USER apiuser
 EXPOSE 3002
 CMD ["node", "apps/api/dist/src/main.js"]

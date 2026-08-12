@@ -204,10 +204,27 @@ jobs:
       contents: read
       packages: write
     steps:
+      # fetch-depth: 0 + fetch-tags: true -- `git describe --tags` below needs the full
+      # history and tag refs, which the default shallow (depth-1, no-tags) checkout doesn't
+      # have.
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Lowercase the GHCR image owner
         run: echo "OWNER_LC=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      # Deploy identity baked into the api image (apps/api/Dockerfile ARG -> ENV), surfaced
+      # at runtime via GET /version -- see that endpoint's own doc comments for why these
+      # are build-time facts, not deploy-time .env values. `git describe --tags --always`
+      # is deterministic and self-documenting: exactly "v1.0.0" at a tagged commit, or
+      # "v1.0.0-3-gabc1234" three commits past the last tag, or a bare short SHA if no tag
+      # exists yet -- never invented, always derived from real git state.
+      - name: Compute release identity
+        run: |
+          echo "APP_VERSION=$(git describe --tags --always)" >> "$GITHUB_ENV"
+          echo "BUILD_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
 
       - uses: docker/setup-buildx-action@v4
 
@@ -223,6 +240,10 @@ jobs:
           context: .
           file: apps/api/Dockerfile
           push: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            APP_VERSION=${{ env.APP_VERSION }}
+            BUILD_TIMESTAMP=${{ env.BUILD_TIMESTAMP }}
           tags: |
             ghcr.io/${{ env.OWNER_LC }}/gheychi-api:${{ github.sha }}
             ghcr.io/${{ env.OWNER_LC }}/gheychi-api:latest
