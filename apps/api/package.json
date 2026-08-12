@@ -11,7 +11,9 @@
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/data-source.ts",
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/data-source.ts",
     "create-admin": "ts-node scripts/create-admin.ts",
-    "benchmark:availability": "ts-node scripts/benchmark-availability.ts"
+    "benchmark:availability": "ts-node scripts/benchmark-availability.ts",
+    "notify-telegram-release": "ts-node scripts/notify-telegram-release.ts",
+    "generate-changelog": "ts-node scripts/generate-changelog.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1080.0",
