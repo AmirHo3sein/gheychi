@@ -19,6 +19,26 @@ docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 ```
 
+**Then run the smoke test** (`apps/api/scripts/smoke-test.ts`) against the live site, from any machine with the repo and `pnpm install`ed (it doesn't need to run on the VPS itself):
+
+```bash
+pnpm --filter @gheychi/api smoke-test
+```
+
+Container healthchecks only prove a process is alive and listening -- they say nothing
+about whether requests flowing through the real stack (Caddy -> api, real JSON body
+parsing, real DTO validation) actually work. This exists because of a real incident: a
+body-parser registration bug silently broke JSON parsing for every route except the one it
+was scoped to, for roughly 50 minutes in production, while every container reported
+healthy the entire time (see `apps/api/test/body-parser-registration.e2e-spec.ts` for the
+underlying bug). The script checks health/version, both the scoped and unscoped JSON body
+parsers specifically, all three frontend apps respond, and the CSP-Report-Only header is
+present on all four domains -- with zero side effects (no real SMS, no real payment; see
+the provider-cutover checklist below for those, which stay manual and one-time only). Exits
+non-zero and prints exactly which check(s) failed if anything's wrong -- treat a failure
+here as seriously as a failed container healthcheck, and consider rolling back (see
+"## Rollback" below) rather than leaving a partially-broken deploy live while debugging.
+
 If the deploy includes a new database migration, take an on-demand backup first (the automated one only runs daily at 03:00 UTC, so relying on it alone means a mid-day migration could be up to ~24h stale to restore from), then run the migration once the `api` container is up:
 
 ```bash
