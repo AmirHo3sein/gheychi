@@ -53,10 +53,24 @@ async function bootstrap() {
   // ever see 'unknown'. Scoped to the one path that needs it, at the final external URL
   // (setGlobalPrefix below doesn't affect raw express-level app.use path matching), rather
   // than loosening body parsing app-wide.
-  app.use(
-    '/api/csp-report',
-    express.json({ type: ['application/json', 'application/csp-report', 'application/reports+json'], limit: '20kb' }),
-  );
+  //
+  // MUST be wrapped in a differently-named function, not passed express.json(...)'s return
+  // value directly: that return value is always a function literally named `jsonParser`
+  // (an internal detail of the `body-parser` package express re-exports), and
+  // ExpressAdapter.isMiddlewareApplied() -- which Nest's own registerParserMiddleware() calls
+  // later, inside app.listen() -- detects an "already applied" json parser purely by that
+  // function name, regardless of path or options. Registering this under the same name here
+  // made Nest skip installing its own real, unscoped json parser entirely, silently breaking
+  // req.body for every other JSON route in the app (confirmed live: this took down
+  // request-otp, and by the same mechanism every other JSON POST/PATCH endpoint, within
+  // minutes of deploying -- see git history for the incident this comment is warning about).
+  function cspReportJsonParser(req: Request, res: Response, next: NextFunction) {
+    return express.json({
+      type: ['application/json', 'application/csp-report', 'application/reports+json'],
+      limit: '20kb',
+    })(req, res, next);
+  }
+  app.use('/api/csp-report', cspReportJsonParser);
   app.useStaticAssets(join(process.cwd(), 'uploads'), {
     prefix: '/uploads',
     // Defense-in-depth alongside the upload-time Content-Type validation (see
