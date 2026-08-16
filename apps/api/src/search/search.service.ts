@@ -133,10 +133,19 @@ export class SearchService {
         AND ($5::int IS NULL OR EXISTS (
           SELECT 1 FROM salon_categories sc2
           WHERE sc2.salon_id = s.id AND sc2.category_id = $5))
+        AND ($6::text IS NULL OR s.name ILIKE '%' || $6 || '%')
+        AND (
+          ($7::bigint IS NULL AND $8::bigint IS NULL) OR EXISTS (
+            SELECT 1 FROM salon_services ss2
+            WHERE ss2.salon_id = s.id AND ss2.is_active
+              AND ($7::bigint IS NULL OR round(ss2.price::numeric * (100 - COALESCE(ss2.discount_percent, 0)) / 100) >= $7)
+              AND ($8::bigint IS NULL OR round(ss2.price::numeric * (100 - COALESCE(ss2.discount_percent, 0)) / 100) <= $8)
+          )
+        )
       ORDER BY is_featured DESC, ${secondarySort}
-      LIMIT $6
+      LIMIT $9
       `,
-      [q.lng, q.lat, q.gender, radiusMeters, q.categoryId ?? null, fetchLimit],
+      [q.lng, q.lat, q.gender, radiusMeters, q.categoryId ?? null, q.q ?? null, q.priceMin ?? null, q.priceMax ?? null, fetchLimit],
     );
 
     const mapped = rows.map((r: Record<string, unknown>) => ({
@@ -209,16 +218,19 @@ export class SearchService {
     // Best-effort and never awaited, same rationale as BookingsService's own
     // booking_started call -- an analytics outage must add zero latency/failure risk
     // to this public, unauthenticated, high-traffic endpoint. Deliberately carries no
-    // raw query text (this endpoint has no free-text field to begin with) and no
-    // lat/lng (precise enough to pin down a searcher's real-world location) -- only
-    // the structured filters the client actually chose (gender/categoryId/sort/radius)
-    // plus how many results came back, which is exactly the shape useful for later
-    // "are searches returning anything" analysis without carrying anything that could
-    // identify the searcher.
+    // raw free-text query (`q.q`, the salon-name filter -- only WHETHER one was used,
+    // never its content) and no lat/lng (precise enough to pin down a searcher's
+    // real-world location) -- only the structured filters the client actually chose
+    // (gender/categoryId/sort/radius/price/name-filter-used) plus how many results
+    // came back, which is exactly the shape useful for later "are searches returning
+    // anything" analysis without carrying anything that could identify the searcher.
     void this.analytics
       .track('search_performed', {
         gender: q.gender,
         categoryId: q.categoryId ?? null,
+        hasNameFilter: !!q.q,
+        priceMin: q.priceMin ?? null,
+        priceMax: q.priceMax ?? null,
         sort: q.sort ?? 'distance',
         radiusKm: q.radiusKm ?? 15,
         page,

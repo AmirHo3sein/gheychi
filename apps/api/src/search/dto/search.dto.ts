@@ -1,7 +1,16 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsLatitude, IsLongitude, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsLatitude, IsLongitude, IsOptional, IsString, Length, Max, Min } from 'class-validator';
 
 export class SearchQueryDto {
+  // Substring match against the salon's own name (ILIKE, same simple pattern as every
+  // other free-text filter in this codebase -- admin-salons.controller.ts's own `name`
+  // filter, content/blog search, review search -- no tsvector/trigram index anywhere in
+  // this codebase to match against, so this doesn't introduce one either).
+  @IsOptional()
+  @IsString()
+  @Length(1, 100)
+  q?: string;
+
   @Type(() => Number)
   @IsLatitude()
   lat: number;
@@ -23,6 +32,21 @@ export class SearchQueryDto {
   @Type(() => Number)
   @IsInt()
   categoryId?: number;
+
+  // Matches a salon that has AT LEAST ONE active service (after its own discount) priced
+  // within [priceMin, priceMax] -- not "the salon's cheapest service falls in this range",
+  // which would silently exclude a salon whose affordable service isn't its very cheapest
+  // one. Same discounted-price expression as minPrice below, so a result here is never
+  // inconsistent with what the card/checkout would actually charge.
+  @IsOptional()
+  @Type(() => Number)
+  @Min(0)
+  priceMin?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @Min(0)
+  priceMax?: number;
 
   @IsOptional()
   @IsIn(['distance', 'rating'])

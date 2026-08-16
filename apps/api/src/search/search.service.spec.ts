@@ -42,6 +42,29 @@ describe('SearchService', () => {
     expect(params[params.length - 1]).toBe(50);
   });
 
+  it('passes null for q/priceMin/priceMax (no-op filters) when none are given', async () => {
+    query.mockResolvedValue([]);
+
+    await service.search(BASE_QUERY);
+
+    const [sql, params] = query.mock.calls[0];
+    // q, priceMin, priceMax sit right before the trailing LIMIT param in the SQL's own
+    // positional order (see search.service.ts) -- asserting by position, not just by
+    // "somewhere in params", pins that the DTO's optional fields actually reach the
+    // query rather than silently landing on the wrong placeholder.
+    expect(params.slice(-4, -1)).toEqual([null, null, null]);
+    expect(sql).toContain('ILIKE');
+  });
+
+  it('forwards q/priceMin/priceMax to the query in the same positional order the SQL expects', async () => {
+    query.mockResolvedValue([]);
+
+    await service.search({ ...BASE_QUERY, q: 'رنگ مو', priceMin: 100_000, priceMax: 500_000 });
+
+    const [, params] = query.mock.calls[0];
+    expect(params.slice(-4, -1)).toEqual(['رنگ مو', 100_000, 500_000]);
+  });
+
   it('returns hasMore=false and nextCursor=null when fewer rows come back than requested', async () => {
     query.mockResolvedValue([row(0), row(1)]);
 
@@ -112,6 +135,9 @@ describe('SearchService', () => {
       expect(analytics.track).toHaveBeenCalledWith('search_performed', {
         gender: 'women',
         categoryId: 3,
+        hasNameFilter: false,
+        priceMin: null,
+        priceMax: null,
         sort: 'rating',
         radiusKm: 10,
         page: 1,
@@ -121,6 +147,16 @@ describe('SearchService', () => {
       const [, properties] = analytics.track.mock.calls[0];
       expect(properties).not.toHaveProperty('lat');
       expect(properties).not.toHaveProperty('lng');
+    });
+
+    it('tracks hasNameFilter=true and never the raw q text when a name filter is used', async () => {
+      query.mockResolvedValue([]);
+
+      await service.search({ ...BASE_QUERY, q: 'رنگ مو' });
+
+      const [, properties] = analytics.track.mock.calls[0];
+      expect(properties).toMatchObject({ hasNameFilter: true });
+      expect(properties).not.toHaveProperty('q');
     });
 
     it('still returns results when the analytics provider fails (never affects the response)', async () => {

@@ -104,6 +104,43 @@ describe('Search (e2e)', () => {
     expect(res.body.items.map((s: { slug: string }) => s.slug)).toEqual(['far-salon']);
   });
 
+  it('filters by a case-insensitive substring of the salon name', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/search')
+      .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', q: 'near' })
+      .expect(200);
+    expect(res.body.items.map((s: { slug: string }) => s.slug)).toEqual(['near-salon']);
+  });
+
+  it('returns an empty array when the name filter matches nothing', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/search')
+      .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', q: 'no such salon exists' })
+      .expect(200);
+    expect(res.body.items).toEqual([]);
+  });
+
+  it('filters by price range -- matches a salon with at least one active service in range', async () => {
+    // near-salon: Cut 500,000. far-salon: Manicure 300,000.
+    const cheap = await request(app.getHttpServer())
+      .get('/api/search')
+      .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', priceMax: 350000 })
+      .expect(200);
+    expect(cheap.body.items.map((s: { slug: string }) => s.slug)).toEqual(['far-salon']);
+
+    const expensive = await request(app.getHttpServer())
+      .get('/api/search')
+      .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', priceMin: 400000 })
+      .expect(200);
+    expect(expensive.body.items.map((s: { slug: string }) => s.slug)).toEqual(['near-salon']);
+
+    const both = await request(app.getHttpServer())
+      .get('/api/search')
+      .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', priceMin: 250000, priceMax: 350000 })
+      .expect(200);
+    expect(both.body.items.map((s: { slug: string }) => s.slug)).toEqual(['far-salon']);
+  });
+
   it('filters men salons for gender=men', async () => {
     const res = await request(app.getHttpServer())
       .get('/api/search')
