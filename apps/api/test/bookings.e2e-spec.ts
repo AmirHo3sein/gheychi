@@ -5,6 +5,7 @@ import { BOOKING_UNAVAILABLE } from '../src/booking/booking-error-codes';
 import { loginAs } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
+import { createApprovedSalonWithService, createService } from './factories/salon.factory';
 
 describe('Bookings — create hold (e2e)', () => {
   let app: INestApplication;
@@ -17,33 +18,12 @@ describe('Bookings — create hold (e2e)', () => {
     app = await createTestApp();
 
     const ownerCookie = await loginAs(app, '09125550001');
-    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
-    const categoryId = categoriesRes.body[0].id;
-    const salonRes = await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerCookie).send({
-      name: 'Booking Test Salon',
-      genderTarget: 'women',
-      address: 'Somewhere St, No. 1',
-      city: 'Tehran',
-      lat: 35.7,
-      lng: 51.4,
-      capacity: 1,
-      categoryIds: [categoryId],
-    });
-    salonId = salonRes.body.id;
-
-    const serviceRes = await request(app.getHttpServer())
-      .post('/api/salons/mine/services')
-      .set('Cookie', ownerCookie)
-      .send({ categoryId, name: 'Cut', price: 2000000, durationMin: 60 });
-    serviceId = serviceRes.body.id;
-
-    const ds = app.get(DataSource);
-    await ds.query(`UPDATE salons SET status = 'approved' WHERE id = $1`, [salonId]);
-    await ds.query(
-      `INSERT INTO working_hours (salon_id, weekday, open_time, close_time)
-       SELECT $1, generate_series(0, 6), '00:00', '23:00'`,
-      [salonId],
-    );
+    ({ salonId, serviceId } = await createApprovedSalonWithService(
+      app,
+      ownerCookie,
+      { name: 'Booking Test Salon' },
+      { price: 2000000 },
+    ));
 
     customerCookie = await loginAs(app, '09126660002');
   });
@@ -259,18 +239,11 @@ describe('Bookings — create hold (e2e)', () => {
     beforeAll(async () => {
       ownerCookie = await loginAs(app, '09125550001');
       const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
-      const serviceRes = await request(app.getHttpServer())
-        .post('/api/salons/mine/services')
-        .set('Cookie', ownerCookie)
-        .send({
-          categoryId: categoriesRes.body[0].id,
-          name: 'Colour (30% off)',
-          price: 2000000,
-          durationMin: 60,
-          discountPercent: 30,
-        })
-        .expect(201);
-      discountedServiceId = serviceRes.body.id;
+      discountedServiceId = await createService(app, ownerCookie, categoriesRes.body[0].id, {
+        name: 'Colour (30% off)',
+        price: 2000000,
+        discountPercent: 30,
+      });
     });
 
     it('does not redeem a coupon that loses to the service discount, and leaves it reusable', async () => {

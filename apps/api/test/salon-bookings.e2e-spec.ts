@@ -1,9 +1,9 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { DataSource } from 'typeorm';
 import { loginAs } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
+import { createApprovedSalonWithService } from './factories/salon.factory';
 
 describe('Salon-side booking management (e2e)', () => {
   let app: INestApplication;
@@ -18,33 +18,7 @@ describe('Salon-side booking management (e2e)', () => {
     app = await createTestApp();
 
     ownerCookie = await loginAs(app, '09122020007');
-    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
-    const categoryId = categoriesRes.body[0].id;
-    const salonRes = await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerCookie).send({
-      name: 'Provider Bookings Salon',
-      genderTarget: 'women',
-      address: 'Somewhere St, No. 1',
-      city: 'Tehran',
-      lat: 35.7,
-      lng: 51.4,
-      capacity: 1,
-      categoryIds: [categoryId],
-    });
-    salonId = salonRes.body.id;
-
-    const serviceRes = await request(app.getHttpServer())
-      .post('/api/salons/mine/services')
-      .set('Cookie', ownerCookie)
-      .send({ categoryId, name: 'Cut', price: 500000, durationMin: 60 });
-    serviceId = serviceRes.body.id;
-
-    const ds = app.get(DataSource);
-    await ds.query(`UPDATE salons SET status = 'approved' WHERE id = $1`, [salonId]);
-    await ds.query(
-      `INSERT INTO working_hours (salon_id, weekday, open_time, close_time)
-       SELECT $1, generate_series(0, 6), '00:00', '23:00'`,
-      [salonId],
-    );
+    ({ salonId, serviceId } = await createApprovedSalonWithService(app, ownerCookie, { name: 'Provider Bookings Salon' }));
 
     customerCookie = await loginAs(app, '09123030008');
     const created = await request(app.getHttpServer())
@@ -117,35 +91,13 @@ describe('Manual/offline bookings (e2e)', () => {
     app = await createTestApp();
 
     ownerCookie = await loginAs(app, '09122020009');
-    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
-    const categoryId = categoriesRes.body[0].id;
-    const salonRes = await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerCookie).send({
+    // Deliberately capacity 1 -- a manual booking must genuinely occupy the salon's only
+    // chair, blocking a subsequent online booking for the same slot.
+    ({ salonId, serviceId } = await createApprovedSalonWithService(app, ownerCookie, {
       name: 'Manual Bookings Salon',
-      genderTarget: 'women',
       address: 'Somewhere St, No. 2',
-      city: 'Tehran',
-      lat: 35.7,
-      lng: 51.4,
-      // Deliberately 1 -- a manual booking must genuinely occupy the salon's only chair,
-      // blocking a subsequent online booking for the same slot.
       capacity: 1,
-      categoryIds: [categoryId],
-    });
-    salonId = salonRes.body.id;
-
-    const serviceRes = await request(app.getHttpServer())
-      .post('/api/salons/mine/services')
-      .set('Cookie', ownerCookie)
-      .send({ categoryId, name: 'Cut', price: 500000, durationMin: 60 });
-    serviceId = serviceRes.body.id;
-
-    const ds = app.get(DataSource);
-    await ds.query(`UPDATE salons SET status = 'approved' WHERE id = $1`, [salonId]);
-    await ds.query(
-      `INSERT INTO working_hours (salon_id, weekday, open_time, close_time)
-       SELECT $1, generate_series(0, 6), '00:00', '23:00'`,
-      [salonId],
-    );
+    }));
 
     customerCookie = await loginAs(app, '09123030009');
   });

@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import { loginAs } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
+import { createApprovedSalonWithService } from './factories/salon.factory';
 
 describe('Workers + worker ratings (e2e)', () => {
   let app: INestApplication;
@@ -19,34 +20,10 @@ describe('Workers + worker ratings (e2e)', () => {
     app = await createTestApp();
 
     ownerCookie = await loginAs(app, '09151110001');
-    const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
-    categoryId = categoriesRes.body[0].id;
-    const salonRes = await request(app.getHttpServer()).post('/api/salons').set('Cookie', ownerCookie).send({
+    ({ salonId, categoryId, serviceId, slug: salonSlug } = await createApprovedSalonWithService(app, ownerCookie, {
       name: 'Worker Test Salon',
-      genderTarget: 'women',
-      address: 'Somewhere St, No. 1',
-      city: 'Tehran',
-      lat: 35.7,
-      lng: 51.4,
       capacity: 5,
-      categoryIds: [categoryId],
-    });
-    salonId = salonRes.body.id;
-    salonSlug = salonRes.body.slug;
-
-    const serviceRes = await request(app.getHttpServer())
-      .post('/api/salons/mine/services')
-      .set('Cookie', ownerCookie)
-      .send({ categoryId, name: 'Cut', price: 500000, durationMin: 60 });
-    serviceId = serviceRes.body.id;
-
-    const ds = app.get(DataSource);
-    await ds.query(`UPDATE salons SET status = 'approved' WHERE id = $1`, [salonId]);
-    await ds.query(
-      `INSERT INTO working_hours (salon_id, weekday, open_time, close_time)
-       SELECT $1, generate_series(0, 6), '00:00', '23:00'`,
-      [salonId],
-    );
+    }));
 
     customerCookie = await loginAs(app, '09152220002');
   });
