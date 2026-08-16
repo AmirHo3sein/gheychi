@@ -1,15 +1,18 @@
 import {
-  BadRequestException, Body, ConflictException, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Patch,
-  Post, Req, UseGuards,
+  BadRequestException, Body, ConflictException, Controller, Get, Inject, NotFoundException, Param, ParseUUIDPipe,
+  Patch, Post, Req, UseGuards,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
 import { DataSource, In, Repository } from 'typeorm';
 import { isUniqueViolation } from '../common/postgres-error-codes';
 import { ReferralsService } from '../referrals/referrals.service';
+import { SMS_PROVIDER, SmsProvider } from '../sms/sms.provider';
 import { User } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
 import { CreateWorkerDto, UpdateWorkerDto, UpdateWorkerServicesDto } from './dto/worker.dto';
+import { Salon } from './salon.entity';
 import { SalonOwnerGuard } from './salon-owner.guard';
 import { SalonService } from './salon-service.entity';
 import { Worker } from './worker.entity';
@@ -22,9 +25,12 @@ export class SalonWorkersController {
     @InjectRepository(Worker) private readonly workers: Repository<Worker>,
     @InjectRepository(WorkerService) private readonly workerServices: Repository<WorkerService>,
     @InjectRepository(SalonService) private readonly salonServices: Repository<SalonService>,
+    @InjectRepository(Salon) private readonly salons: Repository<Salon>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly usersService: UsersService,
     private readonly referralsService: ReferralsService,
+    @Inject(SMS_PROVIDER) private readonly sms: SmsProvider,
+    private readonly config: ConfigService,
   ) {}
 
   @Post()
@@ -34,17 +40,40 @@ export class SalonWorkersController {
       throw new BadRequestException('یک صاحب سالن نمی‌تواند کارمند خودش باشد');
     }
 
+    let worker: Worker;
     try {
-      const worker = await this.workers.save(
+      worker = await this.workers.save(
         this.workers.create({ salonId: req.salonId, userId: user.id, name: dto.name }),
       );
-      return { ...worker, serviceIds: [] };
     } catch (err) {
       // workers_salon_user_uidx UNIQUE(salon_id, user_id) is the actual race-safety
       // backstop here -- this user may already be on the roster.
       if (isUniqueViolation(err)) throw new ConflictException('این کاربر از قبل عضو تیم است');
       throw err;
     }
+
+    // Real "invitation" -- the one previously-missing piece: the worker themselves never
+    // learned they'd been added, whether their account was brand-new (findOrCreateByPhone
+    // above) or already existed. No accept/decline step or pending state -- the roster row
+    // is already live the moment this succeeds (matches this codebase's existing worker
+    // model, e.g. the referral-code relay endpoint below assumes the same "already a real
+    // member, just hasn't logged in yet" shape) -- this SMS is purely so they find out.
+    // Best-effort and fire-and-forget, same posture as every other notification send in
+    // this codebase (PaymentsService.notifyOne): a down SMS provider must never fail the
+    // owner's own request.
+    void this.notifyWorkerAdded(user.phone, req.salonId!).catch(() => {});
+
+    return { ...worker, serviceIds: [] };
+  }
+
+  private async notifyWorkerAdded(phone: string, salonId: string): Promise<void> {
+    const salon = await this.salons.findOneBy({ id: salonId });
+    if (!salon) return;
+    const frontendBase = this.config.get('FRONTEND_BASE_URL', 'http://localhost:3003');
+    await this.sms.send(
+      phone,
+      `شما توسط سالن «${salon.name}» به عنوان کارمند اضافه شدید. برای ورود همین شماره را وارد کنید: ${frontendBase}/login`,
+    );
   }
 
   @Get()

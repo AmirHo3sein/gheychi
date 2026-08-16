@@ -1,13 +1,18 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { ReferralsService } from '../referrals/referrals.service';
+import { SmsProvider } from '../sms/sms.provider';
 import { User } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
+import { Salon } from './salon.entity';
 import { SalonService } from './salon-service.entity';
 import { SalonWorkersController } from './salon-workers.controller';
 import { Worker } from './worker.entity';
 import { WorkerService } from './worker-service.entity';
+
+const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 // Same shape used by content.service.spec.ts / reports.service.spec.ts: a TypeORM
 // QueryFailedError carrying the pg driver's code, which isUniqueViolation() reads.
@@ -21,9 +26,12 @@ describe('SalonWorkersController', () => {
   let workers: { save: jest.Mock; create: jest.Mock; find: jest.Mock; findOneBy: jest.Mock };
   let workerServices: { find: jest.Mock };
   let salonServices: { count: jest.Mock };
+  let salons: { findOneBy: jest.Mock };
   let dataSource: { transaction: jest.Mock };
   let usersService: { findOrCreateByPhone: jest.Mock };
   let referralsService: { getOrCreateMyCode: jest.Mock };
+  let sms: { send: jest.Mock };
+  let config: { get: jest.Mock };
   const OWNER_REQ = { salonId: 'salon-1', user: { id: 'owner-1' } as User } as unknown as Request;
 
   beforeEach(() => {
@@ -35,16 +43,22 @@ describe('SalonWorkersController', () => {
     };
     workerServices = { find: jest.fn().mockResolvedValue([]) };
     salonServices = { count: jest.fn().mockResolvedValue(0) };
+    salons = { findOneBy: jest.fn().mockResolvedValue({ id: 'salon-1', name: 'سالن تست' }) };
     dataSource = { transaction: jest.fn().mockImplementation((fn) => fn({ delete: jest.fn(), insert: jest.fn() })) };
     usersService = { findOrCreateByPhone: jest.fn() };
     referralsService = { getOrCreateMyCode: jest.fn() };
+    sms = { send: jest.fn().mockResolvedValue(undefined) };
+    config = { get: jest.fn().mockReturnValue('http://localhost:3003') };
     controller = new SalonWorkersController(
       workers as unknown as Repository<Worker>,
       workerServices as unknown as Repository<WorkerService>,
       salonServices as unknown as Repository<SalonService>,
+      salons as unknown as Repository<Salon>,
       dataSource as unknown as DataSource,
       usersService as unknown as UsersService,
       referralsService as unknown as ReferralsService,
+      sms as unknown as SmsProvider,
+      config as unknown as ConfigService,
     );
   });
 
@@ -59,12 +73,56 @@ describe('SalonWorkersController', () => {
     });
 
     it('creates a worker row scoped to the caller salon for a distinct phone/user', async () => {
-      usersService.findOrCreateByPhone.mockResolvedValue({ user: { id: 'worker-user-1' }, isNew: true });
+      usersService.findOrCreateByPhone.mockResolvedValue({
+        user: { id: 'worker-user-1', phone: '09121234567' },
+        isNew: true,
+      });
 
       await controller.create(OWNER_REQ, { name: 'Sara', phone: '09121234567' });
 
       expect(workers.create).toHaveBeenCalledWith({ salonId: 'salon-1', userId: 'worker-user-1', name: 'Sara' });
       expect(workers.save).toHaveBeenCalled();
+    });
+
+    it('SMS-notifies the worker they were added, naming the salon and a login link -- fire-and-forget, never blocking the response', async () => {
+      usersService.findOrCreateByPhone.mockResolvedValue({
+        user: { id: 'worker-user-1', phone: '09121234567' },
+        isNew: true,
+      });
+
+      await controller.create(OWNER_REQ, { name: 'Sara', phone: '09121234567' });
+      await flush();
+
+      expect(sms.send).toHaveBeenCalledWith('09121234567', expect.stringContaining('سالن تست'));
+      expect(sms.send).toHaveBeenCalledWith('09121234567', expect.stringContaining('http://localhost:3003/login'));
+    });
+
+    it('still returns successfully even when the SMS send fails (never blocks/fails worker creation)', async () => {
+      usersService.findOrCreateByPhone.mockResolvedValue({
+        user: { id: 'worker-user-1', phone: '09121234567' },
+        isNew: true,
+      });
+      sms.send.mockRejectedValue(new Error('sms provider down'));
+
+      const result = await controller.create(OWNER_REQ, { name: 'Sara', phone: '09121234567' });
+      await flush();
+
+      expect(result).toMatchObject({ salonId: 'salon-1', userId: 'worker-user-1' });
+    });
+
+    it('does not SMS at all when the worker row fails to save (e.g. a 409 conflict)', async () => {
+      usersService.findOrCreateByPhone.mockResolvedValue({
+        user: { id: 'worker-user-1', phone: '09121234567' },
+        isNew: false,
+      });
+      workers.save.mockRejectedValue(uniqueViolation());
+
+      await expect(controller.create(OWNER_REQ, { name: 'Sara', phone: '09121234567' })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      await flush();
+
+      expect(sms.send).not.toHaveBeenCalled();
     });
 
     it('translates a unique-violation on (salon_id, user_id) into a 409', async () => {

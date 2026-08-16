@@ -8,6 +8,7 @@ import { CatalogModule } from '../catalog/catalog.module';
 import { CitiesModule } from '../cities/cities.module';
 import { ReferralsModule } from '../referrals/referrals.module';
 import { WorkerRating } from '../reviews/worker-rating.entity';
+import { SmsModule } from '../sms/sms.module';
 import { StorageModule } from '../storage/storage.module';
 import { UsersModule } from '../users/users.module';
 import { AdminSalonsController } from './admin-salons.controller';
@@ -66,6 +67,9 @@ import { WorkingHour } from './working-hour.entity';
     // For SalonsService.createForOwner/updateMine's best-effort city_id resolution.
     // CitiesModule has no dependency back on SalonsModule, plain one-directional import.
     CitiesModule,
+    // For SalonWorkersController's new-worker SMS notification -- plain leaf module, no
+    // dependency back on SalonsModule.
+    SmsModule,
   ],
   controllers: [
     SalonServicesController,
