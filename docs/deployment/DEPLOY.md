@@ -123,6 +123,7 @@ The API ships with console/mock/local defaults so it runs with zero external cre
 | Storage (S3-compatible) | `STORAGE_PROVIDER=s3`, `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_PUBLIC_BASE_URL` |
 | Push (Web Push) | `PUSH_PROVIDER=webpush`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` — generate a keypair with `npx web-push generate-vapid-keys` and also set the public half as `NUXT_PUBLIC_VAPID_PUBLIC_KEY` |
 | Alerts (admin SMS) | `ALERT_ADMIN_PHONE` — optional, comma-separated; critical money alerts (stuck refunds, orphaned authorities) SMS these numbers via the configured SMS provider. Empty disables SMS; in-app admin notifications always flow. `ALERT_SMS_HOURLY_CAP` (default 30) bounds alert SMS per hour during mass incidents |
+| Error tracking (Sentry) | `ERROR_TRACKING_PROVIDER=sentry`, `SENTRY_DSN` (create a project at sentry.io, or self-host, and copy its DSN). Empty/unset keeps the existing structured-JSON-to-`Logger` behavior — see `apps/api/src/error-tracking/` |
 
 After changing any of these, `docker compose -f docker-compose.prod.yml up -d api` (and `user-app` for the VAPID public key) to apply — no rebuild needed, these are all runtime env vars.
 
