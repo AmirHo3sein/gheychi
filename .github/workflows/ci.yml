@@ -43,7 +43,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v6
         with:
@@ -244,7 +244,7 @@ jobs:
       # fetch-depth: 0 + fetch-tags: true -- `git describe --tags` below needs the full
       # history and tag refs, which the default shallow (depth-1, no-tags) checkout doesn't
       # have.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
