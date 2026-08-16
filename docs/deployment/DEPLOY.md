@@ -94,6 +94,24 @@ Stopping `api` first avoids live writes racing the restore; `--clean --if-exists
 - **Database backups run automatically.** The `backup` service dumps Postgres daily (03:00 UTC, plus once immediately whenever the stack starts) to `s3://$S3_BUCKET/backups/`, keeping 14 days. A failed backup logs loudly to `docker compose logs backup` rather than paging anyone — check it periodically. See "## Restoring a backup" below.
 - **Every service carries a `mem_limit`/`cpus` ceiling** in `docker-compose.prod.yml` — a leak or runaway burst in one container (most plausibly `api`) can't starve the whole VPS and take every other service down with it. These are conservative starting points sized for a generic small VPS, not measured against real production traffic — re-tune them (`docker stats` under real load is the fastest way to see current headroom) if the VPS's actual RAM/vCPU total differs meaningfully from what a modest single-VPS deployment implies, or if `api`/`postgres` are ever OOM-killed under legitimate load.
 
+## Observability
+
+`docker-compose.prod.yml` runs Prometheus + Grafana alongside the app stack, scraping the API's own `GET /api/metrics` (already existed before this — see `apps/api/src/metrics/`) every 15s. Both are internal-only: Prometheus has no port mapping at all (Grafana reaches it at `http://prometheus:9090` over the compose `internal` network), and Grafana is bound to `127.0.0.1:3000` on the host — neither has a Caddy route or a real domain, so neither is reachable from the public internet.
+
+**One-time setup**: set `GRAFANA_ADMIN_PASSWORD` in `.env` before first `up -d` (Grafana refuses to start with a blank one in production).
+
+**Viewing it**: from your own machine,
+
+```bash
+ssh -L 3000:localhost:3000 <deploy-host>
+```
+
+then open `http://localhost:3000` locally and log in as `admin` / `$GRAFANA_ADMIN_PASSWORD`. The Prometheus datasource is auto-provisioned (`docker/grafana/provisioning/datasources/prometheus.yml`) — no manual setup needed before building or importing a dashboard. Prometheus itself has no UI worth tunneling to separately; query it through Grafana's Explore view, or `docker compose -f docker-compose.prod.yml exec prometheus wget -qO- http://localhost:9090/api/v1/query?query=up` for a one-off check.
+
+**Retention**: 30 days of metrics history (`--storage.tsdb.retention.time=30d`), bounded to keep disk usage predictable on a single small VPS rather than growing forever — this is a recent-regression/incident window, not a long-term analytics store (that's what `AnalyticsService`/`analytics_events` are for, a separate concern).
+
+Publicly exposing Grafana behind a real subdomain (its own TLS cert, same admin password) is a deliberate, not-yet-done follow-up rather than an oversight — the SSH-tunnel path above needed zero new DNS records to ship.
+
 ## Provider cutover checklist
 
 The API ships with console/mock/local defaults so it runs with zero external credentials. Flip these `.env` values on the VPS to go live with real providers — no code changes needed, every implementation already exists and is unit-tested:

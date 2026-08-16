@@ -134,6 +134,50 @@ services:
     cpus: 0.5
     networks: [internal]
 
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    restart: unless-stopped
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # A single-VPS deploy has no long-term metrics-retention need beyond spotting a
+      # recent regression/incident -- bounded to keep disk usage predictable rather than
+      # growing forever.
+      - --storage.tsdb.retention.time=30d
+    depends_on: [api]
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 0.5
+    networks: [internal]
+
+  grafana:
+    image: grafana/grafana-oss:11.4.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # No public route for this exists in the Caddyfile -- see the port mapping below.
+      GF_SERVER_ROOT_URL: http://localhost:3000
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+    # Loopback-only -- deliberately NOT proxied through Caddy (no DOMAIN_* var claims a
+    # subdomain for it, no TLS cert requested for it). View it via an SSH tunnel
+    # (`ssh -L 3000:localhost:3000 <host>`, then http://localhost:3000 locally) -- see
+    # docs/deployment/DEPLOY.md's "Observability" section. Exposing it publicly later is a
+    # deliberate follow-up (a real subdomain + TLS + this same admin password), not an
+    # oversight.
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on: [prometheus]
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.5
+    networks: [internal]
+
 networks:
   internal:
 
@@ -141,3 +185,5 @@ volumes:
   pgdata:
   caddy_data:
   caddy_config:
+  prometheus_data:
+  grafana_data:
