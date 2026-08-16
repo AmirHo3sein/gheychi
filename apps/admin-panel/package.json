@@ -8,6 +8,7 @@
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:e2e": "node e2e/prepare-db.cjs && playwright test",
     "typecheck": "vue-tsc -b --noEmit"
   },
@@ -31,6 +32,7 @@
     "@types/node": "^22.10.0",
     "@types/pg": "^8.20.0",
     "@vitejs/plugin-vue": "^5.2.1",
+    "@vitest/coverage-v8": "^3.2.6",
     "@vue/test-utils": "^2.4.6",
     "happy-dom": "^15.11.0",
     "ioredis": "^5.6.0",

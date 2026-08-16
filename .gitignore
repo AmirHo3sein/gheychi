@@ -13,6 +13,7 @@ dist/
 test-results/
 playwright-report/
 blob-report/
+coverage/
 apps/api/uploads/
 *.tsbuildinfo
 .DS_Store

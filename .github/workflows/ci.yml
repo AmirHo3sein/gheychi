@@ -117,17 +117,36 @@ jobs:
           pnpm --filter @gheychi/provider-panel typecheck
           pnpm --filter @gheychi/admin-panel typecheck
 
-      - name: Backend unit tests
-        run: pnpm --filter @gheychi/api test
+      # Runs the coverage-instrumented variant directly rather than `test` then `test:coverage`
+      # separately -- coverage instrumentation doesn't change what passes/fails, so a second
+      # full run would only double this step's time for no extra signal. Report-only for now
+      # (no threshold gate): see the coverage-upload step below for where the actual numbers
+      # land. Deciding on/enforcing a minimum is a product call, not something to silently
+      # bake into CI.
+      - name: Backend unit tests (with coverage)
+        run: pnpm --filter @gheychi/api test:coverage
 
       - name: Backend e2e tests
         run: pnpm --filter @gheychi/api test:e2e
 
-      - name: Frontend unit/component tests
+      - name: Frontend unit/component tests (with coverage)
         run: |
-          pnpm --filter @gheychi/user-app test
-          pnpm --filter @gheychi/provider-panel test
-          pnpm --filter @gheychi/admin-panel test
+          pnpm --filter @gheychi/user-app test:coverage
+          pnpm --filter @gheychi/provider-panel test:coverage
+          pnpm --filter @gheychi/admin-panel test:coverage
+
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            apps/api/coverage/
+            apps/user-app/coverage/
+            apps/provider-panel/coverage/
+            apps/admin-panel/coverage/
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Cache Playwright browsers
         # Keyed on the lockfile hash so a Playwright version bump invalidates it automatically.
@@ -184,6 +203,15 @@ jobs:
           pnpm --filter @gheychi/provider-panel exec node e2e/prepare-db.cjs
           pnpm --filter @gheychi/provider-panel exec playwright test --retries=1
 
+      - name: Upload provider-panel Playwright trace/video on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: provider-panel-playwright-report
+          path: apps/provider-panel/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Kill any lingering api dev server
         if: always()
         run: pkill -f "nest start" || true
@@ -192,6 +220,15 @@ jobs:
         run: |
           pnpm --filter @gheychi/admin-panel exec node e2e/prepare-db.cjs
           pnpm --filter @gheychi/admin-panel exec playwright test --retries=1
+
+      - name: Upload admin-panel Playwright trace/video on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-panel-playwright-report
+          path: apps/admin-panel/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Build all apps
         run: pnpm build
