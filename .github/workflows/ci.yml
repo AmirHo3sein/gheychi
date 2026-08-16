@@ -57,6 +57,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Report-only, not blocking: as of this step's introduction, `--prod` alone already
+      # surfaces 25 pre-existing high/critical advisories, every one of them a transitive
+      # build-time dependency of nuxt/@nuxt/image (postcss/svgo's image-processing chain --
+      # static-output tooling, not code that runs against live user input), not something
+      # fixable here without waiting on upstream releases. Dependabot already watches these
+      # passively; this adds a visible, always-present signal in every CI run instead of
+      # relying on someone noticing a Dependabot PR -- `|| true` so a new advisory here is
+      # something to go LOOK at (grep this step's log), not a blocked merge for an issue
+      # this repo has no immediate fix for.
+      - name: Dependency vulnerability audit (report-only)
+        run: pnpm audit --audit-level=high || true
+
       # Migrations previously applied only as a side effect of prepare-db.cjs scripts and
       # webServer boot -- no dedicated, clearly-attributed step existed. This makes a
       # duplicate migration timestamp (two branches independently picking the same leading

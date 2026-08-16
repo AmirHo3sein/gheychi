@@ -7,8 +7,25 @@
 		X-Content-Type-Options nosniff
 		X-Frame-Options DENY
 		Referrer-Policy strict-origin-when-cross-origin
+		# Safe to set unconditionally: every site block below is HTTPS-only (Caddy's
+		# automatic HTTPS already redirects any stray HTTP request), so there is no legit
+		# plain-HTTP traffic this could break. No `preload` -- that requires submitting to
+		# the browser preload list, a much harder-to-reverse commitment than this repo
+		# needs to make as part of a routine hardening pass.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		-Server
 	}
+}
+
+# Every powerful browser feature denied by default -- user-app's own block below overrides
+# just `geolocation`, the one feature this stack actually uses (its home page's
+# near-me search, see app/pages/index.vue). No site here uses camera/microphone/payment/usb.
+(permissions_policy_restrictive) {
+	header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+}
+
+(permissions_policy_user_app) {
+	header Permissions-Policy "camera=(), microphone=(), geolocation=(self), payment=(), usb=()"
 }
 
 # Report-Only, not enforcing -- see docs/deployment/csp-proposal.md for the full research
@@ -33,6 +50,7 @@
 
 {$DOMAIN_APEX} {
 	import security_headers
+	import permissions_policy_user_app
 	import csp_user_app
 	reverse_proxy user-app:3003
 }
@@ -44,23 +62,27 @@
 # A 301 here is the one place that actually resolves that instead of leaving it to chance.
 www.{$DOMAIN_APEX} {
 	import security_headers
+	import permissions_policy_restrictive
 	redir https://{$DOMAIN_APEX}{uri} permanent
 }
 
 {$DOMAIN_API} {
 	import security_headers
+	import permissions_policy_restrictive
 	import csp_api
 	reverse_proxy api:3002
 }
 
 {$DOMAIN_PANEL} {
 	import security_headers
+	import permissions_policy_restrictive
 	import csp_panel
 	reverse_proxy provider-panel:80
 }
 
 {$DOMAIN_ADMIN} {
 	import security_headers
+	import permissions_policy_restrictive
 	import csp_panel
 	reverse_proxy admin-panel:80
 }
