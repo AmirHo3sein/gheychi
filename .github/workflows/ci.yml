@@ -230,6 +230,32 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+      - name: Kill any lingering api dev server
+        if: always()
+        run: pkill -f "nest start" || true
+
+      # The one deliberate gap the three suites above share: none of them follows a booking
+      # created in one app into another. This spawns api + user-app + provider-panel
+      # together and drives a single booking across both frontends in one test -- see
+      # apps/e2e-cross-app/playwright.config.ts's own header comment.
+      - name: Cross-app booking flow e2e
+        run: |
+          pnpm --filter @gheychi/e2e-cross-app exec node e2e/prepare-db.cjs
+          pnpm --filter @gheychi/e2e-cross-app exec playwright test --retries=1
+
+      - name: Upload cross-app Playwright trace/video on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cross-app-playwright-report
+          path: apps/e2e-cross-app/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Kill any lingering api dev server
+        if: always()
+        run: pkill -f "nest start" || true
+
       - name: Build all apps
         run: pnpm build
 
