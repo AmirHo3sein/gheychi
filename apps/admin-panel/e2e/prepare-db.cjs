@@ -98,6 +98,42 @@ async function main() {
   // target user for a manual balance adjustment via WalletView/AdjustBalanceCard.
   await seed.query(`INSERT INTO users (phone, role) VALUES ('09120000502', 'customer')`)
 
+  // A SECOND admin account, distinct from 09120000500 -- OtpService rate-limits to 3
+  // requests/phone/hour and 01/02/03 above already spend all three on that phone within
+  // this same suite run. 04-admin-gap-coverage.spec.ts logs in as this one instead.
+  await seed.query(`INSERT INTO users (phone, role) VALUES ('09120000506', 'admin')`)
+
+  // -- Seed data for 04-admin-gap-coverage.spec.ts (categories, invoices, analytics --
+  // previously zero e2e coverage despite solid unit coverage on each of these pages) --
+
+  // One category referenced by a real salon service (delete must 409-restrict), one
+  // unreferenced (delete must actually succeed).
+  const { rows: [{ id: usedCategoryId }] } = await seed.query(
+    `INSERT INTO service_categories (name, icon) VALUES ('رنگ مو e2e', 'palette') RETURNING id`,
+  )
+  await seed.query(`INSERT INTO service_categories (name, icon) VALUES ('دسته‌بندی بدون استفاده e2e', 'tag')`)
+  const { rows: [{ id: approvedSalonId }] } = await seed.query(
+    `SELECT id FROM salons WHERE slug = 'e2e-admin-panel-approved-salon'`,
+  )
+  await seed.query(
+    `INSERT INTO salon_services (salon_id, category_id, name, price, duration_min)
+     VALUES ($1, $2, 'رنگ مو e2e', 300000, 60)`,
+    [approvedSalonId, usedCategoryId],
+  )
+
+  // An issued invoice for the same approved salon -- InvoicesView's record-payment action
+  // (InvoiceStatusActions.vue -> PATCH /admin/invoices/:id/payment) had zero e2e coverage.
+  await seed.query(
+    `INSERT INTO invoices (salon_id, jalali_year, jalali_month, period_start, period_end,
+       total_gross_amount, total_commission_amount, total_net_payable, status)
+     VALUES ($1, 1404, 5, '2026-07-22T00:00:00Z', '2026-08-21T23:59:59Z', 500000, 50000, 450000, 'issued')`,
+    [approvedSalonId],
+  )
+
+  // One analytics event -- AnalyticsView's totals table had zero e2e coverage (only its
+  // component-level spec exercised it against a mocked API response).
+  await seed.query(`INSERT INTO analytics_events (event_name, properties) VALUES ('user_registered', '{}')`)
+
   await seed.end()
 }
 
