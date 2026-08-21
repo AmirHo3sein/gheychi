@@ -28,7 +28,7 @@ describe('PayamakYabSmsProvider', () => {
     await provider.send('09121234567', 'hello');
 
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://smspanel.payamakyab.com/Post/Send.asmx');
+    expect(url).toBe('https://p.1000sms.ir/Post/Send.asmx');
     expect(init.method).toBe('POST');
     expect(init.headers['SOAPAction']).toBe('http://tempuri.org/SendSimpleSMS');
     expect(init.headers['Content-Type']).toContain('text/xml');

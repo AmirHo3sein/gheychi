@@ -5,7 +5,14 @@ import { SmsProvider } from './sms.provider';
 // in this codebase for that, and the one method this needs (SendSimpleSMS) has a small
 // enough, stable enough contract that hand-rolling the envelope (matching
 // KavenegarSmsProvider's own plain-fetch style) is simpler than adding one just for this.
-const PAYAMAKYAB_URL = 'https://smspanel.payamakyab.com/Post/Send.asmx';
+//
+// p.1000sms.ir, NOT the panel's other domain (smspanel.payamakyab.com) -- same backend
+// account (confirmed via a live GetCredit call returning the identical balance from
+// both), but smspanel.payamakyab.com's TLS certificate is expired; this domain's is
+// valid. Never point this back at the expired-cert domain, even temporarily -- this
+// class deliberately does not weaken certificate validation, so that domain hard-fails
+// every request.
+const PAYAMAKYAB_URL = 'https://p.1000sms.ir/Post/Send.asmx';
 const PAYAMAKYAB_TIMEOUT_MS = 10_000;
 
 // SendSimpleSMSResult's own documented contract: on success it's "<deliveryStatus>-
