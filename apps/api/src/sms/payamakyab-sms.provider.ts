@@ -1,0 +1,115 @@
+import { Injectable } from '@nestjs/common';
+import { SmsProvider } from './sms.provider';
+
+// A plain SOAP 1.1 (.asmx) web service, not REST -- no client library dependency exists
+// in this codebase for that, and the one method this needs (SendSimpleSMS) has a small
+// enough, stable enough contract that hand-rolling the envelope (matching
+// KavenegarSmsProvider's own plain-fetch style) is simpler than adding one just for this.
+const PAYAMAKYAB_URL = 'https://smspanel.payamakyab.com/Post/Send.asmx';
+const PAYAMAKYAB_TIMEOUT_MS = 10_000;
+
+// SendSimpleSMSResult's own documented contract: on success it's "<deliveryStatus>-
+// <recId>" (e.g. "0-1782780631" -- 0 meaning "handed to the carrier", recId a tracking
+// id this codebase never needs since nothing here polls GetDelivery); on failure it's a
+// BARE status code with no dash at all. The two "0"s are NOT the same thing -- a bare
+// "0" is failure (bad username/password), while "0-<anything>" is success -- so success
+// is detected structurally (contains a dash), and failure only by exact match against
+// this known list.
+const FAILURE_MESSAGES: Record<string, string> = {
+  '0': 'نام کاربری یا رمز عبور صحیح نیست',
+  '2': 'اعتبار کافی نیست',
+  '3': 'محدودیت در ارسال روزانه',
+  '4': 'محدودیت در حجم ارسال',
+  '5': 'شماره فرستنده معتبر نیست یا غیرفعال است',
+  '6': 'شماره موبایل صحیح جهت ارسال وجود ندارد',
+  '7': 'متن پیامک خالی است',
+  '8': 'کاربر ارسال‌کننده غیرفعال است',
+  '9': 'تعداد شماره‌ها بیش از حد مجاز است',
+  '100': 'مجاز به استفاده از وب سرویس نیستید',
+};
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+// The panel's own sample payloads use bare 10-digit numbers ("912xxxxxxx", no leading
+// zero, no +98) -- this codebase stores phones as 09xxxxxxxxx everywhere else, so this is
+// the one seam that needs to strip the leading zero to match what the panel documents.
+function toBareMobile(phone: string): string {
+  return phone.startsWith('0') ? phone.slice(1) : phone;
+}
+
+function buildEnvelope(username: string, password: string, from: string, to: string, text: string): string {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <SendSimpleSMS xmlns="http://tempuri.org/">
+      <username>${escapeXml(username)}</username>
+      <password>${escapeXml(password)}</password>
+      <from>${escapeXml(from)}</from>
+      <to>${escapeXml(to)}</to>
+      <text>${escapeXml(text)}</text>
+      <isflash>false</isflash>
+    </SendSimpleSMS>
+  </soap:Body>
+</soap:Envelope>`;
+}
+
+// Tolerant of an `ns1:`/any-prefix or unprefixed tag -- the docs' own sample response
+// screenshots show the prefixed form (<ns1:SendSimpleSMSResult>), but ASP.NET .asmx
+// services are also known to answer unprefixed depending on how the client declares its
+// namespace; matching both is cheap and avoids a fragile assumption either way.
+function extractResult(xml: string): string | null {
+  const match = xml.match(/<(?:[\w.-]+:)?SendSimpleSMSResult>([^<]*)<\/(?:[\w.-]+:)?SendSimpleSMSResult>/);
+  return match ? match[1].trim() : null;
+}
+
+@Injectable()
+export class PayamakYabSmsProvider implements SmsProvider {
+  constructor(
+    private readonly username: string,
+    private readonly password: string,
+    private readonly sender: string,
+  ) {}
+
+  async sendOtp(phone: string, code: string): Promise<void> {
+    await this.send(phone, `کد تایید شما در قیچی: ${code}`);
+  }
+
+  async send(phone: string, message: string): Promise<void> {
+    const envelope = buildEnvelope(this.username, this.password, this.sender, toBareMobile(phone), message);
+    let res: Response;
+    try {
+      res = await fetch(PAYAMAKYAB_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/xml; charset=utf-8',
+          SOAPAction: 'http://tempuri.org/SendSimpleSMS',
+        },
+        body: envelope,
+        signal: AbortSignal.timeout(PAYAMAKYAB_TIMEOUT_MS),
+      });
+    } catch (err) {
+      throw new Error(`PayamakYab send failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const body = await res.text();
+    if (!res.ok) {
+      throw new Error(`PayamakYab send failed: HTTP ${res.status} -- ${body.slice(0, 300)}`);
+    }
+    const result = extractResult(body);
+    if (result === null) {
+      throw new Error(`PayamakYab send failed: unrecognized response -- ${body.slice(0, 300)}`);
+    }
+    if (FAILURE_MESSAGES[result] !== undefined) {
+      throw new Error(`PayamakYab send failed: ${FAILURE_MESSAGES[result]} (code ${result})`);
+    }
+    if (!/^\d+-\d+$/.test(result)) {
+      throw new Error(`PayamakYab send failed: unrecognized result "${result}"`);
+    }
+  }
+}

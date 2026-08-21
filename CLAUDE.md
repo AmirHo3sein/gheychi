@@ -147,7 +147,7 @@ Every external integration follows the same interface-token-factory pattern, sel
 
 | Concern | Interface | Token | Implementations | Selector env var |
 |---|---|---|---|---|
-| SMS | `SmsProvider` (`sms/sms.provider.ts`) | `SMS_PROVIDER` | `ConsoleSmsProvider`, `KavenegarSmsProvider` | `SMS_PROVIDER=console\|kavenegar` |
+| SMS | `SmsProvider` (`sms/sms.provider.ts`) | `SMS_PROVIDER` | `ConsoleSmsProvider`, `KavenegarSmsProvider`, `PayamakYabSmsProvider` (a plain SOAP/.asmx panel — hand-rolled envelope via `fetch`, no SOAP client dependency; needs `PAYAMAKYAB_USERNAME`/`PAYAMAKYAB_PASSWORD`/`PAYAMAKYAB_SENDER`) | `SMS_PROVIDER=console\|kavenegar\|payamakyab` |
 | Payments | `PaymentGateway` (`booking/payment-gateway.ts`) | `PAYMENT_GATEWAY` | `MockPaymentGateway`, `ZarinpalGateway` | `PAYMENT_GATEWAY=mock\|zarinpal` |
 | Push | `PushProvider` (`push/push.provider.ts`) | `PUSH_PROVIDER` | `ConsolePushProvider`, `WebPushProvider` | `PUSH_PROVIDER=console\|webpush` |
 | Error tracking | `ErrorTrackingService` (`error-tracking/error-tracking.service.ts`) | `ERROR_TRACKING_PROVIDER` | `LoggerErrorTrackingService` (structured-JSON-to-`Logger`), `SentryErrorTrackingService` (real `@sentry/node`, `skipOpenTelemetrySetup: true` + `tracesSampleRate: 0` since this app's own OTel SDK in `tracing.ts` already owns tracing — Sentry here is error capture only) | `ERROR_TRACKING_PROVIDER=logger\|sentry`, defaults to `logger`; `sentry` mode requires `SENTRY_DSN` too (`getOrThrow`, fails fast if missing — same posture as `PAYMENT_GATEWAY=zarinpal`'s own credentials) |
