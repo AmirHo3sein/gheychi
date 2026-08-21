@@ -331,7 +331,7 @@ const STEP_HINT: Record<typeof step.value, string> = {
                   :disabled="codeExpiresIn > 0 || resendsRemaining === 0"
                   @click="requestOtp"
                 >
-                  {{ codeExpiresIn > 0 ? `ارسال مجدد کد (${formatCountdown(codeExpiresIn)})` : 'ارسال مجدد کد' }}
+                  ارسال مجدد کد
                 </button>
               </p>
               <!-- Resends are capped at 3/hour server-side, and resend only unlocks once the
