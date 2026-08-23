@@ -105,7 +105,14 @@ export class PayamakYabSmsProvider implements SmsProvider {
         signal: AbortSignal.timeout(PAYAMAKYAB_TIMEOUT_MS),
       });
     } catch (err) {
-      throw new Error(`PayamakYab send failed: ${err instanceof Error ? err.message : String(err)}`);
+      // Node's undici gives a generic top-level message ("fetch failed") for every
+      // network-level failure alike (DNS, connection refused, TLS, ...) -- the actual
+      // reason lives on `.cause`, which a bare `err.message` silently drops. This is
+      // exactly the gap that turned a real, specific network error into an
+      // undiagnosable "fetch failed" in production once already.
+      const cause = err instanceof Error && 'cause' in err ? err.cause : undefined;
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(`PayamakYab send failed: ${detail}${cause ? ` (cause: ${String(cause)})` : ''}`);
     }
     const body = await res.text();
     if (!res.ok) {

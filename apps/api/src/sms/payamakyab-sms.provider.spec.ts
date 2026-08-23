@@ -110,6 +110,16 @@ describe('PayamakYabSmsProvider', () => {
     await expect(provider.send('09121234567', 'hi')).rejects.toThrow('PayamakYab send failed');
   });
 
+  it('surfaces the real underlying cause of a fetch failure, not just the generic "fetch failed"', async () => {
+    // Node's undici gives every network-level failure the same generic top-level
+    // message -- the actual reason (DNS, connection refused, TLS, ...) lives on
+    // `.cause`, which this codebase already lost once in production.
+    fetchMock.mockRejectedValue(new TypeError('fetch failed', { cause: new Error('getaddrinfo ENOTFOUND p.1000sms.ir') }));
+    const provider = new PayamakYabSmsProvider('voltan', 'secret', '10000767');
+
+    await expect(provider.send('09121234567', 'hi')).rejects.toThrow(/ENOTFOUND p\.1000sms\.ir/);
+  });
+
   it('bounds the request with a network timeout', async () => {
     fetchMock.mockResolvedValue({ ok: true, text: async () => soapResponse('0-1') });
     const provider = new PayamakYabSmsProvider('voltan', 'secret', '10000767');
