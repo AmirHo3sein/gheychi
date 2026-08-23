@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { SmsProvider } from './sms.provider';
 
 // A plain SOAP 1.1 (.asmx) web service, not REST -- no client library dependency exists
@@ -78,6 +78,8 @@ function extractResult(xml: string): string | null {
 
 @Injectable()
 export class PayamakYabSmsProvider implements SmsProvider {
+  private readonly logger = new Logger('PayamakYabSmsProvider');
+
   constructor(
     private readonly username: string,
     private readonly password: string,
@@ -89,7 +91,8 @@ export class PayamakYabSmsProvider implements SmsProvider {
   }
 
   async send(phone: string, message: string): Promise<void> {
-    const envelope = buildEnvelope(this.username, this.password, this.sender, toBareMobile(phone), message);
+    const bareMobile = toBareMobile(phone);
+    const envelope = buildEnvelope(this.username, this.password, this.sender, bareMobile, message);
     let res: Response;
     try {
       res = await fetch(PAYAMAKYAB_URL, {
@@ -118,5 +121,12 @@ export class PayamakYabSmsProvider implements SmsProvider {
     if (!/^\d+-\d+$/.test(result)) {
       throw new Error(`PayamakYab send failed: unrecognized result "${result}"`);
     }
+    // The panel accepting the send (a real recId, not a failure code) is NOT the same
+    // as the phone actually receiving it -- logging the recId is what makes a later
+    // GetDelivery lookup possible when a user reports "nothing arrived" despite this
+    // codebase seeing a clean 201. Never the message text itself (it may carry a real
+    // OTP code) -- phone + recId only.
+    const [, recId] = result.split('-');
+    this.logger.log(`Accepted by carrier: phone=${bareMobile} recId=${recId}`);
   }
 }

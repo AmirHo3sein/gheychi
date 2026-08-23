@@ -119,6 +119,18 @@ describe('PayamakYabSmsProvider', () => {
     expect(fetchMock.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
   });
 
+  it('logs the recId on a successful send (never the message text, which may carry a real OTP code)', async () => {
+    fetchMock.mockResolvedValue({ ok: true, text: async () => soapResponse('0-1782738475') });
+    const provider = new PayamakYabSmsProvider('voltan', 'secret', '10000767');
+    const logSpy = jest.spyOn(provider['logger'], 'log');
+
+    await provider.send('09121234567', 'کد تایید شما در قیچی: 654321');
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('recId=1782738475'));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('phone=9121234567'));
+    expect(logSpy.mock.calls[0][0]).not.toContain('654321');
+  });
+
   describe('sendOtp', () => {
     it('composes a Persian OTP message and sends it through the same SendSimpleSMS call', async () => {
       fetchMock.mockResolvedValue({ ok: true, text: async () => soapResponse('0-1') });
