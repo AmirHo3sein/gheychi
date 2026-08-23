@@ -120,6 +120,32 @@ describe('PayamakYabSmsProvider', () => {
     await expect(provider.send('09121234567', 'hi')).rejects.toThrow(/ENOTFOUND p\.1000sms\.ir/);
   });
 
+  it('retries once on a network-level failure and succeeds if the retry lands', async () => {
+    fetchMock
+      .mockRejectedValueOnce(new TypeError('fetch failed', { cause: new Error('getaddrinfo EAI_AGAIN p.1000sms.ir') }))
+      .mockResolvedValueOnce({ ok: true, text: async () => soapResponse('0-1') });
+    const provider = new PayamakYabSmsProvider('voltan', 'secret', '10000767');
+
+    await expect(provider.send('09121234567', 'hi')).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('throws (does not retry) on a non-2xx HTTP response -- deterministic, retrying changes nothing', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 500, text: async () => 'Internal Server Error' });
+    const provider = new PayamakYabSmsProvider('voltan', 'secret', '10000767');
+
+    await expect(provider.send('09121234567', 'hi')).rejects.toThrow('HTTP 500');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws (does not retry) on a business-logic failure code from the panel', async () => {
+    fetchMock.mockResolvedValue({ ok: true, text: async () => soapResponse('2') });
+    const provider = new PayamakYabSmsProvider('voltan', 'secret', '10000767');
+
+    await expect(provider.send('09121234567', 'hi')).rejects.toThrow(/اعتبار کافی نیست/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('bounds the request with a network timeout', async () => {
     fetchMock.mockResolvedValue({ ok: true, text: async () => soapResponse('0-1') });
     const provider = new PayamakYabSmsProvider('voltan', 'secret', '10000767');
