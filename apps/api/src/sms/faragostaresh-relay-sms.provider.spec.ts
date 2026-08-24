@@ -75,6 +75,31 @@ describe('FaragostareshRelaySmsProvider', () => {
     await expect(provider.send('09121234567', 'hi')).rejects.toThrow('Faragostaresh relay send failed');
   });
 
+  it('surfaces the real underlying cause of a fetch failure, not just the generic "fetch failed"', async () => {
+    fetchMock.mockRejectedValue(new TypeError('fetch failed', { cause: new Error('getaddrinfo EAI_AGAIN www.faragostaresh.com') }));
+    const provider = new FaragostareshRelaySmsProvider();
+
+    await expect(provider.send('09121234567', 'hi')).rejects.toThrow(/EAI_AGAIN www\.faragostaresh\.com/);
+  });
+
+  it('retries once on a network-level failure and succeeds if the retry lands', async () => {
+    fetchMock
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce({ status: 200, json: async () => ({ result: true, data: {}, error: { message: '' } }) });
+    const provider = new FaragostareshRelaySmsProvider();
+
+    await expect(provider.send('09121234567', 'hi')).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('throws (does not retry) on the relay\'s own business-logic failure -- deterministic, retrying changes nothing', async () => {
+    fetchMock.mockResolvedValue({ status: 502, json: async () => ({ result: false, data: [], error: { message: 'Insufficient SMS credit.' } }) });
+    const provider = new FaragostareshRelaySmsProvider();
+
+    await expect(provider.send('09121234567', 'hi')).rejects.toThrow('Insufficient SMS credit.');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('bounds the request with a network timeout', async () => {
     fetchMock.mockResolvedValue({ status: 200, json: async () => ({ result: true, data: {}, error: { message: '' } }) });
     const provider = new FaragostareshRelaySmsProvider();

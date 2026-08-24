@@ -48,20 +48,7 @@ export class FaragostareshRelaySmsProvider implements SmsProvider {
 
   async send(phone: string, message: string): Promise<void> {
     const bareMobile = toBareMobile(phone);
-    let res: Response;
-    try {
-      res = await fetch(RELAY_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${RELAY_TOKEN}`,
-        },
-        body: JSON.stringify({ mobile: bareMobile, message }),
-        signal: AbortSignal.timeout(RELAY_TIMEOUT_MS),
-      });
-    } catch (err) {
-      throw new Error(`Faragostaresh relay send failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    const res = await this.post(bareMobile, message);
     let body: RelayResponse;
     try {
       body = (await res.json()) as RelayResponse;
@@ -80,5 +67,36 @@ export class FaragostareshRelaySmsProvider implements SmsProvider {
     // `data.message`, which echoes the real text back and may carry a real OTP code)
     // is what makes that follow-up check possible.
     this.logger.log(`Relayed via faragostaresh: phone=${bareMobile} providerResponse=${JSON.stringify(body.data?.provider_response ?? null)}`);
+  }
+
+  // Same scoped retry as PayamakYabSmsProvider's own post() -- ONE retry, only for a
+  // network-level failure (fetch() itself throwing: DNS/connect/TLS), never for an
+  // HTTP error or the relay's own business-logic failure (bad token, provider error,
+  // ...), which are deterministic. This class shipped without this the first time and
+  // a real request hit exactly the same transient DNS flakiness (a bare, undiagnosable
+  // "fetch failed") already fixed once in the PayamakYab provider -- carrying the same
+  // protection over here from the start would have caught it.
+  private async post(bareMobile: string, message: string): Promise<Response> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await fetch(RELAY_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${RELAY_TOKEN}`,
+          },
+          body: JSON.stringify({ mobile: bareMobile, message }),
+          signal: AbortSignal.timeout(RELAY_TIMEOUT_MS),
+        });
+      } catch (err) {
+        if (attempt < 2) {
+          this.logger.warn(`Network-level failure on attempt ${attempt}, retrying once: ${err instanceof Error ? err.message : String(err)}`);
+          continue;
+        }
+        const cause = err instanceof Error && 'cause' in err ? err.cause : undefined;
+        const detail = err instanceof Error ? err.message : String(err);
+        throw new Error(`Faragostaresh relay send failed: ${detail}${cause ? ` (cause: ${String(cause)})` : ''}`);
+      }
+    }
   }
 }
