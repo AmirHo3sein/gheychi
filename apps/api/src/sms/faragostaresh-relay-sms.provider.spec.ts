@@ -19,7 +19,17 @@ describe('FaragostareshRelaySmsProvider', () => {
     expect(init.method).toBe('POST');
     expect(init.headers['Authorization']).toBe('Bearer 7f3c9a2e8b1d46f0a5c7e9d2b8f14a63');
     expect(init.headers['Content-Type']).toBe('application/json');
-    expect(JSON.parse(init.body)).toEqual({ mobile: '9121234567', message: 'hello' });
+    expect(JSON.parse(init.body)).toEqual({ mobile: '9121234567', message: 'hello لغو 11' });
+  });
+
+  it('appends the required لغو 11 opt-out footer to every message, regardless of content', async () => {
+    fetchMock.mockResolvedValue({ status: 200, json: async () => ({ result: true, data: {}, error: { message: '' } }) });
+    const provider = new FaragostareshRelaySmsProvider();
+
+    await provider.send('09121234567', 'نوبت شما در سالن، ساعت ۱۰ لغو شد.');
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.message).toBe('نوبت شما در سالن، ساعت ۱۰ لغو شد. لغو 11');
   });
 
   it('resolves on result:true', async () => {

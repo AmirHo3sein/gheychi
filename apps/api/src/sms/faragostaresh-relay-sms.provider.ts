@@ -26,6 +26,14 @@ const RELAY_URL = 'https://www.faragostaresh.com/sms/send.php';
 const RELAY_TOKEN = '7f3c9a2e8b1d46f0a5c7e9d2b8f14a63';
 const RELAY_TIMEOUT_MS = 15_000;
 
+// The line behind this relay silently drops (SendSmsResult reports success, but
+// GetDelivery/actual delivery fails) any message that doesn't carry this standard
+// Iranian SMS opt-out footer -- confirmed by directly comparing a working Postman
+// call (message ended in "... لغو 11") against every one of our own failing sends
+// (no footer). Appended here, once, so it covers every message type this provider
+// ever sends (OTP, cancellations, confirmations, ...), not just OTP.
+const OPT_OUT_FOOTER = 'لغو 11';
+
 interface RelayResponse {
   result: boolean;
   data?: Record<string, unknown>;
@@ -48,7 +56,8 @@ export class FaragostareshRelaySmsProvider implements SmsProvider {
 
   async send(phone: string, message: string): Promise<void> {
     const bareMobile = toBareMobile(phone);
-    const res = await this.post(bareMobile, message);
+    const footedMessage = `${message} ${OPT_OUT_FOOTER}`;
+    const res = await this.post(bareMobile, footedMessage);
     let body: RelayResponse;
     try {
       body = (await res.json()) as RelayResponse;
