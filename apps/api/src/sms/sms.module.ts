@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ConsoleSmsProvider } from './console-sms.provider';
+import { FaragostareshRelaySmsProvider } from './faragostaresh-relay-sms.provider';
 import { KavenegarSmsProvider } from './kavenegar-sms.provider';
 import { PayamakYabSmsProvider } from './payamakyab-sms.provider';
 import { SMS_PROVIDER } from './sms.provider';
@@ -24,6 +25,12 @@ import { SMS_PROVIDER } from './sms.provider';
             config.getOrThrow('PAYAMAKYAB_PASSWORD'),
             config.getOrThrow('PAYAMAKYAB_SENDER'),
           );
+        }
+        // TEMPORARY stopgap -- see FaragostareshRelaySmsProvider's own doc comment.
+        // Switch back to SMS_PROVIDER=payamakyab once the panel authorizes our
+        // server's IP for the SendSms method directly; don't forget this exists.
+        if (provider === 'faragostaresh-relay') {
+          return new FaragostareshRelaySmsProvider();
         }
         return new ConsoleSmsProvider();
       },
