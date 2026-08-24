@@ -71,7 +71,14 @@ export class FaragostareshRelaySmsProvider implements SmsProvider {
     if (!body.result) {
       throw new Error(`Faragostaresh relay send failed: ${body.error?.message ?? `HTTP ${res.status}`}`);
     }
-    // Never the message text itself (it may carry a real OTP code) -- phone only.
-    this.logger.log(`Relayed via faragostaresh: phone=${bareMobile}`);
+    // The relay's own `result: true` only means the panel's SendSms call itself
+    // returned success (SendSmsResult=1) -- it says nothing about whether the carrier
+    // actually delivered it (confirmed: a user reported a clean success here with
+    // nothing arriving on their phone). `provider_response` is the raw SendSms
+    // response (send.php's own `$soapResult`), which carries the real per-recipient
+    // recId GetDelivery needs to check actual delivery status -- logging it (never
+    // `data.message`, which echoes the real text back and may carry a real OTP code)
+    // is what makes that follow-up check possible.
+    this.logger.log(`Relayed via faragostaresh: phone=${bareMobile} providerResponse=${JSON.stringify(body.data?.provider_response ?? null)}`);
   }
 }

@@ -29,6 +29,28 @@ describe('FaragostareshRelaySmsProvider', () => {
     await expect(provider.send('09121234567', 'hi')).resolves.toBeUndefined();
   });
 
+  it('logs the raw provider_response on success (never data.message, which echoes the real text back)', async () => {
+    fetchMock.mockResolvedValue({
+      status: 200,
+      json: async () => ({
+        result: true,
+        data: {
+          mobile: '9121234567',
+          message: 'کد تایید شما در قیچی: 654321',
+          provider_response: { SendSmsResult: 1, recId: { long: '2122594150' }, status: { byte: 0 } },
+        },
+        error: { message: '' },
+      }),
+    });
+    const provider = new FaragostareshRelaySmsProvider();
+    const logSpy = jest.spyOn(provider['logger'], 'log');
+
+    await provider.send('09121234567', 'کد تایید شما در قیچی: 654321');
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('2122594150'));
+    expect(logSpy.mock.calls[0][0]).not.toContain('654321');
+  });
+
   it('throws with the relay\'s own error message on result:false', async () => {
     fetchMock.mockResolvedValue({
       status: 502,
