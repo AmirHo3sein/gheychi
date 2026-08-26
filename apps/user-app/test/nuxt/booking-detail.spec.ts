@@ -54,6 +54,15 @@ describe('booking detail page', () => {
     wrapper?.unmount()
     wrapper = undefined
     clearNuxtData(['booking-detail-b1', 'booking-review-b1'])
+    // useState has no $reset() -- shared across every test in this file (see the
+    // feature-flags gating test below).
+    useState('feature-flags').value = {
+      reviewsEnabled: true,
+      storiesEnabled: true,
+      portfolioEnabled: true,
+      referralsEnabled: true,
+      couponsEnabled: true,
+    }
   })
 
   afterEach(() => {
@@ -152,6 +161,25 @@ describe('booking detail page', () => {
     await reviewButton.trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('این نوبت چطور بود؟')
+  })
+
+  it('hides the net-new "ثبت نظر" action when feature_reviews_enabled is off, but still offers "ویرایش نظر" for an existing review', async () => {
+    useState('feature-flags').value = {
+      reviewsEnabled: false,
+      storiesEnabled: true,
+      portfolioEnabled: true,
+      referralsEnabled: true,
+      couponsEnabled: true,
+    }
+    stub({ ...BASE_BOOKING, status: 'completed' })
+    wrapper = await mountSuspended(BookingDetailPage)
+    expect(wrapper.find('[data-testid="review-booking-button"]').exists()).toBe(false)
+
+    wrapper.unmount()
+    clearNuxtData(['booking-detail-b1', 'booking-review-b1'])
+    stub({ ...BASE_BOOKING, status: 'completed' }, [MY_REVIEW])
+    wrapper = await mountSuspended(BookingDetailPage)
+    expect(wrapper.get('[data-testid="review-booking-button"]').text()).toBe('ویرایش نظر')
   })
 
   // Regression: the action read "ثبت نظر" for an already-reviewed booking too, so the

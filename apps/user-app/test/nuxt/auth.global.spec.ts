@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mockNuxtImport } from '@nuxt/test-utils/runtime'
 import { useSessionStore } from '../../app/stores/session'
+import { FEATURE_FLAGS_LOADED_STATE_KEY } from '../../app/composables/useFeatureFlags'
 import authMiddleware from '../../app/middleware/auth.global'
 
 // Same pattern as useApi.spec.ts: `$fetch` is a real globalThis binding, not an
@@ -27,17 +28,23 @@ describe('auth.global middleware', () => {
     navigateToMock.mockReset()
     vi.stubGlobal('$fetch', fetchStub)
     useSessionStore().$reset()
+    // useState has no built-in $reset() the way the one Pinia store above does -- this
+    // ref is otherwise shared across every test in this file (it's keyed by a fixed
+    // string, not re-created per test), so a flag fetched once in an earlier test would
+    // silently short-circuit every later test's own fetch expectations.
+    useState(FEATURE_FLAGS_LOADED_STATE_KEY).value = false
   })
 
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('probes the session on a public route but does not redirect even when the probe 401s', async () => {
+  it('probes the session (and the feature flags) on a public route but does not redirect even when the probe 401s', async () => {
     fetchMock.mockRejectedValue({ response: { status: 401 } })
     await authMiddleware(toRoute('/salons/best-salon-tehran'), toRoute('/'))
 
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    // /auth/me + /platform-config/feature-flags -- both fire on a first-ever navigation.
+    expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(navigateToMock).not.toHaveBeenCalled()
     expect(useSessionStore().isLoggedIn).toBe(false)
   })
@@ -59,13 +66,16 @@ describe('auth.global middleware', () => {
     expect(navigateToMock).toHaveBeenCalledWith('/login')
   })
 
-  it('does not re-probe or redirect on a private route once the session is already checked', async () => {
+  it('does not re-probe the session on a private route once it is already checked, but still fetches feature flags once', async () => {
     const session = useSessionStore()
     session.setUser({ id: '1', phone: '09120000000', name: 'Test', gender: 'male', role: 'customer' })
 
     await authMiddleware(toRoute('/profile'), toRoute('/'))
 
-    expect(fetchMock).not.toHaveBeenCalled()
+    // Feature flags are tracked independently of session.checked -- this middleware run
+    // still fetches them once (no /auth/me call, since the session is already known).
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith('/platform-config/feature-flags', expect.anything())
     expect(navigateToMock).not.toHaveBeenCalled()
   })
 

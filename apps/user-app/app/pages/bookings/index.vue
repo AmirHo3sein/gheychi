@@ -33,6 +33,7 @@ interface MyReview {
 }
 
 const { apiFetch } = useApi()
+const { flags: featureFlags } = useFeatureFlags()
 const bookings = ref<BookingItem[]>([])
 const terms = ref<BookingTerms | null>(null)
 const reviewByBookingId = ref<Record<string, MyReview>>({})
@@ -218,8 +219,10 @@ const { titleId: cancelTitleId } = useDialog(cancelDialogRoot, { onClose: closeC
         </BaseButton>
 
         <template v-if="booking.status === 'completed'">
+          <!-- A review already on file stays viewable/editable even with the flag off,
+               only net-new "ثبت نظر" is hidden -- same reasoning as bookings/[id].vue. -->
           <BaseButton
-            v-if="reviewFor(booking.id)?.status !== 'withdrawn'"
+            v-if="reviewFor(booking.id)?.status !== 'withdrawn' && (reviewFor(booking.id) || featureFlags.reviewsEnabled)"
             variant="secondary"
             data-testid="review-booking-button"
             @click="reviewingBooking = booking"

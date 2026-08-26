@@ -8,6 +8,7 @@ import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect, { type SelectOption } from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useApi } from '@/composables/useApi'
+import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import { formatRemainingTime } from '@/utils/remaining-time'
 
 interface SalonStory {
@@ -25,6 +26,7 @@ interface Service {
 }
 
 const { apiFetch } = useApi()
+const { flags: featureFlags } = useFeatureFlags()
 const stories = ref<SalonStory[]>([])
 const services = ref<Service[]>([])
 const loading = ref(true)
@@ -115,6 +117,19 @@ function serviceName(id: string | null) {
         {{ activeCount.toLocaleString('fa-IR') }} از ۱۰ استوری فعال
       </span>
     </div>
+
+    <!-- Management stays fully functional while the flag is off (only the public read is
+         gated server-side, see public-salon-content.controller.ts) -- this just explains
+         why nothing shows up on the salon's public profile right now. -->
+    <p
+      v-if="!featureFlags.storiesEnabled"
+      data-testid="stories-disabled-banner"
+      role="status"
+      class="mx-auto flex max-w-2xl items-center gap-2 rounded-xl bg-(--tone-warning-bg) p-3 text-sm text-(--tone-warning-text)"
+    >
+      <AppIcon name="warning" :size="16" class="shrink-0" />
+      این ویژگی موقتاً برای مشتریان غیرفعال است؛ می‌توانید همچنان استوری مدیریت کنید.
+    </p>
 
     <!-- Composer form: capped AND centered so its caption field stays a sane width on a
          laptop (while the story grid below still uses the full container) without hugging

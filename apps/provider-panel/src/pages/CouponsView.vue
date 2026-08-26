@@ -9,6 +9,7 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useApi } from '@/composables/useApi'
+import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import type { Tone } from '@/utils/labels'
 
 interface Coupon {
@@ -27,6 +28,7 @@ interface Coupon {
 }
 
 const { apiFetch } = useApi()
+const { flags: featureFlags } = useFeatureFlags()
 const coupons = ref<Coupon[]>([])
 const loading = ref(true)
 const loadError = ref(false)
@@ -172,6 +174,19 @@ async function deactivate(coupon: Coupon) {
          it -- a start-aligned heading above centered content reads as visibly offset from
          it ("the title is on the right"). -->
     <h1 class="text-center text-lg font-bold text-(--color-text)">کدهای تخفیف</h1>
+
+    <!-- Coupon management stays fully functional while the flag is off (only redemption
+         at checkout is gated server-side, see coupons.service.ts) -- this just explains
+         why a customer can't redeem anything right now. -->
+    <p
+      v-if="!featureFlags.couponsEnabled"
+      data-testid="coupons-disabled-banner"
+      role="status"
+      class="mx-auto flex max-w-2xl items-center gap-2 rounded-xl bg-(--tone-warning-bg) p-3 text-sm text-(--tone-warning-text)"
+    >
+      <AppIcon name="warning" :size="16" class="shrink-0" />
+      کدهای تخفیف موقتاً غیرفعال است؛ می‌توانید همچنان کد بسازید، اما مشتریان نمی‌توانند از آن استفاده کنند.
+    </p>
 
     <!-- Capped AND centered independently of the page container: a single-column form whose
          inputs span 1024px reads as broken, and capping without centering hugs the RTL start

@@ -130,10 +130,35 @@ describe('account referral page', () => {
     // cache would otherwise leak the first test's response into the second mount
     // instead of re-fetching -- same reasoning as account-wallet.spec.ts.
     clearNuxtData(['referral-my-code', 'referrals-mine', 'referral-rewards-mine'])
+    // useState has no $reset() -- shared across every test in this file (see the
+    // feature-flags gating test below).
+    useState('feature-flags').value = {
+      reviewsEnabled: true,
+      storiesEnabled: true,
+      portfolioEnabled: true,
+      referralsEnabled: true,
+      couponsEnabled: true,
+    }
   })
 
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  it('hides the code card when feature_referrals_enabled is off, but keeps rewards/invites visible', async () => {
+    stub(MY_CODE, [], 0, 20, [], 0)
+    useState('feature-flags').value = {
+      reviewsEnabled: true,
+      storiesEnabled: true,
+      portfolioEnabled: true,
+      referralsEnabled: false,
+      couponsEnabled: true,
+    }
+    const wrapper = await mountSuspended(ReferralPage)
+
+    expect(wrapper.find('[data-testid="referral-code-card"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('دعوت‌های من')
+    expect(wrapper.text()).toContain('پاداش‌های من')
   })
 
   it('renders the code card and copies the code to the clipboard', async () => {

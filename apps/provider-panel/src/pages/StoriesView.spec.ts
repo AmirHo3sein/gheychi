@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import PhotoUploader from '@/components/photos/PhotoUploader.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
+import { resetFeatureFlags } from '@/composables/useFeatureFlags'
 import { resetToast } from '@/composables/useToast'
 import StoriesView from './StoriesView.vue'
 
@@ -51,6 +52,7 @@ describe('StoriesView', () => {
   beforeEach(() => {
     fetchMock.mockReset()
     resetToast()
+    resetFeatureFlags()
     fetchMock.mockImplementation((path: string) => {
       // Clone list responses so component-side mutations never leak back into the
       // shared fixtures across tests.
@@ -58,6 +60,29 @@ describe('StoriesView', () => {
       if (path === '/salons/mine/services') return Promise.resolve({ data: structuredClone(services), error: null })
       return Promise.resolve({ data: null, error: null })
     })
+  })
+
+  it('shows the "hidden from customers" banner when stories are disabled, but still renders the composer/list', async () => {
+    const { useFeatureFlags } = await import('@/composables/useFeatureFlags')
+    useFeatureFlags().flags.value = {
+      reviewsEnabled: true,
+      storiesEnabled: false,
+      portfolioEnabled: true,
+      referralsEnabled: true,
+      couponsEnabled: true,
+    }
+    const wrapper = await mountView()
+
+    expect(wrapper.get('[data-testid="stories-disabled-banner"]').text()).toContain('موقتاً برای مشتریان غیرفعال است')
+    expect(wrapper.get('[data-testid="cap-meter"]').text()).toContain('۲ از ۱۰ استوری فعال')
+    wrapper.unmount()
+  })
+
+  it('shows no banner when stories are enabled', async () => {
+    const wrapper = await mountView()
+
+    expect(wrapper.find('[data-testid="stories-disabled-banner"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it('shows the cap meter counting every unexpired story, removed ones included', async () => {

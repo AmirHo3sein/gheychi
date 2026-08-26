@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSessionStore } from '@/stores/session'
 import { resetSalon } from '@/composables/useSalon'
+import { resetFeatureFlags } from '@/composables/useFeatureFlags'
 import { createAppRouter } from './index'
 
 vi.mock('@/pages/LoginView.vue', () => ({ default: { template: '<div />' } }))
@@ -21,6 +22,7 @@ describe('router guard', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     resetSalon()
+    resetFeatureFlags()
   })
 
   afterEach(() => {

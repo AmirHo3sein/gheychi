@@ -2,6 +2,7 @@ import { createRouter, type RouterHistory, type Router } from 'vue-router'
 import type { SessionUser } from '@/stores/session'
 import { useSessionStore } from '@/stores/session'
 import { useSalon } from '@/composables/useSalon'
+import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import { useApi } from '@/composables/useApi'
 import AppLayout from '@/components/layout/AppLayout.vue'
 
@@ -34,10 +35,17 @@ export function createAppRouter(history: RouterHistory): Router {
 
   router.beforeEach(async (to) => {
     const session = useSessionStore()
+    // Every route needs these before it renders, to avoid a flash of a banner/feature
+    // that's actually enabled -- ensureLoaded() is a no-op once already loaded, so this is
+    // safe to await unconditionally.
+    const { ensureLoaded: ensureFeatureFlagsLoaded } = useFeatureFlags()
 
     if (!session.checked) {
       const { apiFetch } = useApi()
-      const { data, error } = await apiFetch<SessionUser>('/auth/me', { silent: true, redirectOn401: false })
+      const [{ data, error }] = await Promise.all([
+        apiFetch<SessionUser>('/auth/me', { silent: true, redirectOn401: false }),
+        ensureFeatureFlagsLoaded(),
+      ])
       // A network/5xx error isn't the same as a confirmed 401 -- don't mark session.checked
       // in that case, so the next navigation retries instead of permanently treating a
       // transient blip as "confirmed logged out" for the rest of this tab's session. Mirrors
@@ -45,6 +53,8 @@ export function createAppRouter(history: RouterHistory): Router {
       if (!error || error.status === 401) {
         session.setUser(data)
       }
+    } else {
+      await ensureFeatureFlagsLoaded()
     }
 
     if (to.meta.public) {

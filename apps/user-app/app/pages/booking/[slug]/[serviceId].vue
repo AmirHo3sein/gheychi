@@ -33,6 +33,7 @@ const route = useRoute()
 const slug = route.params.slug as string
 const serviceId = route.params.serviceId as string
 const { apiFetch } = useApi()
+const { flags: featureFlags } = useFeatureFlags()
 
 const { data: page } = await useAsyncData(`booking-${slug}-${serviceId}`, async () => {
   const [salonRes, servicesRes, termsRes, workersRes] = await Promise.all([
@@ -445,7 +446,7 @@ async function confirmBooking() {
            alarm. Numbers still come exclusively from /platform-config/booking-terms above. -->
       <p v-if="page.terms" class="text-(--color-text-muted)">بعد از این زمان، پیش‌پرداخت قابل بازگشت نیست</p>
 
-      <div class="space-y-2 border-t border-(--color-border) pt-4">
+      <div v-if="featureFlags.couponsEnabled" class="space-y-2 border-t border-(--color-border) pt-4">
         <div class="flex items-end gap-2">
           <!-- role="alert" scoped to just the field (label+input+BaseInput's own error
                message), not the whole row, so an invalid-coupon message is announced to

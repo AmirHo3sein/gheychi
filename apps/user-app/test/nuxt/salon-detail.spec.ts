@@ -65,6 +65,16 @@ describe('salon detail page', () => {
     wrapper?.unmount()
     wrapper = undefined
     clearNuxtData('salon-test-salon')
+    // useState has no $reset() -- this ref is shared across every test in this file, so
+    // an earlier test's override (see the feature-flags gating test below) would
+    // otherwise leak into later tests.
+    useState('feature-flags').value = {
+      reviewsEnabled: true,
+      storiesEnabled: true,
+      portfolioEnabled: true,
+      referralsEnabled: true,
+      couponsEnabled: true,
+    }
   })
 
   afterEach(() => {
@@ -201,6 +211,23 @@ describe('salon detail page', () => {
     await wrapper.get('a[href="#reviews"]').trigger('click')
 
     expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
+  })
+
+  it('hides the reviews section and rating link when feature_reviews_enabled is off', async () => {
+    mockEndpoints()
+    useState('feature-flags').value = {
+      reviewsEnabled: false,
+      storiesEnabled: true,
+      portfolioEnabled: true,
+      referralsEnabled: true,
+      couponsEnabled: true,
+    }
+
+    wrapper = await mountSuspended(SalonDetailPage)
+
+    expect(wrapper.find('a[href="#reviews"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="flag-review-button"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('هنوز نظری ثبت نشده است')
   })
 
   it('renders a single-pin map near the address from the salon location', async () => {

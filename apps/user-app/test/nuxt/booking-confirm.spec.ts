@@ -89,10 +89,37 @@ describe('booking confirm page', () => {
     wrapper?.unmount()
     wrapper = undefined
     clearNuxtData('booking-test-salon-svc-1')
+    // useState has no $reset() -- shared across every test in this file (see the
+    // feature-flags gating test below).
+    useState('feature-flags').value = {
+      reviewsEnabled: true,
+      storiesEnabled: true,
+      portfolioEnabled: true,
+      referralsEnabled: true,
+      couponsEnabled: true,
+    }
   })
 
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  it('hides the coupon field entirely when feature_coupons_enabled is off', async () => {
+    stubPageLoad('success')
+    useState('feature-flags').value = {
+      reviewsEnabled: true,
+      storiesEnabled: true,
+      portfolioEnabled: true,
+      referralsEnabled: true,
+      couponsEnabled: false,
+    }
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+
+    expect(wrapper.text()).not.toContain('کد تخفیف دارید؟')
+    expect(wrapper.findAll('button').some((b: DOMWrapper<Element>) => b.text() === 'اعمال')).toBe(false)
   })
 
   it('shows a deposit estimate matching calculateDeposit()\'s formula (max(price*percent/100, minToman))', async () => {

@@ -8,6 +8,7 @@ import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect, { type SelectOption } from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useApi } from '@/composables/useApi'
+import { useFeatureFlags } from '@/composables/useFeatureFlags'
 
 interface PortfolioItem {
   id: string
@@ -24,6 +25,7 @@ interface Service {
 }
 
 const { apiFetch } = useApi()
+const { flags: featureFlags } = useFeatureFlags()
 const items = ref<PortfolioItem[]>([])
 const services = ref<Service[]>([])
 const loading = ref(true)
@@ -130,6 +132,19 @@ async function move(index: number, direction: -1 | 1) {
         {{ items.length.toLocaleString('fa-IR') }} از ۴۰ نمونه کار
       </span>
     </div>
+
+    <!-- Management stays fully functional while the flag is off (only the public read is
+         gated server-side) -- this just explains why nothing shows up on the salon's
+         public profile right now. Same wording as StoriesView.vue's own banner. -->
+    <p
+      v-if="!featureFlags.portfolioEnabled"
+      data-testid="portfolio-disabled-banner"
+      role="status"
+      class="mx-auto flex max-w-2xl items-center gap-2 rounded-xl bg-(--tone-warning-bg) p-3 text-sm text-(--tone-warning-text)"
+    >
+      <AppIcon name="warning" :size="16" class="shrink-0" />
+      این ویژگی موقتاً برای مشتریان غیرفعال است؛ می‌توانید همچنان نمونه کار مدیریت کنید.
+    </p>
 
     <PhotoUploader class="mx-auto max-w-2xl" endpoint="/salons/mine/portfolio" @uploaded="onUploaded" />
 

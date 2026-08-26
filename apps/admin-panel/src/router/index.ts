@@ -36,6 +36,12 @@ const routes = [
       { path: 'users', name: 'users', component: () => import('@/pages/UsersView.vue'), meta: { title: 'کاربران' } },
       { path: 'audit-log', name: 'audit-log', component: () => import('@/pages/AuditLogView.vue'), meta: { title: 'تاریخچه اقدامات' } },
       { path: 'config', name: 'config', component: () => import('@/pages/ConfigView.vue'), meta: { title: 'تنظیمات پلتفرم' } },
+      {
+        path: 'feature-flags',
+        name: 'feature-flags',
+        component: () => import('@/pages/FeatureFlagsView.vue'),
+        meta: { title: 'ویژگی‌های پلتفرم' },
+      },
     ],
   },
 ]

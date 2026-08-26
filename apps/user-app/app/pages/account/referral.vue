@@ -67,6 +67,7 @@ interface RewardsResponse {
 const route = useRoute()
 const router = useRouter()
 const { apiFetch } = useApi()
+const { flags: featureFlags } = useFeatureFlags()
 
 const PAGE_SIZE = 20
 
@@ -290,7 +291,10 @@ useSeoMeta({ title: 'دعوت از دوستان — قیچی' })
       <h1 class="text-lg font-bold">دعوت از دوستان</h1>
     </div>
 
-    <section v-if="myCode" data-testid="referral-code-card" class="space-y-3">
+    <!-- The code/invite CTA is what's hidden while the program is off -- tracked invites
+         and rewards already granted stay visible below, since GET /referrals/mine/* keeps
+         working regardless (only new grants pause server-side). -->
+    <section v-if="myCode && featureFlags.referralsEnabled" data-testid="referral-code-card" class="space-y-3">
       <h2 class="font-bold">کد معرفی من</h2>
       <BaseCard padding="lg" class="space-y-4 text-center">
         <p data-testid="referral-code" class="text-3xl font-bold tracking-[0.3em]">{{ myCode.code }}</p>

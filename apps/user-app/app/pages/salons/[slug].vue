@@ -38,6 +38,12 @@ const route = useRoute()
 const slug = route.params.slug as string
 const { apiFetch } = useApi()
 const session = useSessionStore()
+// Stories/portfolio already come back empty from the API when their flag is off (see
+// PublicSalonContentController), so their existing `v-if="...length"` guards handle that
+// for free -- only reviews needs an explicit check here, since SalonReviews and the rating
+// link both render unconditionally (an empty reviews array still shows a "no reviews yet"
+// state, which would misrepresent the feature as off-by-content rather than off-by-flag).
+const { flags: featureFlags } = useFeatureFlags()
 
 const { data: page } = await useAsyncData(`salon-${slug}`, async () => {
   const salonRes = await apiFetch<Salon>(`/salons/${slug}`, { silent: true })
@@ -338,6 +344,7 @@ function scrollToSection(id: string) {
       </div>
       <p v-if="page.salon.tagline" data-testid="salon-tagline" class="mt-1 text-sm text-(--color-text-muted)">{{ page.salon.tagline }}</p>
       <a
+        v-if="featureFlags.reviewsEnabled"
         href="#reviews"
         class="mt-1 flex w-fit items-center gap-1 text-sm text-(--color-text-muted) underline-offset-2 hover:text-(--color-text) hover:underline"
         @click.prevent="scrollToSection('reviews')"
@@ -540,7 +547,7 @@ function scrollToSection(id: string) {
 
     <SalonTeam :workers="page.workers" />
 
-    <SalonReviews :reviews="page.reviews" :can-report="canReport" @report="openReviewReport" />
+    <SalonReviews v-if="featureFlags.reviewsEnabled" :reviews="page.reviews" :can-report="canReport" @report="openReviewReport" />
 
     <button
       v-if="canReport"

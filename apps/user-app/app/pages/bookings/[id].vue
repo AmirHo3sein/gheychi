@@ -31,6 +31,7 @@ const CANCELLABLE_STATUSES: BookingDetail['status'][] = ['pending_payment', 'con
 
 const route = useRoute()
 const { apiFetch } = useApi()
+const { flags: featureFlags } = useFeatureFlags()
 
 const { data: booking, refresh } = await useAsyncData(`booking-detail-${route.params.id}`, async () => {
   const { data } = await apiFetch<BookingDetail>(`/bookings/${route.params.id}`, { silent: true })
@@ -163,8 +164,11 @@ const reviewButtonLabel = computed(() => {
       </BaseButton>
 
       <template v-if="booking.status === 'completed'">
+        <!-- A review already on file stays viewable/editable even with the flag off (the
+             API only blocks NEW create/reply while disabled, see reviews.service.ts) --
+             only the net-new "ثبت نظر" path is hidden here. -->
         <BaseButton
-          v-if="myReview?.status !== 'withdrawn'"
+          v-if="myReview?.status !== 'withdrawn' && (myReview || featureFlags.reviewsEnabled)"
           variant="secondary"
           data-testid="review-booking-button"
           @click="reviewOpen = true"

@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AppSelect from '@/components/ui/AppSelect.vue'
+import { resetFeatureFlags } from '@/composables/useFeatureFlags'
 import { resetToast } from '@/composables/useToast'
 import PortfolioView from './PortfolioView.vue'
 
@@ -44,6 +45,7 @@ describe('PortfolioView', () => {
   beforeEach(() => {
     fetchMock.mockReset()
     resetToast()
+    resetFeatureFlags()
     fetchMock.mockImplementation((path: string, options?: { method?: string; body?: Record<string, unknown> }) => {
       // Clone list responses so in-place row mutations in the component never leak
       // back into the shared fixtures across tests.
@@ -56,6 +58,29 @@ describe('PortfolioView', () => {
       }
       return Promise.resolve({ data: null, error: null })
     })
+  })
+
+  it('shows the "hidden from customers" banner when portfolio is disabled, but still renders items', async () => {
+    const { useFeatureFlags } = await import('@/composables/useFeatureFlags')
+    useFeatureFlags().flags.value = {
+      reviewsEnabled: true,
+      storiesEnabled: true,
+      portfolioEnabled: false,
+      referralsEnabled: true,
+      couponsEnabled: true,
+    }
+    const wrapper = await mountView()
+
+    expect(wrapper.get('[data-testid="portfolio-disabled-banner"]').text()).toContain('موقتاً برای مشتریان غیرفعال است')
+    expect(wrapper.get('[data-testid="cap-meter"]').text()).toContain('۲ از ۴۰ نمونه کار')
+    wrapper.unmount()
+  })
+
+  it('shows no banner when portfolio is enabled', async () => {
+    const wrapper = await mountView()
+
+    expect(wrapper.find('[data-testid="portfolio-disabled-banner"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it('reorders by swapping the two adjacent items sortOrders via PATCH, then refetches', async () => {

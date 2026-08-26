@@ -21,6 +21,7 @@ const LINKS: { to: string; label: string; icon: IconName }[] = [
   { to: '/audit-log', label: 'تاریخچه اقدامات', icon: 'history' },
   { to: '/referrals/settings', label: 'تنظیمات معرفی', icon: 'gift' },
   { to: '/config', label: 'تنظیمات', icon: 'config' },
+  { to: '/feature-flags', label: 'ویژگی‌ها', icon: 'toggle' },
 ]
 
 const route = useRoute()

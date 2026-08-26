@@ -1,7 +1,8 @@
 import { mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CouponsView from './CouponsView.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
+import { resetFeatureFlags, useFeatureFlags } from '@/composables/useFeatureFlags'
 
 async function mountCoupons() {
   const wrapper = mount(CouponsView)
@@ -10,8 +11,35 @@ async function mountCoupons() {
 }
 
 describe('CouponsView', () => {
+  beforeEach(() => {
+    resetFeatureFlags()
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  it('shows the "temporarily disabled" banner when feature_coupons_enabled is off', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => [] }))
+    useFeatureFlags().flags.value = {
+      reviewsEnabled: true,
+      storiesEnabled: true,
+      portfolioEnabled: true,
+      referralsEnabled: true,
+      couponsEnabled: false,
+    }
+
+    const wrapper = await mountCoupons()
+
+    expect(wrapper.get('[data-testid="coupons-disabled-banner"]').text()).toContain('موقتاً غیرفعال است')
+  })
+
+  it('shows no banner when coupons are enabled', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => [] }))
+
+    const wrapper = await mountCoupons()
+
+    expect(wrapper.find('[data-testid="coupons-disabled-banner"]').exists()).toBe(false)
   })
 
   it('shows a retry-capable error state (not the empty-list message) when the initial load fails', async () => {

@@ -8,6 +8,11 @@ const PROFILE_COMPLETION_PATH = '/profile'
 
 export default defineNuxtRouteMiddleware(async (to) => {
   const session = useSessionStore()
+  // Every page (public or private) needs to know these before it renders, to avoid a
+  // flash of a feature that's actually disabled -- fetched here, once, alongside the
+  // session probe, rather than each page remembering to call it itself.
+  // ensureLoaded() is a no-op once already loaded, so this is safe to await unconditionally.
+  const { ensureLoaded: ensureFeatureFlagsLoaded } = useFeatureFlags()
 
   if (!session.checked) {
     const { apiFetch } = useApi()
@@ -16,13 +21,18 @@ export default defineNuxtRouteMiddleware(async (to) => {
     // hydrated so the UI reflects that they're logged in. redirectOn401: false stops
     // apiFetch's own 401 handling from force-redirecting an anonymous visitor away from
     // a public page -- the explicit check below is the single place that decides that.
-    const { data } = await apiFetch<SessionUser>('/auth/me', { silent: true, redirectOn401: false })
+    const [{ data }] = await Promise.all([
+      apiFetch<SessionUser>('/auth/me', { silent: true, redirectOn401: false }),
+      ensureFeatureFlagsLoaded(),
+    ])
     // This probe can still be in flight when the user finishes an OTP login/profile
     // completion elsewhere in the same session (those call session.setUser() directly,
     // not through this middleware) -- on a slow connection or cold dev server, this
     // probe's stale "still anonymous" result can resolve AFTER that newer, authoritative
     // update. Only apply it if nothing more recent already has.
     if (!session.checked) session.setUser(data)
+  } else {
+    await ensureFeatureFlagsLoaded()
   }
 
   if (!session.isLoggedIn && !isPublicRoute(to.path)) {
