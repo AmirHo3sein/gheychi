@@ -3,6 +3,7 @@ import { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { ActivityController } from './activity/activity.controller';
 import { AdminNotificationsController } from './admin-notifications/admin-notifications.controller';
 import { AdminAuditController } from './audit/admin-audit.controller';
 import { AuthController } from './auth/auth.controller';
@@ -69,6 +70,7 @@ const PATH_METADATA = 'path';
 // caller" assertion below simply never running for it) is caught by the companion
 // "controller count" sanity check.
 const ALL_CONTROLLERS: Function[] = [
+  ActivityController,
   AdminNotificationsController,
   AdminAuditController,
   AuthController,

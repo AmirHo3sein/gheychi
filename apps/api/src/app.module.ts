@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ActivityModule } from './activity/activity.module';
 import { AdminNotificationsModule } from './admin-notifications/admin-notifications.module';
 import { AlertsModule } from './alerts/alerts.module';
 import { AuthGuard } from './auth/auth.guard';
@@ -79,6 +80,7 @@ import { WalletModule } from './wallet/wallet.module';
     ReferralsModule,
     InvoicingModule,
     StorageModule,
+    ActivityModule,
   ],
   controllers: [HealthController],
   providers: [
