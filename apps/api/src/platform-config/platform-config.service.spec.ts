@@ -38,6 +38,26 @@ describe('PlatformConfigService.set', () => {
   });
 });
 
+describe('PlatformConfigService.listAll', () => {
+  it('scopes the query to REQUIRED_PLATFORM_CONFIG_KEYS only, excluding feature flag rows', async () => {
+    const find = jest.fn().mockResolvedValue([]);
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PlatformConfigService,
+        { provide: getRepositoryToken(PlatformConfig), useValue: { find } },
+        { provide: DataSource, useValue: {} },
+        { provide: REDIS, useValue: {} },
+      ],
+    }).compile();
+    const service = moduleRef.get(PlatformConfigService);
+
+    await service.listAll();
+
+    const call = find.mock.calls[0][0];
+    expect(call.where.key._value).toEqual([...REQUIRED_PLATFORM_CONFIG_KEYS]);
+  });
+});
+
 describe('PlatformConfigService.setMany', () => {
   let service: PlatformConfigService;
   let repo: { find: jest.Mock };

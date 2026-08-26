@@ -218,8 +218,16 @@ export class PlatformConfigService implements OnApplicationBootstrap {
     return result;
   }
 
+  // Scoped to the numeric keys only -- this is AdminConfigController's exclusive backing
+  // (list + audit before/after snapshots), whose PATCH round-trips every row this returns
+  // straight back through UpdateConfigDto's @IsNumber() validation. Before this scoping,
+  // listAll() returned literally every platform_config row including the boolean
+  // feature_*_enabled ones, which made that PATCH 400 on its very next save (a boolean
+  // value failing @IsNumber()) -- caught by a real, reproducible admin-panel e2e failure
+  // (02-moderation-and-money.spec.ts's platform-config step). Feature flags have their own
+  // dedicated GET/PATCH /admin/feature-flags; nothing here should ever need to see them.
   listAll(): Promise<PlatformConfig[]> {
-    return this.repo.find({ order: { key: 'ASC' } });
+    return this.repo.find({ where: { key: In([...REQUIRED_PLATFORM_CONFIG_KEYS]) }, order: { key: 'ASC' } });
   }
 
   async set(key: string, value: number | string | boolean): Promise<void> {
