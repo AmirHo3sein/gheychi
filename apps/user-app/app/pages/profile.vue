@@ -111,6 +111,16 @@ useSeoMeta({ title: 'پروفایل — قیچی' })
     </section>
 
     <section class="space-y-2">
+      <h2 class="font-bold">تاریخچه فعالیت</h2>
+      <NuxtLink to="/account/activity" class="block">
+        <BaseCard class="flex items-center justify-between text-(--color-text)">
+          <span class="text-sm">نوبت‌ها، تراکنش‌ها، نظرات و پاداش‌ها در یک نگاه</span>
+          <BaseIcon name="chevron-back" :size="18" class="text-(--color-text-muted)" />
+        </BaseCard>
+      </NuxtLink>
+    </section>
+
+    <section class="space-y-2">
       <h2 class="font-bold">دعوت از دوستان</h2>
       <NuxtLink to="/account/referral" class="block">
         <BaseCard class="flex items-center justify-between text-(--color-text)">

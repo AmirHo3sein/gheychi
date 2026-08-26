@@ -35,6 +35,8 @@ export type IconName =
   | 'razor'
   | 'pencil'
   | 'logout'
+  | 'wallet'
+  | 'gift'
 
 const props = withDefaults(defineProps<{ name: IconName; size?: number }>(), { size: 20 })
 </script>
@@ -185,6 +187,15 @@ const props = withDefaults(defineProps<{ name: IconName; size?: number }>(), { s
       <path d="M9.5 20H5.5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4" />
       <path d="m15.5 16 4-4-4-4" />
       <path d="M19.5 12h-11" />
+    </template>
+    <template v-else-if="name === 'wallet'">
+      <path d="M3.5 7.5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2Z" />
+      <path d="M15.5 12.2h2.3a1.3 1.3 0 0 0 0-2.6h-2.3a1.3 1.3 0 0 0 0 2.6Z" />
+    </template>
+    <template v-else-if="name === 'gift'">
+      <rect x="3.5" y="9.5" width="17" height="10" rx="1.5" />
+      <path d="M3.5 9.5h17M12 9.5V20" />
+      <path d="M12 9.5C9.5 9.5 8 8 8 6.3A2.3 2.3 0 0 1 10.3 4c1.7 0 1.7 3.2 1.7 5.5ZM12 9.5c2.5 0 4-1.5 4-3.2A2.3 2.3 0 0 0 13.7 4c-1.7 0-1.7 3.2-1.7 5.5Z" />
     </template>
   </svg>
 </template>
