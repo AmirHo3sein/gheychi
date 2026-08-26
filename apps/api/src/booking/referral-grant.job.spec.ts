@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { CronJobRunner } from '../common/cron-job-runner.service';
+import { PlatformConfigService } from '../platform-config/platform-config.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { ReferralGrantJob } from './referral-grant.job';
 
@@ -8,6 +9,7 @@ describe('ReferralGrantJob', () => {
   let job: ReferralGrantJob;
   let query: jest.Mock;
   let tryGrantReward: jest.Mock;
+  let getFeatureFlags: jest.Mock;
 
   const AWAITING_CANDIDATE = { referred_user_id: 'user-1', salon_id: null };
   const TRIGGERING_BOOKING = { id: 'booking-1' };
@@ -25,6 +27,7 @@ describe('ReferralGrantJob', () => {
       return [TRIGGERING_BOOKING];
     });
     tryGrantReward = jest.fn().mockResolvedValue(undefined);
+    getFeatureFlags = jest.fn().mockResolvedValue({ referralsEnabled: true });
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -32,6 +35,7 @@ describe('ReferralGrantJob', () => {
         { provide: DataSource, useValue: { query } },
         { provide: ReferralsService, useValue: { tryGrantReward } },
         { provide: CronJobRunner, useValue: { run: jest.fn((_name: string, fn: () => Promise<void>) => fn()) } },
+        { provide: PlatformConfigService, useValue: { getFeatureFlags } },
       ],
     }).compile();
 
@@ -104,6 +108,15 @@ describe('ReferralGrantJob', () => {
     expect(attempted).toBe(1);
     expect(tryGrantReward).toHaveBeenCalledTimes(2);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('user-1'));
+  });
+
+  it('skips both sweeps entirely (0 attempted, no queries) when feature_referrals_enabled is off', async () => {
+    getFeatureFlags.mockResolvedValue({ referralsEnabled: false });
+
+    const attempted = await job.run();
+
+    expect(attempted).toBe(0);
+    expect(query).not.toHaveBeenCalled();
   });
 
   it('handleCron delegates to run() through the shared CronJobRunner', async () => {

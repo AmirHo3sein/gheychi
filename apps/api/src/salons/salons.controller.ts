@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { Public } from '../auth/public.decorator';
+import { PlatformConfigService } from '../platform-config/platform-config.service';
 import { User } from '../users/user.entity';
 import { CreateSalonDto, UpdateSalonDto } from './dto/salon.dto';
 import { SalonOwnerGuard } from './salon-owner.guard';
@@ -8,7 +9,10 @@ import { SalonsService } from './salons.service';
 
 @Controller('salons')
 export class SalonsController {
-  constructor(private readonly salons: SalonsService) {}
+  constructor(
+    private readonly salons: SalonsService,
+    private readonly platformConfig: PlatformConfigService,
+  ) {}
 
   @Post()
   create(@Req() req: Request, @Body() dto: CreateSalonDto) {
@@ -35,7 +39,12 @@ export class SalonsController {
 
   @Get(':slug')
   @Public()
-  publicProfile(@Param('slug') slug: string) {
-    return this.salons.findPublicBySlug(slug);
+  async publicProfile(@Param('slug') slug: string) {
+    const salon = await this.salons.findPublicBySlug(slug);
+    const { reviewsEnabled } = await this.platformConfig.getFeatureFlags();
+    // Showing a rating derived from currently-hidden comments would look broken --
+    // zeroed here (not just hidden client-side) so a direct API call can't see it either.
+    if (!reviewsEnabled) return { ...salon, ratingAvg: '0', ratingCount: 0 };
+    return salon;
   }
 }

@@ -4,7 +4,14 @@ import { EntityManager, IsNull, Repository } from 'typeorm';
 import { isUniqueViolation } from '../common/postgres-error-codes';
 import { httpExceptionReasonCode } from '../metrics/http-exception-reason.util';
 import { MetricsService } from '../metrics/metrics.service';
-import { COUPON_ALREADY_REDEEMED, COUPON_EXPIRED, COUPON_INVALID, COUPON_LIMIT_REACHED } from './coupon-error-codes';
+import { PlatformConfigService } from '../platform-config/platform-config.service';
+import {
+  COUPON_ALREADY_REDEEMED,
+  COUPON_EXPIRED,
+  COUPON_FEATURE_DISABLED,
+  COUPON_INVALID,
+  COUPON_LIMIT_REACHED,
+} from './coupon-error-codes';
 import { CouponRedemption } from './coupon-redemption.entity';
 import { Coupon } from './coupon.entity';
 import { CreateCouponDto, UpdateCouponDto } from './dto/coupon.dto';
@@ -20,6 +27,7 @@ export class CouponsService {
     // comment -- every existing positional `new CouponsService(...)` call site only
     // needs an arg added at the tail.
     private readonly metrics: MetricsService,
+    private readonly platformConfig: PlatformConfigService,
   ) {}
 
   // Codes are normalized uppercase+trim on every write AND every lookup -- the
@@ -195,6 +203,13 @@ export class CouponsService {
   }
 
   private async resolveAndValidateImpl(code: string, salonId: string, userId: string, em?: EntityManager): Promise<Coupon> {
+    // Single choke point for BOTH the standalone preview and the real booking-time
+    // redemption (see this method's own doc comment above) -- one guard covers both.
+    const { couponsEnabled } = await this.platformConfig.getFeatureFlags();
+    if (!couponsEnabled) {
+      throw new BadRequestException({ message: 'کدهای تخفیف موقتاً غیرفعال است', code: COUPON_FEATURE_DISABLED });
+    }
+
     const normalized = this.normalize(code);
     const couponRepo = em ? em.getRepository(Coupon) : this.coupons;
     const redemptionRepo = em ? em.getRepository(CouponRedemption) : this.redemptions;

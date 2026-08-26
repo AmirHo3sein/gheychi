@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { PlatformConfigService } from '../platform-config/platform-config.service';
 import { SearchQueryDto } from './dto/search.dto';
 
 export interface SearchResult {
@@ -64,6 +65,7 @@ export class SearchService {
     // constructors -- every existing positional `new SearchService(...)` call site
     // only needs an arg added at the tail, not threaded through the middle.
     private readonly analytics: AnalyticsService,
+    private readonly platformConfig: PlatformConfigService,
   ) {}
 
   async search(q: SearchQueryDto): Promise<SearchPage> {
@@ -205,7 +207,17 @@ export class SearchService {
 
     const allFetched = [...featuredKept, ...merged];
     const start = (page - 1) * pageSize;
-    const items = allFetched.slice(start, start + pageSize);
+    // Applied only to this page's slice, AFTER the featured-cap merge/sort above has
+    // already used the real values -- zeroing earlier would make a rating-sorted query
+    // lose its real SQL-level ordering once reviews are disabled. Hidden means actually
+    // hidden, not just un-rendered, same principle as the reviews-list/salon-profile
+    // gating elsewhere.
+    const { reviewsEnabled, storiesEnabled } = await this.platformConfig.getFeatureFlags();
+    const items = allFetched.slice(start, start + pageSize).map((r) => ({
+      ...r,
+      ...(reviewsEnabled ? {} : { ratingAvg: 0, ratingCount: 0 }),
+      ...(storiesEnabled ? {} : { hasActiveStory: false }),
+    }));
 
     // rows.length < fetchLimit means Postgres genuinely ran out of matching salons --
     // there is nothing beyond what was fetched, regardless of how this page's slice

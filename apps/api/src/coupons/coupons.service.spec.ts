@@ -2,7 +2,13 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { EntityManager, QueryFailedError } from 'typeorm';
 import { UNIQUE_VIOLATION } from '../common/postgres-error-codes';
 import { MetricsService } from '../metrics/metrics.service';
-import { COUPON_ALREADY_REDEEMED, COUPON_EXPIRED, COUPON_INVALID, COUPON_LIMIT_REACHED } from './coupon-error-codes';
+import {
+  COUPON_ALREADY_REDEEMED,
+  COUPON_EXPIRED,
+  COUPON_FEATURE_DISABLED,
+  COUPON_INVALID,
+  COUPON_LIMIT_REACHED,
+} from './coupon-error-codes';
 import { CouponRedemption } from './coupon-redemption.entity';
 import { Coupon } from './coupon.entity';
 import { CouponsService } from './coupons.service';
@@ -45,7 +51,9 @@ describe('CouponsService create', () => {
       create: jest.fn((data: Partial<Coupon>) => data),
       save: jest.fn((data: Partial<Coupon>) => Promise.resolve(makeCoupon(data))),
     };
-    service = new CouponsService(couponsRepo as never, {} as never, new MetricsService());
+    service = new CouponsService(couponsRepo as never, {} as never, new MetricsService(), {
+      getFeatureFlags: jest.fn().mockResolvedValue({ couponsEnabled: true }),
+    } as never);
   });
 
   // The create and list contracts must agree: the admin/provider coupon screens append the
@@ -78,13 +86,27 @@ describe('CouponsService.resolveAndValidate', () => {
   let couponsRepo: { findOneBy: jest.Mock };
   let redemptionsRepo: { findOneBy: jest.Mock; count: jest.Mock };
   let metrics: MetricsService;
+  let platformConfig: { getFeatureFlags: jest.Mock };
   let service: CouponsService;
 
   beforeEach(() => {
     couponsRepo = { findOneBy: jest.fn() };
     redemptionsRepo = { findOneBy: jest.fn().mockResolvedValue(null), count: jest.fn().mockResolvedValue(0) };
     metrics = new MetricsService();
-    service = new CouponsService(couponsRepo as never, redemptionsRepo as never, metrics);
+    platformConfig = { getFeatureFlags: jest.fn().mockResolvedValue({ couponsEnabled: true }) };
+    service = new CouponsService(couponsRepo as never, redemptionsRepo as never, metrics, platformConfig as never);
+  });
+
+  it('rejects with a distinct code when feature_coupons_enabled is off, before touching the coupon repo', async () => {
+    platformConfig.getFeatureFlags.mockResolvedValue({ couponsEnabled: false });
+
+    await expect(service.resolveAndValidate('SUMMER20', 'salon-1', 'user-1')).rejects.toThrow(
+      'کدهای تخفیف موقتاً غیرفعال است',
+    );
+    expect(await rejectionCode(service.resolveAndValidate('SUMMER20', 'salon-1', 'user-1'))).toBe(
+      COUPON_FEATURE_DISABLED,
+    );
+    expect(couponsRepo.findOneBy).not.toHaveBeenCalled();
   });
 
   // A few of the domain counters wired into this exact call site (see coupons.service.ts's

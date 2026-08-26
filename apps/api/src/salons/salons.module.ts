@@ -6,6 +6,7 @@ import { AuditModule } from '../audit/audit.module';
 import { AuthModule } from '../auth/auth.module';
 import { CatalogModule } from '../catalog/catalog.module';
 import { CitiesModule } from '../cities/cities.module';
+import { PlatformConfigModule } from '../platform-config/platform-config.module';
 import { ReferralsModule } from '../referrals/referrals.module';
 import { WorkerRating } from '../reviews/worker-rating.entity';
 import { SmsModule } from '../sms/sms.module';
@@ -53,6 +54,10 @@ import { WorkingHour } from './working-hour.entity';
     AuthModule,
     StorageModule,
     AuditModule,
+    // Plain, one-directional import -- PlatformConfigModule's own dependencies
+    // (TypeOrmModule, AuthModule, AuditModule) are already imported here, so this
+    // introduces no new module edge and no cycle risk.
+    PlatformConfigModule,
     AdminNotificationsModule,
     AnalyticsModule,
     UsersModule,

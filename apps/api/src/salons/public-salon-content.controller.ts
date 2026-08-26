@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Public } from '../auth/public.decorator';
 import { iranDateString } from '../common/iran-time.util';
+import { PlatformConfigService } from '../platform-config/platform-config.service';
 import { ListWorkersQueryDto, WorkerRatingsQueryDto } from './dto/worker.dto';
 import { PortfolioItem } from './portfolio-item.entity';
 import { ScheduleException } from './schedule-exception.entity';
@@ -29,6 +30,7 @@ export class PublicSalonContentController {
     @InjectRepository(PortfolioItem) private readonly portfolio: Repository<PortfolioItem>,
     @InjectRepository(Worker) private readonly workers: Repository<Worker>,
     @InjectRepository(WorkerRating) private readonly workerRatings: Repository<WorkerRating>,
+    private readonly platformConfig: PlatformConfigService,
   ) {}
 
   private async requireSalonId(slug: string): Promise<string> {
@@ -82,6 +84,11 @@ export class PublicSalonContentController {
   @Get('stories')
   async listStories(@Param('slug') slug: string) {
     const salonId = await this.requireSalonId(slug);
+    const { storiesEnabled } = await this.platformConfig.getFeatureFlags();
+    // Gated here, not only via a frontend v-if -- a direct API call must see the same
+    // empty result the hidden UI implies. Provider-panel management stays functional
+    // regardless (see salon-stories.controller.ts), only the public read is affected.
+    if (!storiesEnabled) return [];
     // Expiry is a DB-clock predicate (the same clock that stamped expires_at at
     // insert), so a story vanishes at exactly 24h with no cron or app-clock drift.
     const rows = await this.stories
@@ -99,6 +106,8 @@ export class PublicSalonContentController {
   @Get('portfolio')
   async listPortfolio(@Param('slug') slug: string) {
     const salonId = await this.requireSalonId(slug);
+    const { portfolioEnabled } = await this.platformConfig.getFeatureFlags();
+    if (!portfolioEnabled) return [];
     const rows = await this.portfolio.find({
       where: { salonId, status: 'published' },
       order: { sortOrder: 'ASC', createdAt: 'ASC' },

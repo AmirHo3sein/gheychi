@@ -1016,7 +1016,10 @@ export class BookingsService {
     // into a money/booking-adjacent flow.
     if (status === 'completed') {
       try {
-        await this.referralsService.tryGrantReward(booking.userId, booking.id, 'completed');
+        const { referralsEnabled } = await this.config.getFeatureFlags();
+        if (referralsEnabled) {
+          await this.referralsService.tryGrantReward(booking.userId, booking.id, 'completed');
+        }
       } catch (err) {
         this.logger.error(
           `tryGrantReward threw for booking ${booking.id} (user ${booking.userId}) after marking it completed: ${err instanceof Error ? err.message : String(err)}`,

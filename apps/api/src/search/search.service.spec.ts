@@ -26,11 +26,19 @@ describe('SearchService', () => {
   let query: jest.Mock;
   let service: SearchService;
   let analytics: { track: jest.Mock };
+  let platformConfig: { getFeatureFlags: jest.Mock };
 
   beforeEach(() => {
     query = jest.fn();
     analytics = { track: jest.fn().mockResolvedValue(undefined) };
-    service = new SearchService({ query } as never, analytics as unknown as AnalyticsService);
+    platformConfig = {
+      getFeatureFlags: jest.fn().mockResolvedValue({ reviewsEnabled: true, storiesEnabled: true }),
+    };
+    service = new SearchService(
+      { query } as never,
+      analytics as unknown as AnalyticsService,
+      platformConfig as never,
+    );
   });
 
   it('requests the default page size (50) as the SQL LIMIT when no cursor is given', async () => {
@@ -164,6 +172,41 @@ describe('SearchService', () => {
       analytics.track.mockRejectedValue(new Error('analytics vendor down'));
 
       await expect(service.search(BASE_QUERY)).resolves.toMatchObject({ items: [expect.objectContaining({ id: 'salon-0' })] });
+    });
+  });
+
+  describe('feature flags', () => {
+    it('zeroes ratingAvg/ratingCount when reviews are disabled, without touching hasActiveStory', async () => {
+      platformConfig.getFeatureFlags.mockResolvedValue({ reviewsEnabled: false, storiesEnabled: true });
+      query.mockResolvedValue([{ ...row(0), rating_avg: 4.5, rating_count: 12, has_active_story: true }]);
+
+      const { items } = await service.search(BASE_QUERY);
+
+      expect(items[0]).toMatchObject({ ratingAvg: 0, ratingCount: 0, hasActiveStory: true });
+    });
+
+    it('forces hasActiveStory to false when stories are disabled, without touching rating', async () => {
+      platformConfig.getFeatureFlags.mockResolvedValue({ reviewsEnabled: true, storiesEnabled: false });
+      query.mockResolvedValue([{ ...row(0), rating_avg: 4.5, rating_count: 12, has_active_story: true }]);
+
+      const { items } = await service.search(BASE_QUERY);
+
+      expect(items[0]).toMatchObject({ ratingAvg: 4.5, ratingCount: 12, hasActiveStory: false });
+    });
+
+    it('still sorts by the real rating internally (sort=rating) even though the displayed value is zeroed', async () => {
+      platformConfig.getFeatureFlags.mockResolvedValue({ reviewsEnabled: false, storiesEnabled: true });
+      // Postgres would have already sorted these DESC by rating_avg for sort=rating --
+      // the mock returns them pre-sorted, matching what the real query does.
+      query.mockResolvedValue([
+        { ...row(0), id: 'high-rated', rating_avg: 4.8, distance_km: 5 },
+        { ...row(1), id: 'low-rated', rating_avg: 2.1, distance_km: 1 },
+      ]);
+
+      const { items } = await service.search({ ...BASE_QUERY, sort: 'rating' });
+
+      expect(items.map((i) => i.id)).toEqual(['high-rated', 'low-rated']);
+      expect(items.every((i) => i.ratingAvg === 0)).toBe(true);
     });
   });
 });

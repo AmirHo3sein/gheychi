@@ -1376,6 +1376,7 @@ describe('BookingsService.updateStatus -- first-completed-booking referral trigg
   let emUpdate: jest.Mock;
   let tryGrantReward: jest.Mock;
   let recordCommission: jest.Mock;
+  let getFeatureFlags: jest.Mock;
 
   const CONFIRMED_BOOKING = {
     id: 'booking-1',
@@ -1390,6 +1391,7 @@ describe('BookingsService.updateStatus -- first-completed-booking referral trigg
     emUpdate = jest.fn().mockResolvedValue({ affected: 1 });
     tryGrantReward = jest.fn().mockResolvedValue(undefined);
     recordCommission = jest.fn().mockResolvedValue(undefined);
+    getFeatureFlags = jest.fn().mockResolvedValue({ referralsEnabled: true });
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -1407,7 +1409,7 @@ describe('BookingsService.updateStatus -- first-completed-booking referral trigg
           provide: DataSource,
           useValue: { transaction: jest.fn((cb: (em: unknown) => unknown) => cb({ update: emUpdate })) },
         },
-        { provide: PlatformConfigService, useValue: {} },
+        { provide: PlatformConfigService, useValue: { getFeatureFlags } },
         { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
         { provide: REDIS, useValue: {} },
         { provide: PAYMENT_GATEWAY, useValue: {} },
@@ -1440,6 +1442,15 @@ describe('BookingsService.updateStatus -- first-completed-booking referral trigg
     await service.updateStatus('salon-1', 'booking-1', 'no_show');
 
     expect(tryGrantReward).not.toHaveBeenCalled();
+  });
+
+  it('does NOT call tryGrantReward when feature_referrals_enabled is off, but still completes the booking', async () => {
+    getFeatureFlags.mockResolvedValue({ referralsEnabled: false });
+
+    const result = await service.updateStatus('salon-1', 'booking-1', 'completed');
+
+    expect(tryGrantReward).not.toHaveBeenCalled();
+    expect(result).toBeDefined();
   });
 
   it('still returns the updated booking even when tryGrantReward throws (never fails the status update response)', async () => {

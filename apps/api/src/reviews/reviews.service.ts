@@ -60,6 +60,9 @@ export class ReviewsService {
   ) {}
 
   async create(userId: string, dto: CreateReviewDto): Promise<Review> {
+    const { reviewsEnabled } = await this.platformConfig.getFeatureFlags();
+    if (!reviewsEnabled) throw new BadRequestException('ثبت نظر موقتاً غیرفعال است');
+
     const booking = await this.bookings.findOneBy({ id: dto.bookingId, userId });
     if (!booking) throw new NotFoundException('Booking not found');
     if (booking.status !== 'completed') {
@@ -286,6 +289,12 @@ export class ReviewsService {
     // this check, reviews of pending/suspended salons were publicly listable by id.
     const salon = await this.salons.findOneBy({ id: salonId, status: 'approved' });
     if (!salon) throw new NotFoundException();
+
+    // Hidden means actually hidden, not just un-rendered -- gated here (not only via a
+    // frontend v-if) so a direct API call sees the same empty result a customer does.
+    const { reviewsEnabled } = await this.platformConfig.getFeatureFlags();
+    if (!reviewsEnabled) return { items: [], total: 0, page, pageSize };
+
     const [rows, total] = await this.reviews.findAndCount({
       where: { salonId, status: 'published' },
       order: { createdAt: 'DESC' },
@@ -435,6 +444,9 @@ export class ReviewsService {
   }
 
   async addSalonReply(salonId: string, reviewId: string, reply: string): Promise<Review> {
+    const { reviewsEnabled } = await this.platformConfig.getFeatureFlags();
+    if (!reviewsEnabled) throw new BadRequestException('پاسخ به نظر موقتاً غیرفعال است');
+
     const review = await this.reviews.findOneBy({ id: reviewId, salonId });
     if (!review) throw new NotFoundException('Review not found');
     await this.reviews.update({ id: reviewId }, { salonReply: reply, salonReplyAt: new Date() });

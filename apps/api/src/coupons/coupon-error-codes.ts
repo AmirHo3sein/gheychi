@@ -15,9 +15,14 @@ export const COUPON_INVALID = 'COUPON_INVALID';
 export const COUPON_EXPIRED = 'COUPON_EXPIRED';
 export const COUPON_ALREADY_REDEEMED = 'COUPON_ALREADY_REDEEMED';
 export const COUPON_LIMIT_REACHED = 'COUPON_LIMIT_REACHED';
+// Platform-wide kill switch (feature_coupons_enabled), not a problem with this
+// specific code -- kept distinct from COUPON_INVALID so a client can tell "your code is
+// wrong" apart from "coupons are off right now" and message the user accordingly.
+export const COUPON_FEATURE_DISABLED = 'COUPON_FEATURE_DISABLED';
 
 export type CouponErrorCode =
   | typeof COUPON_INVALID
   | typeof COUPON_EXPIRED
   | typeof COUPON_ALREADY_REDEEMED
-  | typeof COUPON_LIMIT_REACHED;
+  | typeof COUPON_LIMIT_REACHED
+  | typeof COUPON_FEATURE_DISABLED;

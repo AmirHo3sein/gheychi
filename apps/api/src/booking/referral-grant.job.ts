@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { DataSource } from 'typeorm';
 import { CronJobRunner } from '../common/cron-job-runner.service';
+import { PlatformConfigService } from '../platform-config/platform-config.service';
 import { ReferralsService } from '../referrals/referrals.service';
 
 // Bounds one run's work per bucket; anything left over is picked up on the next
@@ -30,6 +31,7 @@ export class ReferralGrantJob {
     private readonly dataSource: DataSource,
     private readonly referrals: ReferralsService,
     private readonly jobRunner: CronJobRunner,
+    private readonly config: PlatformConfigService,
   ) {}
 
   @Cron('0 * * * *')
@@ -40,6 +42,12 @@ export class ReferralGrantJob {
   }
 
   async run(): Promise<number> {
+    // Single choke point for this job's two sweeps -- a referral sitting in
+    // awaiting_qualifying_event/partially_granted just stays there and gets evaluated
+    // again on the next hourly tick once re-enabled, nothing is lost.
+    const { referralsEnabled } = await this.config.getFeatureFlags();
+    if (!referralsEnabled) return 0;
+
     let attempted = 0;
     attempted += await this.sweepAwaitingFirstPaidBooking();
     attempted += await this.sweepPartiallyGranted();

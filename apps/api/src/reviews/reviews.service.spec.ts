@@ -14,10 +14,12 @@ describe('ReviewsService.listForSalon', () => {
   let service: ReviewsService;
   let reviewsFindAndCount: jest.Mock;
   let salonFindOneBy: jest.Mock;
+  let getFeatureFlags: jest.Mock;
 
   beforeEach(async () => {
     reviewsFindAndCount = jest.fn().mockResolvedValue([[], 0]);
     salonFindOneBy = jest.fn();
+    getFeatureFlags = jest.fn().mockResolvedValue({ reviewsEnabled: true });
     const moduleRef = await Test.createTestingModule({
       providers: [
         ReviewsService,
@@ -27,7 +29,7 @@ describe('ReviewsService.listForSalon', () => {
         { provide: getRepositoryToken(Worker), useValue: {} },
         { provide: getRepositoryToken(WorkerRating), useValue: {} },
         { provide: DataSource, useValue: {} },
-        { provide: PlatformConfigService, useValue: {} },
+        { provide: PlatformConfigService, useValue: { getFeatureFlags } },
       ],
     }).compile();
     service = moduleRef.get(ReviewsService);
@@ -43,6 +45,16 @@ describe('ReviewsService.listForSalon', () => {
     salonFindOneBy.mockResolvedValue(null);
     await expect(service.listForSalon('suspended-salon')).rejects.toBeInstanceOf(NotFoundException);
     expect(salonFindOneBy).toHaveBeenCalledWith({ id: 'suspended-salon', status: 'approved' });
+  });
+
+  it('returns an empty, zero-total envelope without querying reviews when feature_reviews_enabled is off', async () => {
+    salonFindOneBy.mockResolvedValue({ id: 's1', status: 'approved' });
+    getFeatureFlags.mockResolvedValue({ reviewsEnabled: false });
+
+    const result = await service.listForSalon('s1');
+
+    expect(result).toEqual({ items: [], total: 0, page: 1, pageSize: 50 });
+    expect(reviewsFindAndCount).not.toHaveBeenCalled();
   });
 
   it('returns published reviews newest-first for an approved salon, in a {items, total, page, pageSize} envelope', async () => {
@@ -119,6 +131,44 @@ describe('ReviewsService.listForSalon', () => {
   });
 });
 
+describe('ReviewsService.addSalonReply', () => {
+  let service: ReviewsService;
+  let reviewsFindOneBy: jest.Mock;
+  let reviewsUpdate: jest.Mock;
+  let getFeatureFlags: jest.Mock;
+
+  beforeEach(async () => {
+    reviewsFindOneBy = jest.fn().mockResolvedValue({ id: 'r1', salonId: 's1' });
+    reviewsUpdate = jest.fn().mockResolvedValue({ affected: 1 });
+    getFeatureFlags = jest.fn().mockResolvedValue({ reviewsEnabled: true });
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ReviewsService,
+        { provide: getRepositoryToken(Review), useValue: { findOneBy: reviewsFindOneBy, update: reviewsUpdate } },
+        { provide: getRepositoryToken(Booking), useValue: {} },
+        { provide: getRepositoryToken(Salon), useValue: {} },
+        { provide: getRepositoryToken(Worker), useValue: {} },
+        { provide: getRepositoryToken(WorkerRating), useValue: {} },
+        { provide: DataSource, useValue: {} },
+        { provide: PlatformConfigService, useValue: { getFeatureFlags } },
+      ],
+    }).compile();
+    service = moduleRef.get(ReviewsService);
+  });
+
+  it('writes the reply when reviews are enabled', async () => {
+    await service.addSalonReply('s1', 'r1', 'ممنون از نظر شما');
+    expect(reviewsUpdate).toHaveBeenCalledWith({ id: 'r1' }, { salonReply: 'ممنون از نظر شما', salonReplyAt: expect.any(Date) });
+  });
+
+  it('rejects with 400 before touching the review repo when feature_reviews_enabled is off', async () => {
+    getFeatureFlags.mockResolvedValue({ reviewsEnabled: false });
+
+    await expect(service.addSalonReply('s1', 'r1', 'ممنون از نظر شما')).rejects.toBeInstanceOf(BadRequestException);
+    expect(reviewsFindOneBy).not.toHaveBeenCalled();
+  });
+});
+
 // A fake EntityManager whose `query` routes on a distinctive substring of the SQL
 // text, mirroring the real recomputeSalonRating/recomputeWorkerRating call shape
 // (lock -> aggregate SELECT -> UPDATE) without depending on call order.
@@ -144,6 +194,7 @@ describe('ReviewsService.create -- worker rating validation and atomic insert', 
   let reviewsFindOneBy: jest.Mock;
   let transaction: jest.Mock;
   let em: ReturnType<typeof makeFakeEm>;
+  let getFeatureFlags: jest.Mock;
 
   const COMPLETED_BOOKING = { id: 'booking-1', salonId: 'salon-1', status: 'completed', workerId: null as string | null };
 
@@ -152,6 +203,7 @@ describe('ReviewsService.create -- worker rating validation and atomic insert', 
     reviewsFindOneBy = jest.fn().mockResolvedValue(null);
     em = makeFakeEm({ salon: { avg_rating: '5.00', review_count: 1 }, worker: { avg_rating: '4.00', rating_count: 1 } });
     transaction = jest.fn((cb: (em: unknown) => unknown) => cb(em));
+    getFeatureFlags = jest.fn().mockResolvedValue({ reviewsEnabled: true });
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -162,10 +214,19 @@ describe('ReviewsService.create -- worker rating validation and atomic insert', 
         { provide: getRepositoryToken(Worker), useValue: {} },
         { provide: getRepositoryToken(WorkerRating), useValue: {} },
         { provide: DataSource, useValue: { transaction } },
-        { provide: PlatformConfigService, useValue: {} },
+        { provide: PlatformConfigService, useValue: { getFeatureFlags } },
       ],
     }).compile();
     service = moduleRef.get(ReviewsService);
+  });
+
+  it('rejects with 400 before touching the booking repo when feature_reviews_enabled is off', async () => {
+    getFeatureFlags.mockResolvedValue({ reviewsEnabled: false });
+
+    await expect(service.create('user-1', { bookingId: 'booking-1', rating: 5 })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(bookingsFindOneBy).not.toHaveBeenCalled();
   });
 
   it('400s when the booking has a worker but no workerRating was submitted', async () => {
