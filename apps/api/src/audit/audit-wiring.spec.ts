@@ -4,6 +4,7 @@ import { AdminBlogController } from '../content/admin-blog.controller';
 import { AdminCouponsController } from '../coupons/admin-coupons.controller';
 import { AdminInvoicesController } from '../invoicing/admin-invoices.controller';
 import { AdminConfigController } from '../platform-config/admin-config.controller';
+import { AdminFeatureFlagsController } from '../platform-config/admin-feature-flags.controller';
 import { AdminReferralRewardTypesController, AdminReferralsController } from '../referrals/admin-referrals.controller';
 import { AdminReportsController } from '../reports/admin-reports.controller';
 import { AdminReviewsController } from '../reviews/admin-reviews.controller';
@@ -79,6 +80,12 @@ describe('admin mutation audit wiring', () => {
       handler: AdminConfigController.prototype.update,
       action: 'config.update',
       targetType: 'config',
+    },
+    {
+      label: 'feature flags update',
+      handler: AdminFeatureFlagsController.prototype.update,
+      action: 'feature-flags.update',
+      targetType: 'feature-flags',
     },
     {
       label: 'report resolve',

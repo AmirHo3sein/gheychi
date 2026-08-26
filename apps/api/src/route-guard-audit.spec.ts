@@ -30,6 +30,7 @@ import { AdminInvoicesController } from './invoicing/admin-invoices.controller';
 import { SalonInvoicesController } from './invoicing/salon-invoices.controller';
 import { MetricsController } from './metrics/metrics.controller';
 import { AdminConfigController } from './platform-config/admin-config.controller';
+import { AdminFeatureFlagsController } from './platform-config/admin-feature-flags.controller';
 import { PlatformConfigController } from './platform-config/platform-config.controller';
 import { PushController } from './push/push.controller';
 import { AdminReferralRewardTypesController, AdminReferralsController } from './referrals/admin-referrals.controller';
@@ -93,6 +94,7 @@ const ALL_CONTROLLERS: Function[] = [
   SalonInvoicesController,
   MetricsController,
   AdminConfigController,
+  AdminFeatureFlagsController,
   PlatformConfigController,
   PushController,
   AdminReferralRewardTypesController,
@@ -160,6 +162,7 @@ const PUBLIC_ROUTES: Array<[Function, string]> = [
   [VersionController, 'getVersion'], // deploy-identity endpoint (version/git SHA/build timestamp); no secrets, safe for anyone to read with no session
   [CspReportController, 'report'], // browser-submitted CSP violation reports (report-uri) -- no session concept applies, any browser can send one
   [PlatformConfigController, 'bookingTerms'],
+  [PlatformConfigController, 'getFeatureFlags'], // consumed by user-app/provider-panel to gate their own UI; no secrets, safe for anyone to read with no session
   [ReferralsController, 'validate'], // IP-rate-limited separately, see referrals.controller.ts
   [SalonReviewsController, 'list'],
   [PublicSalonContentController, 'listServices'],

@@ -4,7 +4,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { REDIS } from '../redis/redis.module';
 import { PlatformConfig } from './platform-config.entity';
-import { PlatformConfigService, REQUIRED_PLATFORM_CONFIG_KEYS } from './platform-config.service';
+import { FEATURE_FLAG_KEYS, PlatformConfigService, REQUIRED_PLATFORM_CONFIG_KEYS } from './platform-config.service';
 
 describe('PlatformConfigService.set', () => {
   let service: PlatformConfigService;
@@ -236,6 +236,95 @@ describe('PlatformConfigService -- caching', () => {
   });
 });
 
+describe('PlatformConfigService -- feature flags', () => {
+  let service: PlatformConfigService;
+  let repo: { findOneBy: jest.Mock; find: jest.Mock };
+  let dataSource: { transaction: jest.Mock };
+  let em: { update: jest.Mock };
+  let redis: { get: jest.Mock; set: jest.Mock; del: jest.Mock };
+
+  beforeEach(async () => {
+    em = { update: jest.fn() };
+    repo = { findOneBy: jest.fn(), find: jest.fn() };
+    dataSource = { transaction: jest.fn((cb: (em: unknown) => Promise<unknown>) => cb(em)) };
+    redis = { get: jest.fn().mockResolvedValue(null), set: jest.fn(), del: jest.fn() };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PlatformConfigService,
+        { provide: getRepositoryToken(PlatformConfig), useValue: repo },
+        { provide: DataSource, useValue: dataSource },
+        { provide: REDIS, useValue: redis },
+      ],
+    }).compile();
+    service = moduleRef.get(PlatformConfigService);
+  });
+
+  it('reads all 5 flags, mapped to their field names', async () => {
+    repo.findOneBy.mockImplementation(({ key }: { key: string }) =>
+      Promise.resolve({ key, value: key === 'feature_stories_enabled' ? false : true }),
+    );
+
+    await expect(service.getFeatureFlags()).resolves.toEqual({
+      reviewsEnabled: true,
+      storiesEnabled: false,
+      portfolioEnabled: true,
+      referralsEnabled: true,
+      couponsEnabled: true,
+    });
+  });
+
+  it('caches a flag as "1"/"0" and reads a cache hit back as the correct boolean', async () => {
+    redis.get.mockResolvedValueOnce(null).mockResolvedValueOnce('0');
+    repo.findOneBy.mockResolvedValue({ key: 'feature_reviews_enabled', value: true });
+
+    await service.getFeatureFlags(); // first call: populates cache
+    expect(redis.set).toHaveBeenCalledWith('platform-config:feature_reviews_enabled', '1', 'EX', 60);
+
+    redis.get.mockResolvedValue('0');
+    repo.findOneBy.mockClear();
+    const second = await service.getFeatureFlags();
+    expect(second.reviewsEnabled).toBe(false);
+    expect(repo.findOneBy).not.toHaveBeenCalled();
+  });
+
+  it('throws InternalServerErrorException when a flag row is missing', async () => {
+    repo.findOneBy.mockResolvedValue(null);
+
+    await expect(service.getFeatureFlags()).rejects.toBeInstanceOf(InternalServerErrorException);
+  });
+
+  it('throws InternalServerErrorException when a flag value is not boolean', async () => {
+    repo.findOneBy.mockResolvedValue({ key: 'feature_reviews_enabled', value: 'true' });
+
+    await expect(service.getFeatureFlags()).rejects.toThrow(/must be boolean/);
+  });
+
+  it('setFeatureFlags writes only the provided fields, mapped back to their keys', async () => {
+    repo.find.mockResolvedValue([{ key: 'feature_reviews_enabled' }, { key: 'feature_stories_enabled' }]);
+
+    await service.setFeatureFlags({ reviewsEnabled: false, storiesEnabled: true });
+
+    expect(em.update).toHaveBeenNthCalledWith(
+      1,
+      PlatformConfig,
+      { key: 'feature_reviews_enabled' },
+      { value: false },
+    );
+    expect(em.update).toHaveBeenNthCalledWith(
+      2,
+      PlatformConfig,
+      { key: 'feature_stories_enabled' },
+      { value: true },
+    );
+  });
+
+  it('setFeatureFlags is a no-op (no transaction) when called with an empty partial', async () => {
+    await service.setFeatureFlags({});
+
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+  });
+});
+
 describe('PlatformConfigService.onApplicationBootstrap -- startup validation', () => {
   let service: PlatformConfigService;
   let repoFind: jest.Mock;
@@ -253,12 +342,38 @@ describe('PlatformConfigService.onApplicationBootstrap -- startup validation', (
     service = moduleRef.get(PlatformConfigService);
   });
 
-  it('boots cleanly when every required key is present with a valid, in-bounds value', async () => {
-    repoFind.mockResolvedValue(
-      REQUIRED_PLATFORM_CONFIG_KEYS.map((key) => ({ key, value: VALID_CONFIG_VALUES[key] })),
-    );
+  it('boots cleanly when every required key and feature flag is present with a valid value', async () => {
+    repoFind.mockResolvedValue([
+      ...REQUIRED_PLATFORM_CONFIG_KEYS.map((key) => ({ key, value: VALID_CONFIG_VALUES[key] })),
+      ...FEATURE_FLAG_KEYS.map((key) => ({ key, value: true })),
+    ]);
 
     await expect(service.onApplicationBootstrap()).resolves.toBeUndefined();
+  });
+
+  it('fails boot with a clear message naming every missing feature flag when some are absent', async () => {
+    repoFind.mockResolvedValue([
+      ...REQUIRED_PLATFORM_CONFIG_KEYS.map((key) => ({ key, value: VALID_CONFIG_VALUES[key] })),
+      { key: 'feature_reviews_enabled', value: true },
+    ]);
+
+    await expect(service.onApplicationBootstrap()).rejects.toThrow(
+      /Missing required feature flag row\(s\): .*feature_stories_enabled/,
+    );
+  });
+
+  it('fails boot with a clear message when a present feature flag value is not boolean', async () => {
+    repoFind.mockResolvedValue([
+      ...REQUIRED_PLATFORM_CONFIG_KEYS.map((key) => ({ key, value: VALID_CONFIG_VALUES[key] })),
+      ...FEATURE_FLAG_KEYS.map((key) => ({
+        key,
+        value: key === 'feature_coupons_enabled' ? 'yes' : true,
+      })),
+    ]);
+
+    await expect(service.onApplicationBootstrap()).rejects.toThrow(
+      /Feature flag value\(s\) must be boolean: feature_coupons_enabled/,
+    );
   });
 
   it('fails boot with a clear message naming every missing key when some are absent', async () => {

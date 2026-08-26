@@ -16,4 +16,9 @@ export class PlatformConfigController {
     ]);
     return { depositPercent, depositMinToman, cancellationWindowHours };
   }
+
+  @Get('feature-flags')
+  getFeatureFlags() {
+    return this.config.getFeatureFlags();
+  }
 }

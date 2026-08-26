@@ -28,6 +28,34 @@ export const REQUIRED_PLATFORM_CONFIG_KEYS = [
   'review_edit_window_hours',
 ] as const;
 
+// Separate from REQUIRED_PLATFORM_CONFIG_KEYS/getNumber() on purpose: describeInvalidConfigValue
+// coerces via Number(rawValue), which would silently "pass" a boolean (Number(true) === 1) without
+// ever checking it's actually a boolean. These get their own list, their own boot check, and their
+// own getter (getFeatureFlags()) instead of being folded into the numeric path.
+export const FEATURE_FLAG_KEYS = [
+  'feature_reviews_enabled',
+  'feature_stories_enabled',
+  'feature_portfolio_enabled',
+  'feature_referrals_enabled',
+  'feature_coupons_enabled',
+] as const;
+
+export interface FeatureFlags {
+  reviewsEnabled: boolean;
+  storiesEnabled: boolean;
+  portfolioEnabled: boolean;
+  referralsEnabled: boolean;
+  couponsEnabled: boolean;
+}
+
+const FEATURE_FLAG_KEY_TO_FIELD: Record<(typeof FEATURE_FLAG_KEYS)[number], keyof FeatureFlags> = {
+  feature_reviews_enabled: 'reviewsEnabled',
+  feature_stories_enabled: 'storiesEnabled',
+  feature_portfolio_enabled: 'portfolioEnabled',
+  feature_referrals_enabled: 'referralsEnabled',
+  feature_coupons_enabled: 'couponsEnabled',
+};
+
 interface ConfigBounds {
   min: number;
   max: number | null;
@@ -74,7 +102,7 @@ export class PlatformConfigService implements OnApplicationBootstrap {
   // number)" into "the deploy itself fails loudly, before serving any traffic at all."
   async onApplicationBootstrap(): Promise<void> {
     const rows = await this.repo.find({
-      where: { key: In([...REQUIRED_PLATFORM_CONFIG_KEYS]) },
+      where: { key: In([...REQUIRED_PLATFORM_CONFIG_KEYS, ...FEATURE_FLAG_KEYS]) },
       select: ['key', 'value'],
     });
     const byKey = new Map(rows.map((row) => [row.key, row.value]));
@@ -84,16 +112,25 @@ export class PlatformConfigService implements OnApplicationBootstrap {
       .map((key) => describeInvalidConfigValue(key, byKey.get(key)))
       .filter((problem): problem is string => problem !== null);
 
-    if (missing.length === 0 && invalid.length === 0) return;
+    const missingFlags = FEATURE_FLAG_KEYS.filter((key) => !byKey.has(key));
+    const invalidFlags = FEATURE_FLAG_KEYS.filter((key) => byKey.has(key) && typeof byKey.get(key) !== 'boolean');
+
+    if (missing.length === 0 && invalid.length === 0 && missingFlags.length === 0 && invalidFlags.length === 0) {
+      return;
+    }
 
     const problems = [
       ...(missing.length > 0 ? [`Missing required platform_config row(s): ${missing.join(', ')}.`] : []),
       ...(invalid.length > 0 ? [`Invalid platform_config value(s): ${invalid.join('; ')}.`] : []),
+      ...(missingFlags.length > 0 ? [`Missing required feature flag row(s): ${missingFlags.join(', ')}.`] : []),
+      ...(invalidFlags.length > 0
+        ? [`Feature flag value(s) must be boolean: ${invalidFlags.join(', ')}.`]
+        : []),
     ];
     throw new Error(
       `${problems.join(' ')} ` +
         'Fix these platform_config row(s) via the initial-schema migration (or an admin PATCH ' +
-        '/admin/config call) before starting the API.',
+        '/admin/config or /admin/feature-flags call) before starting the API.',
     );
   }
 
@@ -151,6 +188,36 @@ export class PlatformConfigService implements OnApplicationBootstrap {
     return this.getNumber('review_edit_window_hours');
   }
 
+  private async getBoolean(key: string): Promise<boolean> {
+    const cacheKey = CACHE_KEY_PREFIX + key;
+    const cached = await this.redis.get(cacheKey);
+    if (cached !== null) return cached === '1';
+
+    const row = await this.repo.findOneBy({ key });
+    // Same defense-in-depth reasoning as getNumber(): onApplicationBootstrap already
+    // refuses to start without every flag present and boolean-typed, so reaching either
+    // branch below means a row was deleted/corrupted directly against the database after a
+    // successful boot.
+    if (!row) throw new InternalServerErrorException(`Missing platform_config key: ${key}`);
+    if (typeof row.value !== 'boolean') {
+      throw new InternalServerErrorException(`Invalid platform_config value: ${key} must be boolean`);
+    }
+    await this.redis.set(cacheKey, row.value ? '1' : '0', 'EX', CACHE_TTL_SEC);
+    return row.value;
+  }
+
+  // One batched call (parallel reads, still N Redis round trips today -- a single
+  // multi-key cache entry would save nothing meaningful at 5 keys) so every call site reads
+  // all 5 flags together instead of juggling 5 separate getters.
+  async getFeatureFlags(): Promise<FeatureFlags> {
+    const values = await Promise.all(FEATURE_FLAG_KEYS.map((key) => this.getBoolean(key)));
+    const result = {} as FeatureFlags;
+    FEATURE_FLAG_KEYS.forEach((key, i) => {
+      result[FEATURE_FLAG_KEY_TO_FIELD[key]] = values[i];
+    });
+    return result;
+  }
+
   listAll(): Promise<PlatformConfig[]> {
     return this.repo.find({ order: { key: 'ASC' } });
   }
@@ -183,5 +250,20 @@ export class PlatformConfigService implements OnApplicationBootstrap {
       }
     });
     await this.redis.del(...keys.map((key) => CACHE_KEY_PREFIX + key));
+  }
+
+  // Partial update, field-named (reviewsEnabled, ...) rather than key-named -- callers
+  // (the admin controller) shouldn't need to know the underlying platform_config key
+  // strings, matching getFeatureFlags()'s own field-named return shape. Delegates to
+  // setMany() for the same all-or-nothing validated write.
+  async setFeatureFlags(entries: Partial<FeatureFlags>): Promise<void> {
+    const fieldToKey = Object.fromEntries(
+      FEATURE_FLAG_KEYS.map((key) => [FEATURE_FLAG_KEY_TO_FIELD[key], key]),
+    ) as Record<keyof FeatureFlags, string>;
+    const updates = Object.entries(entries)
+      .filter(([, value]) => value !== undefined)
+      .map(([field, value]) => ({ key: fieldToKey[field as keyof FeatureFlags], value: value as boolean }));
+    if (updates.length === 0) return;
+    await this.setMany(updates);
   }
 }

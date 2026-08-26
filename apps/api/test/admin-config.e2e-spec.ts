@@ -21,12 +21,21 @@ describe('Admin platform config (e2e)', () => {
   it('lists every seeded config key', async () => {
     const res = await request(app.getHttpServer()).get('/api/admin/config').set('Cookie', adminCookie).expect(200);
     const keys = res.body.map((row: { key: string }) => row.key).sort();
+    // listAll() reads the whole platform_config table, so it also includes the
+    // feature_*_enabled rows introduced alongside GET/PATCH /admin/feature-flags -- those
+    // are managed through that dedicated endpoint (admin-feature-flags.e2e-spec.ts), not
+    // through this numeric-config one, but they still show up in this bare table listing.
     expect(keys).toEqual([
       'booking_hold_ttl_minutes',
       'cancellation_window_hours',
       'commission_percent',
       'deposit_min_toman',
       'deposit_percent',
+      'feature_coupons_enabled',
+      'feature_portfolio_enabled',
+      'feature_referrals_enabled',
+      'feature_reviews_enabled',
+      'feature_stories_enabled',
       'reminder_lead_hours',
       'review_edit_window_hours',
     ]);
