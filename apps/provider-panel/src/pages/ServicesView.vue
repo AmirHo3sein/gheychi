@@ -68,6 +68,17 @@ const discountDrafts = reactive<Record<string, string>>({})
 // duration is a minimum and the real time can run longer (e.g. a complex color job).
 const descriptionDrafts = reactive<Record<string, string>>({})
 
+// Same draft treatment as priceDrafts -- this is the ONE field this screen could
+// previously only set at creation, with no way to fix a wrong value afterward (e.g. a
+// service left at the "add service" form's 30-minute default that should really be 15).
+const durationDrafts = reactive<Record<string, string>>({})
+
+// Common values a provider is likely to want, surfaced as one-tap presets so the fact
+// that this number is freely editable (not a fixed platform grid) is obvious at a glance
+// -- this exact value also becomes the spacing between bookable slots for this service,
+// which the label/hint below spells out explicitly.
+const DURATION_PRESETS = [15, 30, 45, 60, 90] as const
+
 async function load() {
   loading.value = true
   loadError.value = false
@@ -88,6 +99,7 @@ async function load() {
     priceDrafts[s.id] = String(s.price)
     discountDrafts[s.id] = s.discountPercent === null ? '' : String(s.discountPercent)
     descriptionDrafts[s.id] = s.description ?? ''
+    durationDrafts[s.id] = String(s.durationMin)
   }
   categories.value = categoriesRes.data ?? []
   loading.value = false
@@ -230,6 +242,42 @@ async function updateDiscount(service: Service) {
   pushToast('تخفیف به‌روزرسانی شد')
 }
 
+// This is the field a provider could previously only set at creation, with no way back --
+// changing it only affects FUTURE availability computation (already-confirmed bookings keep
+// their own snapshotted startsAt/endsAt), so no confirm dialog is needed the way price gets
+// one; same immediate-commit-on-blur shape as updateDiscount/updateDescription above.
+async function updateDuration(service: Service) {
+  const raw = String(durationDrafts[service.id] ?? '').trim()
+  const durationMin = Number(raw)
+  if (raw === '' || !Number.isInteger(durationMin) || durationMin < 5 || durationMin > 600) {
+    durationDrafts[service.id] = String(service.durationMin)
+    pushToast('مدت زمان باید عددی صحیح بین ۵ تا ۶۰۰ دقیقه باشد.')
+    return
+  }
+  if (durationMin === service.durationMin) return
+
+  const { error } = await apiFetch(`/salons/mine/services/${service.id}`, {
+    method: 'PATCH',
+    body: { durationMin },
+  })
+  if (error) {
+    durationDrafts[service.id] = String(service.durationMin)
+    return
+  }
+  service.durationMin = durationMin
+  durationDrafts[service.id] = String(durationMin)
+  pushToast('مدت زمان به‌روزرسانی شد')
+}
+
+function setDurationPreset(service: Service, minutes: number) {
+  durationDrafts[service.id] = String(minutes)
+  updateDuration(service)
+}
+
+function setNewServiceDurationPreset(minutes: number) {
+  newService.durationMin = minutes
+}
+
 // Commits on blur, like price/discount above. An empty draft clears the note (sent as
 // null, mirroring how updateDiscount clears its field) rather than sending ''.
 async function updateDescription(service: Service) {
@@ -321,6 +369,37 @@ async function updateDescription(service: Service) {
                 @change="updateDiscount(s)"
               />
             </div>
+            <div class="sm:max-w-sm">
+              <AppInput
+                v-model="durationDrafts[s.id]"
+                label="مدت زمان و فاصله نوبت‌ها (دقیقه)"
+                type="number"
+                min="5"
+                max="600"
+                data-testid="service-duration-input"
+                class="tnum"
+                @change="updateDuration(s)"
+              />
+              <p class="mt-1 text-xs text-(--color-text-muted)">
+                این عدد فاصله بین نوبت‌های قابل رزرو این خدمت را هم تعیین می‌کند؛ برای مثال یک خدمت
+                ۱۵ دقیقه‌ای هر ۱۵ دقیقه یک نوبت جدید باز می‌کند.
+              </p>
+              <div class="mt-1.5 flex flex-wrap gap-1.5">
+                <button
+                  v-for="preset in DURATION_PRESETS"
+                  :key="preset"
+                  type="button"
+                  :data-testid="`service-duration-preset-${preset}`"
+                  class="rounded-full border px-2.5 py-1 text-xs transition-colors"
+                  :class="s.durationMin === preset
+                    ? 'border-(--color-accent-text) bg-(--color-accent-soft) text-(--color-text)'
+                    : 'border-(--color-border) text-(--color-text-muted) hover:bg-(--color-surface-subtle)'"
+                  @click="setDurationPreset(s, preset)"
+                >
+                  {{ preset.toLocaleString('fa-IR') }} دقیقه
+                </button>
+              </div>
+            </div>
             <div>
               <label class="mb-1 block text-xs font-medium text-(--color-text-muted)">توضیحات خدمت (اختیاری)</label>
               <textarea
@@ -349,16 +428,37 @@ async function updateDescription(service: Service) {
           data-testid="new-service-price-input"
           @update:model-value="(v) => (newService.price = Number(v))"
         />
-        <AppInput
-          :model-value="String(newService.durationMin)"
-          label="مدت زمان (دقیقه)"
-          type="number"
-          min="5"
-          max="600"
-          class="tnum"
-          @update:model-value="(v) => (newService.durationMin = Number(v))"
-        />
+        <div>
+          <AppInput
+            :model-value="String(newService.durationMin)"
+            label="مدت زمان و فاصله نوبت‌ها (دقیقه)"
+            type="number"
+            min="5"
+            max="600"
+            class="tnum"
+            @update:model-value="(v) => (newService.durationMin = Number(v))"
+          />
+          <div class="mt-1.5 flex flex-wrap gap-1.5">
+            <button
+              v-for="preset in DURATION_PRESETS"
+              :key="preset"
+              type="button"
+              :data-testid="`new-service-duration-preset-${preset}`"
+              class="rounded-full border px-2.5 py-1 text-xs transition-colors"
+              :class="newService.durationMin === preset
+                ? 'border-(--color-accent-text) bg-(--color-accent-soft) text-(--color-text)'
+                : 'border-(--color-border) text-(--color-text-muted) hover:bg-(--color-surface-subtle)'"
+              @click="setNewServiceDurationPreset(preset)"
+            >
+              {{ preset.toLocaleString('fa-IR') }} دقیقه
+            </button>
+          </div>
+        </div>
       </div>
+      <p class="text-xs text-(--color-text-muted)">
+        این عدد فاصله بین نوبت‌های قابل رزرو این خدمت را هم تعیین می‌کند؛ خدمت‌های مختلف یک سالن
+        می‌توانند مدت‌زمان‌های متفاوتی داشته باشند (مثلاً یکی ۱۵ دقیقه و دیگری ۶۰ دقیقه).
+      </p>
       <div>
         <label class="mb-1.5 block text-sm font-medium text-(--color-text)">توضیحات خدمت (اختیاری)</label>
         <textarea

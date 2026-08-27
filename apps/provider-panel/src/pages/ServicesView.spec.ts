@@ -340,6 +340,77 @@ describe('ServicesView', () => {
     expect(JSON.parse(fetchMock.mock.calls[3]![1].body)).toEqual({ discountPercent: null })
   })
 
+  it('saves a valid duration change for an existing service, with no confirm dialog', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ...SERVICE, durationMin: 15 }) }) // PATCH
+    vi.stubGlobal('fetch', fetchMock)
+    const confirmSpy = vi.spyOn(window, 'confirm')
+
+    const wrapper = mount(ServicesView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    const durationInput = wrapper.get('[data-testid="service-duration-input"]')
+    await durationInput.setValue('15')
+    await durationInput.trigger('change')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(confirmSpy).not.toHaveBeenCalled()
+    expect(JSON.parse(fetchMock.mock.calls[2]![1].body)).toEqual({ durationMin: 15 })
+    expect(useToast().toasts.value.some((t) => t.message === 'مدت زمان به‌روزرسانی شد')).toBe(true)
+  })
+
+  it('refuses an out-of-range duration for an existing service, restores the field and warns in Persian', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(ServicesView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    const durationInput = wrapper.get('[data-testid="service-duration-input"]')
+    await durationInput.setValue('900')
+    await durationInput.trigger('change')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(fetchMock.mock.calls.length).toBe(2) // no PATCH fired
+    expect((durationInput.element as HTMLInputElement).value).toBe('30')
+    expect(useToast().toasts.value.some((t) => t.message === 'مدت زمان باید عددی صحیح بین ۵ تا ۶۰۰ دقیقه باشد.')).toBe(true)
+  })
+
+  it('sets duration via a one-tap preset button on an existing service', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ...SERVICE, durationMin: 60 }) }) // PATCH
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(ServicesView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    await wrapper.get('[data-testid="service-duration-preset-60"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(JSON.parse(fetchMock.mock.calls[2]![1].body)).toEqual({ durationMin: 60 })
+  })
+
+  it('sets the new-service form duration via a preset button', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(ServicesView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    await wrapper.get('[data-testid="new-service-duration-preset-15"]').trigger('click')
+
+    const durationInput = wrapper.findAll('input[type="number"]')[0]!
+    expect((durationInput.element as HTMLInputElement).value).toBe('15')
+  })
+
   it('saves an existing service description, and clears it back to null', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
