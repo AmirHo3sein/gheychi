@@ -12,6 +12,7 @@ const LINKS: { to: string; label: string; icon: IconName }[] = [
   { to: '/worker-ratings', label: 'امتیاز کارمندان', icon: 'worker-ratings' },
   { to: '/reports', label: 'گزارش‌ها', icon: 'flag' },
   { to: '/categories', label: 'دسته‌بندی‌ها', icon: 'categories' },
+  { to: '/category-requests', label: 'درخواست‌های دسته‌بندی', icon: 'plus' },
   { to: '/coupons', label: 'کدهای تخفیف', icon: 'coupon' },
   { to: '/wallet', label: 'کیف پول', icon: 'wallet' },
   { to: '/invoices', label: 'صورتحساب‌ها', icon: 'invoice' },

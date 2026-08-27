@@ -20,6 +20,12 @@ const routes = [
       { path: 'worker-ratings', name: 'worker-ratings', component: () => import('@/pages/WorkerRatingsView.vue'), meta: { title: 'امتیاز کارمندان' } },
       { path: 'reports', name: 'reports', component: () => import('@/pages/ReportsView.vue'), meta: { title: 'گزارش‌ها' } },
       { path: 'categories', name: 'categories', component: () => import('@/pages/CategoriesView.vue'), meta: { title: 'دسته‌بندی‌ها' } },
+      {
+        path: 'category-requests',
+        name: 'category-requests',
+        component: () => import('@/pages/CategoryRequestsView.vue'),
+        meta: { title: 'درخواست‌های دسته‌بندی' },
+      },
       { path: 'coupons', name: 'coupons', component: () => import('@/pages/CouponsView.vue'), meta: { title: 'کدهای تخفیف' } },
       { path: 'wallet', name: 'wallet', component: () => import('@/pages/WalletView.vue'), meta: { title: 'کیف پول' } },
       { path: 'invoices', name: 'invoices', component: () => import('@/pages/InvoicesView.vue'), meta: { title: 'صورتحساب‌ها' } },

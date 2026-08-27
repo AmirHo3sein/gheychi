@@ -11,6 +11,7 @@ import { AuthModule } from './auth/auth.module';
 import { BackupMonitoringModule } from './backup-monitoring/backup-monitoring.module';
 import { BookingModule } from './booking/booking.module';
 import { CatalogModule } from './catalog/catalog.module';
+import { CategoryRequestsModule } from './catalog/category-requests.module';
 import { CitiesModule } from './cities/cities.module';
 import { CommonModule } from './common/common.module';
 import { ContentModule } from './content/content.module';
@@ -65,6 +66,7 @@ import { WalletModule } from './wallet/wallet.module';
     BackupMonitoringModule,
     CspReportModule,
     CatalogModule,
+    CategoryRequestsModule,
     CitiesModule,
     SalonsModule,
     BookingModule,

@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { AdminCategoriesController } from '../catalog/admin-categories.controller';
+import { AdminCategoryRequestsController } from '../catalog/admin-category-requests.controller';
 import { AdminBlogController } from '../content/admin-blog.controller';
 import { AdminCouponsController } from '../coupons/admin-coupons.controller';
 import { AdminInvoicesController } from '../invoicing/admin-invoices.controller';
@@ -74,6 +75,18 @@ describe('admin mutation audit wiring', () => {
       handler: AdminCategoriesController.prototype.remove,
       action: 'category.delete',
       targetType: 'category',
+    },
+    {
+      label: 'category request approve',
+      handler: AdminCategoryRequestsController.prototype.approve,
+      action: 'category-request.approve',
+      targetType: 'category-request',
+    },
+    {
+      label: 'category request reject',
+      handler: AdminCategoryRequestsController.prototype.reject,
+      action: 'category-request.reject',
+      targetType: 'category-request',
     },
     {
       label: 'config update',

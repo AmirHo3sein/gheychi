@@ -24,6 +24,15 @@ interface Service {
   discountPercent: number | null
 }
 
+interface CategoryRequestRow {
+  id: string
+  name: string
+  note: string | null
+  status: 'pending' | 'approved' | 'rejected'
+  resolutionNote: string | null
+  createdAt: string
+}
+
 const { apiFetch } = useApi()
 const { push: pushToast } = useToast()
 const services = ref<Service[]>([])
@@ -39,6 +48,23 @@ const newService = reactive({
   durationMin: 30,
   discountPercent: null as number | null,
 })
+
+// Inline "request a new category" form -- collapsed by default, opened via a link right
+// under the category select. Deliberately separate from newService: submitting a
+// category request is its own action, not a step toward creating a service (the salon
+// has to wait for admin approval before it can pick the new category at all).
+const categoryRequests = ref<CategoryRequestRow[]>([])
+const requestingCategory = ref(false)
+const categoryRequestName = ref('')
+const categoryRequestNote = ref('')
+const categoryRequestError = ref('')
+const categoryRequestSubmitting = ref(false)
+
+const CATEGORY_REQUEST_STATUS_META: Record<CategoryRequestRow['status'], { label: string; tone: 'warning' | 'success' | 'danger' }> = {
+  pending: { label: 'در انتظار بررسی', tone: 'warning' },
+  approved: { label: 'تایید شد', tone: 'success' },
+  rejected: { label: 'رد شد', tone: 'danger' },
+}
 
 // Server-side DTO validation only checks @IsString() with no length cap (the column is a
 // plain Postgres `text`) -- this is a client-side sanity bound, not a mirrored API rule.
@@ -105,7 +131,48 @@ async function load() {
   loading.value = false
 }
 
+// Kept separate from load() -- a failure here is not a whole-page failure the way a
+// failed services/categories fetch is, so it fails silently rather than gating the page
+// behind loadError.
+async function loadCategoryRequests() {
+  const { data } = await apiFetch<CategoryRequestRow[]>('/salons/mine/category-requests', { silent: true })
+  categoryRequests.value = data ?? []
+}
+
 onMounted(load)
+onMounted(loadCategoryRequests)
+
+function openCategoryRequest() {
+  requestingCategory.value = true
+  categoryRequestName.value = ''
+  categoryRequestNote.value = ''
+  categoryRequestError.value = ''
+}
+
+function cancelCategoryRequest() {
+  requestingCategory.value = false
+}
+
+async function submitCategoryRequest() {
+  categoryRequestError.value = ''
+  const name = categoryRequestName.value.trim()
+  // Mirrors CreateCategoryRequestDto's @Length(2, 60).
+  if (name.length < 2 || name.length > 60) {
+    categoryRequestError.value = 'نام دسته‌بندی باید بین ۲ تا ۶۰ حرف باشد.'
+    return
+  }
+
+  categoryRequestSubmitting.value = true
+  const body: Record<string, unknown> = { name }
+  if (categoryRequestNote.value.trim()) body.note = categoryRequestNote.value.trim()
+  const { error } = await apiFetch('/salons/mine/category-requests', { method: 'POST', body })
+  categoryRequestSubmitting.value = false
+  if (error) return
+
+  pushToast('درخواست دسته‌بندی ارسال شد و در انتظار بررسی مدیر است')
+  requestingCategory.value = false
+  await loadCategoryRequests()
+}
 
 async function addService() {
   createError.value = ''
@@ -420,6 +487,59 @@ async function updateDescription(service: Service) {
     <AppCard class="space-y-3">
       <h2 class="font-bold text-(--color-text)">افزودن خدمت جدید</h2>
       <AppSelect v-model="newService.categoryId" :options="categoryOptions" placeholder="دسته‌بندی" data-testid="new-service-category" />
+
+      <button
+        v-if="!requestingCategory"
+        type="button"
+        data-testid="open-category-request"
+        class="text-xs text-(--color-accent-text) underline-offset-2 hover:underline"
+        @click="openCategoryRequest"
+      >
+        دسته‌بندی مدنظرتان در لیست نیست؟ درخواست دسته‌بندی جدید
+      </button>
+
+      <div v-else class="space-y-2 rounded-xl border border-(--color-border) bg-(--color-surface) p-3">
+        <p class="text-sm font-semibold text-(--color-text)">درخواست دسته‌بندی جدید</p>
+        <AppInput
+          v-model="categoryRequestName"
+          label="نام دسته‌بندی"
+          placeholder="مثلاً: ماساژ درمانی"
+          data-testid="category-request-name"
+          :error="categoryRequestError"
+        />
+        <div>
+          <label class="mb-1 block text-xs font-medium text-(--color-text-muted)">توضیح (اختیاری)</label>
+          <textarea
+            v-model="categoryRequestNote"
+            rows="2"
+            maxlength="500"
+            placeholder="چرا به این دسته‌بندی نیاز دارید؟"
+            class="w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-2 text-sm"
+            data-testid="category-request-note"
+          />
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <AppButton
+            type="button"
+            data-testid="submit-category-request"
+            :loading="categoryRequestSubmitting"
+            :disabled="categoryRequestSubmitting"
+            @click="submitCategoryRequest"
+          >
+            ارسال درخواست
+          </AppButton>
+          <AppButton
+            type="button"
+            variant="secondary"
+            data-testid="cancel-category-request"
+            :disabled="categoryRequestSubmitting"
+            @click="cancelCategoryRequest"
+          >
+            انصراف
+          </AppButton>
+        </div>
+      </div>
+
       <AppInput v-model="newService.name" placeholder="نام خدمت" />
       <div class="grid grid-cols-2 gap-3">
         <AppMoneyInput
@@ -488,6 +608,24 @@ async function updateDescription(service: Service) {
       <AppButton type="button" block data-testid="add-service" @click="addService">
         افزودن
       </AppButton>
+    </AppCard>
+
+    <AppCard v-if="categoryRequests.length" class="space-y-3">
+      <h2 class="font-bold text-(--color-text)">درخواست‌های دسته‌بندی من</h2>
+      <div
+        v-for="r in categoryRequests"
+        :key="r.id"
+        data-testid="category-request-row"
+        class="flex flex-wrap items-start justify-between gap-2 border-t border-(--color-border-soft) pt-3 first:border-t-0 first:pt-0"
+      >
+        <div class="min-w-0">
+          <p class="break-words text-sm font-semibold text-(--color-text)">{{ r.name }}</p>
+          <p v-if="r.status === 'rejected' && r.resolutionNote" class="mt-0.5 text-xs text-(--color-text-muted)">
+            {{ r.resolutionNote }}
+          </p>
+        </div>
+        <StatusBadge :label="CATEGORY_REQUEST_STATUS_META[r.status].label" :tone="CATEGORY_REQUEST_STATUS_META[r.status].tone" />
+      </div>
     </AppCard>
   </div>
 </template>

@@ -183,6 +183,8 @@ const AUDIT_ACTION: Record<string, LabelEntry> = {
   'category.create': { label: 'ایجاد دسته‌بندی', tone: 'success' },
   'category.update': { label: 'ویرایش دسته‌بندی', tone: 'info' },
   'category.delete': { label: 'حذف دسته‌بندی', tone: 'danger' },
+  'category-request.approve': { label: 'تایید درخواست دسته‌بندی', tone: 'success' },
+  'category-request.reject': { label: 'رد درخواست دسته‌بندی', tone: 'danger' },
   'config.update': { label: 'به‌روزرسانی تنظیمات', tone: 'info' },
   'report.resolve': { label: 'رسیدگی به گزارش', tone: 'success' },
   'post.create': { label: 'ایجاد مطلب بلاگ', tone: 'success' },
@@ -215,6 +217,7 @@ const AUDIT_TARGET_TYPE: Record<string, string> = {
   story: 'استوری',
   portfolioitem: 'نمونه کار',
   category: 'دسته‌بندی',
+  'category-request': 'درخواست دسته‌بندی',
   config: 'تنظیمات',
   report: 'گزارش',
   post: 'مطلب بلاگ',
@@ -232,6 +235,12 @@ const REPORT_STATUS: Record<string, LabelEntry> = {
   dismissed: { label: 'رد شده', tone: 'neutral' },
 }
 
+const CATEGORY_REQUEST_STATUS: Record<string, LabelEntry> = {
+  pending: { label: 'در انتظار بررسی', tone: 'warning' },
+  approved: { label: 'تایید شده', tone: 'success' },
+  rejected: { label: 'رد شده', tone: 'danger' },
+}
+
 export function auditActionLabel(action: string): LabelEntry {
   return AUDIT_ACTION[action] ?? { label: action, tone: 'neutral' }
 }
@@ -242,6 +251,10 @@ export function targetTypeLabel(targetType: string): string {
 
 export function reportStatusLabel(status: string): LabelEntry {
   return REPORT_STATUS[status] ?? { label: status, tone: 'neutral' }
+}
+
+export function categoryRequestStatusLabel(status: string): LabelEntry {
+  return CATEGORY_REQUEST_STATUS[status] ?? { label: status, tone: 'neutral' }
 }
 
 interface ConfigMeta {

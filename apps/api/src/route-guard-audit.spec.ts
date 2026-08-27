@@ -16,7 +16,9 @@ import { PaymentsController } from './booking/payments.controller';
 import { SalonBookingsController } from './booking/salon-bookings.controller';
 import { SalonEarningsController } from './booking/salon-earnings.controller';
 import { AdminCategoriesController } from './catalog/admin-categories.controller';
+import { AdminCategoryRequestsController } from './catalog/admin-category-requests.controller';
 import { CatalogController } from './catalog/catalog.controller';
+import { CategoryRequestsController } from './catalog/category-requests.controller';
 import { CitiesController } from './cities/cities.controller';
 import { AdminBlogController } from './content/admin-blog.controller';
 import { BlogController } from './content/blog.controller';
@@ -81,7 +83,9 @@ const ALL_CONTROLLERS: Function[] = [
   SalonBookingsController,
   SalonEarningsController,
   AdminCategoriesController,
+  AdminCategoryRequestsController,
   CatalogController,
+  CategoryRequestsController,
   CitiesController,
   AdminBlogController,
   BlogController,
