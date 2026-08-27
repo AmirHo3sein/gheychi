@@ -5,6 +5,16 @@ import { loginAs } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
 
+// Relative to whenever this suite actually runs, not a fixed calendar date -- a hardcoded
+// '2026-09-0X' literal previously collided with the "per-worker time off" describe block's
+// own now+5-day availability-window test once real time drifted close enough to it (409
+// instead of 201, since both landed on the same day). Every date this file creates as an
+// exception row is now computed the same relative way, so no two ever collide regardless
+// of when CI runs.
+function daysFromNow(n: number): string {
+  return new Date(Date.now() + n * 24 * 60 * 60_000).toISOString().slice(0, 10);
+}
+
 describe('Schedule (e2e)', () => {
   let app: INestApplication;
   let cookie: string;
@@ -197,6 +207,15 @@ describe('Schedule (e2e)', () => {
     let worker2Id: string;
     let serviceId: string;
 
+    // Spaced well clear of (and never overlapping with) the roving now+5-day date the
+    // final test in this block uses for its availability-window assertions.
+    const wholeDayExceptionDate = daysFromNow(40);
+    const noSuchWorkerDate = daysFromNow(41);
+    const partialHourRejectedDate = daysFromNow(42);
+    const duplicateWholeSalonDate = daysFromNow(43);
+    const duplicatePerWorkerDate = daysFromNow(44);
+    const coexistDate = daysFromNow(45);
+
     beforeAll(async () => {
       const w1 = await request(app.getHttpServer())
         .post('/api/salons/mine/workers')
@@ -238,7 +257,7 @@ describe('Schedule (e2e)', () => {
       const created = await request(app.getHttpServer())
         .post('/api/salons/mine/exceptions')
         .set('Cookie', cookie)
-        .send({ date: '2026-09-01', workerId: worker1Id })
+        .send({ date: wholeDayExceptionDate, workerId: worker1Id })
         .expect(201);
       expect(created.body.workerId).toBe(worker1Id);
       expect(created.body.isClosed).toBe(true);
@@ -248,27 +267,27 @@ describe('Schedule (e2e)', () => {
       request(app.getHttpServer())
         .post('/api/salons/mine/exceptions')
         .set('Cookie', cookie)
-        .send({ date: '2026-09-02', workerId: '00000000-0000-0000-0000-000000000000' })
+        .send({ date: noSuchWorkerDate, workerId: '00000000-0000-0000-0000-000000000000' })
         .expect(404));
 
     it('rejects a partial-hour exception scoped to a worker -- v1 only supports whole-day per-worker', () =>
       request(app.getHttpServer())
         .post('/api/salons/mine/exceptions')
         .set('Cookie', cookie)
-        .send({ date: '2026-09-04', workerId: worker1Id, startTime: '13:00', endTime: '14:00' })
+        .send({ date: partialHourRejectedDate, workerId: worker1Id, startTime: '13:00', endTime: '14:00' })
         .expect(400));
 
     it('409s on a duplicate whole-salon closure for the same date', async () => {
       await request(app.getHttpServer())
         .post('/api/salons/mine/exceptions')
         .set('Cookie', cookie)
-        .send({ date: '2026-09-05' })
+        .send({ date: duplicateWholeSalonDate })
         .expect(201);
 
       await request(app.getHttpServer())
         .post('/api/salons/mine/exceptions')
         .set('Cookie', cookie)
-        .send({ date: '2026-09-05' })
+        .send({ date: duplicateWholeSalonDate })
         .expect(409);
     });
 
@@ -276,13 +295,13 @@ describe('Schedule (e2e)', () => {
       await request(app.getHttpServer())
         .post('/api/salons/mine/exceptions')
         .set('Cookie', cookie)
-        .send({ date: '2026-09-06', workerId: worker1Id })
+        .send({ date: duplicatePerWorkerDate, workerId: worker1Id })
         .expect(201);
 
       await request(app.getHttpServer())
         .post('/api/salons/mine/exceptions')
         .set('Cookie', cookie)
-        .send({ date: '2026-09-06', workerId: worker1Id })
+        .send({ date: duplicatePerWorkerDate, workerId: worker1Id })
         .expect(409);
 
       // A DIFFERENT worker off on the exact same date is not a duplicate -- the partial
@@ -290,7 +309,7 @@ describe('Schedule (e2e)', () => {
       await request(app.getHttpServer())
         .post('/api/salons/mine/exceptions')
         .set('Cookie', cookie)
-        .send({ date: '2026-09-06', workerId: worker2Id })
+        .send({ date: duplicatePerWorkerDate, workerId: worker2Id })
         .expect(201);
     });
 
@@ -298,13 +317,13 @@ describe('Schedule (e2e)', () => {
       await request(app.getHttpServer())
         .post('/api/salons/mine/exceptions')
         .set('Cookie', cookie)
-        .send({ date: '2026-09-03' }) // whole-salon
+        .send({ date: coexistDate }) // whole-salon
         .expect(201);
 
       await request(app.getHttpServer())
         .post('/api/salons/mine/exceptions')
         .set('Cookie', cookie)
-        .send({ date: '2026-09-03', workerId: worker1Id })
+        .send({ date: coexistDate, workerId: worker1Id })
         .expect(201);
     });
 
@@ -324,9 +343,10 @@ describe('Schedule (e2e)', () => {
         .get(`/api/salons/${salonRes.body.slug}/exceptions`)
         .expect(200);
       // Every date in the public list must be a genuine whole-salon closure -- the
-      // per-worker-only date (2026-09-01, worker1 alone) must not appear as if it were one.
-      // (2026-09-03 legitimately appears too, since it also has its own whole-salon row.)
-      expect(publicList.body.some((e: { date: string }) => e.date === '2026-09-01')).toBe(false);
+      // per-worker-only date (wholeDayExceptionDate, worker1 alone) must not appear as if
+      // it were one. (coexistDate legitimately appears too, since it also has its own
+      // whole-salon row.)
+      expect(publicList.body.some((e: { date: string }) => e.date === wholeDayExceptionDate)).toBe(false);
     });
 
     it('excludes the day from that specific worker\'s availability, but not from "any available worker"', async () => {
@@ -335,8 +355,9 @@ describe('Schedule (e2e)', () => {
 
       // Availability only ever looks 14 days out from the real current time (see
       // AVAILABILITY_WINDOW_DAYS) -- a fixed calendar date would drift outside that window
-      // depending on when this suite runs, so this is computed relative to now instead.
-      const dayOff = new Date(Date.now() + 5 * 24 * 60 * 60_000).toISOString().slice(0, 10);
+      // depending on when this suite runs, so this is computed relative to now instead
+      // (well clear of the 40+ day dates the rest of this block uses -- see daysFromNow).
+      const dayOff = daysFromNow(5);
       await request(app.getHttpServer())
         .post('/api/salons/mine/exceptions')
         .set('Cookie', cookie)
