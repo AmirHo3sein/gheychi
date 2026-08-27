@@ -72,8 +72,7 @@ test('services and hours management: edit/add/deactivate a service, weekly hours
   // form already uses (03-manual-booking-and-time-off.spec.ts's own worker-name locator).
   await page.locator('input[placeholder="نام خدمت"]').fill('رنگ مو')
   await page.getByTestId('new-service-price-input').fill('500000')
-  // AppInput labeled (not placeholder'd) and carries no testid -- matches by its <label for>.
-  await page.getByLabel('مدت زمان (دقیقه)').fill('60')
+  await page.getByTestId('new-service-duration-input').fill('60')
   await page.getByTestId('add-service').click()
 
   const newServiceCard = page.locator('[data-testid^="service-card-"]').filter({ hasText: 'رنگ مو' })

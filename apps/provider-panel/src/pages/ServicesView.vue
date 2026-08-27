@@ -552,6 +552,7 @@ async function updateDescription(service: Service) {
           <AppInput
             :model-value="String(newService.durationMin)"
             label="مدت زمان و فاصله نوبت‌ها (دقیقه)"
+            data-testid="new-service-duration-input"
             type="number"
             min="5"
             max="600"
