@@ -789,6 +789,26 @@ export class BookingsService {
   }
 
   /**
+   * The small `before` snapshot the approve/reject audit rows carry. Deliberately a few
+   * named fields rather than the whole row: the audit payload is a permanent record, and a
+   * full booking row would drag price/discount/wallet columns into it for no auditing
+   * value. Salon-scoped like every other read on this path, so it can't be used to probe
+   * another salon's bookings. Returns null (rather than throwing) when there's no such
+   * booking -- the audit interceptor simply records no `before`, and the real handler
+   * below is what produces the 404.
+   */
+  async findForSalonAudit(salonId: string, bookingId: string): Promise<Record<string, unknown> | null> {
+    const booking = await this.bookings.findOneBy({ id: bookingId, salonId });
+    if (!booking) return null;
+    return {
+      status: booking.status,
+      confirmationMode: booking.confirmationMode,
+      approvalExpiresAt: booking.approvalExpiresAt,
+      startsAt: booking.startsAt,
+    };
+  }
+
+  /**
    * Salon accepts a pending request. `pending_approval -> pending_payment` (or straight to
    * `confirmed` when nothing is owed), opening the customer's payment window and stamping
    * its deadline for the first time.
@@ -878,6 +898,15 @@ export class BookingsService {
       );
     });
 
+    // Structured, greppable lifecycle line. Ids only -- no phone, no name, no payment
+    // credential -- matching the same PII rule AnalyticsService and booking_events carry.
+    this.logger.log(
+      `booking.approval.approved bookingId=${bookingId} salonId=${salonId} customerId=${booking.userId} ` +
+        `serviceId=${booking.serviceId} workerId=${booking.workerId ?? 'none'} mode=manual_approval ` +
+        `from=pending_approval to=${nextStatus} actor=salon_owner actorId=${actorId} ` +
+        `paymentDeadline=${paymentExpiresAt?.toISOString() ?? 'none'}`,
+    );
+
     // Best-effort, post-commit: the decision is already durable, and a failed SMS must
     // never surface as a failed approval (the owner would retry and get a 409).
     try {
@@ -932,6 +961,12 @@ export class BookingsService {
         em,
       );
     });
+
+    this.logger.log(
+      `booking.approval.rejected bookingId=${bookingId} salonId=${salonId} customerId=${booking.userId} ` +
+        `serviceId=${booking.serviceId} workerId=${booking.workerId ?? 'none'} mode=manual_approval ` +
+        `from=pending_approval to=rejected_by_salon actor=salon_owner actorId=${actorId}`,
+    );
 
     try {
       await this.paymentsService.notifyRejected(bookingId, reason);

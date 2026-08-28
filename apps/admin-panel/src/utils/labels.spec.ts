@@ -37,12 +37,13 @@ describe('auditActionLabel', () => {
     // post.cover.set was later split into two distinct backend actions (post.cover.upload /
     // post.cover.remove, Phase 1 audit-logging fix) so the two operations are distinguishable
     // in the audit log by action alone, net +1 to this count. 2 more (category-request.approve,
-    // category-request.reject) were added with the category-request feature.
+    // category-request.reject) were added with the category-request feature, and 2 more
+    // (booking.approval.approved/rejected) with the manual booking-approval workflow.
     // 1 more (booking-settings.update) came with the optional manual booking-approval
     // workflow -- the admin-only per-salon approval/payment timeout overrides.
     // This length guard is deliberate: adding a backend @AuditAction without a Farsi label
     // must fail here.
-    expect(AUDIT_ACTION_KEYS).toHaveLength(31)
+    expect(AUDIT_ACTION_KEYS).toHaveLength(33)
     for (const action of AUDIT_ACTION_KEYS) {
       const entry = auditActionLabel(action)
       // A mapped entry never falls back to the raw dotted action name.

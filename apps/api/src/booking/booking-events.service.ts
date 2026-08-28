@@ -94,8 +94,13 @@ export class BookingEventsService {
     }
   }
 
-  /** One booking's full timeline, oldest first — the admin support view. */
+  /**
+   * One booking's full timeline, oldest first — the admin support view.
+   *
+   * Ordered by `seq`, not `createdAt`: see BookingEvent.seq for why a timestamp cannot
+   * order rows written inside a single transaction.
+   */
   listForBooking(bookingId: string): Promise<BookingEvent[]> {
-    return this.events.find({ where: { bookingId }, order: { createdAt: 'ASC' } });
+    return this.events.find({ where: { bookingId }, order: { seq: 'ASC' } });
   }
 }

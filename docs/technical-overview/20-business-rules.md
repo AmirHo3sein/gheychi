@@ -11,7 +11,7 @@ A consolidated reference of every enforced business rule in the platform, groupe
 | `cancellation_window_hours` | 24 | `BookingsService.cancel()` — [09-booking-engine.md](./09-booking-engine.md) |
 | `commission_percent` | 10 | `InvoicingService.recordCommission()` — [14-commission.md](./14-commission.md) |
 | `booking_hold_ttl_minutes` | 15 | `BookingExpiryJob`, and the global default payment window for manual approval — [18](./18-background-jobs.md), [28](./28-booking-approval-workflow.md) |
-| `booking_approval_timeout_minutes` | 30 | `BookingApprovalExpiryJob` — [28-booking-approval-workflow.md](./28-booking-approval-workflow.md) |
+| `booking_approval_timeout_minutes` | 10 | `BookingApprovalExpiryJob` — [28-booking-approval-workflow.md](./28-booking-approval-workflow.md) |
 | `reminder_lead_hours` | 3 | `BookingReminderJob` |
 | `review_edit_window_hours` | 72 | `ReviewsService.assertWithinEditWindow()` |
 
@@ -25,6 +25,8 @@ A consolidated reference of every enforced business rule in the platform, groupe
 - `startsAt` must be strictly in the future.
 - A zero-deposit booking (100%-discount or fully wallet-covered) is confirmed immediately with no `Payment` row — **unless** the salon runs manual approval, in which case it still becomes a request first.
 - A salon may require **manual approval** (`salons.booking_confirmation_mode`, owner-selectable). In that mode a booking is created as `pending_approval` with **no `Payment` row and no gateway session**, so declining or expiring it can never owe a refund. The owner controls the mode and nothing else: both timeout values are admin-only, globally and per salon. See [28-booking-approval-workflow.md](./28-booking-approval-workflow.md).
+- The payment-window-expired notification is sent for **manual-approval bookings only** — an abandoned automatic checkout is deliberately never texted (SMS budget).
+- A customer is not texted merely for submitting a request (they are on the screen); the salon owner is, because the approval window is short and they are not.
 - A `pending_approval` request blocks its slot exactly as a paid booking does (`SLOT_BLOCKING_STATUSES`) — otherwise a salon could approve a request it has no room for.
 - A request whose appointment time has already passed can no longer be approved — its approval deadline is independent of the booking's own `startsAt`, so a request can outlive the slot it asked for.
 - A salon owner cannot decline a `pending_approval` request through the customer cancel route; they must use `reject()`, which requires a reason.

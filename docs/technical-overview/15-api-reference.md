@@ -217,8 +217,8 @@ Every upload endpoint (`salons/mine/photos`, `salons/mine/portfolio`, `salons/mi
 
 | Method | Route | Guard | Purpose |
 |---|---|---|---|
-| POST | `/salons/mine/bookings/:id/approve` | `SalonOwnerGuard` | Accept a `pending_approval` request. Opens the payment window (`pending_payment` + a `Payment` row + a snapshotted `payment_expires_at`), or goes straight to `confirmed` when nothing is owed. 409 if no longer pending. Returns 200, not 201 — it transitions rather than creates. |
-| POST | `/salons/mine/bookings/:id/reject` | `SalonOwnerGuard` | Decline a request. Body `{ reason }` **required** (1..300), echoed to the customer. Releases the coupon/wallet hold. 409 if no longer pending. |
+| POST | `/salons/mine/bookings/:id/approve` | `SalonOwnerGuard` + audited (`booking.approval.approved`) | Accept a `pending_approval` request. Opens the payment window (`pending_payment` + a `Payment` row + a snapshotted `payment_expires_at`), or goes straight to `confirmed` when nothing is owed. 409 if no longer pending. Returns 200, not 201 — it transitions rather than creates. |
+| POST | `/salons/mine/bookings/:id/reject` | `SalonOwnerGuard` + audited (`booking.approval.rejected`) | Decline a request. Body `{ reason }` **required** (1..300), echoed to the customer. Releases the coupon/wallet hold. 409 if no longer pending. |
 | GET | `/admin/salons/:id/booking-settings` | `RolesGuard('admin')` | The salon's mode (read-only here), its raw overrides (`approvalTimeoutOverride`/`paymentTimeoutOverride`, `null` = inherit) and the **effective** resolved values with their global defaults and `*IsOverridden` flags. |
 | PATCH | `/admin/salons/:id/booking-settings` | `RolesGuard('admin')` | Set or clear the per-salon overrides. Body `{ approvalTimeoutMinutes?, paymentTimeoutMinutes? }`, each `1..1440` or an explicit `null` to inherit. Audited as `booking-settings.update`. |
 | GET | `/admin/bookings/:id/events` | `RolesGuard('admin')` | The booking's full lifecycle timeline, oldest first. |

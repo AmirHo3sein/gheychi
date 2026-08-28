@@ -101,7 +101,11 @@ helper and the same `SmsProvider`/`PushService` abstractions:
 `notifyApprovalRequested` (customer + owner), `notifyApproved`, `notifyRejected`,
 `notifyApprovalExpired`, and `notifyPaymentExpired`.
 
-Every one of them states explicitly whether money changed hands — "your request expired" is
+SMS is spent deliberately, not on every event: the request-created message reaches the
+customer by push only (they are looking at the screen) while the owner gets a real SMS (short
+window, not in the app), and `notifyPaymentExpired` is invoked for manual-approval bookings
+only — an abandoned automatic checkout is never texted. Every one of them states explicitly
+whether money changed hands — "your request expired" is
 easily misread as "you lost your deposit", and in this flow nothing was ever charged.
 `notifyPaymentExpired` also closed a pre-existing silence: `BookingExpiryJob` never told the
 customer anything. All five are best-effort and fired after their transaction commits, so a

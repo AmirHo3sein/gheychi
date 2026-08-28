@@ -1,4 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { bigintToNumber } from '../common/numeric-transformers';
 
 /**
  * Every lifecycle moment worth reconstructing later. Deliberately a superset of the
@@ -48,6 +49,17 @@ export type BookingEventActorType = 'customer' | 'salon_owner' | 'admin' | 'syst
 export class BookingEvent {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  /**
+   * Monotonic insertion order — the ONLY thing this table is ever sorted by.
+   *
+   * `createdAt` cannot serve that role: Postgres's `now()` is the transaction start time,
+   * so events written in one transaction share a timestamp, and TypeORM's JS-side stamping
+   * is only millisecond-resolution anyway. Database-generated, never set from application
+   * code.
+   */
+  @Column({ type: 'bigint', generated: 'increment', transformer: bigintToNumber })
+  seq: number;
 
   @Column({ name: 'booking_id' })
   bookingId: string;

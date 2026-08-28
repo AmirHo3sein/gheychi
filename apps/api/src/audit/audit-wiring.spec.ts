@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { AdminBookingSettingsController } from '../booking/admin-booking-settings.controller';
+import { SalonBookingsController } from '../booking/salon-bookings.controller';
 import { AdminCategoriesController } from '../catalog/admin-categories.controller';
 import { AdminCategoryRequestsController } from '../catalog/admin-category-requests.controller';
 import { AdminBlogController } from '../content/admin-blog.controller';
@@ -88,6 +89,21 @@ describe('admin mutation audit wiring', () => {
       handler: AdminCategoryRequestsController.prototype.reject,
       action: 'category-request.reject',
       targetType: 'category-request',
+    },
+    // Provider-performed, not admin-performed -- but audit_log's contract is "a real
+    // person did this", not "an admin did this", and a salon owner accepting or declining
+    // a customer's request is exactly that.
+    {
+      label: 'booking approval approved',
+      handler: SalonBookingsController.prototype.approve,
+      action: 'booking.approval.approved',
+      targetType: 'booking',
+    },
+    {
+      label: 'booking approval rejected',
+      handler: SalonBookingsController.prototype.reject,
+      action: 'booking.approval.rejected',
+      targetType: 'booking',
     },
     {
       label: 'salon booking settings update',

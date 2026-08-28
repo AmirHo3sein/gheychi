@@ -66,7 +66,7 @@ export class BookingExpiryJob {
     // releaseBookingHold), and that needs the exact set of bookings this run
     // expired -- atomically with the expiry itself, so a crash between the two can't
     // leave a dead booking still holding its customer's code or balance hostage.
-    const expiredIds = await this.bookings.manager.transaction(async (em) => {
+    const expired = await this.bookings.manager.transaction(async (em) => {
       const result = await em
         .createQueryBuilder()
         .update(Booking)
@@ -82,9 +82,15 @@ export class BookingExpiryJob {
           { status: 'pending_payment', now, cutoff, batchSize: BATCH_SIZE },
         )
         .setParameters({ status: 'pending_payment', now, cutoff, batchSize: BATCH_SIZE })
-        .returning('id')
+        // confirmation_mode comes back alongside the id because only manual-approval
+        // bookings get a notification -- see the notification block below. Raw string
+        // form, not the array form: the array form maps ENTITY PROPERTY names, so
+        // 'confirmation_mode' would be silently dropped and every expiry would look
+        // automatic (i.e. never notify anyone).
+        .returning('id, confirmation_mode')
         .execute();
-      const ids = (result.raw as Array<{ id: string }>).map((row) => row.id);
+      const rows = result.raw as Array<{ id: string; confirmation_mode: string }>;
+      const ids = rows.map((row) => row.id);
       await releaseBookingHold(em, this.walletService, ids);
       // One multi-row INSERT rather than 2 round-trips per booking -- at the 1000-row batch
       // cap that is the difference between a short transaction and a very long one.
@@ -100,16 +106,26 @@ export class BookingExpiryJob {
         ]),
         em,
       );
-      return ids;
+      return rows;
     });
 
-    // Post-commit and per-booking isolated: the expiry itself is already durable, so a
+    // MANUAL-APPROVAL BOOKINGS ONLY. This is a deliberate SMS-budget rule, not an
+    // oversight.
+    //
+    // An abandoned automatic checkout is a customer who opened the payment page and walked
+    // away seconds ago -- they know they didn't pay, and texting every one of them would
+    // spend real money to tell people something they already know. A manual-approval
+    // booking is the opposite case: the customer was told "the salon accepted, you have
+    // until HH:MM", then went about their day. Letting that window close silently is what
+    // actually costs them a slot.
+    //
+    // Post-commit and per-booking isolated: the expiry is already durable, so a
     // notification failure must never roll it back or abort the rest of the batch.
-    // Previously this job was completely silent to the customer -- acceptable when the
-    // only way to reach it was abandoning a checkout you were looking at, but not once a
-    // salon-approved request can expire on a customer who was told they had a window.
+    const notifiableIds = expired
+      .filter((row) => row.confirmation_mode === 'manual_approval')
+      .map((row) => row.id);
     await notifyAllBoundedly(
-      expiredIds,
+      notifiableIds,
       (id) => this.paymentsService.notifyPaymentExpired(id),
       (id, err) =>
         this.logger.error(
@@ -117,6 +133,13 @@ export class BookingExpiryJob {
         ),
     );
 
-    return expiredIds.length;
+    if (expired.length > 0) {
+      this.logger.log(
+        `booking.payment.window.expired count=${expired.length} notified=${notifiableIds.length} ` +
+          `(automatic-mode expiries are deliberately not notified)`,
+      );
+    }
+
+    return expired.length;
   }
 }

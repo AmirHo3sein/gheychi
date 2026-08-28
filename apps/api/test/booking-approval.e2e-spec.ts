@@ -564,6 +564,93 @@ describe('Booking approval workflow (e2e)', () => {
     });
   });
 
+  // --- SMS budget: the payment-expiry notification is manual-mode ONLY -----------------
+  describe('SMS is spent deliberately', () => {
+    // Asserted through the console SMS provider's own log line rather than by mocking:
+    // SMS_PROVIDER=console in .env.test, so every real send is observable here, and this
+    // pins actual delivery rather than an intention to deliver.
+    function captureSms(): { lines: string[]; restore: () => void } {
+      const lines: string[] = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const proto = (require('@nestjs/common') as any).Logger.prototype;
+      const original = proto.log;
+      proto.log = function patched(message: unknown, ...rest: unknown[]) {
+        lines.push(String(message));
+        return original.call(this, message, ...rest);
+      };
+      return { lines, restore: () => { proto.log = original; } };
+    }
+
+    it('does NOT text a customer whose AUTOMATIC checkout was simply abandoned', async () => {
+      await setMode('automatic');
+      // A dedicated customer, and the assertion is scoped to THEIR phone: one run of the
+      // job expires every booking that is due, including manual-mode leftovers from
+      // earlier cases in this file which legitimately DO get texted. A bare "no such SMS
+      // anywhere" assertion would fail for the wrong reason.
+      const abandonCookie = await loginAs(app, '09171110009');
+      const created = await book(futureIso(290), abandonCookie).expect(201);
+      const bookingId = created.body.booking.id;
+      await ds.query(`UPDATE bookings SET payment_expires_at = now() - interval '1 minute' WHERE id = $1`, [
+        bookingId,
+      ]);
+
+      const sms = captureSms();
+      try {
+        await app.get(BookingExpiryJob).run();
+      } finally {
+        sms.restore();
+      }
+
+      expect(await statusOf(bookingId)).toBe('expired');
+      // An abandoned automatic checkout is someone who walked away from the payment page
+      // seconds ago and already knows they didn't pay. Texting them spends real money to
+      // say nothing.
+      expect(sms.lines.some((l) => l.includes('09171110009') && l.includes('مهلت پرداخت'))).toBe(false);
+    });
+
+    it('DOES text a customer whose approved manual booking lost its payment window', async () => {
+      await setMode('manual_approval');
+      const created = await book(futureIso(291)).expect(201);
+      const bookingId = created.body.booking.id;
+      await request(app.getHttpServer())
+        .post(`/api/salons/mine/bookings/${bookingId}/approve`)
+        .set('Cookie', ownerCookie)
+        .expect(200);
+      await ds.query(`UPDATE bookings SET payment_expires_at = now() - interval '1 minute' WHERE id = $1`, [
+        bookingId,
+      ]);
+
+      const sms = captureSms();
+      try {
+        await app.get(BookingExpiryJob).run();
+      } finally {
+        sms.restore();
+      }
+
+      expect(await statusOf(bookingId)).toBe('expired');
+      // The opposite case: this customer was told "the salon accepted, pay by HH:MM" and
+      // then went about their day. Letting that close silently costs them the slot.
+      expect(sms.lines.some((l) => l.includes('مهلت پرداخت'))).toBe(true);
+    });
+
+    it('does not text the customer merely for submitting a request -- they are on the screen', async () => {
+      await setMode('manual_approval');
+
+      const sms = captureSms();
+      try {
+        await book(futureIso(292)).expect(201);
+        // notifyApprovalRequested is awaited inside createHold, so it has already run.
+      } finally {
+        sms.restore();
+      }
+
+      // The OWNER must still be texted: they aren't looking at the app and have only the
+      // approval window to act.
+      expect(sms.lines.some((l) => l.includes('درخواست نوبت جدید'))).toBe(true);
+      expect(sms.lines.some((l) => l.includes('درخواست نوبت شما'))).toBe(false);
+    });
+  });
+
   // --- Scenario 8: config snapshotting ------------------------------------------------
   describe('deadline snapshotting', () => {
     beforeAll(() => setMode('manual_approval'));

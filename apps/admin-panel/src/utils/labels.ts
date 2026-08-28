@@ -305,6 +305,8 @@ const AUDIT_ACTION: Record<string, LabelEntry> = {
   'coupon.update': { label: 'ویرایش کد تخفیف', tone: 'info' },
   'coupon.delete': { label: 'حذف کد تخفیف', tone: 'danger' },
   'worker-rating.moderate': { label: 'تعدیل ارزیابی کارمند', tone: 'warning' },
+  'booking.approval.approved': { label: 'تایید درخواست رزرو', tone: 'success' },
+  'booking.approval.rejected': { label: 'رد درخواست رزرو', tone: 'danger' },
   'booking-settings.update': { label: 'ویرایش تنظیمات رزرو سالن', tone: 'info' },
 }
 
@@ -319,6 +321,7 @@ const AUDIT_TARGET_TYPE: Record<string, string> = {
   story: 'استوری',
   portfolioitem: 'نمونه کار',
   category: 'دسته‌بندی',
+  booking: 'نوبت',
   'category-request': 'درخواست دسته‌بندی',
   config: 'تنظیمات',
   report: 'گزارش',

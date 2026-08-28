@@ -86,8 +86,8 @@ Two immutable columns on `bookings`:
 | `payment_expires_at` | when the booking enters `pending_payment` — at creation (automatic) or at approval (manual) | `BookingExpiryJob` |
 
 The value is computed from the configuration **in force at that moment** and then frozen. An admin
-raising the global approval timeout from 30 to 60 minutes does **not** hand every in-flight request
-another 30 minutes.
+raising the global approval timeout from 10 to 60 minutes does **not** hand every in-flight request
+another 50 minutes.
 
 This also fixed a pre-existing bug: `BookingExpiryJob` used to derive its cutoff as
 `created_at < now() - booking_hold_ttl_minutes`, read fresh from config on every tick, so editing
@@ -98,7 +98,7 @@ before this shipped keep their original behaviour exactly** while new rows are s
 ## Configuration: admin owns the timing, the owner owns the mode
 
 ```
-approval timeout = salons.approval_timeout_minutes  ?? platform_config.booking_approval_timeout_minutes  (30)
+approval timeout = salons.approval_timeout_minutes  ?? platform_config.booking_approval_timeout_minutes  (10)
 payment timeout  = salons.payment_timeout_minutes   ?? platform_config.booking_hold_ttl_minutes          (15)
 ```
 
@@ -179,6 +179,29 @@ both.
 a booking must not fail because a history row could not be written — and when handed the caller's
 `em` it joins that transaction, so an event describing a rolled-back transition never survives.
 
+Ordered by a `bigserial` **`seq`**, never by `created_at`. Postgres's `now()` is the
+*transaction* start time, so the several transitions that write two events at once
+(`BOOKING_CREATED` + `APPROVAL_REQUESTED`; `PAYMENT_EXPIRED` + `SLOT_RELEASED`) share an
+identical timestamp — and TypeORM stamps `@CreateDateColumn` from JS at millisecond
+resolution anyway. Ordering by timestamp let the support view show a request being approved
+before it was created; a monotonic sequence is ordered by construction. `created_at` is kept
+and displayed, it just isn't what sorts.
+
+### Relationship to `audit_log`
+
+Both, deliberately, and they are not duplicates:
+
+| | `audit_log` | `booking_events` |
+|---|---|---|
+| Answers | "who did this, and can we hold them to it" | "what happened to this booking" |
+| Actor | `actor_id` is **NOT NULL** — always a real person | may be `system` (the crons) |
+| Browsed by | actor, action, date, across the platform | one booking, in order |
+
+Approve and reject are performed by a real human, so they write an `audit_log` row
+(`booking.approval.approved` / `booking.approval.rejected`) *as well as* a booking event.
+The cron-driven halves of the same state machine have no actor and are structurally unable
+to live in `audit_log` — which is exactly why `booking_events` exists.
+
 Read back by admins at `GET /admin/bookings/:id/events`, rendered as a timeline in the admin panel.
 Metadata must never carry a credential, payment authority, OTP, or PII; the review responsibility
 sits with each call site, the same rule `AnalyticsService` already carries.
@@ -202,18 +225,31 @@ was silent, which was tolerable when the only way to reach it was abandoning a c
 looking at, but not once a salon-approved request can expire on a customer who was told they had a
 window.
 
-## Notifications
+## Notifications — and where SMS is deliberately NOT sent
 
 All through the existing `SmsProvider`/`PushService` abstractions via `PaymentsService`'s
-`notifyOne` helper.
+`notifyOne` helper. SMS costs real money per message, so each channel choice below is a
+decision, not a default:
+
+- **The customer is not texted when their request is submitted.** They pressed the button a
+  second ago and are reading the confirmation screen; push carries it. The **owner** is
+  texted, because they are not in the app and have only the approval window to act — this is
+  the most time-critical message in the flow.
+- **An abandoned *automatic* checkout is never texted.** `BookingExpiryJob` filters its
+  notifications to `confirmation_mode = 'manual_approval'`. Someone who walked away from a
+  payment page moments ago already knows they didn't pay; a manual-approval customer, told
+  "the salon accepted, pay by HH:MM" and then off living their day, genuinely does not.
+  (The `RETURNING` clause uses the raw-string form for this — the array form maps entity
+  *property* names, so `confirmation_mode` would be silently dropped and every expiry would
+  look automatic.)
 
 | Moment | Customer | Owner |
 |---|---|---|
-| Request created | "…در انتظار تایید سالن است. هنوز مبلغی پرداخت نشده است." | "یک درخواست نوبت جدید…" |
+| Request created | push only — "…هنوز مبلغی پرداخت نشده است." | **SMS** + push — "یک درخواست نوبت جدید…" |
 | Approved | "…تایید شد. برای قطعی شدن نوبت، پیش‌پرداخت را انجام دهید." | — (they just did it) |
 | Rejected | "…تایید نشد. دلیل: {reason}" | — |
 | Approval expired | "…به دلیل عدم پاسخ سالن منقضی شد. مبلغی از شما دریافت نشده است." | — |
-| Payment expired | "مهلت پرداخت … به پایان رسید و رزرو منقضی شد." | — |
+| Payment expired (**manual mode only**) | "مهلت پرداخت … به پایان رسید و رزرو منقضی شد." | — |
 
 Every customer-facing message in this flow states explicitly whether money changed hands, because
 "your request expired" is easily misread as "you lost your deposit".

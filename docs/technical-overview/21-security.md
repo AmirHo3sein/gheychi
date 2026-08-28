@@ -112,5 +112,11 @@ Redis-backed, narrowly scoped to the two genuinely abusable surfaces: OTP reques
   authority, OTP, or PII — the same standing rule as `AnalyticsService`, enforced by review at
   each call site. Today it holds only timeout values, ISO deadlines, status names, and the
   owner-authored rejection reason.
+- **Auditability.** A salon owner accepting or declining a request writes a real
+  `audit_log` row (`booking.approval.approved` / `booking.approval.rejected`) — `audit_log`
+  records "a real person did this", and a provider is a real person. The cron-driven
+  transitions in the same state machine have no actor and cannot live there
+  (`audit_log.actor_id` is NOT NULL), which is why `booking_events` carries the full
+  lifecycle. The two are not duplicate records of one transition.
 - **A route with no explicit guard is public by default in this codebase.** All four new routes
   declare guards explicitly and are covered by the `route-guard-audit.spec.ts` invariant test.

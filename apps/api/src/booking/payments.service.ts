@@ -466,9 +466,15 @@ export class PaymentsService {
 
   /**
    * Manual-approval mode, step 1: the customer has asked for a slot and the salon has to
-   * decide. Tells the customer their request is in (and that they have NOT paid yet --
-   * the single most important thing to be unambiguous about here), and pings the owner
-   * that something is waiting on them, since an unanswered request expires on its own.
+   * decide.
+   *
+   * Asymmetric on purpose. The OWNER gets an SMS: they are not looking at the app, and
+   * they have only the approval window (10 minutes by default) to act before the request
+   * expires on its own -- this is the single most time-critical notification in the whole
+   * flow. The CUSTOMER gets push only: they pressed the button a second ago and are
+   * looking at the confirmation screen, so an SMS would be paying to tell someone
+   * something they are already reading. The message still says plainly that nothing has
+   * been paid, because that is the point most easily misread.
    */
   async notifyApprovalRequested(bookingId: string): Promise<void> {
     const booking = await this.bookings.findOneBy({ id: bookingId });
@@ -487,8 +493,12 @@ export class PaymentsService {
         ? this.notifyOne(
             customer,
             `درخواست نوبت شما در ${salon.name} برای ${when} ثبت شد و در انتظار تایید سالن است. هنوز مبلغی پرداخت نشده است.`,
-            { title: 'درخواست نوبت ثبت شد', body: `${salon.name} — ${when}` },
+            {
+              title: 'درخواست نوبت ثبت شد',
+              body: `${salon.name} — ${when} · هنوز مبلغی پرداخت نشده است`,
+            },
             bookingId,
+            { sms: false },
           )
         : Promise.resolve(),
       owner
@@ -541,8 +551,9 @@ export class PaymentsService {
 
   /**
    * The customer's payment window ran out. Public because BookingExpiryJob is its only
-   * caller. Applies to both workflows -- an abandoned automatic checkout and an approved
-   * manual request the customer never paid for reach the exact same place.
+   * caller, and that caller invokes it for MANUAL-APPROVAL bookings only -- see the
+   * SMS-budget rationale at that call site. An abandoned automatic checkout reaches the
+   * same `expired` status but is deliberately not notified.
    */
   async notifyPaymentExpired(bookingId: string): Promise<void> {
     const booking = await this.bookings.findOneBy({ id: bookingId });
@@ -678,8 +689,14 @@ export class PaymentsService {
     smsBody: string,
     push: { title: string; body: string },
     bookingId: string,
+    // SMS costs real money per message, so a few call sites deliberately opt out of it
+    // where the recipient is demonstrably already looking at the screen (see
+    // notifyApprovalRequested). Push and in-app cost nothing and still reach them.
+    channels: { sms: boolean } = { sms: true },
   ): Promise<void> {
-    await this.sms.send(user.phone, smsBody).catch(() => {});
+    if (channels.sms) {
+      await this.sms.send(user.phone, smsBody).catch(() => {});
+    }
     const data: PushNotificationData = { type: 'booking', bookingId };
     await this.push.sendToUser(user.id, { ...push, data }).catch(() => {});
   }

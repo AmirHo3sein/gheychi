@@ -120,9 +120,14 @@ describe('BookingExpiryJob', () => {
     expect(cutoff.getTime()).toBeLessThanOrEqual(Date.now() - HOLD_TTL_MINUTES * 60_000);
   });
 
-  it('notifies the customer once per expired booking, and one failing notification does not sink the run', async () => {
+  it('notifies the customer once per expired MANUAL booking, and one failing notification does not sink the run', async () => {
     const errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
-    execute.mockResolvedValue({ raw: [{ id: 'booking-1' }, { id: 'booking-2' }] });
+    execute.mockResolvedValue({
+      raw: [
+        { id: 'booking-1', confirmation_mode: 'manual_approval' },
+        { id: 'booking-2', confirmation_mode: 'manual_approval' },
+      ],
+    });
     notifyPaymentExpired.mockRejectedValueOnce(new Error('sms provider down'));
 
     const expiredCount = await job.run();
@@ -135,6 +140,34 @@ describe('BookingExpiryJob', () => {
     expect(notifyPaymentExpired).toHaveBeenNthCalledWith(2, 'booking-2');
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('booking-1'));
     errorSpy.mockRestore();
+  });
+
+  // A deliberate SMS-budget rule: an abandoned automatic checkout is someone who walked
+  // away from the payment page moments ago and already knows they didn't pay. Only a
+  // manual-approval customer -- told "the salon accepted, pay by HH:MM" and then off
+  // living their life -- genuinely needs telling.
+  it('expires an ABANDONED AUTOMATIC checkout without spending an SMS on it', async () => {
+    execute.mockResolvedValue({ raw: [{ id: 'booking-1', confirmation_mode: 'automatic' }] });
+
+    expect(await job.run()).toBe(1);
+
+    expect(notifyPaymentExpired).not.toHaveBeenCalled();
+  });
+
+  it('notifies only the manual bookings in a mixed batch', async () => {
+    execute.mockResolvedValue({
+      raw: [
+        { id: 'auto-1', confirmation_mode: 'automatic' },
+        { id: 'manual-1', confirmation_mode: 'manual_approval' },
+        { id: 'auto-2', confirmation_mode: 'automatic' },
+      ],
+    });
+
+    // All three are still expired and still have their holds released...
+    expect(await job.run()).toBe(3);
+    // ...but only the manual one is worth an SMS.
+    expect(notifyPaymentExpired).toHaveBeenCalledTimes(1);
+    expect(notifyPaymentExpired).toHaveBeenCalledWith('manual-1');
   });
 
   it('releases the coupon/wallet hold for every booking it expires', async () => {

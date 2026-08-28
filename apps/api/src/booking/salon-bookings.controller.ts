@@ -1,5 +1,9 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Req, UseGuards, UseInterceptors,
+} from '@nestjs/common';
 import { Request } from 'express';
+import { AuditAction } from '../audit/audit.decorator';
+import { AuditInterceptor } from '../audit/audit.interceptor';
 import { SalonOwnerGuard } from '../salons/salon-owner.guard';
 import { AssignWorkerDto } from '../salons/dto/worker.dto';
 import { BookingsService } from './bookings.service';
@@ -38,16 +42,38 @@ export class SalonBookingsController {
   // @HttpCode(200), not Nest's POST default of 201: these transition an existing booking
   // rather than creating a resource -- matching the house style already set by
   // POST /bookings/:id/cancel and POST /bookings/:id/retry-payment.
+  //
+  // Both carry @AuditAction as well as writing a booking_events row, and that is not
+  // duplication of the same record -- the two answer different questions and only one of
+  // them can answer either. `audit_log.actor_id` is NOT NULL, so it can only ever hold
+  // transitions a real person performed: it is the "who did this, and can we hold them to
+  // it" ledger, browsable by actor across the whole platform. Approve/reject are exactly
+  // that, which is why they belong there. The cron-driven halves of this same state
+  // machine (approval expiry, payment expiry) have no actor at all and are structurally
+  // unable to live in audit_log, which is why booking_events exists and why it -- not
+  // audit_log -- is what reconstructs one booking's full lifecycle.
   @Post(':id/approve')
   @HttpCode(200)
-  approve(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
-    return this.bookings.approve(req.salonId!, id, (req.user as User).id);
+  @UseInterceptors(AuditInterceptor)
+  @AuditAction('booking.approval.approved', 'booking')
+  async approve(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
+    const before = await this.bookings.findForSalonAudit(req.salonId!, id);
+    if (before) req.auditBefore = before;
+    const updated = await this.bookings.approve(req.salonId!, id, (req.user as User).id);
+    req.auditAfter = { status: updated.status, paymentExpiresAt: updated.paymentExpiresAt };
+    return updated;
   }
 
   @Post(':id/reject')
   @HttpCode(200)
-  reject(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body() dto: RejectBookingDto) {
-    return this.bookings.reject(req.salonId!, id, (req.user as User).id, dto.reason);
+  @UseInterceptors(AuditInterceptor)
+  @AuditAction('booking.approval.rejected', 'booking')
+  async reject(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body() dto: RejectBookingDto) {
+    const before = await this.bookings.findForSalonAudit(req.salonId!, id);
+    if (before) req.auditBefore = before;
+    const updated = await this.bookings.reject(req.salonId!, id, (req.user as User).id, dto.reason);
+    req.auditAfter = { status: updated.status };
+    return updated;
   }
 
   @Patch(':id/assign-worker')

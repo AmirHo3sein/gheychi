@@ -101,6 +101,13 @@ export class BookingApprovalExpiryJob {
       return ids;
     });
 
+    if (expiredIds.length > 0) {
+      this.logger.log(
+        `booking.approval.expired count=${expiredIds.length} from=pending_approval to=expired actor=system ` +
+          `bookingIds=${expiredIds.join(',')}`,
+      );
+    }
+
     await notifyAllBoundedly(
       expiredIds,
       (id) => this.paymentsService.notifyApprovalExpired(id),
