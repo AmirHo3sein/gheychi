@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -13,6 +13,7 @@ import { useToast } from '@/composables/useToast'
 import { toEnglishDigits } from '@/utils/digits'
 import { bookingStatusLabel } from '@/utils/labels'
 import { formatToman } from '@/utils/format-toman'
+import { formatRemainingTime } from '@/utils/remaining-time'
 import { tehranDateString } from '@/utils/tehran-date'
 
 interface Booking {
@@ -21,7 +22,17 @@ interface Booking {
   serviceName: string
   priceSnapshot: number
   startsAt: string
+  endsAt: string
+  createdAt: string
   status: string
+  // Which workflow this booking was created under, snapshotted server-side -- an
+  // in-flight request keeps its own mode even if the salon switches mode afterwards.
+  confirmationMode: 'automatic' | 'manual_approval'
+  // Backend truth, both of them: the deadline snapshots the API itself enforces. The
+  // countdown rendered from approvalExpiresAt is a display convenience only -- no
+  // action here is ever gated on a client-side clock.
+  approvalExpiresAt: string | null
+  paymentExpiresAt: string | null
   workerId: string | null
   workerName: string | null
   // A shadow account created via findOrCreateByPhone (SalonWorkersController's own
@@ -87,6 +98,31 @@ onMounted(loadAll)
 // booking always surfaces first.
 const sortedBookings = computed(() => [...bookings.value].sort((a, b) => a.startsAt.localeCompare(b.startsAt)))
 
+// -- Manual-approval queue: requests waiting on the owner's decision. --
+//
+// Deliberately NOT filtered by the day view below and never grouped into the agenda's
+// date sections: a request expires on its own deadline (its slot is released and the
+// customer told no), so it is time-critical regardless of which day it is for, and
+// burying it under a date header the owner isn't currently looking at would let it
+// lapse unseen. Requests still appear in the agenda too, where they read as a held slot.
+const pendingRequests = computed(() =>
+  // Soonest deadline first -- the ordering that matches what will lapse first, not the
+  // startsAt ordering the agenda uses. A missing deadline (never expected for a real
+  // pending request) sorts last rather than crashing the comparator.
+  bookings.value
+    .filter((b) => b.status === 'pending_approval')
+    .sort((a, b) => (a.approvalExpiresAt ?? '9999').localeCompare(b.approvalExpiresAt ?? '9999')),
+)
+
+// Ticks once a minute so the «... مانده» labels stay fresh while the page is open. Same
+// interval pattern as StoriesView -- a display refresh only; the deadline itself is the
+// backend's, and an expired request is rejected server-side, not hidden by this clock.
+const now = ref(new Date())
+const remainingTimer = setInterval(() => {
+  now.value = new Date()
+}, 60_000)
+onUnmounted(() => clearInterval(remainingTimer))
+
 const todayCount = computed(
   () => sortedBookings.value.filter((b) => tehranDateString(new Date(b.startsAt)) === tehranDateString(new Date())).length,
 )
@@ -111,6 +147,64 @@ async function markStatus(id: string, status: 'completed' | 'no_show') {
   submittingId.value = id
   try {
     await apiFetch(`/salons/mine/bookings/${id}`, { method: 'PATCH', body: { status } })
+    await fetchBookings()
+  } finally {
+    submittingId.value = null
+  }
+}
+
+// -- Approve / reject a manual-approval request --
+//
+// Both always refetch, success or failure. A request can stop being pending without this
+// tab knowing (the approval deadline lapses, the customer cancels, another device decides
+// it) and the API answers that with a 409 -- refetching on the error path is what replaces
+// the stale card with the state that actually won, instead of leaving a dead "approve"
+// button on screen. useApi already toasted the message.
+async function approveRequest(id: string) {
+  if (submittingId.value) return
+  submittingId.value = id
+  try {
+    await apiFetch(`/salons/mine/bookings/${id}/approve`, { method: 'POST' })
+    await fetchBookings()
+  } finally {
+    submittingId.value = null
+  }
+}
+
+// Two-step, mirroring SalonStatusActions' reject half: the buttons collapse into a reason
+// field, and the reason is mandatory (the API's own RejectBookingDto is 1..300) so it is
+// validated here rather than letting a 400 be the owner's first feedback.
+const rejectingId = ref<string | null>(null)
+const rejectReason = ref('')
+const rejectReasonError = ref(false)
+
+function openReject(id: string) {
+  rejectingId.value = id
+  rejectReason.value = ''
+  rejectReasonError.value = false
+}
+
+function cancelReject() {
+  rejectingId.value = null
+  rejectReason.value = ''
+  rejectReasonError.value = false
+}
+
+async function submitReject(id: string) {
+  if (submittingId.value) return
+  const reason = rejectReason.value.trim()
+  if (!reason) {
+    rejectReasonError.value = true
+    return
+  }
+  rejectReasonError.value = false
+  submittingId.value = id
+  try {
+    await apiFetch(`/salons/mine/bookings/${id}/reject`, { method: 'POST', body: { reason } })
+    // The panel closes either way: on success the request is gone, and on a lost race the
+    // refetched card no longer offers rejecting at all, so a still-open reason box would
+    // be pointing at nothing.
+    cancelReject()
     await fetchBookings()
   } finally {
     submittingId.value = null
@@ -157,6 +251,30 @@ function formatDateLabel(dateStr: string): string {
   return new Intl.DateTimeFormat('fa-IR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Tehran' }).format(
     new Date(`${dateStr}T12:00:00Z`),
   )
+}
+
+// Same Tehran pinning as formatBookingTime, with the calendar date included -- a request
+// card has to say WHEN it arrived, and «۱۰:۳۰» alone would read as today's.
+function formatRequestedAt(iso: string): string {
+  // Explicit hour/minute rather than `timeStyle: 'short'`: Intl rejects mixing timeStyle
+  // with individual date components in the same options object.
+  return new Intl.DateTimeFormat('fa-IR', {
+    day: 'numeric',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Asia/Tehran',
+  }).format(new Date(iso))
+}
+
+// endsAt is the booking's own snapshot, not a live re-read of the service's current
+// durationMin -- so a service edited after the request was made never misreports how long
+// this appointment actually blocks the chair.
+function durationLabel(b: Booking): string | null {
+  const minutes = Math.round((new Date(b.endsAt).getTime() - new Date(b.startsAt).getTime()) / 60_000)
+  // Guarded rather than printed blindly: an unparsable/absent endsAt would otherwise
+  // render a literal «NaN دقیقه» on the card.
+  return Number.isFinite(minutes) ? `${minutes.toLocaleString('fa-IR')} دقیقه` : null
 }
 
 // -- Manual/offline booking: the owner recording a customer who called or walked in --
@@ -306,6 +424,137 @@ const groupedBookings = computed<BookingGroup[]>(() => {
       </div>
 
       <template v-else>
+        <!-- Manual-approval queue, deliberately the first thing on the page and outside the
+             day view entirely: these requests expire on their own deadline, so they must be
+             visible no matter which day the agenda below is currently showing. -->
+        <section v-if="pendingRequests.length > 0" data-testid="pending-requests" class="space-y-3">
+          <div class="flex flex-wrap items-center gap-2 px-1">
+            <h2 class="font-bold text-(--color-text)">درخواست‌های در انتظار تایید</h2>
+            <StatusBadge :label="`${pendingRequests.length.toLocaleString('fa-IR')} درخواست`" tone="warning" />
+          </div>
+          <!-- The one thing an owner must not misread: nothing has been paid yet. -->
+          <p class="px-1 text-xs text-(--color-text-muted)">
+            مشتری هنوز پرداختی انجام نداده است؛ پس از تایید شما مهلت پرداخت آغاز می‌شود. اگر تا پایان مهلت تصمیم نگیرید،
+            درخواست به‌صورت خودکار منقضی و نوبت آزاد می‌شود.
+          </p>
+
+          <!-- ring, not a border-color override: AppCard's root already sets
+               border-(--color-border), and two border-color utilities on one element are
+               resolved by stylesheet order, not by which one is written last here. -->
+          <AppCard
+            v-for="b in pendingRequests"
+            :key="b.id"
+            :data-testid="`pending-request-${b.id}`"
+            class="space-y-3 ring-1 ring-(--tone-warning-text)"
+          >
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div class="flex min-w-0 items-start gap-3">
+                <div class="flex w-16 shrink-0 flex-col items-center justify-center rounded-xl bg-(--tone-warning-bg) py-2 text-(--tone-warning-text)">
+                  <span class="tnum text-sm font-bold">{{ formatBookingTime(b.startsAt) }}</span>
+                </div>
+                <!-- min-w-0 + break-words, same reason as the agenda card below: a long
+                     salon-authored service name must wrap inside the card. -->
+                <div class="min-w-0 space-y-1">
+                  <p class="break-words text-sm font-bold text-(--color-text)">{{ b.serviceName }}</p>
+                  <p class="text-xs text-(--color-text-muted)">
+                    {{ formatDateLabel(tehranDateString(new Date(b.startsAt))) }}
+                    <span v-if="durationLabel(b)" class="tnum"> — {{ durationLabel(b) }}</span>
+                  </p>
+                  <p class="text-sm text-(--color-text-muted)">
+                    {{ b.customerName || 'بدون نام' }}
+                    <span v-if="b.customerPhone" dir="ltr" class="tnum"> — {{ b.customerPhone }}</span>
+                  </p>
+                  <p class="text-xs text-(--color-text-muted)">
+                    کارمند:
+                    <span class="font-semibold text-(--color-text)">{{ b.workerName || 'تعیین‌نشده' }}</span>
+                  </p>
+                  <p class="text-xs text-(--color-text-muted)">
+                    <span dir="ltr" class="tnum">{{ formatToman(b.priceSnapshot) }}</span> تومان
+                    · ثبت درخواست: <span class="tnum">{{ formatRequestedAt(b.createdAt) }}</span>
+                  </p>
+                </div>
+              </div>
+              <!-- Display only: the real deadline lives on the server (approvalExpiresAt is
+                   its snapshot), and an expired request is refused there, not here. -->
+              <span
+                v-if="b.approvalExpiresAt"
+                :data-testid="`approval-remaining-${b.id}`"
+                class="tnum inline-flex shrink-0 items-center gap-1.5 rounded-full bg-(--tone-warning-bg) px-2.5 py-1 text-xs font-semibold text-(--tone-warning-text)"
+              >
+                <AppIcon name="hours" :size="13" class="shrink-0" />
+                {{ formatRemainingTime(b.approvalExpiresAt, now) }}
+              </span>
+            </div>
+
+            <div v-if="rejectingId === b.id" class="space-y-2 border-t border-(--color-border-soft) pt-3">
+              <label :for="`reject-reason-${b.id}`" class="block text-xs font-semibold text-(--color-text-muted)">
+                دلیل رد درخواست (برای مشتری ارسال می‌شود)
+              </label>
+              <textarea
+                :id="`reject-reason-${b.id}`"
+                v-model="rejectReason"
+                data-testid="reject-reason"
+                rows="2"
+                maxlength="300"
+                placeholder="مثلاً در این ساعت ظرفیت نداریم"
+                class="w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-3 text-sm text-(--color-text)"
+              />
+              <p v-if="rejectReasonError" data-testid="reject-reason-error" class="text-xs text-(--tone-danger-text)">
+                نوشتن دلیل الزامی است.
+              </p>
+              <div class="flex flex-wrap justify-end gap-2">
+                <AppButton
+                  data-testid="reject-submit"
+                  type="button"
+                  variant="danger"
+                  size="sm"
+                  :disabled="submittingId === b.id"
+                  :loading="submittingId === b.id"
+                  @click="submitReject(b.id)"
+                >
+                  ثبت رد درخواست
+                </AppButton>
+                <AppButton
+                  data-testid="reject-cancel"
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  :disabled="submittingId === b.id"
+                  @click="cancelReject"
+                >
+                  انصراف
+                </AppButton>
+              </div>
+            </div>
+
+            <div v-else class="flex flex-wrap justify-end gap-2 border-t border-(--color-border-soft) pt-3">
+              <AppButton
+                data-testid="approve-request"
+                type="button"
+                variant="primary"
+                size="sm"
+                :disabled="submittingId === b.id"
+                :loading="submittingId === b.id"
+                @click="approveRequest(b.id)"
+              >
+                <template #icon><AppIcon name="check" :size="13" /></template>
+                تایید درخواست
+              </AppButton>
+              <AppButton
+                data-testid="reject-request"
+                type="button"
+                variant="danger"
+                size="sm"
+                :disabled="submittingId === b.id"
+                @click="openReject(b.id)"
+              >
+                <template #icon><AppIcon name="x" :size="13" /></template>
+                رد درخواست
+              </AppButton>
+            </div>
+          </AppCard>
+        </section>
+
         <!-- Always-visible, not a modal -- same shape as HoursView.vue's ad-hoc-closures
              form. A compact quick-add panel, not a page-dominating wall of fields. -->
         <AppCard class="space-y-4">
@@ -526,6 +775,18 @@ const groupedBookings = computed<BookingGroup[]>(() => {
                   لغو
                 </AppButton>
               </div>
+              <!-- Sibling branch of the confirmed-only actions above, deliberately a pointer
+                   rather than a second pair of approve/reject buttons: the decision belongs to
+                   the queue at the top of the page (the one place that never hides behind the
+                   day filter), and duplicating it here would mean two controls, one busy-lock
+                   and two ways to lose the same race. -->
+              <p
+                v-else-if="b.status === 'pending_approval'"
+                data-testid="agenda-pending-hint"
+                class="border-t border-(--color-border-soft) pt-3 text-xs text-(--color-text-muted)"
+              >
+                این نوبت هنوز پرداخت نشده و در بخش «درخواست‌های در انتظار تایید» بالای صفحه بررسی می‌شود.
+              </p>
             </AppCard>
           </div>
         </div>

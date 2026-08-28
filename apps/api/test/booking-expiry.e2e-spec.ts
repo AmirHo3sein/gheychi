@@ -67,7 +67,18 @@ describe('Booking expiry job (e2e)', () => {
       .expect(201);
 
     const ds = app.get(DataSource);
-    await ds.query(`UPDATE bookings SET created_at = now() - interval '20 minutes' WHERE id = $1`, [stale.body.booking.id]);
+    // Ageing a hold now means shifting its own snapshotted deadline too, not just
+    // created_at: a booking created today carries payment_expires_at, and THAT is what
+    // the job reads (created_at is only the fallback for rows predating that column).
+    // Shifting both by the same interval is the honest simulation of "this hold is
+    // 20 minutes old".
+    await ds.query(
+      `UPDATE bookings
+          SET created_at = now() - interval '20 minutes',
+              payment_expires_at = payment_expires_at - interval '20 minutes'
+        WHERE id = $1`,
+      [stale.body.booking.id],
+    );
 
     const affected = await job.run();
     expect(affected).toBe(1);
@@ -107,7 +118,7 @@ describe('Booking expiry job (e2e)', () => {
     const before = await ds.query(`SELECT id FROM coupon_redemptions WHERE booking_id = $1`, [created.body.booking.id]);
     expect(before).toHaveLength(1);
 
-    await ds.query(`UPDATE bookings SET created_at = now() - interval '20 minutes' WHERE id = $1`, [
+    await ds.query(`UPDATE bookings SET created_at = now() - interval '20 minutes', payment_expires_at = payment_expires_at - interval '20 minutes' WHERE id = $1`, [
       created.body.booking.id,
     ]);
     await job.run();
@@ -132,7 +143,7 @@ describe('Booking expiry job (e2e)', () => {
       .expect(201);
 
     const ds = app.get(DataSource);
-    await ds.query(`UPDATE bookings SET created_at = now() - interval '20 minutes' WHERE id = $1`, [first.body.booking.id]);
+    await ds.query(`UPDATE bookings SET created_at = now() - interval '20 minutes', payment_expires_at = payment_expires_at - interval '20 minutes' WHERE id = $1`, [first.body.booking.id]);
     await job.run();
 
     const secondCustomer = await loginAs(app, '09129090014');

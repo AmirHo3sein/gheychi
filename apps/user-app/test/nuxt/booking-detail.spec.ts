@@ -23,6 +23,15 @@ const BASE_BOOKING = {
   walletAmountUsed: null as number | null,
   status: 'cancelled_by_salon',
   refundStatus: null as string | null,
+  confirmationMode: 'automatic' as 'automatic' | 'manual_approval',
+  approvalExpiresAt: null as string | null,
+  paymentExpiresAt: null as string | null,
+}
+
+// Deadlines are expressed relative to the real clock so these assertions don't depend on
+// when the suite runs -- formatRemainingTime's own exact output is pinned in test/unit.
+function inMinutes(minutes: number): string {
+  return new Date(Date.now() + minutes * 60_000).toISOString()
 }
 
 const MY_REVIEW = {
@@ -242,6 +251,78 @@ describe('booking detail page', () => {
     expect(wrapper.find('[data-testid="retry-payment-button"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="cancel-booking-button"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="review-booking-button"]').exists()).toBe(false)
+  })
+
+  // This page rendered no status at all before the manual-approval workflow existed. It has
+  // to now: "waiting on the salon" and "waiting on you to pay" look identical otherwise.
+  it('names the booking status on the page', async () => {
+    fetchMock.mockResolvedValue({ ...BASE_BOOKING, status: 'confirmed' })
+    wrapper = await mountSuspended(BookingDetailPage)
+    expect(wrapper.get('[data-testid="booking-status-badge"]').text()).toContain('تایید شده')
+  })
+
+  // The load-bearing test of this whole feature on the detail page: a pending_approval
+  // booking has NO payment behind it. Saying (or implying) otherwise -- a receipt, a refund,
+  // a "pay now" -- would be a straight lie about the customer's money.
+  it('states plainly that nothing has been paid while the salon has not answered, and offers no payment action', async () => {
+    fetchMock.mockResolvedValue({
+      ...BASE_BOOKING,
+      status: 'pending_approval',
+      confirmationMode: 'manual_approval',
+      approvalExpiresAt: inMinutes(45),
+    })
+    wrapper = await mountSuspended(BookingDetailPage)
+
+    expect(wrapper.get('[data-testid="booking-status-badge"]').text()).toContain('در انتظار تایید سالن')
+    const card = wrapper.get('[data-testid="pending-approval-card"]')
+    expect(card.text()).toContain('درخواست شما برای سالن ارسال شد')
+    expect(card.text()).toContain('هیچ مبلغی از شما دریافت نشده است')
+    expect(card.get('[data-testid="remaining-time"]').text()).toContain('مانده')
+
+    expect(wrapper.find('[data-testid="retry-payment-button"]').exists()).toBe(false)
+    // The deposit figure is still shown, but tensed as what WILL be due -- never as paid.
+    expect(wrapper.text()).toContain('پیش‌پرداخت پس از تایید سالن')
+  })
+
+  it('lets the customer withdraw a request the salon has not answered', async () => {
+    vi.stubGlobal('confirm', () => true)
+    fetchMock.mockImplementation(async (path: string, opts?: { method?: string }) => {
+      if (path === '/bookings/b1' && (!opts || opts.method === undefined || opts.method === 'GET')) {
+        return { ...BASE_BOOKING, status: 'pending_approval', confirmationMode: 'manual_approval' }
+      }
+      if (path === '/bookings/b1/cancel' && opts?.method === 'POST') return { ok: true }
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    wrapper = await mountSuspended(BookingDetailPage)
+
+    const cancelButton = wrapper.get('[data-testid="cancel-booking-button"]')
+    expect(cancelButton.text()).toBe('لغو درخواست')
+
+    await cancelButton.trigger('click')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith('/bookings/b1/cancel', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('shows how long is left to pay next to the retry-payment action', async () => {
+    fetchMock.mockResolvedValue({ ...BASE_BOOKING, status: 'pending_payment', paymentExpiresAt: inMinutes(20) })
+    wrapper = await mountSuspended(BookingDetailPage)
+
+    expect(wrapper.text()).toContain('مهلت پرداخت')
+    expect(wrapper.get('[data-testid="remaining-time"]').text()).toContain('مانده')
+    // Display only -- the action stays available and the API's own refusal is what ends it.
+    expect(wrapper.find('[data-testid="retry-payment-button"]').exists()).toBe(true)
+  })
+
+  it('explains a salon rejection without implying a refund, and offers no actions', async () => {
+    fetchMock.mockResolvedValue({ ...BASE_BOOKING, status: 'rejected_by_salon', confirmationMode: 'manual_approval' })
+    wrapper = await mountSuspended(BookingDetailPage)
+
+    expect(wrapper.get('[data-testid="booking-status-badge"]').text()).toContain('رد شده توسط سالن')
+    expect(wrapper.get('[data-testid="rejected-card"]').text()).toContain('مبلغی از شما دریافت نشده است')
+    expect(wrapper.find('[data-testid="refund-status-card"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="cancel-booking-button"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="retry-payment-button"]').exists()).toBe(false)
   })
 
   it('cancels the booking and refreshes after confirmation', async () => {

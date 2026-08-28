@@ -6,11 +6,17 @@ interface LabelMeta {
 }
 
 const BOOKING_STATUS: Record<string, LabelMeta> = {
+  // Manual-approval mode only: the customer has asked for the slot and is waiting on the
+  // owner's decision. Nothing is paid yet -- deliberately not "در انتظار پرداخت".
+  pending_approval: { label: 'در انتظار تایید شما', tone: 'warning' },
   pending_payment: { label: 'در انتظار پرداخت', tone: 'warning' },
   confirmed: { label: 'تایید شده', tone: 'info' },
   completed: { label: 'انجام شد', tone: 'success' },
   cancelled_by_user: { label: 'لغو شده (مشتری)', tone: 'neutral' },
   cancelled_by_salon: { label: 'لغو شده (آرایشگاه)', tone: 'neutral' },
+  // Distinct from cancelled_by_salon: the salon declined the REQUEST before it was ever
+  // confirmed (and before any payment), rather than cancelling a live booking.
+  rejected_by_salon: { label: 'رد شده توسط شما', tone: 'danger' },
   expired: { label: 'منقضی شده', tone: 'neutral' },
   no_show: { label: 'عدم حضور', tone: 'danger' },
 }

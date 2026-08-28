@@ -3,7 +3,12 @@ import type { ApiError } from '~/composables/useApi'
 import { applyDiscount } from '../../../utils/discount'
 import { formatToman } from '../../../utils/format-toman'
 
-interface Salon { id: string; name: string; address: string }
+// `bookingConfirmationMode` is on the public GET /salons/:slug payload (findPublicBySlug
+// returns the whole salon row), which is what lets this page tell the customer BEFORE they
+// commit that this salon reviews requests by hand. The booking's own mode is still frozen
+// server-side at creation time -- this field is only ever used for pre-submit copy, never
+// to decide what the page does with the response (that's `paymentRequired`, below).
+interface Salon { id: string; name: string; address: string; bookingConfirmationMode: 'automatic' | 'manual_approval' }
 interface SalonServiceItem { id: string; name: string; description: string | null; price: number; durationMin: number; discountPercent: number | null }
 interface BookingTerms { depositPercent: number; depositMinToman: number; cancellationWindowHours: number }
 // GET /salons/:slug/workers (PublicSalonContentController) -- active workers only,
@@ -53,6 +58,12 @@ const { data: page } = await useAsyncData(`booking-${slug}-${serviceId}`, async 
 if (!page.value) {
   throw createError({ statusCode: 404, statusMessage: 'Service not found' })
 }
+
+// Drives every piece of pre-submit copy on this page that would otherwise promise an
+// immediate booking. Compared against the explicit 'manual_approval' value (not `!==
+// 'automatic'`) so an older API response without the field at all falls back to the
+// unchanged, pay-now wording rather than silently telling everyone they're only requesting.
+const manualApproval = computed(() => page.value?.salon.bookingConfirmationMode === 'manual_approval')
 
 // null = "any available staff", exactly today's unchanged default.
 const selectedWorkerId = ref<string | null>(null)
@@ -260,7 +271,7 @@ async function confirmBooking() {
   if (!selectedSlot.value) return
   submitting.value = true
   submitError.value = ''
-  const { data, error } = await apiFetch<{ booking: { id: string }; paymentUrl: string }>('/bookings', {
+  const { data, error } = await apiFetch<{ booking: { id: string }; paymentUrl: string; paymentRequired?: boolean }>('/bookings', {
     method: 'POST',
     body: {
       salonId: page.value!.salon.id,
@@ -307,6 +318,19 @@ async function confirmBooking() {
     selectedSlot.value = null
     return
   }
+  // `paymentRequired === false` means the API opened no gateway session at all -- either a
+  // manual-approval request awaiting the salon, or a fully-discounted booking with nothing to
+  // charge. In both cases `paymentUrl` is this very app's own /bookings/:id (built from the
+  // API's FRONTEND_BASE_URL), so navigating to it externally would be a full page reload out
+  // to an absolute URL just to land back inside the app. Routed internally instead, and by
+  // booking id rather than by parsing the absolute URL: the id is already in hand and can't
+  // be thrown off by a FRONTEND_BASE_URL that doesn't match the origin we're actually served
+  // from. Checked with `=== false` so an API response without the field keeps the old,
+  // unconditional external behaviour.
+  if (data.paymentRequired === false) {
+    await navigateTo(`/bookings/${data.booking.id}`)
+    return
+  }
   await navigateTo(data.paymentUrl, { external: true })
 }
 </script>
@@ -346,8 +370,9 @@ async function confirmBooking() {
          unchanged from before this picker existed. Placed before SlotPicker because the
          choice narrows which slots are even offered, not just who shows up for one
          already picked. Selected fill is neutral (bg-(--color-text)), not the brand accent
-         -- this page's one accent seal is reserved for the final "پرداخت و رزرو" button, so
-         picking a worker never competes with it (The One Seal Rule). -->
+         -- this page's one accent seal is reserved for the final submit button ("پرداخت و
+         رزرو", or "ثبت درخواست رزرو" in a manual-approval salon), so picking a worker never
+         competes with it (The One Seal Rule). -->
     <section v-if="page.workers.length">
       <h2 class="mb-2 flex items-center gap-1.5 text-sm font-bold text-(--color-text)">
         <BaseIcon name="user" :size="16" class="text-(--color-text-muted)" />
@@ -435,7 +460,8 @@ async function confirmBooking() {
         <span>استفاده از موجودی کیف پول (<span dir="ltr" class="tnum">{{ formatToman(walletBalanceToman) }}</span> تومان)</span>
       </label>
       <p v-if="depositDueOnline !== null">
-        پیش‌پرداخت آنلاین: <span dir="ltr" class="tnum">{{ formatToman(depositDueOnline) }}</span> تومان
+        {{ manualApproval ? 'پیش‌پرداخت آنلاین (پس از تایید سالن)' : 'پیش‌پرداخت آنلاین' }}:
+        <span dir="ltr" class="tnum">{{ formatToman(depositDueOnline) }}</span> تومان
         <span v-if="walletAmountToApply > 0" class="text-(--color-text-muted)">
           (<span dir="ltr" class="tnum">{{ formatToman(walletAmountToApply) }}</span> تومان از کیف پول)
         </span>
@@ -497,8 +523,19 @@ async function confirmBooking() {
         </p>
       </div>
 
+      <!-- The button must not promise what the next tap actually does. In a manual-approval
+           salon this submits a REQUEST and opens no payment at all, so "پرداخت و رزرو" would
+           be wrong on both halves. The line above it states the trade plainly (nothing is
+           charged now; payment comes after the salon says yes) rather than leaving the
+           customer to discover it on the booking page afterwards. Muted, sitting directly on
+           the button it qualifies -- it's a condition of the action, not a warning. -->
+      <p v-if="manualApproval" data-testid="manual-approval-note" class="flex items-start gap-1.5 text-xs text-(--color-text-muted)">
+        <BaseIcon name="clock" :size="14" class="mt-0.5 shrink-0" />
+        این سالن رزروها را دستی تایید می‌کند؛ اکنون مبلغی پرداخت نمی‌کنید و پس از تایید سالن پرداخت انجام می‌شود.
+      </p>
+
       <BaseButton block size="lg" data-testid="confirm-booking-button" :loading="submitting" @click="confirmBooking">
-        پرداخت و رزرو
+        {{ manualApproval ? 'ثبت درخواست رزرو' : 'پرداخت و رزرو' }}
       </BaseButton>
     </BaseCard>
 

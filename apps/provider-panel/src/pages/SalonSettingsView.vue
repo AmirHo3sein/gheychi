@@ -21,6 +21,9 @@ const loadError = ref(false)
 const saving = ref(false)
 const aboutId = useId()
 const instagramId = useId()
+// A radio group's `name` is what makes the two options mutually exclusive in the DOM --
+// generated rather than hardcoded so it can never collide with another group on the page.
+const confirmationModeName = useId()
 
 const form = reactive({
   name: '',
@@ -35,6 +38,10 @@ const form = reactive({
   tagline: '',
   about: '',
   instagramHandle: '',
+  // How an online booking gets confirmed. The owner picks the MODE and nothing else --
+  // the approval/payment time limits behind it are platform-managed (admin-only), so this
+  // page shows them as informational copy and never as a control.
+  bookingConfirmationMode: 'automatic' as 'automatic' | 'manual_approval',
 })
 
 // Client-side mirror of UpdateSalonDto's instagramHandle @Matches regex -- the charset
@@ -127,6 +134,10 @@ async function save() {
       tagline: form.tagline.trim(),
       about: form.about.trim(),
       instagramHandle: form.instagramHandle.trim(),
+      // Sent unconditionally, never through the `|| undefined` idiom the optional text
+      // fields above use: 'automatic' is a real, meaningful value here (not "unset"), and
+      // omitting it would silently make switching back from manual approval impossible.
+      bookingConfirmationMode: form.bookingConfirmationMode,
     },
   })
   if (!error) {
@@ -249,6 +260,72 @@ onMounted(loadCities)
           <p v-if="form.tagline.trim()" class="break-words text-sm text-(--color-text-muted)">{{ form.tagline.trim() }}</p>
           <p v-if="form.about.trim()" class="mt-1 break-words whitespace-pre-line text-sm text-(--color-text)">{{ aboutExcerpt }}</p>
         </div>
+      </div>
+
+      <div class="space-y-4 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-5 shadow-(--shadow-sm)">
+        <div>
+          <h2 class="font-bold text-(--color-text)">تایید نوبت</h2>
+          <p class="mt-1 text-sm text-(--color-text-muted)">تعیین می‌کند نوبت‌های اینترنتی چگونه نهایی می‌شوند.</p>
+        </div>
+
+        <!-- Real radios, not a styled toggle: two named alternatives, both of which must be
+             readable at once (each carries its own explanation), and keyboard/screen-reader
+             behaviour comes for free from the native group. -->
+        <fieldset class="space-y-2.5">
+          <legend class="sr-only">شیوه تایید نوبت</legend>
+
+          <label
+            class="flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition-colors"
+            :class="form.bookingConfirmationMode === 'automatic' ? 'border-(--color-accent-strong) bg-(--color-accent-soft)' : 'border-(--color-border)'"
+          >
+            <input
+              v-model="form.bookingConfirmationMode"
+              :name="confirmationModeName"
+              data-testid="confirmation-mode-automatic"
+              type="radio"
+              value="automatic"
+              class="mt-0.5 h-4 w-4 shrink-0 accent-(--color-accent-strong)"
+            />
+            <span class="min-w-0">
+              <span class="block text-sm font-semibold text-(--color-text)">تایید خودکار</span>
+              <span class="mt-1 block text-xs text-(--color-text-muted)">
+                مشتری بلافاصله پرداخت می‌کند و نوبت بدون دخالت شما تایید می‌شود.
+              </span>
+            </span>
+          </label>
+
+          <label
+            class="flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition-colors"
+            :class="form.bookingConfirmationMode === 'manual_approval' ? 'border-(--color-accent-strong) bg-(--color-accent-soft)' : 'border-(--color-border)'"
+          >
+            <input
+              v-model="form.bookingConfirmationMode"
+              :name="confirmationModeName"
+              data-testid="confirmation-mode-manual"
+              type="radio"
+              value="manual_approval"
+              class="mt-0.5 h-4 w-4 shrink-0 accent-(--color-accent-strong)"
+            />
+            <span class="min-w-0">
+              <span class="block text-sm font-semibold text-(--color-text)">نیاز به تایید من</span>
+              <span class="mt-1 block text-xs text-(--color-text-muted)">
+                مشتری ابتدا درخواست می‌فرستد و تا وقتی شما آن را تایید نکنید پرداختی انجام نمی‌شود. درخواست‌ها را در صفحه
+                «نوبت‌ها» تایید یا رد می‌کنید.
+              </span>
+            </span>
+          </label>
+        </fieldset>
+
+        <!-- Read-only by product rule: the approval/payment windows are platform-managed
+             (admin-only). Stated here so an owner knows a request expires on its own, but
+             deliberately NOT offered as an editable field on this page. -->
+        <p
+          data-testid="timeout-policy-note"
+          class="flex items-start gap-2 rounded-xl bg-(--tone-info-bg) p-3 text-xs text-(--tone-info-text)"
+        >
+          <AppIcon name="hours" :size="14" class="mt-0.5 shrink-0" />
+          مهلت‌های تایید و پرداخت توسط پلتفرم تعیین می‌شود.
+        </p>
       </div>
 
       <AppButton

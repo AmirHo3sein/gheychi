@@ -109,3 +109,22 @@ flowchart TD
 ## Related documents
 
 This file is the map; every numbered document from [01](./01-project-overview.md) through [25](./25-future-improvements.md) is a territory it points into. Start at [00-index.md](./00-index.md) if you're new here.
+
+## Booking approval workflow — file glossary
+
+| Concern | File |
+|---|---|
+| Statuses + `SLOT_BLOCKING_STATUSES` | `apps/api/src/booking/booking.entity.ts` |
+| Request creation / approve / reject | `apps/api/src/booking/bookings.service.ts` |
+| Effective timeout resolution | `apps/api/src/booking/booking-settings.service.ts` |
+| Lifecycle log | `apps/api/src/booking/booking-event.entity.ts`, `booking-events.service.ts` |
+| Approval expiry cron | `apps/api/src/booking/booking-approval-expiry.job.ts` |
+| Payment expiry cron | `apps/api/src/booking/booking-expiry.job.ts` |
+| Provider decision routes | `apps/api/src/booking/salon-bookings.controller.ts` |
+| Admin timing + timeline routes | `apps/api/src/booking/admin-booking-settings.controller.ts` |
+| Schema | `apps/api/src/migrations/1755200000000-booking-approval-workflow.ts` |
+| Customer UI | `apps/user-app/app/pages/bookings/`, `app/components/booking/RemainingTime.vue` |
+| Provider UI | `apps/provider-panel/src/pages/BookingsView.vue`, `SalonSettingsView.vue` |
+| Admin UI | `apps/admin-panel/src/components/salons/SalonBookingSettingsCard.vue`, `src/pages/BookingTimelineView.vue` |
+
+Full narrative: [28-booking-approval-workflow.md](./28-booking-approval-workflow.md).

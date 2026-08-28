@@ -10,6 +10,7 @@ import { AuthController } from './auth/auth.controller';
 import { AuthGuard } from './auth/auth.guard';
 import { IS_PUBLIC_KEY, Public } from './auth/public.decorator';
 import { BackupReportController } from './backup-monitoring/backup-report.controller';
+import { AdminBookingSettingsController } from './booking/admin-booking-settings.controller';
 import { AvailabilityController } from './booking/availability.controller';
 import { BookingsController } from './booking/bookings.controller';
 import { PaymentsController } from './booking/payments.controller';
@@ -77,6 +78,7 @@ const ALL_CONTROLLERS: Function[] = [
   AdminAuditController,
   AuthController,
   BackupReportController,
+  AdminBookingSettingsController,
   AvailabilityController,
   BookingsController,
   PaymentsController,

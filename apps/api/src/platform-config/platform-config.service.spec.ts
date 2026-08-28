@@ -128,6 +128,7 @@ const VALID_CONFIG_VALUES: Record<string, number> = {
   cancellation_window_hours: 24,
   commission_percent: 10,
   booking_hold_ttl_minutes: 15,
+  booking_approval_timeout_minutes: 30,
   reminder_lead_hours: 3,
   review_edit_window_hours: 72,
 };
@@ -154,6 +155,17 @@ describe('PlatformConfigService -- getter failure handling', () => {
   it('resolves the numeric value when the key exists', async () => {
     repo.findOneBy.mockResolvedValue({ key: 'commission_percent', value: '10' });
     await expect(service.getCommissionPercent()).resolves.toBe(10);
+  });
+
+  // The manual-approval workflow's GLOBAL default accept/decline deadline. Pinned here
+  // alongside the other getters so the getter can't drift off its own config key -- a typo
+  // there would read a key that isn't in REQUIRED_PLATFORM_CONFIG_KEYS, so boot validation
+  // would never catch it and every approval-mode booking would 500 instead.
+  it('resolves the booking approval timeout from its own key', async () => {
+    repo.findOneBy.mockResolvedValue({ key: 'booking_approval_timeout_minutes', value: '30' });
+
+    await expect(service.getBookingApprovalTimeoutMinutes()).resolves.toBe(30);
+    expect(repo.findOneBy).toHaveBeenCalledWith({ key: 'booking_approval_timeout_minutes' });
   });
 
   // Should be unreachable in practice -- onApplicationBootstrap (below) refuses to let the
@@ -397,7 +409,7 @@ describe('PlatformConfigService.onApplicationBootstrap -- startup validation', (
   });
 
   it('fails boot with a clear message naming every missing key when some are absent', async () => {
-    // Only 2 of the 7 required rows exist -- simulates a fresh/incomplete seed. The two
+    // Only 2 of the 8 required rows exist -- simulates a fresh/incomplete seed. The two
     // present rows carry valid values so this test isolates the "missing key" path from the
     // "invalid value" path exercised separately below.
     repoFind.mockResolvedValue([
@@ -468,7 +480,8 @@ describe('PlatformConfigService.onApplicationBootstrap -- startup validation', (
   it('reports both missing and invalid keys together when both problems exist', async () => {
     repoFind.mockResolvedValue([
       // deposit_min_toman, cancellation_window_hours, booking_hold_ttl_minutes,
-      // reminder_lead_hours, review_edit_window_hours are all absent from this list.
+      // booking_approval_timeout_minutes, reminder_lead_hours, review_edit_window_hours
+      // are all absent from this list.
       { key: 'deposit_percent', value: VALID_CONFIG_VALUES.deposit_percent },
       { key: 'commission_percent', value: 'garbage' },
     ]);

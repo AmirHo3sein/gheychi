@@ -22,7 +22,13 @@ stateDiagram-v2
     expired --> [*]
 ```
 
-All terminal states (`completed`, `no_show`, both cancellation states, `expired`) are truly terminal — nothing in the codebase transitions out of them. Every write that moves a booking between states uses a **conditional CAS `UPDATE ... WHERE status = <expected>`** and checks `affected`, throwing `ConflictException` on a lost race — this idiom is used consistently everywhere in this subsystem (and echoed in several other modules — see [20-business-rules.md](./20-business-rules.md)).
+> **This diagram describes `automatic` mode.** A salon may instead run **manual approval**
+> (`salons.booking_confirmation_mode`), which inserts a `pending_approval` state before any
+> payment exists at all, and adds a `rejected_by_salon` terminal state. The full extended state
+> machine, and why an approval timeout reuses `expired` rather than a new status, is documented
+> in [28-booking-approval-workflow.md](./28-booking-approval-workflow.md).
+
+All terminal states (`completed`, `no_show`, both cancellation states, `expired`, `rejected_by_salon`) are truly terminal — nothing in the codebase transitions out of them. Every write that moves a booking between states uses a **conditional CAS `UPDATE ... WHERE status = <expected>`** and checks `affected`, throwing `ConflictException` on a lost race — this idiom is used consistently everywhere in this subsystem (and echoed in several other modules — see [20-business-rules.md](./20-business-rules.md)).
 
 ## `createHold()` — the core transaction
 
@@ -103,6 +109,11 @@ If the final deposit is `0` (a 100%-off coupon, or wallet balance fully covering
 - If the booking **was `confirmed`**: payment → `refund_pending` (if refunding) or stays `paid` (deposit forfeited). Refund is attempted inline afterward (best-effort; `RefundRetryJob` self-heals failures) — see [11-payment-system.md](./11-payment-system.md).
 - If the booking **was `pending_payment`** (nothing captured yet): payment → `failed`, and `releaseBookingHold()` gives back any coupon redemption / wallet debit.
 
+> Under manual approval, `cancel()` additionally refuses an **owner** cancelling a
+> `pending_approval` request: that must go through `reject()`, which records the honest
+> status and requires a reason. The customer's own withdrawal path is unchanged. See
+> [28](./28-booking-approval-workflow.md).
+
 ## Completion / no-show — `updateStatus()`
 
 Provider-only, only from `confirmed`. Conditional CAS. In one transaction: records commission (`InvoicingService.recordCommission`, identical treatment for both outcomes — see [14-commission.md](./14-commission.md)); on `'completed'` only, best-effort triggers `ReferralsService.tryGrantReward(...)` (see [13-financial-system.md](./13-financial-system.md)).
@@ -113,7 +124,7 @@ Provider-side, `PATCH /salons/mine/bookings/:id/assign-worker`. Re-validates the
 
 ## Retry payment
 
-`POST /bookings/:id/retry-payment` — only the booking's own customer, only from `pending_payment`. Mints a **fresh** Zarinpal session for the same `depositAmount`; the prior session stays chargeable via the append-only `payment_authorities` ledger (so reconciliation can still find it if the customer pays through the old link).
+`POST /bookings/:id/retry-payment` — only the booking's own customer, only from `pending_payment`, and only while the booking's `payment_expires_at` has not passed (the status lags the deadline by up to one cron tick, and handing out a live payment link in that gap produces a capture on a booking that is about to expire). Mints a **fresh** Zarinpal session for the same `depositAmount`; the prior session stays chargeable via the append-only `payment_authorities` ledger (so reconciliation can still find it if the customer pays through the old link).
 
 ## Data enrichment — `attachNames`
 
@@ -135,6 +146,8 @@ AssignWorkerDto: { workerId: UUID }   // lives in salons/dto/worker.dto.ts, not 
 ## Known limitations (see also [24-technical-debt.md](./24-technical-debt.md))
 
 - `assignWorker` has no overlap re-check.
+- The blocking-status list is now the single shared `SLOT_BLOCKING_STATUSES` constant
+  (`booking.entity.ts`) rather than six inline copies — see [28](./28-booking-approval-workflow.md).
 - `LOCK_TTL_MS = 5000` is a hardcoded constant, not config-driven — a `createHold` transaction that takes longer than 5s under load could let a second request acquire the lock mid-critical-section.
 - A captured-then-refunded booking does **not** get its coupon redemption or wallet spend reversed — only `releaseBookingHold`'s "never captured" paths do that. Referral reward reversal is the one thing that *does* happen on refund (see [13-financial-system.md](./13-financial-system.md)).
 - Worker-eligibility SQL is hand-written twice (here and in `PublicSalonContentController.listWorkers`) rather than shared — a rule change requires touching both files.

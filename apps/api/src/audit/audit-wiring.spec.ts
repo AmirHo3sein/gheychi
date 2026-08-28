@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { AdminBookingSettingsController } from '../booking/admin-booking-settings.controller';
 import { AdminCategoriesController } from '../catalog/admin-categories.controller';
 import { AdminCategoryRequestsController } from '../catalog/admin-category-requests.controller';
 import { AdminBlogController } from '../content/admin-blog.controller';
@@ -87,6 +88,12 @@ describe('admin mutation audit wiring', () => {
       handler: AdminCategoryRequestsController.prototype.reject,
       action: 'category-request.reject',
       targetType: 'category-request',
+    },
+    {
+      label: 'salon booking settings update',
+      handler: AdminBookingSettingsController.prototype.update,
+      action: 'booking-settings.update',
+      targetType: 'salon',
     },
     {
       label: 'config update',

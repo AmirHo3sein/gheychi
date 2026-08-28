@@ -55,3 +55,17 @@ Every admin mutation is captured by `@AuditAction(action, targetType)` + `AuditI
 - [05-authentication.md](./05-authentication.md)
 - [15-api-reference.md](./15-api-reference.md)
 - [21-security.md](./21-security.md)
+
+## Booking approval routes
+
+| Route | Guard | Note |
+|---|---|---|
+| `POST /salons/mine/bookings/:id/approve` | `SalonOwnerGuard` | service re-scopes the lookup by `req.salonId`, so a valid booking id from another salon 404s |
+| `POST /salons/mine/bookings/:id/reject` | `SalonOwnerGuard` | reason required |
+| `GET`/`PATCH /admin/salons/:id/booking-settings` | `RolesGuard` + `@Roles('admin')` | the only writer of the two per-salon timeout overrides |
+| `GET /admin/bookings/:id/events` | `RolesGuard` + `@Roles('admin')` | crosses salon boundaries by design, hence admin-only |
+
+The owner/admin split is load-bearing: the timeout columns are deliberately **absent** from
+`UpdateSalonDto`, because `SalonsService.updateMine()` applies its DTO via a blanket
+`Object.assign` and would otherwise let a provider set their own deadlines. See
+[28-booking-approval-workflow.md](./28-booking-approval-workflow.md).

@@ -43,3 +43,16 @@ Every hot-path query reviewed during this audit has a supporting index: `salons_
 
 - [09-booking-engine.md](./09-booking-engine.md), [10-scheduling.md](./10-scheduling.md), [14-commission.md](./14-commission.md), [18-background-jobs.md](./18-background-jobs.md) — the subsystems each limit above belongs to
 - [24-technical-debt.md](./24-technical-debt.md) — the non-performance-related debt findings
+
+## Booking approval workflow
+
+- Both expiry crons run every minute and batch 1000 rows/tick via the
+  `id IN (SELECT ... ORDER BY ... LIMIT n)` idiom — never a full-table scan, never all rows in memory.
+- Each is backed by a **partial** index scoped to the single status it scans
+  (`bookings_approval_expiry_idx WHERE status = 'pending_approval'`,
+  `bookings_payment_expiry_idx WHERE status = 'pending_payment'`). Indexing the whole table would
+  be mostly dead weight: every terminal booking — the vast majority, forever — can never match.
+- Notifications are sent **after** the transaction commits, one `try/catch` per booking, so a
+  slow or failing SMS gateway holds no DB locks and cannot stall the batch.
+- `BookingSettingsService` resolves timeouts from the Redis-cached `platform_config` (60s TTL)
+  and is called once per booking creation, outside the per-salon Redis lock.

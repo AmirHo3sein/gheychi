@@ -93,3 +93,17 @@ Known `alert:dedup:` key identities in use: `authority-persist:{bookingId}`, `ve
 - [11-payment-system.md](./11-payment-system.md) — the money-critical conditions that trigger most alerts
 - [13-financial-system.md](./13-financial-system.md) — referral-reward shortfall alerting
 - [19-third-party-services.md](./19-third-party-services.md) — Kavenegar/Web Push provider configuration
+
+## Manual-approval notifications
+
+Five additional customer/owner messages, all through the same `PaymentsService.notifyOne`
+helper and the same `SmsProvider`/`PushService` abstractions:
+`notifyApprovalRequested` (customer + owner), `notifyApproved`, `notifyRejected`,
+`notifyApprovalExpired`, and `notifyPaymentExpired`.
+
+Every one of them states explicitly whether money changed hands — "your request expired" is
+easily misread as "you lost your deposit", and in this flow nothing was ever charged.
+`notifyPaymentExpired` also closed a pre-existing silence: `BookingExpiryJob` never told the
+customer anything. All five are best-effort and fired after their transaction commits, so a
+failed SMS can never roll back a booking decision. See
+[28-booking-approval-workflow.md](./28-booking-approval-workflow.md).

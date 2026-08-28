@@ -3,6 +3,7 @@
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useApi } from '@/composables/useApi'
+import SalonBookingSettingsCard from '@/components/salons/SalonBookingSettingsCard.vue'
 import SalonStatusActions from '@/components/salons/SalonStatusActions.vue'
 import ShowcaseStatusActions from '@/components/salons/ShowcaseStatusActions.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -243,6 +244,11 @@ onMounted(load)
             </p>
           </div>
         </AppCard>
+
+        <!-- Fetches its own settings on mount (a separate admin endpoint from the salon
+             record itself), so it also owns its loading/error state rather than gating this
+             whole page on a second request. -->
+        <SalonBookingSettingsCard :salon-id="salon.id" />
 
         <AppCard>
           <!-- suspendedCause is passed through so the actions can refuse to offer a

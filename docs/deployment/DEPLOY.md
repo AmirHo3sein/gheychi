@@ -39,12 +39,26 @@ non-zero and prints exactly which check(s) failed if anything's wrong -- treat a
 here as seriously as a failed container healthcheck, and consider rolling back (see
 "## Rollback" below) rather than leaving a partially-broken deploy live while debugging.
 
-If the deploy includes a new database migration, take an on-demand backup first (the automated one only runs daily at 03:00 UTC, so relying on it alone means a mid-day migration could be up to ~24h stale to restore from), then run the migration once the `api` container is up:
+If the deploy includes a new database migration, take an on-demand backup first (the automated one only runs daily at 03:00 UTC, so relying on it alone means a mid-day migration could be up to ~24h stale to restore from), then run the migration **before** bringing the new `api` container up:
 
 ```bash
 docker compose -f docker-compose.prod.yml exec backup /backup.sh
-docker compose -f docker-compose.prod.yml exec api pnpm migration:run
+# `run --rm`, NOT `exec`: see the warning below.
+docker compose -f docker-compose.prod.yml run --rm api pnpm migration:run
+docker compose -f docker-compose.prod.yml up -d api
 ```
+
+> ⚠️ **Order matters, and so does `run` vs `exec`.** The API validates its required
+> `platform_config` rows at boot (`PlatformConfigService.onApplicationBootstrap`) and
+> *deliberately refuses to start* if one is missing. A migration that introduces a new
+> required key therefore makes the new image crash-loop until it has run — at which point
+> `exec` is useless, because it needs an already-running container ("container is not
+> running"), leaving no documented way forward. `run --rm` starts a fresh one-shot container
+> with the command overridden, so Nest never boots and the migration always has a way in.
+>
+> This has bitten a real deploy before. If you find the `api` container restart-looping after
+> a deploy, check `docker compose logs api` for a missing-config error and run the migration
+> with `run --rm` — do not assume the image is broken.
 
 This is a manual step by design — migrations never run automatically on container start, so an unreviewed schema change can't fire on every restart.
 

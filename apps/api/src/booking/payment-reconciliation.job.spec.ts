@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, IsNull } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { CronJobRunner } from '../common/cron-job-runner.service';
 import { Booking } from './booking.entity';
@@ -19,6 +19,8 @@ describe('PaymentReconciliationJob', () => {
   let emUpdate: jest.Mock;
   let emDelete: jest.Mock;
   let raise: jest.Mock;
+  // Used only by the new "retire an authority-less payment" branch.
+  let paymentsUpdate: jest.Mock;
 
   const STALE_PAYMENT = {
     id: 'pay-1',
@@ -30,6 +32,7 @@ describe('PaymentReconciliationJob', () => {
 
   beforeEach(async () => {
     paymentsFind = jest.fn().mockResolvedValue([]);
+    paymentsUpdate = jest.fn().mockResolvedValue({ affected: 1 });
     authoritiesQuery = jest.fn().mockResolvedValue([]);
     verifyPayment = jest.fn();
     emUpdate = jest.fn().mockResolvedValue({ affected: 1 });
@@ -41,7 +44,23 @@ describe('PaymentReconciliationJob', () => {
         PaymentReconciliationJob,
         {
           provide: getRepositoryToken(Payment),
-          useValue: { find: paymentsFind, manager: { query: authoritiesQuery } },
+          // run() selects via a QueryBuilder now (it joins bookings so a payment counts as
+          // stale only once its booking's own payment window has genuinely closed -- see
+          // the job's own comment). The builder is faked as a chainable no-op whose
+          // getMany() yields whatever paymentsFind was primed with, so every existing test
+          // keeps expressing "here is the batch" exactly as it always did.
+          useValue: {
+            createQueryBuilder: jest.fn(() => {
+              const qb: Record<string, unknown> = {};
+              for (const method of ['innerJoin', 'where', 'andWhere', 'orderBy', 'take']) {
+                qb[method] = jest.fn(() => qb);
+              }
+              qb.getMany = jest.fn(() => paymentsFind());
+              return qb;
+            }),
+            update: paymentsUpdate,
+            manager: { query: authoritiesQuery },
+          },
         },
         {
           provide: DataSource,
@@ -122,13 +141,32 @@ describe('PaymentReconciliationJob', () => {
     expect(emDelete).toHaveBeenCalledWith(CouponRedemption, expect.objectContaining({ bookingId: expect.anything() }));
   });
 
-  it('skips payments with no authority at all (none current, none in the ledger)', async () => {
+  // Was: "skips payments with no authority at all". Skipping is what made these rows
+  // immortal -- nothing else in the system ever revisits an `initiated` payment, so one
+  // that never got a gateway session was re-selected on every tick forever, permanently
+  // occupying a slot in a 200-row batch. Manual approval made that reachable in normal
+  // operation (approve() opens the payment window and inserts the Payment row; a customer
+  // who never clicks "pay" leaves it authority-less), so they are now retired instead.
+  it('retires a payment that never had an authority -- nothing could have been captured through it', async () => {
     paymentsFind.mockResolvedValue([{ ...STALE_PAYMENT, authority: null }]);
 
     const reconciled = await job.run();
 
-    expect(reconciled).toBe(0);
     expect(verifyPayment).not.toHaveBeenCalled();
+    // Guarded on `authority IS NULL` as well as the status, so a customer minting a
+    // session in the same instant wins the race and keeps their live payment.
+    expect(paymentsUpdate).toHaveBeenCalledWith(
+      { id: 'pay-1', status: 'initiated', authority: IsNull() },
+      { status: 'failed' },
+    );
+    expect(reconciled).toBe(1);
+  });
+
+  it('leaves the payment alone when the retire-CAS loses to a concurrently-minted session', async () => {
+    paymentsFind.mockResolvedValue([{ ...STALE_PAYMENT, authority: null }]);
+    paymentsUpdate.mockResolvedValue({ affected: 0 });
+
+    expect(await job.run()).toBe(0);
   });
 
   it('verifies a SUPERSEDED authority too, and records the session that actually captured', async () => {

@@ -1,4 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { BookingConfirmationMode } from '../booking/booking.entity';
 
 export type GenderTarget = 'women' | 'men';
 export type SalonStatus = 'pending' | 'approved' | 'rejected' | 'suspended';
@@ -77,6 +78,26 @@ export class Salon {
 
   @Column({ name: 'featured_until', type: 'timestamptz', nullable: true })
   featuredUntil: Date | null;
+
+  // The ONE booking setting a salon owner controls (PATCH /salons/mine).
+  // 'automatic' (the default, and every salon that existed before this column) keeps the
+  // original behaviour exactly: pay, then confirmed. 'manual_approval' inserts a
+  // salon-decision step before any payment is taken.
+  @Column({ name: 'booking_confirmation_mode', type: 'varchar', default: 'automatic' })
+  bookingConfirmationMode: BookingConfirmationMode;
+
+  // Admin-only per-salon overrides of the global timeout defaults. NULL = inherit the
+  // platform_config value.
+  //
+  // These are deliberately NOT on UpdateSalonDto: SalonsService.updateMine() applies its
+  // DTO with a blanket `Object.assign(salon, ...)`, so merely *adding* a field there
+  // would silently hand providers the ability to set their own deadlines. They are
+  // writable only through the admin-guarded PATCH /admin/salons/:id/booking-settings.
+  @Column({ name: 'approval_timeout_minutes', type: 'int', nullable: true })
+  approvalTimeoutMinutes: number | null;
+
+  @Column({ name: 'payment_timeout_minutes', type: 'int', nullable: true })
+  paymentTimeoutMinutes: number | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

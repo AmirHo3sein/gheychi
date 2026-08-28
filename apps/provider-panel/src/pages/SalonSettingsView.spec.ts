@@ -25,6 +25,7 @@ const validSalon = {
   tagline: 'شعار قدیمی',
   about: 'متن درباره سالن',
   instagramHandle: 'old.salon',
+  bookingConfirmationMode: 'automatic',
 }
 
 const CATEGORIES_RESPONSE = { data: [{ id: 1, name: 'کوتاهی مو', icon: 'scissors' }], error: null }
@@ -154,6 +155,70 @@ describe('SalonSettingsView', () => {
       method: 'PATCH',
       body: expect.objectContaining({ tagline: '', about: 'متن تازه\nخط دوم', instagramHandle: 'new.salon' }),
     })
+  })
+
+  // The owner picks the MODE and nothing else -- the approval/payment windows behind it are
+  // platform-managed (admin-only), so this page may state them but never offer a control.
+  it('loads the current confirmation mode, switches it, and PATCHes the new value', async () => {
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null }) // GET /salons/mine
+    fetchMock.mockResolvedValueOnce(CATEGORIES_RESPONSE) // GET /categories
+    fetchMock.mockResolvedValueOnce(CITIES_RESPONSE) // GET /cities
+    const wrapper = mount(SalonSettingsView)
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect((wrapper.get('[data-testid="confirmation-mode-automatic"]').element as HTMLInputElement).checked).toBe(true)
+    expect((wrapper.get('[data-testid="confirmation-mode-manual"]').element as HTMLInputElement).checked).toBe(false)
+
+    await wrapper.get('[data-testid="confirmation-mode-manual"]').setValue(true)
+
+    fetchMock.mockResolvedValueOnce({ data: { id: 's1' }, error: null }) // PATCH
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null }) // useSalon refetch
+    await wrapper.get('[data-testid="save-button"]').trigger('click')
+
+    expect(fetchMock).toHaveBeenCalledWith('/salons/mine', {
+      method: 'PATCH',
+      body: expect.objectContaining({ bookingConfirmationMode: 'manual_approval' }),
+    })
+  })
+
+  // 'automatic' is a real value, not "unset": a `|| undefined` omission would make switching
+  // back off manual approval impossible, so it must always be present in the body.
+  it('always sends the confirmation mode, including the default automatic value', async () => {
+    fetchMock.mockResolvedValueOnce({ data: { ...validSalon, bookingConfirmationMode: 'manual_approval' }, error: null }) // GET /salons/mine
+    fetchMock.mockResolvedValueOnce(CATEGORIES_RESPONSE) // GET /categories
+    fetchMock.mockResolvedValueOnce(CITIES_RESPONSE) // GET /cities
+    const wrapper = mount(SalonSettingsView)
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect((wrapper.get('[data-testid="confirmation-mode-manual"]').element as HTMLInputElement).checked).toBe(true)
+
+    await wrapper.get('[data-testid="confirmation-mode-automatic"]').setValue(true)
+
+    fetchMock.mockResolvedValueOnce({ data: { id: 's1' }, error: null }) // PATCH
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null }) // useSalon refetch
+    await wrapper.get('[data-testid="save-button"]').trigger('click')
+
+    expect(fetchMock).toHaveBeenCalledWith('/salons/mine', {
+      method: 'PATCH',
+      body: expect.objectContaining({ bookingConfirmationMode: 'automatic' }),
+    })
+  })
+
+  // Hard product rule: timeouts are admin-only. The page may explain that they exist; it
+  // must never render an input for one.
+  it('states that the time limits are platform-managed without offering any control for them', async () => {
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null }) // GET /salons/mine
+    fetchMock.mockResolvedValueOnce(CATEGORIES_RESPONSE) // GET /categories
+    fetchMock.mockResolvedValueOnce(CITIES_RESPONSE) // GET /cities
+    const wrapper = mount(SalonSettingsView)
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[data-testid="timeout-policy-note"]').text()).toContain('توسط پلتفرم تعیین می‌شود')
+    expect(wrapper.find('[data-testid="approval-timeout"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="payment-timeout"]').exists()).toBe(false)
   })
 
   it('previews tagline and a compact lead of about', async () => {

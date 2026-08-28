@@ -6,7 +6,7 @@ import { ScheduleException } from '../salons/schedule-exception.entity';
 import { WorkerEligibilityService } from '../salons/worker-eligibility.service';
 import { WorkingHour } from '../salons/working-hour.entity';
 import { Salon } from '../salons/salon.entity';
-import { Booking } from './booking.entity';
+import { Booking, SLOT_BLOCKING_STATUSES } from './booking.entity';
 import { computeAvailableSlots, DateException, DayAvailability, WorkingHourRange } from './availability.util';
 
 const AVAILABILITY_WINDOW_DAYS = 14;
@@ -54,7 +54,7 @@ export class AvailabilityService {
       this.bookings.find({
         where: {
           salonId,
-          status: In(['confirmed', 'pending_payment']),
+          status: In(SLOT_BLOCKING_STATUSES),
           startsAt: LessThan(windowEnd),
           endsAt: MoreThan(now),
         },

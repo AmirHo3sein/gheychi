@@ -172,6 +172,107 @@ export function blogPostStatusLabel(status: string): LabelEntry {
   return BLOG_POST_STATUS[status] ?? { label: status, tone: 'neutral' }
 }
 
+// Every member of the backend's BookingStatus union. 'pending_approval' and
+// 'rejected_by_salon' only ever occur for a salon running the manual-approval workflow;
+// the other seven occur in both modes. A 'pending_approval' booking has NO payment behind
+// it yet -- the wording must never imply money has moved.
+const BOOKING_STATUS: Record<string, LabelEntry> = {
+  pending_approval: { label: 'در انتظار تایید آرایشگاه', tone: 'warning' },
+  pending_payment: { label: 'در انتظار پرداخت', tone: 'warning' },
+  confirmed: { label: 'تایید شده', tone: 'success' },
+  completed: { label: 'انجام شده', tone: 'success' },
+  cancelled_by_user: { label: 'لغو شده توسط مشتری', tone: 'neutral' },
+  cancelled_by_salon: { label: 'لغو شده توسط آرایشگاه', tone: 'danger' },
+  rejected_by_salon: { label: 'رد شده توسط آرایشگاه', tone: 'danger' },
+  expired: { label: 'منقضی شده', tone: 'neutral' },
+  no_show: { label: 'عدم حضور', tone: 'danger' },
+}
+
+export function bookingStatusLabel(status: string): LabelEntry {
+  return BOOKING_STATUS[status] ?? { label: status, tone: 'neutral' }
+}
+
+// Salon.bookingConfirmationMode. Owner-controlled -- this app only ever displays it.
+const BOOKING_CONFIRMATION_MODE: Record<string, LabelEntry> = {
+  automatic: { label: 'تایید خودکار', tone: 'success' },
+  manual_approval: { label: 'تایید دستی آرایشگاه', tone: 'info' },
+}
+
+export function bookingConfirmationModeLabel(mode: string): LabelEntry {
+  return BOOKING_CONFIRMATION_MODE[mode] ?? { label: mode, tone: 'neutral' }
+}
+
+// booking_events.event_type -- a deliberate superset of the status transitions (see
+// booking-event.entity.ts), so several of these describe things happening *around* a
+// status change and have no BOOKING_STATUS counterpart.
+const BOOKING_EVENT_TYPE: Record<string, LabelEntry> = {
+  BOOKING_CREATED: { label: 'ایجاد رزرو', tone: 'info' },
+  APPROVAL_REQUESTED: { label: 'ارسال درخواست تایید', tone: 'warning' },
+  SALON_APPROVED: { label: 'تایید توسط آرایشگاه', tone: 'success' },
+  SALON_REJECTED: { label: 'رد توسط آرایشگاه', tone: 'danger' },
+  APPROVAL_EXPIRED: { label: 'اتمام مهلت تایید', tone: 'neutral' },
+  PAYMENT_WINDOW_STARTED: { label: 'شروع مهلت پرداخت', tone: 'info' },
+  PAYMENT_INITIATED: { label: 'آغاز پرداخت', tone: 'info' },
+  PAYMENT_SUCCEEDED: { label: 'پرداخت موفق', tone: 'success' },
+  PAYMENT_FAILED: { label: 'پرداخت ناموفق', tone: 'danger' },
+  PAYMENT_EXPIRED: { label: 'اتمام مهلت پرداخت', tone: 'neutral' },
+  BOOKING_CONFIRMED: { label: 'قطعی شدن رزرو', tone: 'success' },
+  SLOT_RELEASED: { label: 'آزادسازی نوبت', tone: 'neutral' },
+  BOOKING_CANCELLED: { label: 'لغو رزرو', tone: 'danger' },
+  BOOKING_COMPLETED: { label: 'تکمیل رزرو', tone: 'success' },
+  BOOKING_NO_SHOW: { label: 'عدم حضور مشتری', tone: 'danger' },
+}
+
+export function bookingEventTypeLabel(eventType: string): LabelEntry {
+  return BOOKING_EVENT_TYPE[eventType] ?? { label: eventType, tone: 'neutral' }
+}
+
+// booking_events.actor_type. 'system' is every cron-driven transition (approval/payment
+// expiry) -- genuinely no human actor, and it must not read as one.
+const BOOKING_EVENT_ACTOR_TYPE: Record<string, string> = {
+  customer: 'مشتری',
+  salon_owner: 'آرایشگاه‌دار',
+  admin: 'مدیر',
+  system: 'سامانه',
+}
+
+export function bookingEventActorTypeLabel(actorType: string): string {
+  return BOOKING_EVENT_ACTOR_TYPE[actorType] ?? actorType
+}
+
+// Keys the backend currently writes into booking_events.metadata (free-form jsonb, so
+// this is a best-effort prettifier -- an unmapped key falls back to its raw name rather
+// than being hidden, since a support timeline must never silently drop context).
+const BOOKING_EVENT_METADATA_KEY: Record<string, string> = {
+  confirmationMode: 'حالت تایید',
+  depositAmount: 'مبلغ پیش‌پرداخت',
+  approvalTimeoutMinutes: 'مهلت تایید',
+  approvalExpiresAt: 'پایان مهلت تایید',
+  paymentTimeoutMinutes: 'مهلت پرداخت',
+  paymentExpiresAt: 'پایان مهلت پرداخت',
+  reason: 'دلیل',
+  cause: 'علت',
+  fromStatus: 'وضعیت پیشین',
+  refundOwed: 'مبلغ قابل استرداد',
+}
+
+export function bookingEventMetadataKeyLabel(key: string): string {
+  return BOOKING_EVENT_METADATA_KEY[key] ?? key
+}
+
+// Values of the `cause` metadata key on SLOT_RELEASED events.
+const BOOKING_EVENT_CAUSE: Record<string, string> = {
+  approval_expired: 'اتمام مهلت تایید',
+  payment_expired: 'اتمام مهلت پرداخت',
+  salon_rejected: 'رد توسط آرایشگاه',
+  cancelled: 'لغو رزرو',
+  zero_deposit: 'بدون نیاز به پیش‌پرداخت',
+}
+
+export function bookingEventCauseLabel(cause: string): string {
+  return BOOKING_EVENT_CAUSE[cause] ?? cause
+}
+
 // Keys must stay in sync with the backend's @AuditAction() names (audit.decorator.ts).
 const AUDIT_ACTION: Record<string, LabelEntry> = {
   'salon.status.set': { label: 'تغییر وضعیت آرایشگاه', tone: 'warning' },
@@ -204,6 +305,7 @@ const AUDIT_ACTION: Record<string, LabelEntry> = {
   'coupon.update': { label: 'ویرایش کد تخفیف', tone: 'info' },
   'coupon.delete': { label: 'حذف کد تخفیف', tone: 'danger' },
   'worker-rating.moderate': { label: 'تعدیل ارزیابی کارمند', tone: 'warning' },
+  'booking-settings.update': { label: 'ویرایش تنظیمات رزرو سالن', tone: 'info' },
 }
 
 // Canonical list of the audited action names -- filter dropdowns and tests derive from
@@ -272,6 +374,11 @@ const CONFIG_META: Record<string, ConfigMeta> = {
   booking_hold_ttl_minutes: { label: 'مهلت نگه‌داری رزرو', hint: 'زمان قفل‌شدن نوبت تا پرداخت', unit: 'دقیقه', icon: 'calendar' },
   reminder_lead_hours: { label: 'یادآوری قبل از نوبت', hint: 'چند ساعت قبل، پیامک یادآوری ارسال شود', unit: 'ساعت', icon: 'bell' },
   review_edit_window_hours: { label: 'مهلت ویرایش نظر', hint: 'مدت زمانی که کاربر می‌تواند نظر ثبت‌شده را ویرایش یا حذف کند', unit: 'ساعت', icon: 'history' },
+  // The GLOBAL default for the manual-approval workflow; a single salon can be given its
+  // own override from its detail page. Note there is deliberately no matching
+  // booking_payment_timeout_minutes key -- the payment window's global default is
+  // booking_hold_ttl_minutes above (platform-config.service.ts).
+  booking_approval_timeout_minutes: { label: 'مهلت تایید درخواست رزرو', hint: 'فرصت سالن برای تایید یا رد درخواست رزرو', unit: 'دقیقه', icon: 'history' },
 }
 
 /** Falls back to the raw key as its own label -- new config keys stay editable, just less pretty. */

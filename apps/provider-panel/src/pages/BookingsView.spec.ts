@@ -4,6 +4,18 @@ import AppSelect from '@/components/ui/AppSelect.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import BookingsView from './BookingsView.vue'
 
+// A manual-approval request exactly as GET /salons/mine/bookings returns one: nothing is
+// paid yet (paymentExpiresAt is still null) and approvalExpiresAt is the server's own
+// deadline snapshot. Far-future so the rendered countdown is stable whenever this runs.
+const PENDING_REQUEST = {
+  id: 'req1', serviceId: 's1', serviceName: 'رنگ مو', priceSnapshot: 400000,
+  startsAt: '2030-06-15T09:00:00.000Z', endsAt: '2030-06-15T10:00:00.000Z',
+  createdAt: '2030-06-14T09:00:00.000Z', status: 'pending_approval',
+  confirmationMode: 'manual_approval', approvalExpiresAt: '2030-06-14T21:00:00.000Z',
+  paymentExpiresAt: null, workerId: null, workerName: null,
+  customerName: 'مریم احمدی', customerPhone: '09120000000', source: 'online',
+}
+
 describe('BookingsView', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -291,5 +303,143 @@ describe('BookingsView', () => {
     const cards = wrapper.findAll('[data-testid^="booking-"]')
     expect(cards).toHaveLength(1)
     expect(cards[0]!.attributes('data-testid')).toBe('booking-today')
+  })
+
+  // -- Manual-approval queue --
+
+  it('surfaces a pending request with its customer, time, duration and remaining approval time', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([PENDING_REQUEST]) }) // GET bookings
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET workers
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET services
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(BookingsView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    const card = wrapper.get('[data-testid="pending-request-req1"]')
+    expect(card.text()).toContain('رنگ مو')
+    expect(card.text()).toContain('مریم احمدی')
+    expect(card.text()).toContain('09120000000')
+    expect(card.text()).toContain('۶۰ دقیقه')
+    // Display-only countdown off the server's own deadline snapshot.
+    expect(wrapper.get('[data-testid="approval-remaining-req1"]').text()).toContain('مانده')
+    // The one thing that must never be implied: no payment has happened yet.
+    expect(wrapper.get('[data-testid="pending-requests"]').text()).toContain('مشتری هنوز پرداختی انجام نداده است')
+  })
+
+  // The queue is deliberately outside the day filter: a request expires on its own deadline,
+  // so hiding it behind "today" would let it lapse unseen.
+  it('keeps the pending queue visible while the day view is filtered to another day', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([PENDING_REQUEST]) }) // GET bookings
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET workers
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET services
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(BookingsView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    await wrapper.find('[data-testid="toggle-show-all"]').setValue(false)
+    await new Promise((r) => setTimeout(r, 0))
+
+    // Its agenda card is filtered out (the request is for 2030), the queue card is not.
+    expect(wrapper.find('[data-testid="booking-req1"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="pending-request-req1"]').exists()).toBe(true)
+  })
+
+  it('approves a pending request and reloads the list', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([PENDING_REQUEST]) }) // GET bookings
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET workers
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) }) // POST approve
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ([{ ...PENDING_REQUEST, status: 'pending_payment', approvalExpiresAt: null, paymentExpiresAt: '2030-06-14T22:00:00.000Z' }]),
+      }) // GET bookings again
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(BookingsView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    await wrapper.get('[data-testid="approve-request"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(fetchMock.mock.calls[3]![0]).toContain('/salons/mine/bookings/req1/approve')
+    expect(fetchMock.mock.calls[3]![1]).toMatchObject({ method: 'POST' })
+    // Refetched, and the approved request has left the queue.
+    expect(fetchMock.mock.calls[4]![0]).toContain('/salons/mine/bookings')
+    expect(wrapper.find('[data-testid="pending-request-req1"]').exists()).toBe(false)
+  })
+
+  it('requires a reason before rejecting, then posts it', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([PENDING_REQUEST]) }) // GET bookings
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET workers
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) }) // POST reject
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ([{ ...PENDING_REQUEST, status: 'rejected_by_salon', approvalExpiresAt: null }]),
+      }) // GET bookings again
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(BookingsView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    // Step one only opens the reason field -- nothing is sent yet.
+    await wrapper.get('[data-testid="reject-request"]').trigger('click')
+    expect(wrapper.find('[data-testid="reject-reason"]').exists()).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+
+    // Whitespace is not a reason: the API's own DTO would 400, so it's caught here.
+    await wrapper.get('[data-testid="reject-reason"]').setValue('   ')
+    await wrapper.get('[data-testid="reject-submit"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(wrapper.get('[data-testid="reject-reason-error"]').text()).toContain('دلیل الزامی است')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+
+    await wrapper.get('[data-testid="reject-reason"]').setValue('در این ساعت ظرفیت نداریم')
+    await wrapper.get('[data-testid="reject-submit"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(fetchMock.mock.calls[3]![0]).toContain('/salons/mine/bookings/req1/reject')
+    expect(fetchMock.mock.calls[3]![1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ reason: 'در این ساعت ظرفیت نداریم' }),
+    })
+    expect(wrapper.find('[data-testid="pending-request-req1"]').exists()).toBe(false)
+  })
+
+  // Lost race: the deadline lapsed (or another device decided it) between this tab's last
+  // fetch and the click, so the API 409s. The card must not linger as a stale pending
+  // request -- the refetched winning state replaces it.
+  it('refetches after a 409 so the queue shows the state that actually won', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([PENDING_REQUEST]) }) // GET bookings
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET workers
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET services
+      .mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ message: 'این درخواست دیگر در انتظار تایید نیست' }) }) // POST approve
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ([{ ...PENDING_REQUEST, status: 'expired', approvalExpiresAt: null }]),
+      }) // GET bookings again
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(BookingsView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    await wrapper.get('[data-testid="approve-request"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(fetchMock).toHaveBeenCalledTimes(5)
+    expect(fetchMock.mock.calls[4]![0]).toContain('/salons/mine/bookings')
+    expect(wrapper.find('[data-testid="pending-request-req1"]').exists()).toBe(false)
+    // ...and the booking is still on the agenda, now reading as expired.
+    expect(wrapper.get('[data-testid="booking-req1"]').text()).toContain('منقضی شده')
   })
 })

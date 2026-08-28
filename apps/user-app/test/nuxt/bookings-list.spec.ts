@@ -48,6 +48,38 @@ const COMPLETED_BOOKING = {
   status: 'completed' as const,
 }
 
+// Manual-approval mode: a request the salon hasn't answered yet. No payment exists for it,
+// which is the single fact every assertion below is really protecting. The deadline is
+// expressed relative to the real clock so the countdown assertions don't depend on when the
+// suite runs -- formatRemainingTime's own exact output is pinned in test/unit.
+const PENDING_APPROVAL_BOOKING = {
+  id: 'b-pending-approval',
+  salonName: 'سالن ه',
+  serviceName: 'کوتاهی مو',
+  workerName: null,
+  startsAt: '2099-03-01T09:00:00.000Z',
+  priceSnapshot: 300_000,
+  depositAmount: 60_000,
+  status: 'pending_approval' as const,
+  confirmationMode: 'manual_approval' as const,
+  approvalExpiresAt: new Date(Date.now() + 45 * 60_000).toISOString(),
+  paymentExpiresAt: null,
+}
+
+const REJECTED_BOOKING = {
+  id: 'b-rejected',
+  salonName: 'سالن و',
+  serviceName: 'رنگ مو',
+  workerName: null,
+  startsAt: '2099-03-02T09:00:00.000Z',
+  priceSnapshot: 300_000,
+  depositAmount: 60_000,
+  status: 'rejected_by_salon' as const,
+  confirmationMode: 'manual_approval' as const,
+  approvalExpiresAt: null,
+  paymentExpiresAt: null,
+}
+
 const CANCELLED_BOOKING = {
   id: 'b-cancelled',
   salonName: 'سالن د',
@@ -283,6 +315,64 @@ describe('bookings list page', () => {
 
     expect(fetchMock).toHaveBeenCalledWith('/reviews/mine', expect.anything())
     expect(wrapper.get('[data-testid="review-booking-button"]').text()).toBe('ویرایش نظر')
+  })
+
+  // STATUS_META is a CLOSED Record indexed directly in the template, so a status with no
+  // entry doesn't degrade -- it throws inside the render function and takes the whole list
+  // down, including every other booking on it. This is the regression guard for the two
+  // members the manual-approval workflow added.
+  it('renders the manual-approval statuses instead of crashing the whole list on an unmapped status', async () => {
+    stub([PENDING_APPROVAL_BOOKING, REJECTED_BOOKING])
+    wrapper = await mountSuspended(BookingsListPage)
+    await flushPromises()
+
+    const badges = wrapper.findAll('[data-testid="booking-status-badge"]')
+    expect(badges).toHaveLength(2)
+    expect(badges[0]!.text()).toContain('در انتظار تایید سالن')
+    expect(badges[1]!.text()).toContain('رد شده توسط سالن')
+    expect(badges[1]!.classes()).toContain('text-(--color-danger)')
+  })
+
+  // The load-bearing test of this whole feature on the list: a pending_approval booking has
+  // no payment behind it, so offering to "complete" one would both fail server-side and tell
+  // the customer they owe money on an appointment they don't have yet.
+  it('never offers a payment action for a booking still awaiting the salon', async () => {
+    stub([PENDING_APPROVAL_BOOKING])
+    wrapper = await mountSuspended(BookingsListPage)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="retry-payment-button"]').exists()).toBe(false)
+    const strip = wrapper.get('[data-testid="pending-approval-strip"]')
+    expect(strip.text()).toContain('در انتظار تایید سالن')
+    expect(strip.text()).toContain('هنوز مبلغی پرداخت نشده است')
+    expect(strip.get('[data-testid="remaining-time"]').text()).toContain('مانده')
+  })
+
+  it('lets the customer withdraw a request the salon has not answered, at no cost', async () => {
+    stub([PENDING_APPROVAL_BOOKING])
+    wrapper = await mountSuspended(BookingsListPage)
+    await flushPromises()
+
+    const cancelButton = wrapper.get('[data-testid="cancel-booking-button"]')
+    // "لغو نوبت" would claim an appointment exists -- there isn't one until the salon says so.
+    expect(cancelButton.text()).toBe('لغو درخواست')
+
+    await cancelButton.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="cancel-confirm-refund-copy"]').text()).toContain('مبلغی از شما دریافت نشده است')
+    expect(wrapper.get('[data-testid="cancel-confirm-submit"]').text()).toBe('لغو درخواست')
+  })
+
+  it('shows how long is left to pay on an approved-but-unpaid booking', async () => {
+    stub([{ ...PENDING_BOOKING, paymentExpiresAt: new Date(Date.now() + 20 * 60_000).toISOString() }])
+    wrapper = await mountSuspended(BookingsListPage)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('مهلت پرداخت')
+    expect(wrapper.get('[data-testid="remaining-time"]').text()).toContain('مانده')
+    // The countdown is decoration on the action, never a gate on it.
+    expect(wrapper.find('[data-testid="retry-payment-button"]').exists()).toBe(true)
   })
 
   it('shows an empty state when there are no bookings', async () => {

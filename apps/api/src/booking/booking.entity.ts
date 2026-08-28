@@ -2,13 +2,42 @@ import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeor
 import { bigintToNumber, nullableBigintToNumber } from '../common/numeric-transformers';
 
 export type BookingStatus =
+  // Manual-approval mode only: the customer has asked for this slot and the salon
+  // has not yet decided. Holds capacity exactly like a paid-for slot would, but no
+  // Payment row and no gateway session exist yet -- so rejecting/expiring one never
+  // owes anyone a refund.
+  | 'pending_approval'
   | 'pending_payment'
   | 'confirmed'
   | 'completed'
   | 'cancelled_by_user'
   | 'cancelled_by_salon'
+  // Manual-approval mode only: the salon actively declined the request. Deliberately
+  // distinct from cancelled_by_salon (which always means "a real, already-confirmed
+  // appointment was called off, refund the customer") so the two can never be confused
+  // in reporting, in refund logic, or by a customer reading their own history.
+  | 'rejected_by_salon'
   | 'expired'
   | 'no_show';
+
+/**
+ * Which booking workflow a salon runs. Provider-selectable (the ONE booking setting an
+ * owner controls); every timing value around it is admin-only.
+ */
+export type BookingConfirmationMode = 'automatic' | 'manual_approval';
+
+/**
+ * Statuses that occupy a slot for availability/capacity purposes. `pending_approval`
+ * belongs here for the same reason `pending_payment` does: the customer is holding the
+ * slot while an outcome is pending, and letting someone else book over it would mean the
+ * salon could approve a request it has no room for.
+ *
+ * Exported as one shared constant precisely because this list was previously written out
+ * inline at six separate call sites (createHold's two overlap checks, createManual's two,
+ * assignWorker's, and AvailabilityService's) -- adding a status by hand at five of six
+ * would produce a silent, intermittent double-booking bug rather than a test failure.
+ */
+export const SLOT_BLOCKING_STATUSES: BookingStatus[] = ['pending_approval', 'pending_payment', 'confirmed'];
 
 @Entity('bookings')
 export class Booking {
@@ -96,6 +125,29 @@ export class Booking {
   // null for an online booking; there's nowhere in that flow for a customer to write one.
   @Column({ type: 'varchar', length: 500, nullable: true })
   notes: string | null;
+
+  // Which workflow this booking was CREATED under, snapshotted so a salon switching
+  // its own mode later never retroactively changes how an already-in-flight booking
+  // behaves (an approved-and-awaiting-payment request must not silently become an
+  // "automatic" booking, nor vice versa). Every pre-existing row backfills to
+  // 'automatic' via the column DEFAULT, which is exactly what they already were.
+  @Column({ name: 'confirmation_mode', type: 'varchar', default: 'automatic' })
+  confirmationMode: BookingConfirmationMode;
+
+  // Immutable deadline snapshot: when the salon's window to accept/decline this
+  // request runs out. Only ever set for a manual_approval booking, at creation.
+  // Snapshotted rather than recomputed at job time so an admin editing the timeout
+  // never moves the goalposts under a request that is already pending.
+  @Column({ name: 'approval_expires_at', type: 'timestamptz', nullable: true })
+  approvalExpiresAt: Date | null;
+
+  // Immutable deadline snapshot: when the customer's window to pay runs out. Set the
+  // moment the booking enters pending_payment -- at creation for an automatic booking,
+  // at approval time for a manual one. NULL on rows created before this column existed;
+  // BookingExpiryJob falls back to the old created_at + live-TTL derivation for those,
+  // so no historical booking's behaviour changed when this shipped.
+  @Column({ name: 'payment_expires_at', type: 'timestamptz', nullable: true })
+  paymentExpiresAt: Date | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

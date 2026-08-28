@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, LessThan, Repository } from 'typeorm';
+import { DataSource, IsNull, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { CronJobRunner } from '../common/cron-job-runner.service';
 import { WalletService } from '../wallet/wallet.service';
@@ -40,15 +40,66 @@ export class PaymentReconciliationJob {
 
   async run(): Promise<number> {
     const cutoff = new Date(Date.now() - STALE_AFTER_MINUTES * 60_000);
-    const stale = await this.payments.find({
-      where: { status: 'initiated', createdAt: LessThan(cutoff) },
-      take: BATCH_SIZE,
-    });
+    // STALE_AFTER_MINUTES alone is NOT a sufficient staleness test any more.
+    //
+    // It used to be, by an unwritten coincidence: the payment window was one global
+    // number (booking_hold_ttl_minutes, seeded 15), always shorter than these 20 minutes,
+    // so any payment old enough to be selected here belonged to a booking BookingExpiryJob
+    // had already killed -- and this job's `status = 'pending_payment'` guards therefore
+    // never fired on a live booking.
+    //
+    // The payment window is now per-salon and admin-configurable up to 1440 minutes. A
+    // salon with a 60-minute window would otherwise have every unpaid-but-still-valid
+    // booking selected at minute 21, fail verification (the customer simply hasn't paid
+    // yet), and be cancelled 39 minutes before the deadline the customer was shown.
+    //
+    // So a payment is stale only once its booking genuinely can't be paid for any more:
+    // either the booking has already left pending_payment (the late-capture case this job
+    // exists for), or its own snapshotted window has closed. Legacy rows with no snapshot
+    // fall back to the original clock-only behaviour.
+    const stale = await this.payments
+      .createQueryBuilder('payment')
+      .innerJoin(Booking, 'booking', 'booking.id = payment.bookingId')
+      .where('payment.status = :status', { status: 'initiated' })
+      .andWhere('payment.createdAt < :cutoff', { cutoff })
+      .andWhere(
+        `(booking.status <> 'pending_payment'
+          OR booking.paymentExpiresAt IS NULL
+          OR booking.paymentExpiresAt <= now())`,
+      )
+      // Deterministic, oldest-first: without it the batch cap could keep re-selecting the
+      // same arbitrary 200 rows and starve the rest.
+      .orderBy('payment.createdAt', 'ASC')
+      .take(BATCH_SIZE)
+      .getMany();
 
     let reconciled = 0;
     for (const payment of stale) {
       const authorities = await this.loadAuthorities(payment);
-      if (authorities.length === 0) continue;
+      if (authorities.length === 0) {
+        // No authority was ever issued, so the gateway cannot possibly have captured
+        // anything -- there is nothing to verify and nothing to refund. Before manual
+        // approval existed this was near-impossible (createHold minted a session
+        // milliseconds after inserting the row), so `continue` was harmless. Now
+        // approve() inserts the Payment row when it opens the payment window, and a
+        // customer who never clicks "pay" leaves it authority-less forever: it would be
+        // re-selected on every tick, occupying a slot in every future batch until the
+        // 200-row cap consisted entirely of rows that can never be resolved.
+        //
+        // Guarded on `authority IS NULL` as well as the status, so a customer who mints
+        // a session in the same instant wins the race and keeps their live payment.
+        const retired = await this.payments.update(
+          { id: payment.id, status: 'initiated', authority: IsNull() },
+          { status: 'failed' },
+        );
+        if (retired.affected) {
+          this.logger.log(
+            `Retired payment ${payment.id} (booking ${payment.bookingId}): no gateway session was ever opened for it`,
+          );
+          reconciled++;
+        }
+        continue;
+      }
       try {
         // Every authority ever issued for this payment is re-verified, newest first --
         // not just payments.authority. retryPayment supersedes that column while the

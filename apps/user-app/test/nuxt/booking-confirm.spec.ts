@@ -16,7 +16,10 @@ const fetchStub = Object.assign((...args: unknown[]) => fetchMock(...args), {
 // them to fixed test values regardless of where the spec file lives.
 mockNuxtImport('useRoute', () => () => ({ params: { slug: 'test-salon', serviceId: 'svc-1' } }))
 
-const SALON = { id: 'salon-1', name: 'Test Salon', address: 'Somewhere St' }
+const { navigateToMock } = vi.hoisted(() => ({ navigateToMock: vi.fn() }))
+mockNuxtImport('navigateTo', () => navigateToMock)
+
+const SALON = { id: 'salon-1', name: 'Test Salon', address: 'Somewhere St', bookingConfirmationMode: 'automatic' }
 const SERVICE = { id: 'svc-1', name: 'Haircut', description: null as string | null, price: 300_000, durationMin: 30 }
 const TERMS = { depositPercent: 20, depositMinToman: 200_000, cancellationWindowHours: 24 }
 const SLOT_ISO = '2026-07-10T09:00:00.000Z'
@@ -68,11 +71,43 @@ function stubPageLoad(
       return couponValidateResponse
     }
     if (path === '/bookings' && opts?.method === 'POST') {
-      if (bookingsBehavior === 'success') return { booking: { id: 'b1' }, paymentUrl: 'http://gateway.example/pay' }
+      if (bookingsBehavior === 'success') return { booking: { id: 'b1' }, paymentUrl: 'http://gateway.example/pay', paymentRequired: true }
       throw bookingsBehavior.rejectWith
     }
     throw new Error(`unexpected fetch path in test: ${path}`)
   })
+}
+
+// The manual-approval variant of the page load: the salon reviews requests by hand, so
+// POST /bookings opens no gateway session at all -- it answers with paymentRequired:false and
+// a paymentUrl pointing back into this very app (the API builds it from FRONTEND_BASE_URL).
+// Written as its own stub rather than a seventh positional parameter on stubPageLoad.
+function stubManualApprovalPageLoad() {
+  fetchMock.mockImplementation(async (path: string, opts?: { method?: string }) => {
+    if (path === '/salons/test-salon') return { ...SALON, bookingConfirmationMode: 'manual_approval' }
+    if (path === '/salons/test-salon/services') return [SERVICE]
+    if (path === '/platform-config/booking-terms') return TERMS
+    if (path === '/salons/test-salon/workers') return []
+    if (path === `/salons/${SALON.id}/availability`) return []
+    if (path === '/wallet/mine') return { balances: [{ currency: 'toman', balance: 0 }] }
+    if (path === '/bookings' && opts?.method === 'POST') {
+      return {
+        booking: { id: 'b-request' },
+        paymentUrl: 'http://localhost:3003/bookings/b-request',
+        couponApplied: false,
+        paymentRequired: false,
+      }
+    }
+    throw new Error(`unexpected fetch path in test: ${path}`)
+  })
+}
+
+// Drives the page exactly as a customer would: pick a slot, then press the submit button.
+async function pickSlotAndSubmit(wrapper: Awaited<ReturnType<typeof mountSuspended>>) {
+  await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+  await nextTick()
+  await wrapper.get('[data-testid="confirm-booking-button"]').trigger('click')
+  await flushPromises()
 }
 
 describe('booking confirm page', () => {
@@ -85,6 +120,7 @@ describe('booking confirm page', () => {
 
   beforeEach(() => {
     fetchMock.mockReset()
+    navigateToMock.mockReset()
     vi.stubGlobal('$fetch', fetchStub)
     wrapper?.unmount()
     wrapper = undefined
@@ -706,5 +742,52 @@ describe('booking confirm page', () => {
 
     const successEl = wrapper.findAll('[aria-live="polite"]').find((el: DOMWrapper<Element>) => el.text().includes('صرفه‌جویی کردید'))
     expect(successEl).toBeTruthy()
+  })
+
+  it('promises payment-and-booking, and leaves for the gateway, at a salon that confirms automatically', async () => {
+    stubPageLoad('success')
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="confirm-booking-button"]').text()).toBe('پرداخت و رزرو')
+    expect(wrapper.find('[data-testid="manual-approval-note"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="confirm-booking-button"]').trigger('click')
+    await flushPromises()
+
+    expect(navigateToMock).toHaveBeenCalledWith('http://gateway.example/pay', { external: true })
+  })
+
+  // The commitment the customer is making is different at a manual-approval salon, so the
+  // button that makes it must not say "پرداخت و رزرو" -- nothing is paid and nothing is
+  // reserved by pressing it.
+  it('asks for a request, not a payment, at a salon that approves by hand', async () => {
+    stubManualApprovalPageLoad()
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="confirm-booking-button"]').text()).toBe('ثبت درخواست رزرو')
+    const note = wrapper.get('[data-testid="manual-approval-note"]')
+    expect(note.text()).toContain('اکنون مبلغی پرداخت نمی‌کنید')
+    expect(note.text()).toContain('پس از تایید سالن')
+    // Same tensing on the deposit figure: it's what will be due, not what's being charged.
+    expect(wrapper.text()).toContain('پیش‌پرداخت آنلاین (پس از تایید سالن)')
+  })
+
+  // paymentUrl is an absolute URL built from the API's FRONTEND_BASE_URL. When there's no
+  // gateway involved it points back into this very app, so an external navigation would be a
+  // full page reload just to land on a route the router could have taken us to.
+  it('routes internally to the new booking when the API opened no payment session', async () => {
+    stubManualApprovalPageLoad()
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await pickSlotAndSubmit(wrapper)
+
+    expect(navigateToMock).toHaveBeenCalledWith('/bookings/b-request')
+    expect(navigateToMock).not.toHaveBeenCalledWith(expect.stringContaining('http'), expect.anything())
   })
 })

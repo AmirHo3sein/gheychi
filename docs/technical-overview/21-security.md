@@ -93,3 +93,24 @@ Redis-backed, narrowly scoped to the two genuinely abusable surfaces: OTP reques
 
 - [05-authentication.md](./05-authentication.md), [17-permissions.md](./17-permissions.md) — the mechanisms this document assumes
 - [24-technical-debt.md](./24-technical-debt.md) — several findings above repeated with fuller context
+
+## Booking approval workflow
+
+- **Privilege boundary.** The salon owner may set `bookingConfirmationMode` and nothing else.
+  The two per-salon timeout overrides are admin-only and are deliberately kept off
+  `UpdateSalonDto` — `SalonsService.updateMine()` applies its DTO with a blanket `Object.assign`,
+  so their mere presence there would be a privilege escalation. The global
+  `ValidationPipe({whitelist: true})` strips them from a provider request that sends them anyway,
+  and this is pinned by an e2e test that PATCHes them through the provider route and asserts the
+  columns stayed NULL.
+- **Ownership.** Approve/reject sit behind `SalonOwnerGuard` *and* re-scope their lookup by
+  `req.salonId`, so a valid booking id belonging to another salon 404s rather than leaking that
+  it exists.
+- **Input bounds.** Timeout overrides are constrained `1..1440` at both the DTO and a DB CHECK;
+  the rejection reason is `@Length(1, 300)` and is echoed to the customer, so it is bounded.
+- **Event log hygiene.** `booking_events.metadata` must never carry a credential, payment
+  authority, OTP, or PII — the same standing rule as `AnalyticsService`, enforced by review at
+  each call site. Today it holds only timeout values, ISO deadlines, status names, and the
+  owner-authored rejection reason.
+- **A route with no explicit guard is public by default in this codebase.** All four new routes
+  declare guards explicitly and are covered by the `route-guard-audit.spec.ts` invariant test.

@@ -24,6 +24,7 @@ export const REQUIRED_PLATFORM_CONFIG_KEYS = [
   'cancellation_window_hours',
   'commission_percent',
   'booking_hold_ttl_minutes',
+  'booking_approval_timeout_minutes',
   'reminder_lead_hours',
   'review_edit_window_hours',
 ] as const;
@@ -67,8 +68,16 @@ interface ConfigBounds {
 // at startup below, and again as defense-in-depth inside getNumber() for a bad value written
 // directly against the DB after a successful boot.
 const PERCENT_KEYS = new Set<string>(['deposit_percent', 'commission_percent']);
+// Timeout keys that drive a real deadline someone is shown and counts on. A 0 would expire
+// every booking before a human could act on it; an unbounded value would let a request sit
+// on a customer's slot indefinitely. Bounds deliberately identical to the per-salon
+// override's own DTO + DB CHECK (1..1440), so the global default and a salon-level
+// override of the SAME concept can never disagree about what a legal value is.
+const MINUTE_TIMEOUT_KEYS = new Set<string>(['booking_approval_timeout_minutes', 'booking_hold_ttl_minutes']);
 function boundsFor(key: string): ConfigBounds {
-  return PERCENT_KEYS.has(key) ? { min: 0, max: 100 } : { min: 0, max: null };
+  if (PERCENT_KEYS.has(key)) return { min: 0, max: 100 };
+  if (MINUTE_TIMEOUT_KEYS.has(key)) return { min: 1, max: 1440 };
+  return { min: 0, max: null };
 }
 
 // Returns a human-readable problem description if `rawValue` isn't a finite number within
@@ -176,8 +185,20 @@ export class PlatformConfigService implements OnApplicationBootstrap {
     return this.getNumber('commission_percent');
   }
 
+  /**
+   * How long a customer has to pay once a booking enters pending_payment. Doubles as the
+   * GLOBAL DEFAULT payment timeout for the manual-approval workflow -- deliberately reused
+   * rather than forked into a second `booking_payment_timeout_minutes` key, since this key
+   * already means exactly that and two keys for one concept would inevitably diverge.
+   * A per-salon admin override lives on `salons.payment_timeout_minutes`.
+   */
   getBookingHoldTtlMinutes(): Promise<number> {
     return this.getNumber('booking_hold_ttl_minutes');
+  }
+
+  /** Global default for how long a salon has to accept/decline a booking request. */
+  getBookingApprovalTimeoutMinutes(): Promise<number> {
+    return this.getNumber('booking_approval_timeout_minutes');
   }
 
   getReminderLeadHours(): Promise<number> {

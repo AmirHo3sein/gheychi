@@ -212,3 +212,25 @@ Every upload endpoint (`salons/mine/photos`, `salons/mine/portfolio`, `salons/mi
 - [17-permissions.md](./17-permissions.md) — full guard/role detail behind the shorthand above
 - [21-security.md](./21-security.md) — upload validation, audit interceptor mechanics
 - Each numbered subsystem document repeats its own relevant slice of this table with full business-rule context
+
+## Booking approval workflow
+
+| Method | Route | Guard | Purpose |
+|---|---|---|---|
+| POST | `/salons/mine/bookings/:id/approve` | `SalonOwnerGuard` | Accept a `pending_approval` request. Opens the payment window (`pending_payment` + a `Payment` row + a snapshotted `payment_expires_at`), or goes straight to `confirmed` when nothing is owed. 409 if no longer pending. Returns 200, not 201 — it transitions rather than creates. |
+| POST | `/salons/mine/bookings/:id/reject` | `SalonOwnerGuard` | Decline a request. Body `{ reason }` **required** (1..300), echoed to the customer. Releases the coupon/wallet hold. 409 if no longer pending. |
+| GET | `/admin/salons/:id/booking-settings` | `RolesGuard('admin')` | The salon's mode (read-only here), its raw overrides (`approvalTimeoutOverride`/`paymentTimeoutOverride`, `null` = inherit) and the **effective** resolved values with their global defaults and `*IsOverridden` flags. |
+| PATCH | `/admin/salons/:id/booking-settings` | `RolesGuard('admin')` | Set or clear the per-salon overrides. Body `{ approvalTimeoutMinutes?, paymentTimeoutMinutes? }`, each `1..1440` or an explicit `null` to inherit. Audited as `booking-settings.update`. |
+| GET | `/admin/bookings/:id/events` | `RolesGuard('admin')` | The booking's full lifecycle timeline, oldest first. |
+
+Changed shapes on existing routes:
+
+- `POST /bookings` — in manual mode returns `booking.status === 'pending_approval'`,
+  `paymentRequired: false`, and a `paymentUrl` pointing at the in-app booking page rather than a
+  gateway session.
+- Every booking payload now carries `confirmationMode`, `approvalExpiresAt`, `paymentExpiresAt`.
+- `PATCH /salons/mine` accepts `bookingConfirmationMode` (`'automatic' | 'manual_approval'`).
+  It does **not** accept either timeout field, by design.
+- `GET`/`PATCH /admin/config` now include `booking_approval_timeout_minutes`.
+
+See [28-booking-approval-workflow.md](./28-booking-approval-workflow.md).

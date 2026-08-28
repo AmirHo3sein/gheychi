@@ -16,6 +16,11 @@ stateDiagram-v2
     refund_pending --> refund_pending: gateway refuses — retried by RefundRetryJob
 ```
 
+> Under **manual approval** ([28](./28-booking-approval-workflow.md)) the `Payment` row is not
+> created by `createHold` at all — it is inserted by `approve()`, in the same transaction that
+> opens the payment window. A `pending_approval` booking therefore has no payment and no
+> authority, which is precisely why declining or expiring one can never owe a refund.
+
 Important semantic note baked into the code: **`refund_pending` is not a flavor of `failed`** — `failed` means strictly "nothing was ever captured."
 
 ## Gateway abstraction
@@ -72,7 +77,32 @@ flowchart TD
 
 `PaymentReconciliationJob` (every 5 min) re-verifies any `initiated` payment older than **20 minutes**, trying **every authority ever issued** for it (via `payment_authorities`) until one verifies successfully — this is what correctly resolves a customer who paid through a superseded `retryPayment` session and never returned to the app.
 
-The 20-minute threshold is **intentionally longer** than the default 15-minute hold TTL (`booking_hold_ttl_minutes`), so it is common and expected for a genuinely-late-but-successful payment to find its booking already `expired` by the time reconciliation runs. This is **handled, not a bug**: the payment still ends up `paid` and then refunded via the late-capture path — the booking is never resurrected into a slot that may have been rebooked. **These two numbers are tuned relative to each other and must not be changed independently** without re-verifying that relationship.
+The same late-capture machinery is what makes the manual-approval payment window safe: a customer
+paying through a still-open tab after their window closed hits the identical
+`pending_payment → confirmed` CAS failure and is refunded rather than resurrecting the booking.
+That path needed no new code.
+
+The 20-minute threshold used to rest on an unwritten coincidence: the payment window was a
+single global number (`booking_hold_ttl_minutes`, seeded 15), always shorter than 20, so a
+payment old enough to be selected here always belonged to a booking `BookingExpiryJob` had
+already killed — and this job's `status = 'pending_payment'` guards therefore never fired on
+a live booking. Once the payment window became **per-salon and admin-configurable up to 1440
+minutes** ([28](./28-booking-approval-workflow.md)) that coincidence broke: a salon with a
+60-minute window would have had every unpaid-but-still-valid booking selected at minute 21,
+fail verification (the customer simply hadn't paid yet), and be cancelled 39 minutes before
+the deadline the customer was shown.
+
+The selection is therefore **deadline-aware**, not clock-only: a payment is stale only once
+its booking genuinely can't be paid for any more — it has already left `pending_payment`, or
+its own snapshotted `payment_expires_at` has passed. Legacy rows with no snapshot keep the
+original clock-only behaviour. A payment that never got an authority at all (possible since
+`approve()` opens the payment window before the customer clicks "pay") is now **retired** to
+`failed` rather than skipped — skipping made those rows immortal and they would eventually
+have crowded out the 200-row batch.
+
+The 20-minute threshold is still **intentionally longer** than the default 15-minute hold
+TTL, so it is common and expected for a genuinely-late-but-successful payment to find its
+booking already `expired` by the time reconciliation runs. This is **handled, not a bug**: the payment still ends up `paid` and then refunded via the late-capture path — the booking is never resurrected into a slot that may have been rebooked. **These two numbers are tuned relative to each other and must not be changed independently** without re-verifying that relationship.
 
 ## Refund retry & escalation
 

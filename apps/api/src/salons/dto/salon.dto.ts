@@ -69,6 +69,12 @@ export class UpdateSalonDto {
   // The strict handle charset is the safety boundary that keeps the user-app's
   // `https://instagram.com/<handle>` links injection-free.
   @IsOptional() @Transform(emptyToNull) @Matches(/^[A-Za-z0-9._]{1,30}$/) instagramHandle?: string | null;
+  // The ONE booking setting an owner controls. The two timeout overrides that sit
+  // beside it on the salons table are deliberately absent from this DTO: updateMine()
+  // applies whatever survives validation via a blanket Object.assign, so adding them
+  // here would hand providers the power to set their own deadlines. They are writable
+  // only through PATCH /admin/salons/:id/booking-settings.
+  @IsOptional() @IsIn(['automatic', 'manual_approval']) bookingConfirmationMode?: 'automatic' | 'manual_approval';
   // Undefined leaves the salon's tags unchanged; an explicit array (must be
   // non-empty, same reasoning as CreateSalonDto's) replaces them wholesale.
   @IsOptional()

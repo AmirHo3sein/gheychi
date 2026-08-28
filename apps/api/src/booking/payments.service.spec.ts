@@ -14,6 +14,7 @@ import { UsersService } from '../users/users.service';
 import { Booking } from './booking.entity';
 import { PAYMENT_GATEWAY } from './payment-gateway';
 import { Payment } from './payment.entity';
+import { BookingEventsService } from './booking-events.service';
 import { PaymentsService } from './payments.service';
 
 describe('PaymentsService.attemptRefund', () => {
@@ -50,6 +51,7 @@ describe('PaymentsService.attemptRefund', () => {
       providers: [
         PaymentsService,
         MetricsService,
+        { provide: BookingEventsService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
         { provide: getRepositoryToken(Payment), useValue: { findOneBy: paymentsFindOneBy, update: paymentsUpdate } },
         { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy } },
         { provide: DataSource, useValue: {} },
@@ -188,6 +190,7 @@ describe('PaymentsService.notifyCancelled', () => {
       providers: [
         PaymentsService,
         MetricsService,
+        { provide: BookingEventsService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
         { provide: getRepositoryToken(Payment), useValue: {} },
         { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy } },
         { provide: DataSource, useValue: {} },
@@ -278,6 +281,7 @@ describe('PaymentsService.notifyConfirmed', () => {
       providers: [
         PaymentsService,
         MetricsService,
+        { provide: BookingEventsService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
         { provide: getRepositoryToken(Payment), useValue: {} },
         { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy } },
         { provide: DataSource, useValue: {} },
@@ -353,6 +357,7 @@ describe('PaymentsService.handleCallback lost-CAS recovery', () => {
       providers: [
         PaymentsService,
         MetricsService,
+        { provide: BookingEventsService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
         { provide: getRepositoryToken(Payment), useValue: { findOneBy: paymentsFindOneBy, update: paymentsUpdate } },
         { provide: getRepositoryToken(Booking), useValue: { findOneBy: jest.fn() } },
         {
@@ -453,6 +458,7 @@ describe('PaymentsService.handleCallback — capture, dead bookings and unknown 
       providers: [
         PaymentsService,
         MetricsService,
+        { provide: BookingEventsService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: getRepositoryToken(Payment),
           useValue: {
@@ -731,6 +737,7 @@ describe('PaymentsService.handleCallback verify-persist failure', () => {
       providers: [
         PaymentsService,
         MetricsService,
+        { provide: BookingEventsService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: getRepositoryToken(Payment),
           useValue: {

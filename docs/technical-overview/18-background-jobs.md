@@ -8,7 +8,8 @@ Every scheduled job is a `@Injectable()` class registered as a provider in its o
 
 | Job | File | Schedule | Purpose |
 |---|---|---|---|
-| Booking expiry | `booking/booking-expiry.job.ts` | `*/1 * * * *` (every minute) | Expires `pending_payment` bookings past their hold TTL (`booking_hold_ttl_minutes`, seeded 15); releases any consumed coupon/wallet balance atomically |
+| Booking expiry | `booking/booking-expiry.job.ts` | `*/1 * * * *` (every minute) | Expires `pending_payment` bookings past their deadline — the row's own snapshotted `payment_expires_at`, falling back to the legacy `created_at + booking_hold_ttl_minutes` derivation only for rows predating that column; releases any consumed coupon/wallet balance atomically, then notifies the customer post-commit |
+| Booking approval expiry | `booking/booking-approval-expiry.job.ts` | `*/1 * * * *` (every minute) | Expires `pending_approval` manual-approval requests the salon never answered, on the row's own snapshotted `approval_expires_at`. Releases the coupon/wallet hold; **no refund is ever owed** — a request has no `Payment` row by construction. See [28](./28-booking-approval-workflow.md) |
 | Payment reconciliation | `booking/payment-reconciliation.job.ts` | `*/5 * * * *` | Re-verifies `initiated` payments older than 20 minutes against every authority ever issued; confirms, fails, or queues a late-capture refund + alert |
 | Booking reminder | `booking/booking-reminder.job.ts` | `*/5 * * * *` | SMS + push appointment reminders for `confirmed` bookings inside the configured lead window (`reminder_lead_hours`, seeded 3); claims each row via a guarded conditional UPDATE to avoid double-sending |
 | Refund retry | `booking/refund-retry.job.ts` | `*/5 * * * *` | Retries `refund_pending` payments (2-min grace period first); pages a critical/daily-dedup alert once stuck past 24h |
@@ -36,7 +37,7 @@ Redis is used for short-lived coordination primitives, never as a queue of recor
 | `otp:{phone}` | current OTP code | 120s |
 | `otp:rl:{phone}` | OTP request rate limit (max 3) | 3600s |
 | `otp:att:{phone}` | OTP verify-attempt counter (max 5) | 120s |
-| `lock:booking:{salonId}` | distributed mutex around the booking-hold critical section | 5000ms (`SET NX PX`), explicit `DEL` on release |
+| `lock:booking:{salonId}` | distributed mutex around the booking-hold critical section | 5000ms (`SET NX PX` with a per-call token), released by an atomic owner-checked Lua compare-and-delete so an expired holder can never delete a successor's lock |
 | `cron-lock:{jobName}` | `CronJobRunner`/`CronLockService`'s per-job mutex (see above) — a second instance's overlapping tick 409s out (no-ops) rather than double-running | 60s default (`SET NX PX`), per-job override (e.g. storage reconciliation: 10min), explicit `DEL` on release |
 | `referral:validate:rl:{ip}` | rate-limits the public `GET /referrals/validate` code-enumeration surface (max 20) | 3600s |
 | `alert:dedup:{alertKey}` | one alert per condition per window | default 6h, up to 24h for some |

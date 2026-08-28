@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import SalonDetailView from './SalonDetailView.vue'
+import SalonBookingSettingsCard from '@/components/salons/SalonBookingSettingsCard.vue'
 
 const fetchMock = vi.fn()
 
@@ -65,7 +66,12 @@ describe('SalonDetailView', () => {
     })
     router.push('/salons/s1')
     await router.isReady()
-    const wrapper = mount(SalonDetailView, { global: { plugins: [router] } })
+    // SalonBookingSettingsCard fetches its own settings endpoint on mount; stubbing it keeps
+    // this file's sequential apiFetch mock chains about the salon record itself. The card's
+    // own behaviour is covered in SalonBookingSettingsCard.spec.ts.
+    const wrapper = mount(SalonDetailView, {
+      global: { plugins: [router], stubs: { SalonBookingSettingsCard: true } },
+    })
     await flushPromises()
     return wrapper
   }
@@ -304,6 +310,22 @@ describe('SalonDetailView', () => {
     expect(images[0]!.attributes('alt')).toBe(activeStory.caption)
     expect(images[1]!.attributes('alt')).not.toBe('')
     expect(images[1]!.attributes('alt')).toBeTruthy()
+  })
+
+  it('shows the per-salon booking-settings card on the info tab only', async () => {
+    fetchMock
+      .mockResolvedValueOnce({ data: salon, error: null })
+      // GET /admin/salons/s1/stories on tab activation
+      .mockResolvedValueOnce({ data: [], error: null })
+
+    const wrapper = await mountWithRouter()
+    expect(wrapper.findComponent(SalonBookingSettingsCard).exists()).toBe(true)
+    expect(wrapper.findComponent(SalonBookingSettingsCard).props('salonId')).toBe('s1')
+
+    // The showcase tabs are moderation surfaces -- the timing settings don't belong there.
+    await wrapper.get('[data-testid="tab-stories"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent(SalonBookingSettingsCard).exists()).toBe(false)
   })
 
   it('marks the tab control with ARIA tab semantics', async () => {

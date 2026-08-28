@@ -9,7 +9,26 @@ interface BookingItem {
   startsAt: string
   priceSnapshot: number
   depositAmount: number
-  status: 'pending_payment' | 'confirmed' | 'completed' | 'cancelled_by_user' | 'cancelled_by_salon' | 'expired' | 'no_show'
+  status:
+    | 'pending_approval'
+    | 'pending_payment'
+    | 'confirmed'
+    | 'completed'
+    | 'cancelled_by_user'
+    | 'cancelled_by_salon'
+    | 'rejected_by_salon'
+    | 'expired'
+    | 'no_show'
+  // Which workflow this booking runs, frozen onto the row at creation time (see the API's
+  // Booking.confirmationMode) -- a salon flipping its mode later never changes what an
+  // existing booking was promised. Not read directly here (the status already says
+  // everything the card needs), but part of the shape every booking endpoint now returns.
+  confirmationMode: 'automatic' | 'manual_approval'
+  // Backend-owned deadlines, both null unless the booking is currently waiting on one:
+  // approvalExpiresAt while a manual request awaits the salon's decision, paymentExpiresAt
+  // once the payment window is open. Display only -- see RemainingTime.vue.
+  approvalExpiresAt: string | null
+  paymentExpiresAt: string | null
 }
 
 // Mirrors booking/[slug]/[serviceId].vue's local interface -- same
@@ -44,16 +63,26 @@ const STATUS_META: Record<BookingItem['status'], { label: string; icon: IconName
   // text-(--color-text), not accent-strong: accent-strong on accent-soft is 4.88:1 in light
   // mode (passes) but only 2.11:1 in dark mode (fails WCAG AA) -- found during the profile.vue
   // fix pass, same root cause, verified via the WCAG relative-luminance formula.
+  // Manual-approval mode only, and deliberately NOT a danger/alarm color: waiting on the
+  // salon is a normal, in-progress state the customer can't act on and hasn't paid for --
+  // nothing has gone wrong. Same accent-soft treatment as pending_payment.
+  pending_approval: { label: 'در انتظار تایید سالن', icon: 'clock', badgeClass: 'bg-(--color-accent-soft) text-(--color-text)' },
   pending_payment: { label: 'در انتظار پرداخت', icon: 'clock', badgeClass: 'bg-(--color-accent-soft) text-(--color-text)' },
   confirmed: { label: 'تایید شده', icon: 'check-circle', badgeClass: 'bg-(--color-accent-soft) text-(--color-text)' },
   completed: { label: 'انجام شده', icon: 'check-circle', badgeClass: 'bg-(--color-success)/10 text-(--color-success)' },
   cancelled_by_user: { label: 'لغو شده توسط شما', icon: 'x', badgeClass: 'bg-(--color-danger-soft) text-(--color-danger)' },
   cancelled_by_salon: { label: 'لغو شده توسط سالن', icon: 'x', badgeClass: 'bg-(--color-danger-soft) text-(--color-danger)' },
+  // Distinct from cancelled_by_salon: this request never became a booking at all, and no
+  // money was ever taken for it. Shares the danger treatment because the outcome for the
+  // customer is the same -- they need to book somewhere/something else.
+  rejected_by_salon: { label: 'رد شده توسط سالن', icon: 'x', badgeClass: 'bg-(--color-danger-soft) text-(--color-danger)' },
   expired: { label: 'منقضی شده', icon: 'alert-circle', badgeClass: 'bg-(--color-danger-soft) text-(--color-danger)' },
   no_show: { label: 'عدم مراجعه', icon: 'alert-circle', badgeClass: 'bg-(--color-danger-soft) text-(--color-danger)' },
 }
 
-const CANCELLABLE_STATUSES: BookingItem['status'][] = ['pending_payment', 'confirmed']
+// pending_approval is cancellable too: withdrawing a request the salon hasn't answered yet
+// is the customer's own POST /bookings/:id/cancel, with no payment and so no refund in play.
+const CANCELLABLE_STATUSES: BookingItem['status'][] = ['pending_approval', 'pending_payment', 'confirmed']
 
 // Split out of load() so a review submitted/edited/deleted in the modal can refresh
 // just this slice, without flipping the whole list back to its loading state.
@@ -109,6 +138,11 @@ const cancelTarget = ref<BookingItem | null>(null)
 const cancelling = ref(false)
 
 function cancelOutcomeText(booking: BookingItem): string {
+  // A manual-approval request that hasn't been answered yet never opened a payment window,
+  // so there is nothing to refund and no cancellation window to be inside or outside of.
+  if (booking.status === 'pending_approval') {
+    return 'این درخواست هنوز تایید نشده و مبلغی از شما دریافت نشده است؛ لغو آن هزینه‌ای ندارد.'
+  }
   if (booking.status === 'pending_payment') {
     return 'این نوبت هنوز پرداخت نشده است؛ لغو آن هزینه‌ای برای شما ندارد.'
   }
@@ -124,6 +158,12 @@ function cancelOutcomeText(booking: BookingItem): string {
   }
   return `چون کمتر از ${windowHours} ساعت به این نوبت مانده، پیش‌پرداخت قابل بازگشت نیست.`
 }
+
+// Same wording as the card's own button, so the dialog the customer opened is
+// unmistakably about the thing they clicked (a request vs. an actual appointment).
+const cancelActionLabel = computed(() =>
+  cancelTarget.value?.status === 'pending_approval' ? 'لغو درخواست' : 'لغو نوبت',
+)
 
 function openCancelConfirm(booking: BookingItem) {
   cancelTarget.value = booking
@@ -187,6 +227,26 @@ const { titleId: cancelTitleId } = useDialog(cancelDialogRoot, { onClose: closeC
         </span>
       </div>
 
+      <!-- Manual-approval mode: the request is with the salon and there is deliberately NO
+           call to action here. Nothing has been charged yet, so offering a "pay" button
+           would both fail (the API has no payment session for a pending_approval booking)
+           and imply the appointment is already theirs. Muted surface rather than the
+           danger-soft one pending_payment uses: waiting on someone else is not a problem
+           the customer has to fix. -->
+      <div
+        v-if="booking.status === 'pending_approval'"
+        data-testid="pending-approval-strip"
+        class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-xl bg-(--color-surface-subtle) p-3"
+      >
+        <span class="flex min-w-0 items-start gap-1.5 text-(--color-text)">
+          <BaseIcon name="clock" :size="15" class="mt-0.5 shrink-0" />
+          درخواست شما ثبت شد و در انتظار تایید سالن است؛ هنوز مبلغی پرداخت نشده است
+        </span>
+        <span v-if="booking.approvalExpiresAt" class="text-xs text-(--color-text-muted)">
+          مهلت پاسخ سالن: <RemainingTime :expires-at="booking.approvalExpiresAt" />
+        </span>
+      </div>
+
       <!-- flex-wrap + shrink-0 on the button: at 320px this row has ~230px for a ~195px
            warning and a ~100px call to action. Without wrapping the button is the item
            that gives, and "تکمیل پرداخت" breaks across two lines -- the one control on the
@@ -194,8 +254,16 @@ const { titleId: cancelTitleId } = useDialog(cancelDialogRoot, { onClose: closeC
            Wrapping drops it onto its own full-width-ish line instead. -->
       <div v-if="booking.status === 'pending_payment'" class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-xl bg-(--color-danger-soft) p-3">
         <span class="flex min-w-0 items-start gap-1.5 text-(--color-danger)">
-          <BaseIcon name="alert-circle" :size="15" class="mt-0.5" />
-          پرداخت این نوبت کامل نشده است
+          <BaseIcon name="alert-circle" :size="15" class="mt-0.5 shrink-0" />
+          <span class="min-w-0">
+            پرداخت این نوبت کامل نشده است
+            <!-- The payment window is finite and the customer had no way to see that here.
+                 Display only: the button below stays clickable past the deadline and the
+                 API's own 409 is what refuses a too-late retry. -->
+            <span v-if="booking.paymentExpiresAt" class="block text-xs">
+              مهلت پرداخت: <RemainingTime :expires-at="booking.paymentExpiresAt" />
+            </span>
+          </span>
         </span>
         <BaseButton
           size="md"
@@ -215,7 +283,9 @@ const { titleId: cancelTitleId } = useDialog(cancelDialogRoot, { onClose: closeC
           data-testid="cancel-booking-button"
           @click="openCancelConfirm(booking)"
         >
-          لغو نوبت
+          <!-- There is no appointment to cancel yet while the salon hasn't answered -- the
+               customer is withdrawing a request, and the label says so. -->
+          {{ booking.status === 'pending_approval' ? 'لغو درخواست' : 'لغو نوبت' }}
         </BaseButton>
 
         <template v-if="booking.status === 'completed'">
@@ -269,7 +339,7 @@ const { titleId: cancelTitleId } = useDialog(cancelDialogRoot, { onClose: closeC
         data-testid="cancel-confirm-dialog"
         class="my-auto w-full max-w-sm space-y-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-6 shadow-(--shadow-lg) outline-none"
       >
-        <h2 :id="cancelTitleId" class="text-lg font-bold text-(--color-text)">لغو نوبت</h2>
+        <h2 :id="cancelTitleId" class="text-lg font-bold text-(--color-text)">{{ cancelActionLabel }}</h2>
         <p class="text-sm break-words text-(--color-text)">{{ cancelTarget.salonName }} — {{ cancelTarget.serviceName }}</p>
         <p data-testid="cancel-confirm-refund-copy" class="text-sm text-(--color-text-muted)">
           {{ cancelOutcomeText(cancelTarget) }}
@@ -279,7 +349,7 @@ const { titleId: cancelTitleId } = useDialog(cancelDialogRoot, { onClose: closeC
             انصراف
           </BaseButton>
           <BaseButton variant="danger" block data-testid="cancel-confirm-submit" :loading="cancelling" @click="confirmCancel">
-            لغو نوبت
+            {{ cancelActionLabel }}
           </BaseButton>
         </div>
       </div>

@@ -29,3 +29,26 @@ Every item here is a legitimate, scoped candidate for a future cleanup ticket. N
 
 - [23-known-limitations.md](./23-known-limitations.md) — the deliberate counterpart to this list
 - [25-future-improvements.md](./25-future-improvements.md) — where some of these gaps already have a reserved seam to grow into
+
+## Resolved by the booking-approval workflow
+
+- **The blocking-status list was duplicated at six call sites.** Now one exported
+  `SLOT_BLOCKING_STATUSES` constant. This had to be fixed before `pending_approval` could exist:
+  updating five of six sites by hand would have produced a silent, intermittent double-booking
+  bug rather than a test failure.
+- **Hold deadlines were recomputed from live config on every expiry tick.** Editing
+  `booking_hold_ttl_minutes` silently moved the deadline of every in-flight hold. New bookings
+  now snapshot `payment_expires_at` at creation; the old derivation survives only as the
+  fallback arm for rows predating the column.
+- **`BookingExpiryJob` never told the customer anything** when their hold died. It now sends a
+  post-commit, best-effort notification.
+
+## Introduced, and accepted
+
+- `approve()` does not re-check slot availability. It cannot double-book (the request has held
+  its slot since creation), but a salon whose capacity was reduced beneath two already-pending
+  requests can approve both.
+- The two booking-status label maps still diverge in wording across user-app and provider-panel
+  (pre-existing), and the new statuses were added to each in that app's own voice rather than
+  unifying them.
+- No provider-side reminder fires before an approval deadline lapses.

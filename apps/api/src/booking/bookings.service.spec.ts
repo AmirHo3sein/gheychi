@@ -18,6 +18,8 @@ import { WalletTransaction } from '../wallet/wallet-transaction.entity';
 import { WalletService } from '../wallet/wallet.service';
 import { PAYMENT_GATEWAY } from './payment-gateway';
 import { Booking } from './booking.entity';
+import { BookingEventsService } from './booking-events.service';
+import { BookingSettingsService } from './booking-settings.service';
 import { BOOKING_UNAVAILABLE, WORKER_UNAVAILABLE } from './booking-error-codes';
 import { Payment } from './payment.entity';
 import { BookingsService } from './bookings.service';
@@ -38,6 +40,23 @@ const usersServiceStub = () => ({
   updateProfile: jest.fn(),
   findById: jest.fn(),
 });
+
+// The two deps the optional manual-approval workflow added. Every module below wires the
+// same defaults: the platform-global timeouts with no per-salon override (which is what
+// the automatic-mode paths these tests exercise resolve to anyway), and a lifecycle log
+// whose record() never throws -- exactly the production contract, so a booking's outcome
+// is never decided by whether an event was written.
+const bookingSettingsStub = () => ({
+  resolveFor: jest.fn().mockResolvedValue({
+    approvalTimeoutMinutes: 30,
+    paymentTimeoutMinutes: 15,
+    globalApprovalTimeoutMinutes: 30,
+    globalPaymentTimeoutMinutes: 15,
+    approvalTimeoutIsOverridden: false,
+    paymentTimeoutIsOverridden: false,
+  }),
+});
+const bookingEventsStub = () => ({ record: jest.fn().mockResolvedValue(undefined), listForBooking: jest.fn() });
 
 describe('BookingsService.getEarnings', () => {
   let service: BookingsService;
@@ -75,6 +94,8 @@ describe('BookingsService.getEarnings', () => {
         },
         { provide: InvoicingService, useValue: { recordCommission: jest.fn().mockResolvedValue(undefined) } },
         { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService: jest.fn().mockResolvedValue(true) } },
+        { provide: BookingSettingsService, useValue: bookingSettingsStub() },
+        { provide: BookingEventsService, useValue: bookingEventsStub() },
       ],
     }).compile();
 
@@ -149,6 +170,8 @@ describe('BookingsService.getEarnings', () => {
         },
         { provide: InvoicingService, useValue: { recordCommission: jest.fn().mockResolvedValue(undefined) } },
         { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService: jest.fn().mockResolvedValue(true) } },
+        { provide: BookingSettingsService, useValue: bookingSettingsStub() },
+        { provide: BookingEventsService, useValue: bookingEventsStub() },
       ],
     }).compile();
     const serviceWithNewRate = moduleRef.get(BookingsService);
@@ -220,7 +243,19 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
         { provide: getRepositoryToken(Payment), useValue: {} },
         {
           provide: getRepositoryToken(Salon),
-          useValue: { findOneBy: jest.fn().mockResolvedValue({ id: 'salon-1', name: 'Test Salon', capacity: 1 }) },
+          useValue: {
+            // Explicitly automatic-mode with no per-salon timeout overrides: createHold
+            // reads all three off the salon row, and every test below is about the
+            // automatic (pay-immediately) workflow.
+            findOneBy: jest.fn().mockResolvedValue({
+              id: 'salon-1',
+              name: 'Test Salon',
+              capacity: 1,
+              bookingConfirmationMode: 'automatic',
+              approvalTimeoutMinutes: null,
+              paymentTimeoutMinutes: null,
+            }),
+          },
         },
         { provide: getRepositoryToken(SalonService), useValue: { findOneBy: jest.fn().mockResolvedValue({ ...SERVICE }) } },
         { provide: getRepositoryToken(Worker), useValue: { findOneBy: workersFindOneBy } },
@@ -271,6 +306,8 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
         },
         { provide: InvoicingService, useValue: { recordCommission: jest.fn().mockResolvedValue(undefined) } },
         { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService: jest.fn().mockResolvedValue(true) } },
+        { provide: BookingSettingsService, useValue: bookingSettingsStub() },
+        { provide: BookingEventsService, useValue: bookingEventsStub() },
       ],
     }).compile();
 
@@ -581,6 +618,8 @@ describe('BookingsService.createManual', () => {
         { provide: WalletService, useValue: {} },
         { provide: InvoicingService, useValue: {} },
         { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService } },
+        { provide: BookingSettingsService, useValue: bookingSettingsStub() },
+        { provide: BookingEventsService, useValue: bookingEventsStub() },
       ],
     }).compile();
 
@@ -798,6 +837,8 @@ describe('BookingsService.cancel', () => {
         },
         { provide: InvoicingService, useValue: { recordCommission: jest.fn().mockResolvedValue(undefined) } },
         { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService: jest.fn().mockResolvedValue(true) } },
+        { provide: BookingSettingsService, useValue: bookingSettingsStub() },
+        { provide: BookingEventsService, useValue: bookingEventsStub() },
       ],
     }).compile();
 
@@ -979,6 +1020,8 @@ describe('BookingsService.retryPayment authority persist failure', () => {
         },
         { provide: InvoicingService, useValue: { recordCommission: jest.fn().mockResolvedValue(undefined) } },
         { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService: jest.fn().mockResolvedValue(true) } },
+        { provide: BookingSettingsService, useValue: bookingSettingsStub() },
+        { provide: BookingEventsService, useValue: bookingEventsStub() },
       ],
     }).compile();
 
@@ -1067,6 +1110,8 @@ describe('BookingsService.assignWorker', () => {
         },
         { provide: InvoicingService, useValue: { recordCommission: jest.fn().mockResolvedValue(undefined) } },
         { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService } },
+        { provide: BookingSettingsService, useValue: bookingSettingsStub() },
+        { provide: BookingEventsService, useValue: bookingEventsStub() },
       ],
     }).compile();
 
@@ -1160,7 +1205,10 @@ describe('BookingsService.assignWorker', () => {
       where: {
         id: Not('booking-1'),
         workerId: 'worker-1',
-        status: In(['pending_payment', 'confirmed']),
+        // Spelled out rather than reusing SLOT_BLOCKING_STATUSES so this pins the actual
+        // three statuses that hold a slot -- a request still awaiting the salon's approval
+        // occupies the worker just as much as a paid-for one does.
+        status: In(['pending_approval', 'pending_payment', 'confirmed']),
         startsAt: LessThan(BOOKING.endsAt),
         endsAt: MoreThan(BOOKING.startsAt),
       },
@@ -1319,6 +1367,8 @@ describe('BookingsService.listMine / findMine -- workerName enrichment', () => {
         },
         { provide: InvoicingService, useValue: { recordCommission: jest.fn().mockResolvedValue(undefined) } },
         { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService: jest.fn().mockResolvedValue(true) } },
+        { provide: BookingSettingsService, useValue: bookingSettingsStub() },
+        { provide: BookingEventsService, useValue: bookingEventsStub() },
       ],
     }).compile();
 
@@ -1426,6 +1476,8 @@ describe('BookingsService.updateStatus -- first-completed-booking referral trigg
         },
         { provide: InvoicingService, useValue: { recordCommission } },
         { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService: jest.fn().mockResolvedValue(true) } },
+        { provide: BookingSettingsService, useValue: bookingSettingsStub() },
+        { provide: BookingEventsService, useValue: bookingEventsStub() },
       ],
     }).compile();
 

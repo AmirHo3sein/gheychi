@@ -5,7 +5,16 @@ import { formatToman } from '../../utils/format-toman'
 type ActivityType = 'booking' | 'wallet_transaction' | 'review' | 'referral_reward'
 
 interface BookingDetail {
-  status: 'pending_payment' | 'confirmed' | 'completed' | 'cancelled_by_user' | 'cancelled_by_salon' | 'expired' | 'no_show'
+  status:
+    | 'pending_approval'
+    | 'pending_payment'
+    | 'confirmed'
+    | 'completed'
+    | 'cancelled_by_user'
+    | 'cancelled_by_salon'
+    | 'rejected_by_salon'
+    | 'expired'
+    | 'no_show'
   source: 'online' | 'manual'
   salonName: string
   serviceName: string
@@ -50,10 +59,12 @@ const { apiFetch } = useApi()
 // Same per-file local const convention as bookings/index.vue's own STATUS_META, rather
 // than a shared module -- these labels only exist here.
 const BOOKING_STATUS_LABELS: Record<BookingDetail['status'], string> = {
+  pending_approval: 'در انتظار تایید سالن',
   pending_payment: 'در انتظار پرداخت',
   confirmed: 'تایید شده',
   completed: 'انجام شده',
   cancelled_by_user: 'لغو شده توسط شما',
+  rejected_by_salon: 'رد شده توسط سالن',
   cancelled_by_salon: 'لغو شده توسط سالن',
   expired: 'منقضی شده',
   no_show: 'عدم مراجعه',

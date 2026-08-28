@@ -66,6 +66,14 @@ describe('Payment reconciliation job (e2e)', () => {
       `UPDATE payments SET created_at = now() - interval '25 minutes' WHERE booking_id = $1`,
       [created.body.booking.id],
     );
+    // Age the booking's own payment window alongside the payment row. Reconciliation is
+    // deadline-aware now: a payment is only "stale" once its booking genuinely can't be
+    // paid for any more, so ageing created_at alone would leave a booking whose customer
+    // still has time -- and correctly not select it.
+    await ds.query(
+      `UPDATE bookings SET payment_expires_at = now() - interval '1 minute' WHERE id = $1`,
+      [created.body.booking.id],
+    );
 
     const reconciled = await job.run();
     expect(reconciled).toBe(1);
@@ -93,6 +101,14 @@ describe('Payment reconciliation job (e2e)', () => {
     // confirmed rather than cancelled.
     await ds.query(
       `UPDATE payments SET authority = 'MOCK-FAIL-' || authority, created_at = now() - interval '25 minutes' WHERE booking_id = $1`,
+      [created.body.booking.id],
+    );
+    // Age the booking's own payment window alongside the payment row. Reconciliation is
+    // deadline-aware now: a payment is only "stale" once its booking genuinely can't be
+    // paid for any more, so ageing created_at alone would leave a booking whose customer
+    // still has time -- and correctly not select it.
+    await ds.query(
+      `UPDATE bookings SET payment_expires_at = now() - interval '1 minute' WHERE id = $1`,
       [created.body.booking.id],
     );
     await ds.query(
@@ -139,6 +155,14 @@ describe('Payment reconciliation job (e2e)', () => {
       `UPDATE payments SET authority = 'MOCK-FAIL-' || authority, created_at = now() - interval '25 minutes' WHERE booking_id = $1`,
       [bookingId],
     );
+    // Age the booking's own payment window alongside the payment row. Reconciliation is
+    // deadline-aware now: a payment is only "stale" once its booking genuinely can't be
+    // paid for any more, so ageing created_at alone would leave a booking whose customer
+    // still has time -- and correctly not select it.
+    await ds.query(
+      `UPDATE bookings SET payment_expires_at = now() - interval '1 minute' WHERE id = $1`,
+      [bookingId],
+    );
 
     expect(await job.run()).toBe(1);
 
@@ -180,6 +204,14 @@ describe('Payment reconciliation job (e2e)', () => {
     await ds.query(`UPDATE bookings SET status = 'expired' WHERE id = $1`, [created.body.booking.id]);
     await ds.query(
       `UPDATE payments SET created_at = now() - interval '25 minutes' WHERE booking_id = $1`,
+      [created.body.booking.id],
+    );
+    // Age the booking's own payment window alongside the payment row. Reconciliation is
+    // deadline-aware now: a payment is only "stale" once its booking genuinely can't be
+    // paid for any more, so ageing created_at alone would leave a booking whose customer
+    // still has time -- and correctly not select it.
+    await ds.query(
+      `UPDATE bookings SET payment_expires_at = now() - interval '1 minute' WHERE id = $1`,
       [created.body.booking.id],
     );
 

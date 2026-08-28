@@ -216,7 +216,14 @@ export class SalonsService {
     const salon = await this.repo.findOneBy({ slug, status: 'approved' });
     if (!salon) throw new NotFoundException();
     const [withCategories] = await this.attachCategories([salon]);
-    return withCategories;
+    // The two admin-only timeout overrides are internal platform configuration and have no
+    // business on an unauthenticated endpoint -- a customer needs to know *that* this salon
+    // reviews requests (bookingConfirmationMode, which the booking page uses to set
+    // expectations), never how long the platform gives it to answer. Stripped rather than
+    // excluded at the query, because the same entity read backs the authenticated
+    // provider/admin paths that legitimately need them.
+    const { approvalTimeoutMinutes: _a, paymentTimeoutMinutes: _p, ...publicFields } = withCategories;
+    return publicFields as Salon & { categories: SalonCategoryTag[] };
   }
 
   findById(id: string): Promise<Salon | null> {

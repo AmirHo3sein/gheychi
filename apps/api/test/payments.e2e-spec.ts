@@ -226,7 +226,18 @@ describe('Payments — callback (e2e)', () => {
     // Age the hold past the TTL and let BookingExpiryJob release the slot -- it flips the
     // booking to 'expired' but deliberately leaves the payment 'initiated'.
     const ds = app.get(DataSource);
-    await ds.query(`UPDATE bookings SET created_at = now() - interval '20 minutes' WHERE id = $1`, [bookingId]);
+    // Ageing a hold now means shifting its own snapshotted deadline too, not just
+    // created_at: a booking created today carries payment_expires_at, and THAT is what
+    // the job reads (created_at is only the fallback for rows predating that column).
+    // Shifting both by the same interval is the honest simulation of "this hold is
+    // 20 minutes old".
+    await ds.query(
+      `UPDATE bookings
+          SET created_at = now() - interval '20 minutes',
+              payment_expires_at = payment_expires_at - interval '20 minutes'
+        WHERE id = $1`,
+      [bookingId],
+    );
     expect(await app.get(BookingExpiryJob).run()).toBeGreaterThanOrEqual(1);
 
     const res = await request(app.getHttpServer())

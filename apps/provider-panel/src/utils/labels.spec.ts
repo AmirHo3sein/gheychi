@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { bookingStatusLabel, invoiceStatusLabel, jalaliMonthLabel } from './labels'
 
 describe('bookingStatusLabel', () => {
+  // The two manual-approval statuses must never fall through to the raw-value fallback:
+  // an owner would otherwise read a bare English «pending_approval» on the card.
+  it('maps the manual-approval statuses to their own Farsi label and tone', () => {
+    expect(bookingStatusLabel('pending_approval')).toEqual({ label: 'در انتظار تایید شما', tone: 'warning' })
+    expect(bookingStatusLabel('rejected_by_salon')).toEqual({ label: 'رد شده توسط شما', tone: 'danger' })
+  })
+
   it('falls back to the raw value for an unknown status', () => {
     expect(bookingStatusLabel('weird')).toEqual({ label: 'weird', tone: 'neutral' })
   })

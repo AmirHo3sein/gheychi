@@ -16,6 +16,7 @@ import { WalletService } from '../wallet/wallet.service';
 import { Booking } from './booking.entity';
 import { releaseBookingHold } from './booking-hold-release.util';
 import { PAYMENT_GATEWAY, PaymentGateway, PaymentRefundResult } from './payment-gateway';
+import { BookingEventsService } from './booking-events.service';
 import { Payment } from './payment.entity';
 
 // 'refunding' is NOT a flavour of 'failed': the gateway captured the money and a refund is
@@ -65,6 +66,7 @@ export class PaymentsService {
     // comment -- every existing positional `new PaymentsService(...)` call site only
     // needs an arg added at the tail.
     private readonly metrics: MetricsService,
+    private readonly bookingEvents: BookingEventsService,
   ) {}
 
   async handleCallback(authority: string, status: string): Promise<{ status: CallbackOutcome; bookingId: string | null }> {
@@ -205,6 +207,23 @@ export class PaymentsService {
       });
 
     if (outcome === 'captured') {
+      // Recorded POST-COMMIT and deliberately WITHOUT the transaction's `em`: this is a
+      // history row, and a failed INSERT must never be able to poison the transaction that
+      // just captured real money. record() additionally never throws. The tradeoff is that
+      // a crash in this exact instant loses the event rather than the payment -- the right
+      // way round for a log. Without these two the timeline stopped at
+      // PAYMENT_WINDOW_STARTED and never recorded that the booking was confirmed at all.
+      await this.bookingEvents.record({
+        bookingId: payment.bookingId,
+        eventType: 'PAYMENT_SUCCEEDED',
+        actorType: 'customer',
+        metadata: { amount: payment.amount, gateway: payment.gateway },
+      });
+      await this.bookingEvents.record({
+        bookingId: payment.bookingId,
+        eventType: 'BOOKING_CONFIRMED',
+        actorType: 'system',
+      });
       await this.notifyConfirmed(payment.bookingId);
       // Fire-and-forget, never awaited, same rationale as every other analytics call
       // site (see BookingsService.createHold's own comment). Only on the genuine
@@ -445,6 +464,123 @@ export class PaymentsService {
     ]);
   }
 
+  /**
+   * Manual-approval mode, step 1: the customer has asked for a slot and the salon has to
+   * decide. Tells the customer their request is in (and that they have NOT paid yet --
+   * the single most important thing to be unambiguous about here), and pings the owner
+   * that something is waiting on them, since an unanswered request expires on its own.
+   */
+  async notifyApprovalRequested(bookingId: string): Promise<void> {
+    const booking = await this.bookings.findOneBy({ id: bookingId });
+    if (!booking) return;
+    const salon = await this.salonsService.findById(booking.salonId);
+    if (!salon) return;
+    const when = formatIranDateTimeFa(booking.startsAt);
+
+    const [customer, owner] = await Promise.all([
+      this.usersService.findById(booking.userId),
+      this.usersService.findById(salon.ownerId),
+    ]);
+
+    await Promise.all([
+      customer
+        ? this.notifyOne(
+            customer,
+            `درخواست نوبت شما در ${salon.name} برای ${when} ثبت شد و در انتظار تایید سالن است. هنوز مبلغی پرداخت نشده است.`,
+            { title: 'درخواست نوبت ثبت شد', body: `${salon.name} — ${when}` },
+            bookingId,
+          )
+        : Promise.resolve(),
+      owner
+        ? this.notifyOne(
+            owner,
+            `یک درخواست نوبت جدید در ${salon.name} برای ${when} دارید. لطفا آن را تایید یا رد کنید.`,
+            { title: 'درخواست نوبت جدید', body: `${salon.name} — ${when}` },
+            bookingId,
+          )
+        : Promise.resolve(),
+    ]);
+  }
+
+  /**
+   * Manual-approval mode, step 2a: the salon said yes and the customer's payment window
+   * is now open. Customer-only -- the owner just performed this action themselves.
+   */
+  async notifyApproved(bookingId: string): Promise<void> {
+    const booking = await this.bookings.findOneBy({ id: bookingId });
+    if (!booking) return;
+    const salon = await this.salonsService.findById(booking.salonId);
+    if (!salon) return;
+    const customer = await this.usersService.findById(booking.userId);
+    if (!customer) return;
+    const when = formatIranDateTimeFa(booking.startsAt);
+    await this.notifyOne(
+      customer,
+      `درخواست نوبت شما در ${salon.name} برای ${when} تایید شد. برای قطعی شدن نوبت، پیش‌پرداخت را انجام دهید.`,
+      { title: 'درخواست شما تایید شد', body: `${salon.name} — ${when}` },
+      bookingId,
+    );
+  }
+
+  /** Manual-approval mode, step 2b: the salon declined. Nothing was paid, so nothing is refunded. */
+  async notifyRejected(bookingId: string, reason: string): Promise<void> {
+    const booking = await this.bookings.findOneBy({ id: bookingId });
+    if (!booking) return;
+    const salon = await this.salonsService.findById(booking.salonId);
+    if (!salon) return;
+    const customer = await this.usersService.findById(booking.userId);
+    if (!customer) return;
+    const when = formatIranDateTimeFa(booking.startsAt);
+    await this.notifyOne(
+      customer,
+      `درخواست نوبت شما در ${salon.name} برای ${when} تایید نشد. دلیل: ${reason}`,
+      { title: 'درخواست نوبت تایید نشد', body: `${salon.name} — ${when}` },
+      bookingId,
+    );
+  }
+
+  /**
+   * The customer's payment window ran out. Public because BookingExpiryJob is its only
+   * caller. Applies to both workflows -- an abandoned automatic checkout and an approved
+   * manual request the customer never paid for reach the exact same place.
+   */
+  async notifyPaymentExpired(bookingId: string): Promise<void> {
+    const booking = await this.bookings.findOneBy({ id: bookingId });
+    if (!booking) return;
+    const salon = await this.salonsService.findById(booking.salonId);
+    if (!salon) return;
+    const customer = await this.usersService.findById(booking.userId);
+    if (!customer) return;
+    const when = formatIranDateTimeFa(booking.startsAt);
+    await this.notifyOne(
+      customer,
+      `مهلت پرداخت نوبت شما در ${salon.name} برای ${when} به پایان رسید و رزرو منقضی شد.`,
+      { title: 'مهلت پرداخت به پایان رسید', body: `${salon.name} — ${when}` },
+      bookingId,
+    );
+  }
+
+  /**
+   * A request the salon never answered in time. Public because the approval-expiry cron
+   * is its only caller. Tells the customer plainly that nothing was charged -- the whole
+   * point of taking payment after approval rather than before.
+   */
+  async notifyApprovalExpired(bookingId: string): Promise<void> {
+    const booking = await this.bookings.findOneBy({ id: bookingId });
+    if (!booking) return;
+    const salon = await this.salonsService.findById(booking.salonId);
+    if (!salon) return;
+    const customer = await this.usersService.findById(booking.userId);
+    if (!customer) return;
+    const when = formatIranDateTimeFa(booking.startsAt);
+    await this.notifyOne(
+      customer,
+      `درخواست نوبت شما در ${salon.name} برای ${when} به دلیل عدم پاسخ سالن منقضی شد. مبلغی از شما دریافت نشده است.`,
+      { title: 'درخواست نوبت منقضی شد', body: `${salon.name} — ${when}` },
+      bookingId,
+    );
+  }
+
   private async notifyRefunded(bookingId: string): Promise<void> {
     const booking = await this.bookings.findOneBy({ id: bookingId });
     if (!booking) return;
@@ -470,6 +606,16 @@ export class PaymentsService {
       // The deposit was never captured, so the coupon code and wallet balance this hold
       // consumed go back to the customer instead of being burned for life.
       await releaseBookingHold(em, this.walletService, bookingId);
+    });
+    // Post-commit, same rationale as the capture path above. Without these two, a booking
+    // that reads `cancelled_by_user` gave a support agent no way to tell "the customer
+    // pressed cancel" from "the bank declined" -- two very different conversations.
+    await this.bookingEvents.record({ bookingId, eventType: 'PAYMENT_FAILED', actorType: 'system' });
+    await this.bookingEvents.record({
+      bookingId,
+      eventType: 'SLOT_RELEASED',
+      actorType: 'system',
+      metadata: { cause: 'payment_failed' },
     });
   }
 

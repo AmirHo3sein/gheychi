@@ -10,7 +10,8 @@ A consolidated reference of every enforced business rule in the platform, groupe
 | `deposit_min_toman` | 200,000 | same |
 | `cancellation_window_hours` | 24 | `BookingsService.cancel()` — [09-booking-engine.md](./09-booking-engine.md) |
 | `commission_percent` | 10 | `InvoicingService.recordCommission()` — [14-commission.md](./14-commission.md) |
-| `booking_hold_ttl_minutes` | 15 | `BookingExpiryJob` — [18-background-jobs.md](./18-background-jobs.md) |
+| `booking_hold_ttl_minutes` | 15 | `BookingExpiryJob`, and the global default payment window for manual approval — [18](./18-background-jobs.md), [28](./28-booking-approval-workflow.md) |
+| `booking_approval_timeout_minutes` | 30 | `BookingApprovalExpiryJob` — [28-booking-approval-workflow.md](./28-booking-approval-workflow.md) |
 | `reminder_lead_hours` | 3 | `BookingReminderJob` |
 | `review_edit_window_hours` | 72 | `ReviewsService.assertWithinEditWindow()` |
 
@@ -22,7 +23,13 @@ A consolidated reference of every enforced business rule in the platform, groupe
 - Salon capacity and worker availability are checked **independently** — a worker is never "just one more unit of capacity."
 - A worker with **zero** `worker_services` rows is eligible for every service; a worker with rows is restricted to exactly those (opt-out-by-default design, chosen so introducing the feature changed nothing for any pre-existing worker).
 - `startsAt` must be strictly in the future.
-- A zero-deposit booking (100%-discount or fully wallet-covered) is confirmed immediately with no `Payment` row.
+- A zero-deposit booking (100%-discount or fully wallet-covered) is confirmed immediately with no `Payment` row — **unless** the salon runs manual approval, in which case it still becomes a request first.
+- A salon may require **manual approval** (`salons.booking_confirmation_mode`, owner-selectable). In that mode a booking is created as `pending_approval` with **no `Payment` row and no gateway session**, so declining or expiring it can never owe a refund. The owner controls the mode and nothing else: both timeout values are admin-only, globally and per salon. See [28-booking-approval-workflow.md](./28-booking-approval-workflow.md).
+- A `pending_approval` request blocks its slot exactly as a paid booking does (`SLOT_BLOCKING_STATUSES`) — otherwise a salon could approve a request it has no room for.
+- A request whose appointment time has already passed can no longer be approved — its approval deadline is independent of the booking's own `startsAt`, so a request can outlive the slot it asked for.
+- A salon owner cannot decline a `pending_approval` request through the customer cancel route; they must use `reject()`, which requires a reason.
+- `retry-payment` refuses once the booking's payment deadline has passed, even before the expiry cron has caught up.
+- Booking deadlines (`approval_expires_at`, `payment_expires_at`) are **snapshotted onto the row** when the clock starts, never recomputed from live config, so a later admin config change cannot move a deadline someone is already counting on.
 - Cancellation refunds unconditionally if the *salon* cancels; refunds for a *customer* cancellation only if `(startsAt - now) >= cancellation_window_hours`.
 - A booking can only be marked `completed`/`no_show` from `confirmed`, and only by the salon owner.
 - Every state transition uses a conditional CAS `UPDATE ... WHERE status = <expected>` — a lost race always produces a 409, never a silent double-apply. This idiom recurs across the codebase (salon resubmit, coupon/content moderation, blog publish/unpublish, report resolve) and should be treated as the house style for any new state-transition code. A booking-creation 409 now also carries a stable `BOOKING_UNAVAILABLE`/`WORKER_UNAVAILABLE` code (`booking-error-codes.ts`) alongside the status — see [15-api-reference.md](./15-api-reference.md).

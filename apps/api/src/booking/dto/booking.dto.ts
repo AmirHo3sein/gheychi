@@ -1,3 +1,4 @@
+import { Transform } from 'class-transformer';
 import { IsBoolean, IsIn, IsISO8601, IsOptional, IsString, IsUUID, Length, Matches } from 'class-validator';
 import { IRAN_MOBILE } from '../../common/validators';
 
@@ -47,6 +48,19 @@ export class CreateBookingDto {
 export class UpdateBookingStatusDto {
   @IsIn(['completed', 'no_show'])
   status: 'completed' | 'no_show';
+}
+
+// Required, not optional -- mirrors the salon reject/suspend precedent and the
+// category-request reject flow: a customer whose request was turned down deserves a real
+// reason, not a bare "no". It is shown to them verbatim in the rejection SMS.
+export class RejectBookingDto {
+  // Trimmed BEFORE validation, so a whitespace-only reason fails @Length(1, ...) rather
+  // than reaching the customer's SMS as a blank "دلیل: ". Same trim-then-validate fix the
+  // admin wallet-adjustment reason already carries.
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @Length(1, 300)
+  reason: string;
 }
 
 // The owner recording a customer who called or walked in -- not in the system at all, so

@@ -27,7 +27,9 @@ import { User } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
 import { WalletTransaction } from '../wallet/wallet-transaction.entity';
 import { WalletService } from '../wallet/wallet.service';
-import { Booking, BookingStatus } from './booking.entity';
+import { Booking, BookingStatus, SLOT_BLOCKING_STATUSES } from './booking.entity';
+import { BookingEventsService } from './booking-events.service';
+import { BookingSettingsService } from './booking-settings.service';
 import { BOOKING_UNAVAILABLE, WORKER_UNAVAILABLE } from './booking-error-codes';
 import { releaseBookingHold } from './booking-hold-release.util';
 import { CreateBookingDto, CreateManualBookingDto } from './dto/booking.dto';
@@ -103,6 +105,8 @@ export class BookingsService {
     // comment -- every existing positional `new BookingsService(...)` call site
     // only needs an arg added at the tail, not threaded through the middle.
     private readonly metrics: MetricsService,
+    private readonly bookingSettings: BookingSettingsService,
+    private readonly bookingEvents: BookingEventsService,
   ) {}
 
   // Wraps createHoldImpl/createManualImpl with the shared attempt/success/failure
@@ -199,6 +203,14 @@ export class BookingsService {
     }
     const endsAt = new Date(startsAt.getTime() + service.durationMin * 60_000);
 
+    // Which workflow this booking runs, decided ONCE here from the salon's current
+    // setting and then frozen onto the row (confirmationMode below). A salon flipping
+    // its mode a second later must not change what this customer was promised.
+    const manualApproval = salon.bookingConfirmationMode === 'manual_approval';
+    // Resolved before the lock: this reads platform_config (Redis-cached) and must not
+    // add network round-trips to the locked critical section.
+    const settings = await this.bookingSettings.resolveFor(salon);
+
     // Locked per-SALON, not per-exact-slot-instant. A salon offering services with
     // different durations can produce two bookings with different startsAt values
     // whose intervals still overlap (e.g. a 90-min booking at 09:00 and a 30-min
@@ -224,7 +236,7 @@ export class BookingsService {
         const overlapping = await em.count(Booking, {
           where: {
             salonId: dto.salonId,
-            status: In(['pending_payment', 'confirmed']),
+            status: In(SLOT_BLOCKING_STATUSES),
             startsAt: LessThan(endsAt),
             endsAt: MoreThan(startsAt),
           },
@@ -251,7 +263,7 @@ export class BookingsService {
           const workerOverlapping = await em.count(Booking, {
             where: {
               workerId: dto.workerId,
-              status: In(['pending_payment', 'confirmed']),
+              status: In(SLOT_BLOCKING_STATUSES),
               startsAt: LessThan(endsAt),
               endsAt: MoreThan(startsAt),
             },
@@ -335,6 +347,30 @@ export class BookingsService {
         // wallet credit alone lands on exactly the same path.
         const requiresPayment = deposit > 0;
 
+        // Manual-approval mode inserts a salon decision BEFORE any money moves, so the
+        // booking lands in pending_approval regardless of whether a deposit is owed --
+        // including the zero-deposit case, which still needs the salon to say yes before
+        // it becomes a real appointment. The gateway session and even the Payment row are
+        // both deferred to approve() (spec Rule D: no payment before approval).
+        const status: BookingStatus = manualApproval
+          ? 'pending_approval'
+          : requiresPayment
+            ? 'pending_payment'
+            : 'confirmed';
+
+        // Deadlines are SNAPSHOTTED here, never recomputed from live config later. In
+        // manual mode only the approval clock starts now; the payment clock doesn't exist
+        // until the salon approves (approve() stamps it then, from the config in force at
+        // that moment).
+        const stampedAt = new Date();
+        const approvalExpiresAt = manualApproval
+          ? BookingSettingsService.deadlineFrom(stampedAt, settings.approvalTimeoutMinutes)
+          : null;
+        const paymentExpiresAt =
+          !manualApproval && requiresPayment
+            ? BookingSettingsService.deadlineFrom(stampedAt, settings.paymentTimeoutMinutes)
+            : null;
+
         const savedBooking = await em.save(
           Booking,
           em.create(Booking, {
@@ -346,11 +382,14 @@ export class BookingsService {
             priceSnapshot: finalPrice,
             depositAmount: deposit,
             walletAmountUsed,
+            confirmationMode: manualApproval ? 'manual_approval' : 'automatic',
+            approvalExpiresAt,
+            paymentExpiresAt,
             // Customer-chosen at booking time when provided; otherwise still assignable
             // later by the provider via assignWorker (unchanged) -- this is a second,
             // earlier write path onto the same nullable column, not a replacement for it.
             workerId: dto.workerId ?? null,
-            status: requiresPayment ? 'pending_payment' : 'confirmed',
+            status,
             // Only the coupon that actually produced the price is recorded against the
             // booking -- a losing coupon was never applied to it in any sense.
             couponId: couponApplied ? coupon!.id : null,
@@ -370,7 +409,10 @@ export class BookingsService {
         if (walletTransactionId) {
           await em.update(WalletTransaction, { id: walletTransactionId }, { referenceId: savedBooking.id });
         }
-        if (requiresPayment) {
+        // Not created in manual-approval mode: a Payment row is this system's record that
+        // money is expected, and nothing is owed until the salon actually accepts. approve()
+        // inserts it at the moment the payment window opens.
+        if (requiresPayment && !manualApproval) {
           await em.save(
             Payment,
             em.create(Payment, {
@@ -379,6 +421,47 @@ export class BookingsService {
               gateway: 'zarinpal',
               status: 'initiated',
             }),
+          );
+        }
+
+        // Lifecycle log, inside the same transaction so a rolled-back booking never
+        // leaves behind events describing a booking that doesn't exist.
+        await this.bookingEvents.record(
+          {
+            bookingId: savedBooking.id,
+            eventType: 'BOOKING_CREATED',
+            actorType: 'customer',
+            actorId: userId,
+            metadata: { confirmationMode: savedBooking.confirmationMode, depositAmount: deposit },
+          },
+          em,
+        );
+        if (manualApproval) {
+          await this.bookingEvents.record(
+            {
+              bookingId: savedBooking.id,
+              eventType: 'APPROVAL_REQUESTED',
+              actorType: 'customer',
+              actorId: userId,
+              metadata: {
+                approvalTimeoutMinutes: settings.approvalTimeoutMinutes,
+                approvalExpiresAt: approvalExpiresAt?.toISOString() ?? null,
+              },
+            },
+            em,
+          );
+        } else if (requiresPayment) {
+          await this.bookingEvents.record(
+            {
+              bookingId: savedBooking.id,
+              eventType: 'PAYMENT_WINDOW_STARTED',
+              actorType: 'system',
+              metadata: {
+                paymentTimeoutMinutes: settings.paymentTimeoutMinutes,
+                paymentExpiresAt: paymentExpiresAt?.toISOString() ?? null,
+              },
+            },
+            em,
           );
         }
 
@@ -421,6 +504,24 @@ export class BookingsService {
       couponApplied = result.couponApplied;
     } finally {
       await this.releaseSalonLock(dto.salonId, lockToken);
+    }
+
+    // Manual-approval mode: nothing is payable yet and nothing is confirmed. Checked
+    // BEFORE the zero-deposit branch below on purpose -- a fully-discounted request in a
+    // manual salon is still just a request, and falling through to that branch would
+    // confirm it outright and text the customer that their appointment is booked.
+    if (booking.status === 'pending_approval') {
+      try {
+        await this.paymentsService.notifyApprovalRequested(booking.id);
+      } catch (err) {
+        this.logger.error(
+          `Failed to notify the approval request for booking ${booking.id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      const frontendBase = this.nestConfig.get('FRONTEND_BASE_URL', 'http://localhost:3003');
+      // The honest destination: there is no gateway session to send them to, and the
+      // booking page is where the pending-approval state and its countdown live.
+      return { booking, paymentUrl: `${frontendBase}/bookings/${booking.id}`, couponApplied, paymentRequired: false };
     }
 
     // A fully-discounted booking has nothing to charge for: it was committed as 'confirmed'
@@ -522,7 +623,7 @@ export class BookingsService {
         const overlapping = await em.count(Booking, {
           where: {
             salonId,
-            status: In(['pending_payment', 'confirmed']),
+            status: In(SLOT_BLOCKING_STATUSES),
             startsAt: LessThan(endsAt),
             endsAt: MoreThan(startsAt),
           },
@@ -542,7 +643,7 @@ export class BookingsService {
           const workerOverlapping = await em.count(Booking, {
             where: {
               workerId: dto.workerId,
-              status: In(['pending_payment', 'confirmed']),
+              status: In(SLOT_BLOCKING_STATUSES),
               startsAt: LessThan(endsAt),
               endsAt: MoreThan(startsAt),
             },
@@ -566,6 +667,12 @@ export class BookingsService {
             priceSnapshot: service.price,
             depositAmount: 0,
             workerId: dto.workerId ?? null,
+            // Straight to 'confirmed' even when the salon runs manual_approval, and
+            // deliberately so: the person entering this booking IS the approver. Routing an
+            // owner's own walk-in entry through pending_approval would ask them to approve
+            // themselves, and would let their own record expire out from under them if they
+            // didn't. confirmationMode is left to the column DEFAULT ('automatic'), which is
+            // the honest record: no approval step ever occurred for this row.
             status: 'confirmed',
             source: 'manual',
             notes: dto.notes ?? null,
@@ -645,6 +752,16 @@ export class BookingsService {
       throw err;
     }
 
+    // "The customer was handed a live payment link" -- the one moment that distinguishes
+    // "never tried to pay" from "tried and it failed", which is the first thing support
+    // needs to know about an unpaid booking. Post-persist and best-effort by design.
+    await this.bookingEvents.record({
+      bookingId: booking.id,
+      eventType: 'PAYMENT_INITIATED',
+      actorType: 'customer',
+      actorId: booking.userId,
+      metadata: { amount: depositAmount },
+    });
     return paymentUrl;
   }
 
@@ -654,12 +771,179 @@ export class BookingsService {
     if (booking.status !== 'pending_payment') {
       throw new ConflictException('Booking is not awaiting payment');
     }
+    // The status alone is no longer a sufficient test: a booking sits in pending_payment
+    // until the once-a-minute expiry cron gets to it, so there is a window in which the
+    // deadline has passed but the status hasn't caught up. Minting a fresh gateway session
+    // in that window would hand the customer a live payment link for a booking that is
+    // about to expire underneath them -- they pay, the cron expires it moments later, and
+    // the capture lands on a dead booking and has to be refunded.
+    if (booking.paymentExpiresAt && booking.paymentExpiresAt <= new Date()) {
+      throw new ConflictException('مهلت پرداخت این نوبت به پایان رسیده است');
+    }
 
     const salon = await this.salons.findOneBy({ id: booking.salonId });
     if (!salon) throw new NotFoundException('Salon not found');
 
     const paymentUrl = await this.createPaymentSession(booking, salon.name, booking.depositAmount);
     return { paymentUrl };
+  }
+
+  /**
+   * Salon accepts a pending request. `pending_approval -> pending_payment` (or straight to
+   * `confirmed` when nothing is owed), opening the customer's payment window and stamping
+   * its deadline for the first time.
+   *
+   * Concurrency: a single conditional CAS on `status = 'pending_approval'` is the whole
+   * race guard, exactly as every other transition in this service does it. A second
+   * approve, a reject, an approval-expiry tick, and a customer cancellation all contend on
+   * that one predicate, so precisely one can win and the losers get a 409 rather than
+   * double-opening a payment window or resurrecting an expired request.
+   */
+  async approve(salonId: string, bookingId: string, actorId: string): Promise<EnrichedBooking> {
+    const booking = await this.bookings.findOneBy({ id: bookingId, salonId });
+    if (!booking) throw new NotFoundException('Booking not found');
+    if (booking.status !== 'pending_approval') {
+      throw new ConflictException('این درخواست دیگر در انتظار تایید نیست');
+    }
+
+    const salon = await this.salons.findOneBy({ id: salonId });
+    if (!salon) throw new NotFoundException('Salon not found');
+    // A salon that lost its approved standing (admin suspension, or an owner-suspension
+    // cascade) must not be able to take on new committed work. The request simply stays
+    // pending and its own approval deadline will retire it.
+    if (salon.status !== 'approved') {
+      throw new ConflictException('تا زمانی که وضعیت سالن تایید‌شده نباشد، امکان تایید نوبت وجود ندارد');
+    }
+    // A request can outlive the appointment it asked for: nothing stops a customer asking
+    // at 09:50 for 10:00 with a 30-minute approval window, and the approval-expiry cron
+    // only retires it on ITS deadline, not the booking's start. Approving here would open
+    // a payment window for a slot in the past -- charging a customer for an appointment
+    // they could not attend and putting a bogus row in the salon's own agenda. The owner's
+    // honest options are to decline it or to let it lapse.
+    if (booking.startsAt <= new Date()) {
+      throw new ConflictException('زمان این نوبت گذشته است و دیگر قابل تایید نیست');
+    }
+
+    const settings = await this.bookingSettings.resolveFor(salon);
+    const requiresPayment = booking.depositAmount > 0;
+    const nextStatus: BookingStatus = requiresPayment ? 'pending_payment' : 'confirmed';
+    // Stamped from the config in force at APPROVAL time, then frozen -- the customer's
+    // clock starts now, not when they first asked.
+    const paymentExpiresAt = requiresPayment
+      ? BookingSettingsService.deadlineFrom(new Date(), settings.paymentTimeoutMinutes)
+      : null;
+
+    await this.dataSource.transaction(async (em) => {
+      const result = await em.update(
+        Booking,
+        { id: bookingId, status: 'pending_approval' },
+        { status: nextStatus, paymentExpiresAt },
+      );
+      if (!result.affected) {
+        throw new ConflictException('این درخواست دیگر در انتظار تایید نیست');
+      }
+
+      // The Payment row deliberately did not exist until now (see createHold): its
+      // existence is this system's record that money is expected, and nothing was owed
+      // while the salon hadn't accepted.
+      if (requiresPayment) {
+        await em.save(
+          Payment,
+          em.create(Payment, {
+            bookingId,
+            amount: booking.depositAmount,
+            gateway: 'zarinpal',
+            status: 'initiated',
+          }),
+        );
+      }
+
+      await this.bookingEvents.record(
+        { bookingId, eventType: 'SALON_APPROVED', actorType: 'salon_owner', actorId },
+        em,
+      );
+      await this.bookingEvents.record(
+        {
+          bookingId,
+          eventType: requiresPayment ? 'PAYMENT_WINDOW_STARTED' : 'BOOKING_CONFIRMED',
+          actorType: 'system',
+          metadata: requiresPayment
+            ? {
+                paymentTimeoutMinutes: settings.paymentTimeoutMinutes,
+                paymentExpiresAt: paymentExpiresAt?.toISOString() ?? null,
+              }
+            : { reason: 'zero_deposit' },
+        },
+        em,
+      );
+    });
+
+    // Best-effort, post-commit: the decision is already durable, and a failed SMS must
+    // never surface as a failed approval (the owner would retry and get a 409).
+    try {
+      if (requiresPayment) {
+        await this.paymentsService.notifyApproved(bookingId);
+      } else {
+        // Nothing to pay -- this is already a real appointment, so it gets the same
+        // confirmation notification an automatic zero-deposit booking gets.
+        await this.paymentsService.notifyConfirmed(bookingId);
+      }
+    } catch (err) {
+      this.logger.error(
+        `Failed to notify the approval of booking ${bookingId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    const updated = await this.bookings.findOneBy({ id: bookingId });
+    const [withNames] = await this.attachNames([updated!]);
+    return withNames;
+  }
+
+  /**
+   * Salon declines a pending request. No payment was ever taken, so there is nothing to
+   * refund -- but the customer's coupon code and any wallet balance they staked on the
+   * request DO have to come back, which is exactly what releaseBookingHold already does
+   * for every other "died before capture" path (expiry, cancel-while-unpaid, failed
+   * callback). Reusing it here is why rejection needs no reversal logic of its own.
+   */
+  async reject(salonId: string, bookingId: string, actorId: string, reason: string): Promise<EnrichedBooking> {
+    const booking = await this.bookings.findOneBy({ id: bookingId, salonId });
+    if (!booking) throw new NotFoundException('Booking not found');
+    if (booking.status !== 'pending_approval') {
+      throw new ConflictException('این درخواست دیگر در انتظار تایید نیست');
+    }
+
+    await this.dataSource.transaction(async (em) => {
+      const result = await em.update(
+        Booking,
+        { id: bookingId, status: 'pending_approval' },
+        { status: 'rejected_by_salon' },
+      );
+      if (!result.affected) {
+        throw new ConflictException('این درخواست دیگر در انتظار تایید نیست');
+      }
+      await releaseBookingHold(em, this.walletService, bookingId);
+      await this.bookingEvents.record(
+        { bookingId, eventType: 'SALON_REJECTED', actorType: 'salon_owner', actorId, metadata: { reason } },
+        em,
+      );
+      await this.bookingEvents.record(
+        { bookingId, eventType: 'SLOT_RELEASED', actorType: 'system', metadata: { cause: 'salon_rejected' } },
+        em,
+      );
+    });
+
+    try {
+      await this.paymentsService.notifyRejected(bookingId, reason);
+    } catch (err) {
+      this.logger.error(
+        `Failed to notify the rejection of booking ${bookingId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    const updated = await this.bookings.findOneBy({ id: bookingId });
+    const [withNames] = await this.attachNames([updated!]);
+    return withNames;
   }
 
   async findMine(
@@ -696,7 +980,12 @@ export class BookingsService {
   async cancel(bookingId: string, callerId: string): Promise<Booking> {
     const booking = await this.bookings.findOneBy({ id: bookingId });
     if (!booking) throw new NotFoundException('Booking not found');
-    const cancellableStatuses: BookingStatus[] = ['pending_payment', 'confirmed'];
+    // pending_approval is cancellable and needs NO new branch below: it has no Payment
+    // row at all, so it takes the same "nothing was ever captured" path a pending_payment
+    // booking takes -- the payment UPDATE simply matches zero rows (exactly how a manual
+    // or zero-deposit booking already behaves everywhere that reads a Payment), and
+    // releaseBookingHold still returns the coupon code and wallet balance.
+    const cancellableStatuses: BookingStatus[] = ['pending_approval', 'pending_payment', 'confirmed'];
     if (!cancellableStatuses.includes(booking.status)) {
       throw new BadRequestException('Booking cannot be cancelled in its current state');
     }
@@ -707,6 +996,15 @@ export class BookingsService {
     const isCustomer = booking.userId === callerId;
     const isOwner = salon.ownerId === callerId;
     if (!isCustomer && !isOwner) throw new ForbiddenException('You cannot cancel this booking');
+
+    // An owner declining a request must go through reject(), not this route. Both would
+    // end the request, but cancel() would record it as `cancelled_by_salon` (which means
+    // "a real appointment was called off, refund the customer"), send the cancellation
+    // SMS instead of the rejection one, and -- most importantly -- skip the mandatory
+    // reason the customer is owed. The customer keeps their own withdrawal path here.
+    if (booking.status === 'pending_approval' && isOwner && !isCustomer) {
+      throw new BadRequestException('برای رد این درخواست از گزینه «رد درخواست» استفاده کنید تا دلیل آن ثبت شود');
+    }
 
     let newBookingStatus: 'cancelled_by_user' | 'cancelled_by_salon';
     let refund: boolean;
@@ -767,6 +1065,23 @@ export class BookingsService {
         // consumed go back to the customer -- otherwise cancelling before paying would
         // burn them for life.
         await releaseBookingHold(em, this.walletService, booking.id);
+      }
+
+      await this.bookingEvents.record(
+        {
+          bookingId: booking.id,
+          eventType: 'BOOKING_CANCELLED',
+          actorType: isOwner ? 'salon_owner' : 'customer',
+          actorId: callerId,
+          metadata: { fromStatus: booking.status, refundOwed: refund },
+        },
+        em,
+      );
+      if (booking.status !== 'confirmed') {
+        await this.bookingEvents.record(
+          { bookingId: booking.id, eventType: 'SLOT_RELEASED', actorType: 'system', metadata: { cause: 'cancelled' } },
+          em,
+        );
       }
     });
 
@@ -902,7 +1217,7 @@ export class BookingsService {
           where: {
             id: Not(bookingId),
             workerId,
-            status: In(['pending_payment', 'confirmed']),
+            status: In(SLOT_BLOCKING_STATUSES),
             startsAt: LessThan(booking.endsAt),
             endsAt: MoreThan(booking.startsAt),
           },
@@ -998,6 +1313,16 @@ export class BookingsService {
       // InvoicingService.recordCommission's own doc comment on why (both forfeit/
       // deduct the deposit the same way, per this method's own comment above).
       await this.invoicing.recordCommission(em, booking);
+      // Recorded only after the CAS is known to have won, and inside the transaction so a
+      // rolled-back completion never leaves an event claiming it happened.
+      await this.bookingEvents.record(
+        {
+          bookingId,
+          eventType: status === 'completed' ? 'BOOKING_COMPLETED' : 'BOOKING_NO_SHOW',
+          actorType: 'salon_owner',
+        },
+        em,
+      );
     });
 
     // The transaction above has now genuinely committed -- record the outcome.

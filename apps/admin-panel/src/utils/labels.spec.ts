@@ -5,6 +5,13 @@ import {
   analyticsEventLabel,
   auditActionLabel,
   blogPostStatusLabel,
+  bookingConfirmationModeLabel,
+  bookingEventActorTypeLabel,
+  bookingEventCauseLabel,
+  bookingEventMetadataKeyLabel,
+  bookingEventTypeLabel,
+  bookingStatusLabel,
+  configKeyMeta,
   invoicePaymentMethodLabel,
   invoiceStatusLabel,
   jalaliMonthLabel,
@@ -31,9 +38,11 @@ describe('auditActionLabel', () => {
     // post.cover.remove, Phase 1 audit-logging fix) so the two operations are distinguishable
     // in the audit log by action alone, net +1 to this count. 2 more (category-request.approve,
     // category-request.reject) were added with the category-request feature.
+    // 1 more (booking-settings.update) came with the optional manual booking-approval
+    // workflow -- the admin-only per-salon approval/payment timeout overrides.
     // This length guard is deliberate: adding a backend @AuditAction without a Farsi label
     // must fail here.
-    expect(AUDIT_ACTION_KEYS).toHaveLength(30)
+    expect(AUDIT_ACTION_KEYS).toHaveLength(31)
     for (const action of AUDIT_ACTION_KEYS) {
       const entry = auditActionLabel(action)
       // A mapped entry never falls back to the raw dotted action name.
@@ -82,6 +91,107 @@ describe('workerRatingStatusLabel', () => {
     // worker_ratings.status is cascaded to 'rejected' by ReviewsService.remove(), which is
     // indistinguishable from an admin rejection without the parent's status.
     expect(workerRatingStatusLabel('rejected', 'withdrawn')).toEqual({ label: 'حذف شده توسط کاربر', tone: 'neutral' })
+  })
+})
+
+describe('bookingStatusLabel', () => {
+  it('maps every member of the backend BookingStatus union to a Farsi label', () => {
+    // All nine, including the two the manual-approval workflow added
+    // (pending_approval, rejected_by_salon).
+    const statuses = [
+      'pending_approval', 'pending_payment', 'confirmed', 'completed',
+      'cancelled_by_user', 'cancelled_by_salon', 'rejected_by_salon', 'expired', 'no_show',
+    ]
+    for (const status of statuses) {
+      const entry = bookingStatusLabel(status)
+      expect(entry.label).not.toBe(status)
+      expect(entry.label.length).toBeGreaterThan(0)
+    }
+    expect(bookingStatusLabel('pending_approval')).toEqual({ label: 'در انتظار تایید آرایشگاه', tone: 'warning' })
+    expect(bookingStatusLabel('rejected_by_salon')).toEqual({ label: 'رد شده توسط آرایشگاه', tone: 'danger' })
+    // The two "someone cancelled" statuses must stay distinguishable, not collapse into
+    // one label -- who cancelled is the whole point of the split on the backend.
+    expect(bookingStatusLabel('cancelled_by_user').label).not.toBe(bookingStatusLabel('cancelled_by_salon').label)
+  })
+
+  it('never claims money moved for a booking that has no payment behind it yet', () => {
+    // A pending_approval booking is a REQUEST -- nothing has been paid.
+    expect(bookingStatusLabel('pending_approval').label).not.toContain('پرداخت')
+  })
+
+  it('falls back to the raw value for an unknown status', () => {
+    expect(bookingStatusLabel('weird')).toEqual({ label: 'weird', tone: 'neutral' })
+  })
+})
+
+describe('bookingConfirmationModeLabel', () => {
+  it('maps the two owner-selected confirmation modes', () => {
+    expect(bookingConfirmationModeLabel('automatic')).toEqual({ label: 'تایید خودکار', tone: 'success' })
+    expect(bookingConfirmationModeLabel('manual_approval')).toEqual({ label: 'تایید دستی آرایشگاه', tone: 'info' })
+  })
+
+  it('falls back to the raw value for an unknown mode', () => {
+    expect(bookingConfirmationModeLabel('weird')).toEqual({ label: 'weird', tone: 'neutral' })
+  })
+})
+
+describe('bookingEventTypeLabel', () => {
+  it('maps every booking_events.event_type the backend can write', () => {
+    const eventTypes = [
+      'BOOKING_CREATED', 'APPROVAL_REQUESTED', 'SALON_APPROVED', 'SALON_REJECTED',
+      'APPROVAL_EXPIRED', 'PAYMENT_WINDOW_STARTED', 'PAYMENT_INITIATED', 'PAYMENT_SUCCEEDED',
+      'PAYMENT_FAILED', 'PAYMENT_EXPIRED', 'BOOKING_CONFIRMED', 'SLOT_RELEASED',
+      'BOOKING_CANCELLED', 'BOOKING_COMPLETED', 'BOOKING_NO_SHOW',
+    ]
+    for (const eventType of eventTypes) {
+      const entry = bookingEventTypeLabel(eventType)
+      expect(entry.label).not.toBe(eventType)
+      expect(entry.label.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('falls back to the raw SCREAMING_CASE name for an unknown event type', () => {
+    expect(bookingEventTypeLabel('SOMETHING_NEW')).toEqual({ label: 'SOMETHING_NEW', tone: 'neutral' })
+  })
+})
+
+describe('bookingEventActorTypeLabel', () => {
+  it('maps the four actor types, keeping the cron-driven one non-human', () => {
+    expect(bookingEventActorTypeLabel('customer')).toBe('مشتری')
+    expect(bookingEventActorTypeLabel('salon_owner')).toBe('آرایشگاه‌دار')
+    expect(bookingEventActorTypeLabel('admin')).toBe('مدیر')
+    expect(bookingEventActorTypeLabel('system')).toBe('سامانه')
+  })
+
+  it('falls back to the raw value for an unknown actor type', () => {
+    expect(bookingEventActorTypeLabel('robot')).toBe('robot')
+  })
+})
+
+describe('bookingEventMetadataKeyLabel / bookingEventCauseLabel', () => {
+  it('prettifies the metadata keys the backend currently writes', () => {
+    expect(bookingEventMetadataKeyLabel('approvalExpiresAt')).toBe('پایان مهلت تایید')
+    expect(bookingEventMetadataKeyLabel('fromStatus')).toBe('وضعیت پیشین')
+    expect(bookingEventCauseLabel('approval_expired')).toBe('اتمام مهلت تایید')
+  })
+
+  it('shows an unmapped key/cause raw rather than hiding it from the timeline', () => {
+    expect(bookingEventMetadataKeyLabel('brandNewKey')).toBe('brandNewKey')
+    expect(bookingEventCauseLabel('brand_new_cause')).toBe('brand_new_cause')
+  })
+})
+
+describe('configKeyMeta', () => {
+  // Without an entry the ConfigView row would render the raw snake_case key as its label.
+  it('gives the manual-approval timeout config key a Farsi label, hint and unit', () => {
+    const meta = configKeyMeta('booking_approval_timeout_minutes')
+    expect(meta.label).toBe('مهلت تایید درخواست رزرو')
+    expect(meta.unit).toBe('دقیقه')
+    expect(meta.hint.length).toBeGreaterThan(0)
+  })
+
+  it('falls back to the raw key for an unknown config key', () => {
+    expect(configKeyMeta('brand_new_key').label).toBe('brand_new_key')
   })
 })
 
