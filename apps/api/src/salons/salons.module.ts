@@ -11,6 +11,7 @@ import { ReferralsModule } from '../referrals/referrals.module';
 import { WorkerRating } from '../reviews/worker-rating.entity';
 import { SmsModule } from '../sms/sms.module';
 import { StorageModule } from '../storage/storage.module';
+import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { UsersModule } from '../users/users.module';
 import { AdminSalonsController } from './admin-salons.controller';
 import { AdminShowcaseController } from './admin-showcase.controller';
@@ -75,6 +76,11 @@ import { WorkingHour } from './working-hour.entity';
     // For SalonWorkersController's new-worker SMS notification -- plain leaf module, no
     // dependency back on SalonsModule.
     SmsModule,
+    // For SalonsService.createForOwner's initial subscription insert -- SubscriptionsModule
+    // has no dependency back on SalonsModule (see its own doc comment: salon existence is
+    // enforced by salon_subscriptions' own FK, not a Salon repository lookup), so this is a
+    // plain one-directional import.
+    SubscriptionsModule,
   ],
   controllers: [
     SalonServicesController,

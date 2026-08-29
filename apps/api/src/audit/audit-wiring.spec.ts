@@ -14,6 +14,8 @@ import { AdminReviewsController } from '../reviews/admin-reviews.controller';
 import { AdminWorkerRatingsController } from '../reviews/admin-worker-ratings.controller';
 import { AdminSalonsController } from '../salons/admin-salons.controller';
 import { AdminShowcaseController } from '../salons/admin-showcase.controller';
+import { AdminPlansController } from '../subscriptions/admin-plans.controller';
+import { AdminSalonSubscriptionsController } from '../subscriptions/admin-salon-subscriptions.controller';
 import { AdminUsersController } from '../users/admin-users.controller';
 import { AdminWalletController } from '../wallet/admin-wallet.controller';
 import { AUDIT_ACTION } from './audit.decorator';
@@ -239,6 +241,38 @@ describe('admin mutation audit wiring', () => {
       handler: AdminWorkerRatingsController.prototype.moderate,
       action: 'worker-rating.moderate',
       targetType: 'worker-rating',
+    },
+    {
+      label: 'plan create',
+      handler: AdminPlansController.prototype.create,
+      action: 'plan.create',
+      targetType: 'plan',
+    },
+    {
+      label: 'plan update',
+      handler: AdminPlansController.prototype.update,
+      action: 'plan.update',
+      targetType: 'plan',
+    },
+    {
+      label: 'plan delete',
+      handler: AdminPlansController.prototype.remove,
+      action: 'plan.delete',
+      targetType: 'plan',
+    },
+    {
+      label: 'salon subscription plan set',
+      handler: AdminSalonSubscriptionsController.prototype.assign,
+      action: 'subscription.plan.set',
+      targetType: 'salon-subscription',
+      targetIdParam: 'salonId',
+    },
+    {
+      label: 'salon subscription cancel',
+      handler: AdminSalonSubscriptionsController.prototype.cancel,
+      action: 'subscription.cancel',
+      targetType: 'salon-subscription',
+      targetIdParam: 'salonId',
     },
   ];
 

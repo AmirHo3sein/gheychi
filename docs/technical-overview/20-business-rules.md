@@ -94,6 +94,15 @@ A consolidated reference of every enforced business rule in the platform, groupe
 - The first photo uploaded to a salon is automatically the cover; setting a new cover unsets every other cover row in the same transaction.
 - Reported content (open report) is pinned — never garbage-collected — until the report resolves.
 
+## Subscription & plan rules
+
+- Every salon has exactly one `salon_subscriptions` row, from the instant it's created (inserted in the same transaction as the salon insert) — never momentarily unresolvable.
+- Exactly one plan may be `is_default` at a time, DB-backstopped by a partial unique index — the fallback every salon's entitlements resolve to when its own subscription is `canceled`.
+- A plan referenced by any salon's subscription cannot be deleted, enforced by the database's own foreign-key restrict behavior — same pattern as category delete.
+- The default plan itself cannot be deleted, and its `is_default` flag cannot be unset without moving it to another plan first — the platform must never be left with zero resolvable default.
+- A plan's `key` (internal identifier) is set at creation only — never editable, since later phases branch on it in code.
+- Entitlement enforcement does not exist yet — `SubscriptionsService.getEntitlements()` is a resolution seam only, not wired into any feature gate. See [30-subscription-plan-foundation.md](./30-subscription-plan-foundation.md).
+
 ## Category rules
 
 - A salon must have at least one category tag from creation onward — `categoryIds` requires `@ArrayMinSize(1)` on both create and (when supplied) update.

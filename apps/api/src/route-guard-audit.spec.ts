@@ -58,6 +58,8 @@ import { SalonsController } from './salons/salons.controller';
 import { ScheduleController } from './salons/schedule.controller';
 import { SitemapSalonsController } from './salons/sitemap-salons.controller';
 import { SearchController } from './search/search.controller';
+import { AdminPlansController } from './subscriptions/admin-plans.controller';
+import { AdminSalonSubscriptionsController } from './subscriptions/admin-salon-subscriptions.controller';
 import { AdminUsersController } from './users/admin-users.controller';
 import { VersionController } from './version/version.controller';
 import { AdminWalletController } from './wallet/admin-wallet.controller';
@@ -127,6 +129,8 @@ const ALL_CONTROLLERS: Function[] = [
   ScheduleController,
   SitemapSalonsController,
   SearchController,
+  AdminPlansController,
+  AdminSalonSubscriptionsController,
   AdminUsersController,
   VersionController,
   AdminWalletController,

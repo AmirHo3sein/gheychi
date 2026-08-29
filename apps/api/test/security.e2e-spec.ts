@@ -74,6 +74,14 @@ describe('Security regression suite (e2e)', () => {
       { method: 'get', path: '/api/admin/invoices' },
       { method: 'get', path: '/api/admin/worker-ratings' },
       { method: 'get', path: '/api/admin/reviews' },
+      { method: 'get', path: '/api/admin/plans' },
+      { method: 'post', path: '/api/admin/plans', body: { key: 'x', name: 'X' } },
+      { method: 'get', path: '/api/admin/salons/00000000-0000-0000-0000-000000000000/subscription' },
+      {
+        method: 'patch',
+        path: '/api/admin/salons/00000000-0000-0000-0000-000000000000/subscription',
+        body: { planId: '00000000-0000-0000-0000-000000000000' },
+      },
     ];
 
     it.each(ADMIN_ROUTES)('401s $method $path with no session at all', async ({ method, path, body }) => {

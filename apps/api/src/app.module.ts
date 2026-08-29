@@ -32,6 +32,7 @@ import { ReviewsModule } from './reviews/reviews.module';
 import { SalonsModule } from './salons/salons.module';
 import { SearchModule } from './search/search.module';
 import { StorageModule } from './storage/storage.module';
+import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { VersionModule } from './version/version.module';
 import { WalletModule } from './wallet/wallet.module';
 
@@ -68,6 +69,7 @@ import { WalletModule } from './wallet/wallet.module';
     CatalogModule,
     CategoryRequestsModule,
     CitiesModule,
+    SubscriptionsModule,
     SalonsModule,
     BookingModule,
     CouponsModule,

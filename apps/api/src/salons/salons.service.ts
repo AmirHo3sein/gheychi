@@ -5,6 +5,7 @@ import { AdminNotificationsService } from '../admin-notifications/admin-notifica
 import { AnalyticsService } from '../analytics/analytics.service';
 import { ServiceCategory } from '../catalog/service-category.entity';
 import { CitiesService } from '../cities/cities.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { UsersService } from '../users/users.service';
 import { UpdateSalonStatusDto } from './dto/admin-salon-status.dto';
 import { SetFeaturedDto } from './dto/admin-salon.dto';
@@ -35,6 +36,7 @@ export class SalonsService {
     // constructors -- every existing positional `new SalonsService(...)` call site
     // only needs an arg added at the tail, not threaded through the middle.
     private readonly analytics: AnalyticsService,
+    private readonly subscriptions: SubscriptionsService,
   ) {}
 
   /** Throws BadRequestException (not a raw FK-violation 500) for an id that doesn't exist. */
@@ -97,6 +99,10 @@ export class SalonsService {
         dto.categoryIds.map((categoryId) => ({ salonId: salon.id, categoryId })),
       );
       await this.users.promoteToProvider(ownerId);
+      // Every salon must have a resolvable subscription from the instant it exists --
+      // inserted in this same transaction so a salon can never even momentarily exist
+      // without one (see the monetization spec's migration-safety requirement, #23).
+      await this.subscriptions.createDefaultSubscription(salon.id, em);
       return salon;
     });
 

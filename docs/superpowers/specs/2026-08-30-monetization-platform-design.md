@@ -60,9 +60,10 @@ read from, so it's built before the features that will eventually be gated by it
 
 1. **Global payment toggle** — isolated, fast, closes a real admin lever immediately. ✅ shipped
    2026-08-30 (see `docs/technical-overview/29-global-payment-toggle.md`).
-2. Subscription/plan foundation (`plans`, `salon_subscriptions`, entitlement-resolution
+2. **Subscription/plan foundation** (`plans`, `salon_subscriptions`, entitlement-resolution
    service, admin plan CRUD, lifecycle states, migration backfill of a FREE subscription for
-   every existing salon).
+   every existing salon). ✅ shipped 2026-08-30, backend-only (see
+   `docs/technical-overview/30-subscription-plan-foundation.md`).
 3. Entitlement enforcement + admin override (with audit) + usage/plan dashboards (provider and
    admin sides), reading from the Phase 2 backbone.
 4. Public handle + QR + attribution (`salon.slug` made provider-editable with reserved-word

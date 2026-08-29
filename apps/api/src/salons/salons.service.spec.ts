@@ -6,6 +6,7 @@ import { AdminNotificationsService } from '../admin-notifications/admin-notifica
 import { AnalyticsService } from '../analytics/analytics.service';
 import { ServiceCategory } from '../catalog/service-category.entity';
 import { CitiesService } from '../cities/cities.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { UsersService } from '../users/users.service';
 import { SalonCategory } from './salon-category.entity';
 import { Salon } from './salon.entity';
@@ -21,6 +22,7 @@ describe('SalonsService', () => {
   let usersService: { promoteToProvider: jest.Mock; findById: jest.Mock };
   let citiesService: { findIdByName: jest.Mock };
   let analytics: { track: jest.Mock };
+  let subscriptions: { createDefaultSubscription: jest.Mock };
   let emSave: jest.Mock;
   let emCreate: jest.Mock;
   let emInsert: jest.Mock;
@@ -65,6 +67,7 @@ describe('SalonsService', () => {
     // than accidentally depending on this mock's default.
     citiesService = { findIdByName: jest.fn().mockResolvedValue(null) };
     analytics = { track: jest.fn().mockResolvedValue(undefined) };
+    subscriptions = { createDefaultSubscription: jest.fn().mockResolvedValue(undefined) };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -77,6 +80,7 @@ describe('SalonsService', () => {
         { provide: AdminNotificationsService, useValue: notifications },
         { provide: CitiesService, useValue: citiesService },
         { provide: AnalyticsService, useValue: analytics },
+        { provide: SubscriptionsService, useValue: subscriptions },
       ],
     }).compile();
     service = moduleRef.get(SalonsService);
@@ -107,6 +111,20 @@ describe('SalonsService', () => {
           expect.objectContaining({ categoryId: 1 }),
           expect.objectContaining({ categoryId: 2 }),
         ]),
+      );
+    });
+
+    it('creates the initial subscription for the new salon, inside the same transaction', async () => {
+      repo.findOneBy.mockResolvedValue(null);
+
+      await service.createForOwner('u1', DTO);
+
+      // The em passed through is the exact transaction callback's own em (save/create/
+      // insert/delete come from the same object) -- proves this isn't a second, separate
+      // transaction that could commit independently of the salon insert.
+      expect(subscriptions.createDefaultSubscription).toHaveBeenCalledWith(
+        'new-salon-id',
+        expect.objectContaining({ save: emSave, insert: emInsert }),
       );
     });
 
