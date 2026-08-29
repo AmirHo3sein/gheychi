@@ -4,7 +4,7 @@ import { DataSource } from 'typeorm';
 import { ReferralGrantJob } from '../src/booking/referral-grant.job';
 import { RefundRetryJob } from '../src/booking/refund-retry.job';
 import { loginAs, loginAsAdmin, verifyOtpAndLogin } from './utils/auth-helper';
-import { resetDatabase } from './utils/db';
+import { enableOnlinePayments, resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
 
 describe('Referral reward granting + reversal (e2e, Slice 4)', () => {
@@ -20,6 +20,7 @@ describe('Referral reward granting + reversal (e2e, Slice 4)', () => {
 
   beforeAll(async () => {
     await resetDatabase();
+    await enableOnlinePayments();
     app = await createTestApp();
     ds = app.get(DataSource);
 

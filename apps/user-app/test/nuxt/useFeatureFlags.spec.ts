@@ -27,6 +27,7 @@ describe('useFeatureFlags', () => {
       portfolioEnabled: true,
       referralsEnabled: true,
       couponsEnabled: true,
+      onlinePaymentEnabled: true,
     })
   })
 

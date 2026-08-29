@@ -7,6 +7,7 @@ export interface FeatureFlags {
   portfolioEnabled: boolean
   referralsEnabled: boolean
   couponsEnabled: boolean
+  onlinePaymentEnabled: boolean
 }
 
 // Fails open (all true) rather than hiding every gated feature on a transient network
@@ -18,6 +19,7 @@ const DEFAULT_FLAGS: FeatureFlags = {
   portfolioEnabled: true,
   referralsEnabled: true,
   couponsEnabled: true,
+  onlinePaymentEnabled: true,
 }
 
 const flags = ref<FeatureFlags>({ ...DEFAULT_FLAGS })

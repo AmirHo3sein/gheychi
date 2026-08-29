@@ -33,6 +33,7 @@ A consolidated reference of every enforced business rule in the platform, groupe
 - A request whose appointment time has already passed can no longer be approved — its approval deadline is independent of the booking's own `startsAt`, so a request can outlive the slot it asked for.
 - A salon owner cannot decline a `pending_approval` request through the customer cancel route; they must use `reject()`, which requires a reason.
 - `retry-payment` refuses once the booking's payment deadline has passed, even before the expiry cron has caught up.
+- Online payment collection is gated by a global admin flag (`feature_online_payment_enabled`, seeded off). With it off, every deposit-owing booking (automatic-mode `createHold`, or manual-approval `approve()`) rides the same zero-deposit path a 100%-discounted booking already used — confirmed outright, no `Payment` row, deposit still recorded for reporting but never collected online. Wallet credit is never debited toward a deposit that won't be collected. See [29-global-payment-toggle.md](./29-global-payment-toggle.md).
 - Booking deadlines (`approval_expires_at`, `payment_expires_at`) are **snapshotted onto the row** when the clock starts, never recomputed from live config, so a later admin config change cannot move a deadline someone is already counting on.
 - Cancellation refunds unconditionally if the *salon* cancels; refunds for a *customer* cancellation only if `(startsAt - now) >= cancellation_window_hours`.
 - A booking can only be marked `completed`/`no_show` from `confirmed`, and only by the salon owner.

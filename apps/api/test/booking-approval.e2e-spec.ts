@@ -6,7 +6,7 @@ import { BOOKING_UNAVAILABLE, WORKER_UNAVAILABLE } from '../src/booking/booking-
 import { BookingExpiryJob } from '../src/booking/booking-expiry.job';
 import { PaymentReconciliationJob } from '../src/booking/payment-reconciliation.job';
 import { loginAs, loginAsAdmin } from './utils/auth-helper';
-import { resetDatabase } from './utils/db';
+import { enableOnlinePayments, resetDatabase } from './utils/db';
 import { createApprovedSalonWithService } from './factories/salon.factory';
 import { createTestApp } from './utils/test-app';
 
@@ -70,6 +70,7 @@ describe('Booking approval workflow (e2e)', () => {
 
   beforeAll(async () => {
     await resetDatabase();
+    await enableOnlinePayments();
     app = await createTestApp();
     ds = app.get(DataSource);
 

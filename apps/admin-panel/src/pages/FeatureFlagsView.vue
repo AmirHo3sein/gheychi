@@ -17,6 +17,7 @@ interface FeatureFlags {
   portfolioEnabled: boolean
   referralsEnabled: boolean
   couponsEnabled: boolean
+  onlinePaymentEnabled: boolean
 }
 
 const FLAG_META: Record<keyof FeatureFlags, { label: string; hint: string; icon: IconName }> = {
@@ -44,6 +45,11 @@ const FLAG_META: Record<keyof FeatureFlags, { label: string; hint: string; icon:
     label: 'کدهای تخفیف',
     hint: 'غیرفعال‌سازی، اعتبارسنجی و استفاده از هر کد تخفیفی (فروشنده یا معرفی) را متوقف می‌کند.',
     icon: 'coupon',
+  },
+  onlinePaymentEnabled: {
+    label: 'پرداخت آنلاین',
+    hint: 'فعال‌سازی، دریافت پیش‌پرداخت آنلاین (زرین‌پال) را برای نوبت‌های جدید فعال می‌کند؛ در حالت غیرفعال هر نوبت (خودکار یا با تایید دستی) بدون پرداخت آنلاین تایید می‌شود و کل مبلغ نقدی در سالن دریافت می‌شود.',
+    icon: 'wallet',
   },
 }
 const FLAG_KEYS = Object.keys(FLAG_META) as (keyof FeatureFlags)[]

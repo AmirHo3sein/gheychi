@@ -4,18 +4,24 @@ export interface FeatureFlags {
   portfolioEnabled: boolean
   referralsEnabled: boolean
   couponsEnabled: boolean
+  onlinePaymentEnabled: boolean
 }
 
 // Fails open (all true) rather than hiding every gated feature platform-wide on a
 // transient network blip -- the backend is the real enforcement point (see the API's
 // own doc comments on each gated endpoint), this composable only controls what the UI
-// offers to click into.
+// offers to click into. onlinePaymentEnabled defaulting true matches this app's own
+// pre-flag behavior (payment was always assumed required) and is also the safe default
+// functionally: this flag only steers pre-submit copy here (whether a deposit disclosure
+// is shown), never the actual booking outcome -- the API's own `paymentRequired` field on
+// the create-booking response is what the post-submit flow branches on.
 const DEFAULT_FLAGS: FeatureFlags = {
   reviewsEnabled: true,
   storiesEnabled: true,
   portfolioEnabled: true,
   referralsEnabled: true,
   couponsEnabled: true,
+  onlinePaymentEnabled: true,
 }
 
 // Exported so a test can reset this shared useState ref between cases (useState has no

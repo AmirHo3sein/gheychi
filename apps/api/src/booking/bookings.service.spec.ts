@@ -282,6 +282,7 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
           useValue: {
             getDepositPercent: jest.fn().mockResolvedValue(20),
             getDepositMinToman: jest.fn().mockResolvedValue(200_000),
+            getFeatureFlags: jest.fn().mockResolvedValue({ onlinePaymentEnabled: true }),
           },
         },
         {

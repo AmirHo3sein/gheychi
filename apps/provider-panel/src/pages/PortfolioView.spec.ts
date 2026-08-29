@@ -68,6 +68,7 @@ describe('PortfolioView', () => {
       portfolioEnabled: false,
       referralsEnabled: true,
       couponsEnabled: true,
+      onlinePaymentEnabled: true,
     }
     const wrapper = await mountView()
 

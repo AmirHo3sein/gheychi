@@ -452,25 +452,30 @@ async function confirmBooking() {
            guest gets walletBalanceToman: 0 from the quiet (redirectOn401: false) lookup
            above, so the checkbox simply never appears for them rather than nudging a
            guest toward a login they haven't asked for yet. -->
+      <!-- All four of these are specifically about an ONLINE deposit -- collecting it,
+           applying wallet credit toward it, and its refund window. With the platform's
+           online-payment flag off the API never opens a payment session or debits wallet
+           (createHold's own requiresPayment/wallet-debit gating), so showing any of this
+           would promise a step that isn't going to happen. -->
       <label
-        v-if="walletBalanceToman"
+        v-if="walletBalanceToman && featureFlags.onlinePaymentEnabled"
         class="flex items-center gap-2 rounded-xl border border-(--color-border) px-3 py-2 text-(--color-text)"
       >
         <input v-model="applyWalletBalance" type="checkbox" class="h-4 w-4 shrink-0" />
         <span>استفاده از موجودی کیف پول (<span dir="ltr" class="tnum">{{ formatToman(walletBalanceToman) }}</span> تومان)</span>
       </label>
-      <p v-if="depositDueOnline !== null">
+      <p v-if="depositDueOnline !== null && featureFlags.onlinePaymentEnabled">
         {{ manualApproval ? 'پیش‌پرداخت آنلاین (پس از تایید سالن)' : 'پیش‌پرداخت آنلاین' }}:
         <span dir="ltr" class="tnum">{{ formatToman(depositDueOnline) }}</span> تومان
         <span v-if="walletAmountToApply > 0" class="text-(--color-text-muted)">
           (<span dir="ltr" class="tnum">{{ formatToman(walletAmountToApply) }}</span> تومان از کیف پول)
         </span>
       </p>
-      <p v-if="page.terms" class="text-(--color-text-muted)">لغو رایگان تا {{ page.terms.cancellationWindowHours }} ساعت قبل از نوبت</p>
+      <p v-if="page.terms && featureFlags.onlinePaymentEnabled" class="text-(--color-text-muted)">لغو رایگان تا {{ page.terms.cancellationWindowHours }} ساعت قبل از نوبت</p>
       <!-- Non-refundable-by-default disclosure (Product Principle #3) -- calm/muted, not
            danger-red: this informs what happens after the free-cancel window, it doesn't
            alarm. Numbers still come exclusively from /platform-config/booking-terms above. -->
-      <p v-if="page.terms" class="text-(--color-text-muted)">بعد از این زمان، پیش‌پرداخت قابل بازگشت نیست</p>
+      <p v-if="page.terms && featureFlags.onlinePaymentEnabled" class="text-(--color-text-muted)">بعد از این زمان، پیش‌پرداخت قابل بازگشت نیست</p>
 
       <div v-if="featureFlags.couponsEnabled" class="space-y-2 border-t border-(--color-border) pt-4">
         <div class="flex items-end gap-2">
@@ -531,11 +536,13 @@ async function confirmBooking() {
            the button it qualifies -- it's a condition of the action, not a warning. -->
       <p v-if="manualApproval" data-testid="manual-approval-note" class="flex items-start gap-1.5 text-xs text-(--color-text-muted)">
         <BaseIcon name="clock" :size="14" class="mt-0.5 shrink-0" />
-        این سالن رزروها را دستی تایید می‌کند؛ اکنون مبلغی پرداخت نمی‌کنید و پس از تایید سالن پرداخت انجام می‌شود.
+        {{ featureFlags.onlinePaymentEnabled
+          ? 'این سالن رزروها را دستی تایید می‌کند؛ اکنون مبلغی پرداخت نمی‌کنید و پس از تایید سالن پرداخت انجام می‌شود.'
+          : 'این سالن رزروها را دستی تایید می‌کند؛ هزینه به صورت نقدی در سالن دریافت می‌شود.' }}
       </p>
 
       <BaseButton block size="lg" data-testid="confirm-booking-button" :loading="submitting" @click="confirmBooking">
-        {{ manualApproval ? 'ثبت درخواست رزرو' : 'پرداخت و رزرو' }}
+        {{ manualApproval ? 'ثبت درخواست رزرو' : (featureFlags.onlinePaymentEnabled ? 'پرداخت و رزرو' : 'رزرو') }}
       </BaseButton>
     </BaseCard>
 

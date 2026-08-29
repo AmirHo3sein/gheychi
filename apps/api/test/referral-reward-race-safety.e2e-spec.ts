@@ -6,7 +6,7 @@ import { REDIS } from '../src/redis/redis.module';
 import { ReferralsService } from '../src/referrals/referrals.service';
 import { WalletService } from '../src/wallet/wallet.service';
 import { clearOtpIpRateLimit, loginAs, loginAsAdmin, verifyOtpAndLogin } from './utils/auth-helper';
-import { resetDatabase } from './utils/db';
+import { enableOnlinePayments, resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
 
 // Race-safety and reversal-shortfall coverage for slice 4 (reward granting) that the
@@ -32,6 +32,7 @@ describe('Referral reward granting -- race-safety and reversal-shortfall (e2e)',
 
   beforeAll(async () => {
     await resetDatabase();
+    await enableOnlinePayments();
     app = await createTestApp();
     ds = app.get(DataSource);
     referrals = app.get(ReferralsService);

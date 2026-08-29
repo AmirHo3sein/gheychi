@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { loginAs, loginAsAdmin } from './utils/auth-helper';
-import { resetDatabase } from './utils/db';
+import { enableOnlinePayments, resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
 
 describe('Wallet spend at checkout (e2e)', () => {
@@ -34,6 +34,7 @@ describe('Wallet spend at checkout (e2e)', () => {
 
   beforeAll(async () => {
     await resetDatabase();
+    await enableOnlinePayments();
     app = await createTestApp();
 
     adminCookie = await loginAsAdmin(app, '09131110001');

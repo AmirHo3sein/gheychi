@@ -3,7 +3,7 @@ import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { RefundRetryJob } from '../src/booking/refund-retry.job';
 import { loginAs } from './utils/auth-helper';
-import { resetDatabase } from './utils/db';
+import { enableOnlinePayments, resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
 
 describe('Booking cancellation policy (e2e)', () => {
@@ -15,6 +15,7 @@ describe('Booking cancellation policy (e2e)', () => {
 
   beforeAll(async () => {
     await resetDatabase();
+    await enableOnlinePayments();
     app = await createTestApp();
 
     ownerCookie = await loginAs(app, '09124040009');

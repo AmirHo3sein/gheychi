@@ -27,6 +27,7 @@ describe('CouponsView', () => {
       portfolioEnabled: true,
       referralsEnabled: true,
       couponsEnabled: false,
+      onlinePaymentEnabled: true,
     }
 
     const wrapper = await mountCoupons()

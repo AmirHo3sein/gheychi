@@ -133,6 +133,7 @@ describe('booking confirm page', () => {
       portfolioEnabled: true,
       referralsEnabled: true,
       couponsEnabled: true,
+      onlinePaymentEnabled: true,
     }
   })
 
@@ -148,6 +149,7 @@ describe('booking confirm page', () => {
       portfolioEnabled: true,
       referralsEnabled: true,
       couponsEnabled: false,
+      onlinePaymentEnabled: true,
     }
     wrapper = await mountSuspended(BookingConfirmPage)
 
@@ -789,5 +791,68 @@ describe('booking confirm page', () => {
 
     expect(navigateToMock).toHaveBeenCalledWith('/bookings/b-request')
     expect(navigateToMock).not.toHaveBeenCalledWith(expect.stringContaining('http'), expect.anything())
+  })
+
+  // With the platform's global online-payment flag off, the API never opens a payment
+  // session or debits wallet for ANY booking (see BookingsService.createHold), so none of
+  // the online-deposit copy (deposit preview, wallet-apply checkbox, refund-window
+  // disclosure) should be shown -- promising a step that will not happen would be worse
+  // than showing nothing.
+  it('hides all online-deposit UI and books directly when the platform payment flag is off (automatic mode)', async () => {
+    useState('feature-flags').value = {
+      reviewsEnabled: true,
+      storiesEnabled: true,
+      portfolioEnabled: true,
+      referralsEnabled: true,
+      couponsEnabled: true,
+      onlinePaymentEnabled: false,
+    }
+    fetchMock.mockImplementation(async (path: string, opts?: { method?: string }) => {
+      if (path === '/salons/test-salon') return SALON
+      if (path === '/salons/test-salon/services') return [SERVICE]
+      if (path === '/platform-config/booking-terms') return TERMS
+      if (path === '/salons/test-salon/workers') return []
+      if (path === `/salons/${SALON.id}/availability`) return []
+      if (path === '/wallet/mine') return { balances: [{ currency: 'toman', balance: 500_000 }] }
+      if (path === '/bookings' && opts?.method === 'POST') {
+        return { booking: { id: 'b-free' }, paymentUrl: 'http://localhost:3003/bookings/b-free', paymentRequired: false }
+      }
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+
+    expect(wrapper.text()).not.toContain('پیش‌پرداخت آنلاین')
+    expect(wrapper.text()).not.toContain('استفاده از موجودی کیف پول')
+    expect(wrapper.text()).not.toContain('لغو رایگان تا')
+    expect(wrapper.get('[data-testid="confirm-booking-button"]').text()).toBe('رزرو')
+
+    await wrapper.get('[data-testid="confirm-booking-button"]').trigger('click')
+    await flushPromises()
+
+    expect(navigateToMock).toHaveBeenCalledWith('/bookings/b-free')
+  })
+
+  it('tells a manual-approval customer to expect cash at the salon when the platform payment flag is off', async () => {
+    useState('feature-flags').value = {
+      reviewsEnabled: true,
+      storiesEnabled: true,
+      portfolioEnabled: true,
+      referralsEnabled: true,
+      couponsEnabled: true,
+      onlinePaymentEnabled: false,
+    }
+    stubManualApprovalPageLoad()
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="confirm-booking-button"]').text()).toBe('ثبت درخواست رزرو')
+    const note = wrapper.get('[data-testid="manual-approval-note"]')
+    expect(note.text()).toContain('هزینه به صورت نقدی در سالن دریافت می‌شود')
+    expect(note.text()).not.toContain('پس از تایید سالن پرداخت')
   })
 })

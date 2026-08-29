@@ -3,7 +3,7 @@ import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { ReferralGrantJob } from '../src/booking/referral-grant.job';
 import { loginAs, loginAsAdmin, verifyOtpAndLogin } from './utils/auth-helper';
-import { resetDatabase } from './utils/db';
+import { enableOnlinePayments, resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
 
 describe('Referral discount-kind (percent_discount) rewards via literal coupon rows (e2e, Slice 5, Piece 1)', () => {
@@ -19,6 +19,7 @@ describe('Referral discount-kind (percent_discount) rewards via literal coupon r
 
   beforeAll(async () => {
     await resetDatabase();
+    await enableOnlinePayments();
     app = await createTestApp();
     ds = app.get(DataSource);
 

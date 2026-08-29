@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { loginAs } from './utils/auth-helper';
-import { resetDatabase } from './utils/db';
+import { enableOnlinePayments, resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
 import { BookingExpiryJob } from '../src/booking/booking-expiry.job';
 
@@ -15,6 +15,7 @@ describe('Booking expiry job (e2e)', () => {
 
   beforeAll(async () => {
     await resetDatabase();
+    await enableOnlinePayments();
     app = await createTestApp();
     job = app.get(BookingExpiryJob);
 

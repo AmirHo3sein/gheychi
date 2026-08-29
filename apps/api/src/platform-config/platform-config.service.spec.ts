@@ -291,7 +291,7 @@ describe('PlatformConfigService -- feature flags', () => {
     service = moduleRef.get(PlatformConfigService);
   });
 
-  it('reads all 5 flags, mapped to their field names', async () => {
+  it('reads all 6 flags, mapped to their field names', async () => {
     repo.findOneBy.mockImplementation(({ key }: { key: string }) =>
       Promise.resolve({ key, value: key === 'feature_stories_enabled' ? false : true }),
     );
@@ -302,6 +302,7 @@ describe('PlatformConfigService -- feature flags', () => {
       portfolioEnabled: true,
       referralsEnabled: true,
       couponsEnabled: true,
+      onlinePaymentEnabled: true,
     });
   });
 

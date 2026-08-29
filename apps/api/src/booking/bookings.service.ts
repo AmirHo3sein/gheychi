@@ -314,6 +314,9 @@ export class BookingsService {
         // Capped at finalPrice by calculateDeposit, so a fully-discounted booking (100%-off
         // coupon, or a fixed-amount referral coupon worth at least the price) lands on 0.
         const depositBeforeWallet = calculateDeposit(finalPrice, depositPercent, depositMin);
+        // Read once, before the wallet debit below, so both it and requiresPayment (further
+        // down) see the same value for this attempt.
+        const { onlinePaymentEnabled } = await this.config.getFeatureFlags();
 
         // Wallet balance reduces the DEPOSIT (the only money the platform ever captures
         // online) -- not finalPrice/the full service price. The remaining ~80% is cash
@@ -322,9 +325,14 @@ export class BookingsService {
         // debit() itself caps at the customer's real balance and never throws, so
         // requesting more than they have (or requesting against a zero deposit) simply
         // debits nothing -- no separate "enough balance?" check is needed here.
+        //
+        // Gated on onlinePaymentEnabled too: with online payment collection off, no deposit
+        // is ever actually captured, so there is nothing an "applied wallet credit" would be
+        // reducing -- debiting the wallet here would silently spend a real balance for zero
+        // effect (the salon still collects the full price in cash, unaware).
         let walletAmountUsed: number | null = null;
         let walletTransactionId: string | null = null;
-        if (dto.applyWalletBalance && depositBeforeWallet > 0) {
+        if (dto.applyWalletBalance && depositBeforeWallet > 0 && onlinePaymentEnabled) {
           const result = await this.walletService.debit(em, userId, 'toman', depositBeforeWallet, 'booking_spend', {
             referenceType: 'booking',
             reason: 'Applied to booking deposit at checkout',
@@ -345,7 +353,13 @@ export class BookingsService {
         // the referral first_paid_booking trigger correctly never fires for a free booking
         // -- so this needs no special-casing outside createHold. A deposit reduced to 0 by
         // wallet credit alone lands on exactly the same path.
-        const requiresPayment = deposit > 0;
+        //
+        // ANDed with the global online-payment flag: when it's off, EVERY deposit-owing
+        // booking rides this exact same zero-deposit path (confirmed outright, deposit
+        // still recorded on the row for CRM/reporting, just never collected online) rather
+        // than a new parallel code path. Re-enabling the flag later needs no migration or
+        // backfill -- the very next createHold call simply starts requiring payment again.
+        const requiresPayment = deposit > 0 && onlinePaymentEnabled;
 
         // Manual-approval mode inserts a salon decision BEFORE any money moves, so the
         // booking lands in pending_approval regardless of whether a deposit is owed --
@@ -524,18 +538,21 @@ export class BookingsService {
       return { booking, paymentUrl: `${frontendBase}/bookings/${booking.id}`, couponApplied, paymentRequired: false };
     }
 
-    // A fully-discounted booking has nothing to charge for: it was committed as 'confirmed'
-    // above, so there is no payment session to open. (couponApplied, returned by both
-    // branches below, is false when no code was sent AND when a sent code lost to the
-    // service's own discount -- the caller needs it to avoid telling the customer their code
-    // was used when it wasn't; the booking's own price/discount columns already record what
-    // was actually charged.)
-    if (depositAmount === 0) {
+    // Nothing left to charge for: the booking was already committed as 'confirmed' above
+    // (either a genuinely zero deposit, or a non-zero deposit that the global payment flag
+    // says not to collect), so there is no payment session to open. Branches on the
+    // booking's actual status rather than re-deriving from depositAmount -- the flag-off
+    // case can reach here with depositAmount > 0. (couponApplied, returned by both branches
+    // below, is false when no code was sent AND when a sent code lost to the service's own
+    // discount -- the caller needs it to avoid telling the customer their code was used when
+    // it wasn't; the booking's own price/discount columns already record what was actually
+    // charged.)
+    if (booking.status === 'confirmed') {
       // Already 'confirmed' inside the transaction above. Send the same notifications the
       // payment callback sends on a confirmation -- otherwise the salon would never learn
-      // about a free booking. Best-effort, exactly as in notifyConfirmed's own caller: the
-      // booking is committed, so a notification failure must not surface as a failed
-      // request (the customer would retry and double-book).
+      // about a free/payment-disabled booking. Best-effort, exactly as in notifyConfirmed's
+      // own caller: the booking is committed, so a notification failure must not surface as
+      // a failed request (the customer would retry and double-book).
       try {
         await this.paymentsService.notifyConfirmed(booking.id);
       } catch (err) {
@@ -871,7 +888,12 @@ export class BookingsService {
     }
 
     const settings = await this.bookingSettings.resolveFor(salon);
-    const requiresPayment = booking.depositAmount > 0;
+    // Re-read live, not the flag in force when the request was first submitted -- if an
+    // admin turns payment collection off while a request is sitting in pending_approval,
+    // the salon's approval should confirm it outright rather than open a payment window
+    // for a capability that's no longer enabled platform-wide.
+    const { onlinePaymentEnabled } = await this.config.getFeatureFlags();
+    const requiresPayment = booking.depositAmount > 0 && onlinePaymentEnabled;
     const nextStatus: BookingStatus = requiresPayment ? 'pending_payment' : 'confirmed';
     // Stamped from the config in force at APPROVAL time, then frozen -- the customer's
     // clock starts now, not when they first asked.

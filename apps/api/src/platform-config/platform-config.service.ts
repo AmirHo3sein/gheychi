@@ -39,6 +39,13 @@ export const FEATURE_FLAG_KEYS = [
   'feature_portfolio_enabled',
   'feature_referrals_enabled',
   'feature_coupons_enabled',
+  // Global kill switch for online (Zarinpal) payment collection. Seeded false -- launch
+  // opens with every deposit collected in cash at the salon, matching pre-payment-gateway
+  // behavior exactly. Both requiresPayment sites (BookingsService.createHold's own
+  // computation and approve()'s re-derivation) AND this flag into their existing
+  // deposit-based check, so flipping it off is equivalent to every booking landing on the
+  // zero-deposit path that already exists -- no new booking status, no new code path.
+  'feature_online_payment_enabled',
 ] as const;
 
 export interface FeatureFlags {
@@ -47,6 +54,7 @@ export interface FeatureFlags {
   portfolioEnabled: boolean;
   referralsEnabled: boolean;
   couponsEnabled: boolean;
+  onlinePaymentEnabled: boolean;
 }
 
 const FEATURE_FLAG_KEY_TO_FIELD: Record<(typeof FEATURE_FLAG_KEYS)[number], keyof FeatureFlags> = {
@@ -55,6 +63,7 @@ const FEATURE_FLAG_KEY_TO_FIELD: Record<(typeof FEATURE_FLAG_KEYS)[number], keyo
   feature_portfolio_enabled: 'portfolioEnabled',
   feature_referrals_enabled: 'referralsEnabled',
   feature_coupons_enabled: 'couponsEnabled',
+  feature_online_payment_enabled: 'onlinePaymentEnabled',
 };
 
 interface ConfigBounds {

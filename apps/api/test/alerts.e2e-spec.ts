@@ -5,7 +5,7 @@ import { DataSource } from 'typeorm';
 import { RefundRetryJob } from '../src/booking/refund-retry.job';
 import { REDIS } from '../src/redis/redis.module';
 import { loginAs, loginAsAdmin } from './utils/auth-helper';
-import { resetDatabase } from './utils/db';
+import { enableOnlinePayments, resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
 
 describe('Money-critical alerting (e2e)', () => {
@@ -18,6 +18,7 @@ describe('Money-critical alerting (e2e)', () => {
 
   beforeAll(async () => {
     await resetDatabase();
+    await enableOnlinePayments();
     app = await createTestApp();
 
     // Alert dedup keys live in Redis and survive resetDatabase() -- a re-run inside

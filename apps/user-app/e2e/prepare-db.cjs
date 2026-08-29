@@ -61,6 +61,11 @@ async function main() {
 
   const seedClient = makeClient()
   await seedClient.connect()
+  // The migration seeds feature_online_payment_enabled=false (see
+  // docs/technical-overview/29-global-payment-toggle.md) -- a real production launch
+  // decision, not something this suite's happy-path (which exercises a real mock Zarinpal
+  // payment) should silently start skipping.
+  await seedClient.query(`UPDATE platform_config SET value = 'true' WHERE key = 'feature_online_payment_enabled'`)
   const { rows: [{ id: ownerId }] } = await seedClient.query(
     `INSERT INTO users (phone, role) VALUES ('09120000100', 'provider') RETURNING id`,
   )

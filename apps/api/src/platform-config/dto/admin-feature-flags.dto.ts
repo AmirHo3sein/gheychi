@@ -20,4 +20,8 @@ export class UpdateFeatureFlagsDto {
   @IsOptional()
   @IsBoolean()
   couponsEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  onlinePaymentEnabled?: boolean;
 }

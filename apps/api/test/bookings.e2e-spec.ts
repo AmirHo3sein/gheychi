@@ -3,7 +3,7 @@ import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { BOOKING_UNAVAILABLE } from '../src/booking/booking-error-codes';
 import { loginAs } from './utils/auth-helper';
-import { resetDatabase } from './utils/db';
+import { enableOnlinePayments, resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
 import { createApprovedSalonWithService, createService } from './factories/salon.factory';
 
@@ -15,6 +15,7 @@ describe('Bookings — create hold (e2e)', () => {
 
   beforeAll(async () => {
     await resetDatabase();
+    await enableOnlinePayments();
     app = await createTestApp();
 
     const ownerCookie = await loginAs(app, '09125550001');

@@ -40,3 +40,19 @@ export async function resetDatabase(): Promise<void> {
   await redis.flushdb();
   await redis.quit();
 }
+
+// The migration seeds feature_online_payment_enabled=false (a real production launch
+// decision -- see docs/technical-overview/29-global-payment-toggle.md), so a fresh
+// resetDatabase() leaves it off. Every e2e suite exercising the online-payment/deposit/
+// gateway flow (the vast majority of the booking/payment/referral surface) was written
+// against the pre-existing, always-on behavior and needs it explicitly turned on -- called
+// once, right after resetDatabase(), by any file whose scenarios actually involve money
+// moving online. Deliberately a raw DB write, not an authenticated admin PATCH round-trip:
+// this is test setup, not something under test, and admin-feature-flags.e2e-spec.ts is the
+// one place the real HTTP path (and the real migration-seeded default) gets exercised.
+export async function enableOnlinePayments(): Promise<void> {
+  const ds = testDataSource();
+  await ds.initialize();
+  await ds.query(`UPDATE platform_config SET value = 'true' WHERE key = 'feature_online_payment_enabled'`);
+  await ds.destroy();
+}
