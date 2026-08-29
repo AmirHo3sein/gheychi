@@ -88,7 +88,17 @@ export class BookingApprovalExpiryJob {
       // One multi-row INSERT rather than 2 round-trips per booking -- see recordMany.
       await this.bookingEvents.recordMany(
         ids.flatMap((id) => [
-          { bookingId: id, eventType: 'APPROVAL_EXPIRED' as const, actorType: 'system' as const },
+          {
+            bookingId: id,
+            eventType: 'APPROVAL_EXPIRED' as const,
+            actorType: 'system' as const,
+            // Distinguishes a genuine timeout from BookingsService.approve()'s own
+            // availability-recheck-triggered expiry, which carries
+            // cause: 'availability_recheck_failed' instead -- both reuse the same
+            // status/event type, so this is the only thing that tells them apart in
+            // the timeline.
+            metadata: { cause: 'timeout' },
+          },
           {
             bookingId: id,
             eventType: 'SLOT_RELEASED' as const,

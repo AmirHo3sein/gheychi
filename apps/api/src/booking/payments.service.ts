@@ -592,6 +592,32 @@ export class PaymentsService {
     );
   }
 
+  /**
+   * The salon DID respond -- the owner attempted to approve -- but
+   * BookingsService.approve()'s availability re-check found the slot no longer fits
+   * (capacity was lowered, or the requested worker became unavailable/ineligible/
+   * double-booked, in the time between the request and the decision) and auto-expired the
+   * request instead. Deliberately a DIFFERENT message from notifyApprovalExpired's: that
+   * copy says "به دلیل عدم پاسخ سالن" (because the salon didn't respond), which would be
+   * false here and would misdirect a support conversation. Public because
+   * BookingsService.approve() is its only caller.
+   */
+  async notifyApprovalFailedAvailability(bookingId: string): Promise<void> {
+    const booking = await this.bookings.findOneBy({ id: bookingId });
+    if (!booking) return;
+    const salon = await this.salonsService.findById(booking.salonId);
+    if (!salon) return;
+    const customer = await this.usersService.findById(booking.userId);
+    if (!customer) return;
+    const when = formatIranDateTimeFa(booking.startsAt);
+    await this.notifyOne(
+      customer,
+      `متاسفانه در حین بررسی درخواست شما توسط ${salon.name}، این بازه زمانی (${when}) دیگر در دسترس نیست. مبلغی از شما دریافت نشده است.`,
+      { title: 'نوبت درخواستی دیگر در دسترس نیست', body: `${salon.name} — ${when}` },
+      bookingId,
+    );
+  }
+
   private async notifyRefunded(bookingId: string): Promise<void> {
     const booking = await this.bookings.findOneBy({ id: bookingId });
     if (!booking) return;

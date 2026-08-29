@@ -306,13 +306,58 @@ recording, because each is a coupling that is not obvious from the code alone:
   deadlocks precisely when a migration adds a required config key, because the new image
   crash-loops and `exec` needs a running container. Corrected to `run --rm`, before `up -d`.
 
+## Availability is re-checked at approval, not trusted from request time
+
+Platform state can move between a customer's request and the salon's decision: the owner can
+lower their own `capacity`, deactivate the requested worker, or reassign that worker away from
+the requested service. `approve()` therefore replays the exact two checks `createHold` ran when
+the request was first accepted, inside the SAME per-salon Redis lock `createHold` uses (so the
+re-check and the state transition are one atomic critical section, immune to a concurrent
+`createHold`/`approve` reading a stale count):
+
+1. **Salon capacity** — a `SLOT_BLOCKING_STATUSES` overlap count for the slot, this booking's own
+   row excluded (it is itself one of the blocking statuses and would otherwise count against
+   itself).
+2. **Worker availability**, only when a specific worker was requested — still active, still
+   eligible for the service, and still has no other overlapping booking.
+
+This is deliberately not a *stricter* check than creation's own: `createHold` never consults
+working hours or schedule exceptions either (the frontend only ever offers slots `GET
+.../availability` has already filtered that way), so the re-check doesn't either — approval isn't
+meant to be pickier than booking.
+
+**If the re-check fails, the request is auto-expired in the same transaction** rather than left
+`pending_approval` for the same unavoidable outcome at the next `BookingApprovalExpiryJob` tick —
+nothing about the answer will change before then, so waiting only costs the customer the slot for
+longer. The hold is released exactly as a timeout would release it. The event is recorded as
+`APPROVAL_EXPIRED` with `metadata.cause: 'availability_recheck_failed'` (a genuine timeout instead
+carries `cause: 'timeout'`), so the two are never confused in the timeline, and the failed
+attempt's `actorId` is preserved in the metadata even though the transition itself is attributed
+to `system` (the owner did not choose this outcome). The customer is told the truth in a
+DIFFERENT notification than a timeout's — `notifyApprovalFailedAvailability`, not
+`notifyApprovalExpired` — because the timeout copy ("به دلیل عدم پاسخ سالن", "because the salon
+didn't respond") would be a lie here: the salon DID respond, the slot changed underneath the
+request. `BOOKING_UNAVAILABLE`/`WORKER_UNAVAILABLE` (the same codes `createHold` already uses,
+not new ones) distinguish the two causes on the API response.
+
+Concurrency: exactly the same guarantee as every other transition in this service — a single
+conditional CAS on `status = 'pending_approval'` inside the lock. Two requests that together
+exceed a just-reduced capacity, approved via a genuinely simultaneous race, can legitimately both
+self-expire (whichever's re-check runs first still sees the other sitting in `pending_approval`,
+which by itself already fills the reduced capacity) rather than produce a winner — a safe,
+correctly-reported "neither could be honoured given what was true at that instant", not a bug. The
+one outcome the lock+CAS pair makes structurally impossible is **both** reaching
+`pending_payment`. The sequential case (approve one, THEN attempt the other) deterministically
+produces a winner and a loser, and is the one an owner clicking one button at a time will always
+see in practice.
+
 ## Deliberate cuts
 
-- No provider-side reminder before an approval deadline lapses (the request notification is the only
-  ping). Adding one means another cron and another SMS-cost decision.
-- `approve()` does not re-check availability. It cannot double-book, because the request has held its
-  slot since creation — but a salon that somehow has two overlapping pending requests (only possible
-  if capacity was reduced under them) can approve both.
+- **No provider-side reminder before an approval deadline lapses — a permanent product decision,
+  not deferred work.** The 10-minute window is short enough that a second SMS would be spending
+  real money to repeat something the owner was already told once; the request-created SMS is the
+  only ping by design. Do not add a reminder cron for this without revisiting the SMS-budget
+  decision explicitly.
 - No admin-facing aggregate analytics (approval rate, median response time, per-salon
   non-responsiveness). The `booking_events` model was designed to make these computable later; no
   dashboard consumes it yet.

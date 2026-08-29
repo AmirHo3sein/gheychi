@@ -813,11 +813,37 @@ export class BookingsService {
    * `confirmed` when nothing is owed), opening the customer's payment window and stamping
    * its deadline for the first time.
    *
-   * Concurrency: a single conditional CAS on `status = 'pending_approval'` is the whole
-   * race guard, exactly as every other transition in this service does it. A second
-   * approve, a reject, an approval-expiry tick, and a customer cancellation all contend on
-   * that one predicate, so precisely one can win and the losers get a 409 rather than
-   * double-opening a payment window or resurrecting an expired request.
+   * AVAILABILITY IS RE-CHECKED HERE -- a correctness requirement, not an optimization.
+   * Platform state can move between a customer's request and the salon's decision: the
+   * owner can lower their own `capacity`, deactivate the requested worker, or reassign
+   * that worker away from the requested service. This replays EXACTLY the two checks
+   * `createHold` ran when the request was first accepted -- salon capacity (a
+   * `SLOT_BLOCKING_STATUSES` overlap count, this booking's own row excluded, since as a
+   * `pending_approval` row it already counts as one of the blocking statuses) and, when a
+   * specific worker was requested, that the worker is still active, still eligible for the
+   * service, and still has no other overlapping booking. Deliberately not a stricter or
+   * broader check than creation's own: `createHold` never consults working
+   * hours/schedule-exceptions either (the frontend only ever offers slots `GET
+   * .../availability` already filtered that way), so re-validating against a rule creation
+   * itself doesn't enforce would make approval pickier than booking -- not the goal here.
+   *
+   * If the re-check fails, the request is auto-expired IN THE SAME TRANSACTION rather than
+   * left pending for the same unavoidable outcome at the next `BookingApprovalExpiryJob`
+   * tick -- see that job for why `expired` (not a bespoke status) is the right terminus.
+   * The hold is released (coupon/wallet) exactly as a timeout would release it, the event
+   * carries `cause: 'availability_recheck_failed'` so it is never confused with a genuine
+   * timeout in the timeline, and the customer is told the truth -- the salon DID respond,
+   * the slot changed underneath the request -- rather than the timeout copy, which would
+   * be a lie here.
+   *
+   * Concurrency: guarded by the SAME per-salon Redis lock `createHold` uses, for the same
+   * reason -- the availability re-check and the state transition must be one atomic
+   * critical section, or a concurrent `createHold`/`approve` on this salon could act on a
+   * capacity count that is stale by the time this call writes. Inside that lock, a
+   * conditional CAS on `status = 'pending_approval'` remains the DB-level guard against a
+   * concurrent reject/cancel/expiry-cron tick, exactly as every other transition here does
+   * it -- so a second approve, a reject, an approval-expiry tick, and a customer
+   * cancellation all contend on that one predicate and precisely one can win.
    */
   async approve(salonId: string, bookingId: string, actorId: string): Promise<EnrichedBooking> {
     const booking = await this.bookings.findOneBy({ id: bookingId, salonId });
@@ -835,7 +861,7 @@ export class BookingsService {
       throw new ConflictException('تا زمانی که وضعیت سالن تایید‌شده نباشد، امکان تایید نوبت وجود ندارد');
     }
     // A request can outlive the appointment it asked for: nothing stops a customer asking
-    // at 09:50 for 10:00 with a 30-minute approval window, and the approval-expiry cron
+    // at 09:50 for 10:00 with a 10-minute approval window, and the approval-expiry cron
     // only retires it on ITS deadline, not the booking's start. Approving here would open
     // a payment window for a slot in the past -- charging a customer for an appointment
     // they could not attend and putting a bogus row in the salon's own agenda. The owner's
@@ -853,50 +879,171 @@ export class BookingsService {
       ? BookingSettingsService.deadlineFrom(new Date(), settings.paymentTimeoutMinutes)
       : null;
 
-    await this.dataSource.transaction(async (em) => {
-      const result = await em.update(
-        Booking,
-        { id: bookingId, status: 'pending_approval' },
-        { status: nextStatus, paymentExpiresAt },
-      );
-      if (!result.affected) {
-        throw new ConflictException('این درخواست دیگر در انتظار تایید نیست');
-      }
+    // Same per-salon lock createHold uses: the availability re-check below and the state
+    // transition must be one atomic critical section (see the method doc comment).
+    const lockToken = await this.acquireSalonLock(salonId);
+    if (!lockToken) {
+      throw new ConflictException({
+        message: 'سیستم در حال بررسی این سالن است، لطفا دوباره تلاش کنید',
+        code: BOOKING_UNAVAILABLE,
+      });
+    }
 
-      // The Payment row deliberately did not exist until now (see createHold): its
-      // existence is this system's record that money is expected, and nothing was owed
-      // while the salon hadn't accepted.
-      if (requiresPayment) {
-        await em.save(
-          Payment,
-          em.create(Payment, {
+    // Set inside the transaction below when the re-check fails; read afterward to decide
+    // what to report. Never thrown from inside the transaction itself -- the auto-expiry
+    // this branch performs must COMMIT, not roll back with the rest of the attempt.
+    let invalidated: { code: string; message: string } | null = null;
+    try {
+      await this.dataSource.transaction(async (em) => {
+        const overlapping = await em.count(Booking, {
+          where: {
+            salonId,
+            status: In(SLOT_BLOCKING_STATUSES),
+            id: Not(bookingId),
+            startsAt: LessThan(booking.endsAt),
+            endsAt: MoreThan(booking.startsAt),
+          },
+        });
+        if (overlapping >= salon.capacity) {
+          invalidated = { code: BOOKING_UNAVAILABLE, message: 'ظرفیت این بازه زمانی دیگر پر است' };
+        }
+
+        if (!invalidated && booking.workerId) {
+          const worker = await this.workers.findOneBy({ id: booking.workerId, salonId });
+          if (!worker || !worker.active) {
+            invalidated = { code: WORKER_UNAVAILABLE, message: 'این کارمند دیگر فعال نیست' };
+          } else {
+            const eligible = await this.workerEligibility.isWorkerEligibleForService(
+              booking.workerId,
+              booking.serviceId,
+              em,
+            );
+            if (!eligible) {
+              invalidated = { code: WORKER_UNAVAILABLE, message: 'این کارمند دیگر این خدمت را انجام نمی‌دهد' };
+            } else {
+              const workerOverlapping = await em.count(Booking, {
+                where: {
+                  workerId: booking.workerId,
+                  status: In(SLOT_BLOCKING_STATUSES),
+                  id: Not(bookingId),
+                  startsAt: LessThan(booking.endsAt),
+                  endsAt: MoreThan(booking.startsAt),
+                },
+              });
+              if (workerOverlapping > 0) {
+                invalidated = { code: WORKER_UNAVAILABLE, message: 'این کارمند در این زمان نوبت دیگری دارد' };
+              }
+            }
+          }
+        }
+
+        if (invalidated) {
+          const expireResult = await em.update(
+            Booking,
+            { id: bookingId, status: 'pending_approval' },
+            { status: 'expired' },
+          );
+          if (!expireResult.affected) {
+            // A concurrent reject/cancel/timeout won in the moment between our initial
+            // read and this write -- their outcome stands, and they already recorded
+            // their own event, so nothing further to write here.
+            invalidated = { code: BOOKING_UNAVAILABLE, message: 'این درخواست دیگر در انتظار تایید نیست' };
+            return;
+          }
+          await releaseBookingHold(em, this.walletService, bookingId);
+          await this.bookingEvents.record(
+            {
+              bookingId,
+              eventType: 'APPROVAL_EXPIRED',
+              actorType: 'system',
+              metadata: {
+                cause: 'availability_recheck_failed',
+                reasonCode: invalidated.code,
+                attemptedByActorId: actorId,
+              },
+            },
+            em,
+          );
+          await this.bookingEvents.record(
+            {
+              bookingId,
+              eventType: 'SLOT_RELEASED',
+              actorType: 'system',
+              metadata: { cause: 'availability_recheck_failed' },
+            },
+            em,
+          );
+          return;
+        }
+
+        const result = await em.update(
+          Booking,
+          { id: bookingId, status: 'pending_approval' },
+          { status: nextStatus, paymentExpiresAt },
+        );
+        if (!result.affected) {
+          throw new ConflictException('این درخواست دیگر در انتظار تایید نیست');
+        }
+
+        // The Payment row deliberately did not exist until now (see createHold): its
+        // existence is this system's record that money is expected, and nothing was owed
+        // while the salon hadn't accepted.
+        if (requiresPayment) {
+          await em.save(
+            Payment,
+            em.create(Payment, {
+              bookingId,
+              amount: booking.depositAmount,
+              gateway: 'zarinpal',
+              status: 'initiated',
+            }),
+          );
+        }
+
+        await this.bookingEvents.record(
+          { bookingId, eventType: 'SALON_APPROVED', actorType: 'salon_owner', actorId },
+          em,
+        );
+        await this.bookingEvents.record(
+          {
             bookingId,
-            amount: booking.depositAmount,
-            gateway: 'zarinpal',
-            status: 'initiated',
-          }),
+            eventType: requiresPayment ? 'PAYMENT_WINDOW_STARTED' : 'BOOKING_CONFIRMED',
+            actorType: 'system',
+            metadata: requiresPayment
+              ? {
+                  paymentTimeoutMinutes: settings.paymentTimeoutMinutes,
+                  paymentExpiresAt: paymentExpiresAt?.toISOString() ?? null,
+                }
+              : { reason: 'zero_deposit' },
+          },
+          em,
+        );
+      });
+    } finally {
+      await this.releaseSalonLock(salonId, lockToken);
+    }
+
+    if (invalidated) {
+      const { code, message } = invalidated;
+      this.logger.log(
+        `booking.approval.failed_availability bookingId=${bookingId} salonId=${salonId} ` +
+          `customerId=${booking.userId} serviceId=${booking.serviceId} workerId=${booking.workerId ?? 'none'} ` +
+          `mode=manual_approval from=pending_approval to=expired actor=system attemptedByActorId=${actorId} ` +
+          `reasonCode=${code}`,
+      );
+      // Best-effort, post-commit: the auto-expiry already committed, so a failed SMS/push
+      // must never surface as some OTHER error to the owner.
+      try {
+        await this.paymentsService.notifyApprovalFailedAvailability(bookingId);
+      } catch (err) {
+        this.logger.error(
+          `Failed to notify the availability-triggered expiry of booking ${bookingId}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
         );
       }
-
-      await this.bookingEvents.record(
-        { bookingId, eventType: 'SALON_APPROVED', actorType: 'salon_owner', actorId },
-        em,
-      );
-      await this.bookingEvents.record(
-        {
-          bookingId,
-          eventType: requiresPayment ? 'PAYMENT_WINDOW_STARTED' : 'BOOKING_CONFIRMED',
-          actorType: 'system',
-          metadata: requiresPayment
-            ? {
-                paymentTimeoutMinutes: settings.paymentTimeoutMinutes,
-                paymentExpiresAt: paymentExpiresAt?.toISOString() ?? null,
-              }
-            : { reason: 'zero_deposit' },
-        },
-        em,
-      );
-    });
+      throw new ConflictException({ message, code });
+    }
 
     // Structured, greppable lifecycle line. Ids only -- no phone, no name, no payment
     // credential -- matching the same PII rule AnalyticsService and booking_events carry.

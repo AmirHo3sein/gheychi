@@ -28,6 +28,8 @@ A consolidated reference of every enforced business rule in the platform, groupe
 - The payment-window-expired notification is sent for **manual-approval bookings only** — an abandoned automatic checkout is deliberately never texted (SMS budget).
 - A customer is not texted merely for submitting a request (they are on the screen); the salon owner is, because the approval window is short and they are not.
 - A `pending_approval` request blocks its slot exactly as a paid booking does (`SLOT_BLOCKING_STATUSES`) — otherwise a salon could approve a request it has no room for.
+- `approve()` re-checks capacity and (when a specific worker was requested) worker availability before opening the payment window — a correctness requirement, not an optimization, since platform state can change between request and decision. A failed re-check auto-expires the request on the spot (never left pending for the same unavoidable cron-tick outcome) and is recorded distinctly from a genuine timeout.
+- No provider-side reminder SMS fires before the 10-minute approval deadline — a permanent SMS-budget decision, not a gap.
 - A request whose appointment time has already passed can no longer be approved — its approval deadline is independent of the booking's own `startsAt`, so a request can outlive the slot it asked for.
 - A salon owner cannot decline a `pending_approval` request through the customer cancel route; they must use `reject()`, which requires a reason.
 - `retry-payment` refuses once the booking's payment deadline has passed, even before the expiry cron has caught up.

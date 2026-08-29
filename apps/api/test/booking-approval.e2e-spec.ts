@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { BookingApprovalExpiryJob } from '../src/booking/booking-approval-expiry.job';
+import { BOOKING_UNAVAILABLE, WORKER_UNAVAILABLE } from '../src/booking/booking-error-codes';
 import { BookingExpiryJob } from '../src/booking/booking-expiry.job';
 import { PaymentReconciliationJob } from '../src/booking/payment-reconciliation.job';
 import { loginAs, loginAsAdmin } from './utils/auth-helper';
@@ -50,6 +51,22 @@ describe('Booking approval workflow (e2e)', () => {
     const [row] = await ds.query(`SELECT status FROM bookings WHERE id = $1`, [id]);
     return row.status;
   };
+
+  // Asserted through the console SMS provider's own log line rather than by mocking:
+  // SMS_PROVIDER=console in .env.test, so every real send is observable here, and this
+  // pins actual delivery rather than an intention to deliver. Shared across describe
+  // blocks (SMS budget, and the availability-recheck notification copy).
+  function captureSms(): { lines: string[]; restore: () => void } {
+    const lines: string[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const proto = (require('@nestjs/common') as any).Logger.prototype;
+    const original = proto.log;
+    proto.log = function patched(message: unknown, ...rest: unknown[]) {
+      lines.push(String(message));
+      return original.call(this, message, ...rest);
+    };
+    return { lines, restore: () => { proto.log = original; } };
+  }
 
   beforeAll(async () => {
     await resetDatabase();
@@ -300,6 +317,364 @@ describe('Booking approval workflow (e2e)', () => {
         .post(`/api/salons/mine/bookings/${bookingId}/reject`)
         .send({ reason: 'x' })
         .expect(401);
+    });
+  });
+
+  // --- approve() re-checks availability -- platform state can move between the request
+  // and the salon's decision, and an approval must never open a payment window for a slot
+  // that no longer fits. A dedicated salon (capacity 2, two workers) so these cases don't
+  // fight the shared salonId/serviceId for a chair.
+  describe('approve() re-checks availability before opening the payment window', () => {
+    let recheckOwnerCookie: string;
+    let recheckSalonId: string;
+    let recheckServiceId: string;
+    let worker1Id: string;
+    let worker2Id: string;
+
+    beforeAll(async () => {
+      recheckOwnerCookie = await loginAs(app, '09171110020');
+      const created = await createApprovedSalonWithService(
+        app,
+        recheckOwnerCookie,
+        { name: 'Availability Recheck Salon', capacity: 2 },
+        { price: 1_000_000 },
+      );
+      recheckSalonId = created.salonId;
+      recheckServiceId = created.serviceId;
+      await request(app.getHttpServer())
+        .patch('/api/salons/mine')
+        .set('Cookie', recheckOwnerCookie)
+        .send({ bookingConfirmationMode: 'manual_approval' })
+        .expect(200);
+
+      const w1 = await request(app.getHttpServer())
+        .post('/api/salons/mine/workers')
+        .set('Cookie', recheckOwnerCookie)
+        .send({ name: 'Recheck Worker 1', phone: '09171110021' })
+        .expect(201);
+      worker1Id = w1.body.id;
+      const w2 = await request(app.getHttpServer())
+        .post('/api/salons/mine/workers')
+        .set('Cookie', recheckOwnerCookie)
+        .send({ name: 'Recheck Worker 2', phone: '09171110022' })
+        .expect(201);
+      worker2Id = w2.body.id;
+    });
+
+    function recheckBook(startsAt: string, cookie: string, extra: Record<string, unknown> = {}) {
+      return request(app.getHttpServer())
+        .post('/api/bookings')
+        .set('Cookie', cookie)
+        .send({ salonId: recheckSalonId, serviceId: recheckServiceId, startsAt, ...extra });
+    }
+
+    async function recheckStatusOf(id: string): Promise<string> {
+      const [row] = await ds.query(`SELECT status FROM bookings WHERE id = $1`, [id]);
+      return row.status;
+    }
+
+    // 1. approval succeeds when availability is still valid ---------------------------
+    it('approves normally when nothing about availability has changed since the request', async () => {
+      const cust = await loginAs(app, '09171110023');
+      const created = await recheckBook(futureIso(300), cust).expect(201);
+      const bookingId = created.body.booking.id;
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/salons/mine/bookings/${bookingId}/approve`)
+        .set('Cookie', recheckOwnerCookie)
+        .expect(200);
+
+      expect(res.body.status).toBe('pending_payment');
+    });
+
+    // 2. approval fails when capacity becomes insufficient -----------------------------
+    it('auto-expires the request (never opening a payment window) when the salon lowered its own capacity below what is already pending', async () => {
+      const startsAt = futureIso(301);
+      const custA = await loginAs(app, '09171110024');
+      const custB = await loginAs(app, '09171110025');
+      // Capacity 2 lets both pending_approval requests coexist for the same slot -- exactly
+      // the same rule that already blocks a THIRD, over-capacity request at creation time.
+      const bookingA = await recheckBook(startsAt, custA).expect(201);
+      const bookingB = await recheckBook(startsAt, custB).expect(201);
+      const [paymentsBefore] = await Promise.all([
+        ds.query(`SELECT id FROM payments WHERE booking_id = $1`, [bookingA.body.booking.id]),
+      ]);
+      expect(paymentsBefore).toHaveLength(0);
+
+      await request(app.getHttpServer())
+        .patch('/api/salons/mine')
+        .set('Cookie', recheckOwnerCookie)
+        .send({ capacity: 1 })
+        .expect(200);
+
+      // Neither request can be approved in isolation any more -- approving A while B is
+      // still pending would leave 2 slot-blocking bookings against a capacity of 1.
+      const res = await request(app.getHttpServer())
+        .post(`/api/salons/mine/bookings/${bookingA.body.booking.id}/approve`)
+        .set('Cookie', recheckOwnerCookie)
+        .expect(409);
+      expect(res.body.code).toBe(BOOKING_UNAVAILABLE);
+
+      // Auto-expired, not left dangling in pending_approval for the next cron tick --
+      // the outcome cannot change before then, so there's nothing to wait for.
+      expect(await recheckStatusOf(bookingA.body.booking.id)).toBe('expired');
+      const paymentsAfter = await ds.query(`SELECT id FROM payments WHERE booking_id = $1`, [
+        bookingA.body.booking.id,
+      ]);
+      expect(paymentsAfter).toHaveLength(0);
+
+      // With A now expired (no longer a blocking status), B's own overlap count excluding
+      // itself drops to 0 -- capacity 1 is enough for B alone, so it CAN now be approved.
+      await request(app.getHttpServer())
+        .post(`/api/salons/mine/bookings/${bookingB.body.booking.id}/approve`)
+        .set('Cookie', recheckOwnerCookie)
+        .expect(200);
+      expect(await recheckStatusOf(bookingB.body.booking.id)).toBe('pending_payment');
+
+      await request(app.getHttpServer())
+        .patch('/api/salons/mine')
+        .set('Cookie', recheckOwnerCookie)
+        .send({ capacity: 2 })
+        .expect(200);
+    });
+
+    // 3. approval fails when worker availability becomes invalid -----------------------
+    it('auto-expires the request when the requested worker was deactivated after the request was made', async () => {
+      const cust = await loginAs(app, '09171110026');
+      const created = await recheckBook(futureIso(302), cust, { workerId: worker1Id }).expect(201);
+      const bookingId = created.body.booking.id;
+
+      await request(app.getHttpServer())
+        .patch(`/api/salons/mine/workers/${worker1Id}`)
+        .set('Cookie', recheckOwnerCookie)
+        .send({ active: false })
+        .expect(200);
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/salons/mine/bookings/${bookingId}/approve`)
+        .set('Cookie', recheckOwnerCookie)
+        .expect(409);
+      expect(res.body.code).toBe(WORKER_UNAVAILABLE);
+      expect(await recheckStatusOf(bookingId)).toBe('expired');
+
+      await request(app.getHttpServer())
+        .patch(`/api/salons/mine/workers/${worker1Id}`)
+        .set('Cookie', recheckOwnerCookie)
+        .send({ active: true })
+        .expect(200);
+    });
+
+    it('auto-expires the request when the requested worker was reassigned away from the service after the request was made', async () => {
+      const cust = await loginAs(app, '09171110027');
+      const created = await recheckBook(futureIso(303), cust, { workerId: worker2Id }).expect(201);
+      const bookingId = created.body.booking.id;
+
+      // worker2 starts unrestricted (no worker_services rows -> eligible for everything
+      // per the opt-out model). Giving it exactly one row, for a DIFFERENT service, makes
+      // it ineligible for the one this request actually asked for.
+      const categoriesRes = await request(app.getHttpServer()).get('/api/categories').expect(200);
+      const otherService = await request(app.getHttpServer())
+        .post('/api/salons/mine/services')
+        .set('Cookie', recheckOwnerCookie)
+        .send({ categoryId: categoriesRes.body[0].id, name: 'Other Service', price: 500_000, durationMin: 30 })
+        .expect(201);
+      await request(app.getHttpServer())
+        .patch(`/api/salons/mine/workers/${worker2Id}/services`)
+        .set('Cookie', recheckOwnerCookie)
+        .send({ serviceIds: [otherService.body.id] })
+        .expect(200);
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/salons/mine/bookings/${bookingId}/approve`)
+        .set('Cookie', recheckOwnerCookie)
+        .expect(409);
+      expect(res.body.code).toBe(WORKER_UNAVAILABLE);
+      expect(await recheckStatusOf(bookingId)).toBe('expired');
+
+      // Restore worker2 to unrestricted for any later case in this block.
+      await request(app.getHttpServer())
+        .patch(`/api/salons/mine/workers/${worker2Id}/services`)
+        .set('Cookie', recheckOwnerCookie)
+        .send({ serviceIds: [] })
+        .expect(200);
+    });
+
+    // The failed re-check is auditable exactly like every other transition here, and
+    // distinguishable in the timeline from a genuine timeout.
+    it('records the availability-recheck failure as a distinct, attributable event', async () => {
+      const cust = await loginAs(app, '09171110028');
+      const created = await recheckBook(futureIso(304), cust, { workerId: worker1Id }).expect(201);
+      const bookingId = created.body.booking.id;
+      await request(app.getHttpServer())
+        .patch(`/api/salons/mine/workers/${worker1Id}`)
+        .set('Cookie', recheckOwnerCookie)
+        .send({ active: false })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .post(`/api/salons/mine/bookings/${bookingId}/approve`)
+        .set('Cookie', recheckOwnerCookie)
+        .expect(409);
+
+      const events = await request(app.getHttpServer())
+        .get(`/api/admin/bookings/${bookingId}/events`)
+        .set('Cookie', adminCookie)
+        .expect(200);
+      const approvalExpired = events.body.find((e: { eventType: string }) => e.eventType === 'APPROVAL_EXPIRED');
+      expect(approvalExpired.metadata.cause).toBe('availability_recheck_failed');
+      expect(approvalExpired.metadata.reasonCode).toBe(WORKER_UNAVAILABLE);
+      expect(approvalExpired.actorType).toBe('system');
+      const released = events.body.find(
+        (e: { eventType: string; metadata: { cause: string } }) =>
+          e.eventType === 'SLOT_RELEASED' && e.metadata?.cause === 'availability_recheck_failed',
+      );
+      expect(released).toBeTruthy();
+
+      await request(app.getHttpServer())
+        .patch(`/api/salons/mine/workers/${worker1Id}`)
+        .set('Cookie', recheckOwnerCookie)
+        .send({ active: true })
+        .expect(200);
+    });
+
+    // The customer is told the truth: the salon DID respond, the slot changed underneath
+    // the request -- never the "the salon didn't respond in time" timeout copy, which
+    // would misdirect a support conversation here.
+    it('tells the customer the truth instead of the timeout copy', async () => {
+      const cust = await loginAs(app, '09171110029');
+      const created = await recheckBook(futureIso(305), cust, { workerId: worker1Id }).expect(201);
+      const bookingId = created.body.booking.id;
+      await request(app.getHttpServer())
+        .patch(`/api/salons/mine/workers/${worker1Id}`)
+        .set('Cookie', recheckOwnerCookie)
+        .send({ active: false })
+        .expect(200);
+
+      const sms = captureSms();
+      try {
+        await request(app.getHttpServer())
+          .post(`/api/salons/mine/bookings/${bookingId}/approve`)
+          .set('Cookie', recheckOwnerCookie)
+          .expect(409);
+      } finally {
+        sms.restore();
+      }
+
+      expect(sms.lines.some((l) => l.includes('09171110029') && l.includes('دیگر در دسترس نیست'))).toBe(true);
+      expect(sms.lines.some((l) => l.includes('09171110029') && l.includes('عدم پاسخ سالن'))).toBe(false);
+
+      await request(app.getHttpServer())
+        .patch(`/api/salons/mine/workers/${worker1Id}`)
+        .set('Cookie', recheckOwnerCookie)
+        .send({ active: true })
+        .expect(200);
+    });
+
+    // 4. concurrent approval attempts cannot double-book --------------------------------
+    // Two pending_approval requests can only ever contend for the SAME reduced capacity
+    // via the capacity axis, never the worker axis: two overlapping requests for the same
+    // specific worker are already impossible to create (createHold's own worker-overlap
+    // check, run against SLOT_BLOCKING_STATUSES, rejects the second one at REQUEST time).
+    // So capacity is the only real fixture for this scenario.
+    it('never lets two concurrently-approved, over-capacity requests both succeed', async () => {
+      const startsAt = futureIso(306);
+      const custA = await loginAs(app, '09171110030');
+      const custB = await loginAs(app, '09171110031');
+      const bookingA = await recheckBook(startsAt, custA).expect(201);
+      const bookingB = await recheckBook(startsAt, custB).expect(201);
+
+      await request(app.getHttpServer())
+        .patch('/api/salons/mine')
+        .set('Cookie', recheckOwnerCookie)
+        .send({ capacity: 1 })
+        .expect(200);
+
+      const results = await Promise.all(
+        [bookingA.body.booking.id, bookingB.body.booking.id].map((id) =>
+          request(app.getHttpServer())
+            .post(`/api/salons/mine/bookings/${id}/approve`)
+            .set('Cookie', recheckOwnerCookie),
+        ),
+      );
+      const statuses = [
+        await recheckStatusOf(bookingA.body.booking.id),
+        await recheckStatusOf(bookingB.body.booking.id),
+      ];
+      // The decisive invariant: AT MOST one request may ever reach a payable state, and
+      // when one does, the redis-lock/CAS pair around approve() must have prevented the
+      // other from reaching it too -- that is what "cannot double-book" actually means.
+      //
+      // A genuinely simultaneous race over two requests that TOGETHER exceed capacity can
+      // legitimately produce a winner-less outcome too: whichever request's re-check runs
+      // first still finds the OTHER one sitting in pending_approval (nothing has resolved
+      // it yet), which by itself already fills the reduced capacity -- so it can correctly
+      // self-expire, and the second request either loses the redis lock outright (stays
+      // pending_approval, a clean retryable 409) or runs its own re-check moments later and
+      // finds nothing changed. Zero winners here is a safe, honest report of "neither could
+      // be honoured given what was true at that instant" -- not a bug. What a real owner
+      // sees in this situation is two 409s and can approve whichever one is still pending
+      // next; that path is exactly the SEQUENTIAL case the previous test proves works. The
+      // one outcome that must be structurally impossible is BOTH ending up pending_payment.
+      const succeeded = statuses.filter((s) => s === 'pending_payment').length;
+      expect(succeeded).toBeLessThanOrEqual(1);
+      const okResults = results.filter((r) => r.status === 200).length;
+      expect(okResults).toBe(succeeded);
+      // No double-booking: never more than one Payment row for this pair of requests.
+      const payments = await ds.query(
+        `SELECT id FROM payments WHERE booking_id = ANY($1::uuid[])`,
+        [[bookingA.body.booking.id, bookingB.body.booking.id]],
+      );
+      expect(payments.length).toBeLessThanOrEqual(1);
+      expect(payments.length).toBe(succeeded);
+
+      await request(app.getHttpServer())
+        .patch('/api/salons/mine')
+        .set('Cookie', recheckOwnerCookie)
+        .send({ capacity: 2 })
+        .expect(200);
+
+      // Whatever this race left behind, the salon must still be able to reach a clean
+      // resolution afterward -- a still-pending loser can be approved (or declined) next,
+      // exactly like any other pending_approval request.
+      for (const id of [bookingA.body.booking.id, bookingB.body.booking.id]) {
+        if (await recheckStatusOf(id) === 'pending_approval') {
+          await request(app.getHttpServer())
+            .post(`/api/salons/mine/bookings/${id}/reject`)
+            .set('Cookie', recheckOwnerCookie)
+            .send({ reason: 'cleanup' })
+            .expect(200);
+        }
+      }
+    });
+
+    // 10. automatic-mode bookings are entirely unaffected by any of the above -----------
+    it('never runs the availability re-check for automatic-mode bookings, which have no approve() step at all', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/salons/mine')
+        .set('Cookie', recheckOwnerCookie)
+        .send({ bookingConfirmationMode: 'automatic' })
+        .expect(200);
+
+      // Lower capacity to 1 first -- if approve()'s re-check somehow ran against an
+      // automatic booking, this would be exactly the condition that trips it.
+      await request(app.getHttpServer())
+        .patch('/api/salons/mine')
+        .set('Cookie', recheckOwnerCookie)
+        .send({ capacity: 1 })
+        .expect(200);
+
+      const cust = await loginAs(app, '09171110032');
+      const created = await recheckBook(futureIso(307), cust).expect(201);
+      // Automatic mode goes straight to pending_payment -- no approve() call exists on
+      // this path for the re-check to run inside.
+      expect(created.body.booking.status).toBe('pending_payment');
+      expect(created.body.booking.confirmationMode).toBe('automatic');
+
+      await request(app.getHttpServer())
+        .patch('/api/salons/mine')
+        .set('Cookie', recheckOwnerCookie)
+        .send({ capacity: 2, bookingConfirmationMode: 'manual_approval' })
+        .expect(200);
     });
   });
 
@@ -566,21 +941,6 @@ describe('Booking approval workflow (e2e)', () => {
 
   // --- SMS budget: the payment-expiry notification is manual-mode ONLY -----------------
   describe('SMS is spent deliberately', () => {
-    // Asserted through the console SMS provider's own log line rather than by mocking:
-    // SMS_PROVIDER=console in .env.test, so every real send is observable here, and this
-    // pins actual delivery rather than an intention to deliver.
-    function captureSms(): { lines: string[]; restore: () => void } {
-      const lines: string[] = [];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const proto = (require('@nestjs/common') as any).Logger.prototype;
-      const original = proto.log;
-      proto.log = function patched(message: unknown, ...rest: unknown[]) {
-        lines.push(String(message));
-        return original.call(this, message, ...rest);
-      };
-      return { lines, restore: () => { proto.log = original; } };
-    }
-
     it('does NOT text a customer whose AUTOMATIC checkout was simply abandoned', async () => {
       await setMode('automatic');
       // A dedicated customer, and the assertion is scoped to THEIR phone: one run of the
@@ -649,6 +1009,38 @@ describe('Booking approval workflow (e2e)', () => {
       expect(sms.lines.some((l) => l.includes('درخواست نوبت جدید'))).toBe(true);
       expect(sms.lines.some((l) => l.includes('درخواست نوبت شما'))).toBe(false);
     });
+
+    // 6. no provider reminder is sent before timeout -------------------------------------
+    // A deliberate product decision, not a gap: the 10-minute window is short enough that
+    // a second SMS would be spending money to repeat something the owner was already told
+    // once. See docs/technical-overview/28's "Deliberate cuts" section.
+    it('sends exactly ONE owner SMS across the full pending window, with no reminder before the approval deadline', async () => {
+      await setMode('manual_approval');
+      const ownerPhone = '09171110001';
+      const custCookie = await loginAs(app, '09171110033');
+
+      const sms = captureSms();
+      let bookingId: string;
+      try {
+        const created = await book(futureIso(293), custCookie).expect(201);
+        bookingId = created.body.booking.id;
+        // Simulate the request having sat pending for its entire window with the owner
+        // never acting -- if a reminder job existed, this is exactly the gap it would
+        // fire into.
+        await ds.query(`UPDATE bookings SET approval_expires_at = now() - interval '1 minute' WHERE id = $1`, [
+          bookingId,
+        ]);
+        await app.get(BookingApprovalExpiryJob).run();
+      } finally {
+        sms.restore();
+      }
+
+      const ownerLines = sms.lines.filter((l) => l.includes(ownerPhone));
+      // Exactly the one initial "a new request is waiting" ping -- never a second,
+      // reminder-shaped message before (or instead of) the timeout.
+      expect(ownerLines).toHaveLength(1);
+      expect(ownerLines[0]).toContain('درخواست نوبت جدید');
+    });
   });
 
   // --- Scenario 8: config snapshotting ------------------------------------------------
@@ -669,12 +1061,29 @@ describe('Booking approval workflow (e2e)', () => {
       const [after] = await ds.query(`SELECT approval_expires_at FROM bookings WHERE id = $1`, [bookingId]);
       expect(new Date(after.approval_expires_at).getTime()).toBe(new Date(before.approval_expires_at).getTime());
 
-      // Restore, so later cases in this file aren't running against a 10-hour window.
+      // Restore the real seeded default (10), so later cases in this file aren't running
+      // against a 10-hour window.
       await request(app.getHttpServer())
         .patch('/api/admin/config')
         .set('Cookie', adminCookie)
-        .send({ updates: [{ key: 'booking_approval_timeout_minutes', value: 30 }] })
+        .send({ updates: [{ key: 'booking_approval_timeout_minutes', value: 10 }] })
         .expect(200);
+    });
+
+    it('resolves the platform default to exactly 10 minutes for a request with no salon override', async () => {
+      // Offset kept well clear of this describe block's other cases (230, 231): with an
+      // exactly-60-minute service duration, an offset only 1 hour from an ALREADY-COMPUTED
+      // neighbour is one real wall-clock millisecond away from a genuine overlap, since
+      // each futureIso() call reads Date.now() at a slightly later real instant than the
+      // last. This is exactly the race that briefly broke 'applies the per-salon admin
+      // override...' below when this case was first inserted at offset 232.
+      const created = await book(futureIso(234)).expect(201);
+      const elapsedMinutes = (new Date(created.body.booking.approvalExpiresAt).getTime() - Date.now()) / 60_000;
+      // Deliberately short -- see BookingSettingsService/platform_config seed: a customer
+      // should not sit on an unpayable slot for half an hour waiting on an owner who may
+      // not be looking at their phone.
+      expect(elapsedMinutes).toBeGreaterThan(9.5);
+      expect(elapsedMinutes).toBeLessThanOrEqual(10);
     });
 
     it('applies the per-salon admin override to newly created requests', async () => {

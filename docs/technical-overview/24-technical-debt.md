@@ -45,10 +45,14 @@ Every item here is a legitimate, scoped candidate for a future cleanup ticket. N
 
 ## Introduced, and accepted
 
-- `approve()` does not re-check slot availability. It cannot double-book (the request has held
-  its slot since creation), but a salon whose capacity was reduced beneath two already-pending
-  requests can approve both.
 - The two booking-status label maps still diverge in wording across user-app and provider-panel
   (pre-existing), and the new statuses were added to each in that app's own voice rather than
   unifying them.
-- No provider-side reminder fires before an approval deadline lapses.
+
+## Resolved: `approve()` now re-checks availability
+
+Was listed here as an accepted gap; it is a correctness requirement instead. `approve()` replays
+`createHold`'s own capacity and worker-availability checks (this booking's own row excluded)
+inside the same per-salon Redis lock, and auto-expires the request on the spot if the slot no
+longer fits rather than opening a payment window for one that doesn't. See
+[28-booking-approval-workflow.md](./28-booking-approval-workflow.md).
