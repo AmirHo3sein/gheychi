@@ -16,6 +16,7 @@ import { CitiesModule } from './cities/cities.module';
 import { CommonModule } from './common/common.module';
 import { ContentModule } from './content/content.module';
 import { CouponsModule } from './coupons/coupons.module';
+import { CrmModule } from './crm/crm.module';
 import { CspReportModule } from './csp-report/csp-report.module';
 import { ErrorTrackingModule } from './error-tracking/error-tracking.module';
 import { GlobalExceptionFilter } from './error-tracking/global-exception.filter';
@@ -85,6 +86,7 @@ import { WalletModule } from './wallet/wallet.module';
     InvoicingModule,
     StorageModule,
     ActivityModule,
+    CrmModule,
   ],
   controllers: [HealthController],
   providers: [

@@ -110,6 +110,14 @@ A consolidated reference of every enforced business rule in the platform, groupe
 - `Booking.attributionSource` ('qr'/'direct'/'search'/null) is distinct from `Booking.source` ('online'/'manual') — the former is a marketing channel, the latter is how the row was created. Resolved once client-side, never recomputed.
 - Attribution is best-effort and additive only — never blocks or alters a booking's own creation logic, and an unrecognized/malformed value is silently dropped rather than rejected loudly on this specific field.
 
+## Salon CRM rules
+
+- A "customer" is not a separate entity — anyone with at least one `Booking` at a salon is that salon's customer, and ownership isolation is enforced by the booking-history query's own `WHERE salon_id = ... AND user_id = ...` shape, not a separate access check.
+- Customer segment (`new`/`returning`/`lapsed`) is a fixed heuristic (≤1 booking → new; no visit in 60+ days → lapsed; otherwise returning) — not admin/owner-configurable.
+- Dashboard figures are filtered by *when the activity happened* (`created_at`/`paid_at`), never a booking's own `starts_at` (almost always a future appointment date) — the same "when did this happen" lens across gross value, online-collected, and commission.
+- `grossBookingValue` is the full service price (`bookings.price_snapshot`); it is never conflated with `financial_transactions.gross_amount`, which is the online deposit only. `estimatedSalonRevenue` (gross − commission) is explicitly labeled estimated — the salon's own cash portion is never actually observed by the platform.
+- Customer notes are owner-only (create/delete, no edit), salon-scoped, and never audited — self-service data about the caller's own customers, matching the codebase's "audit_log = which admin did what" semantics.
+
 ## Category rules
 
 - A salon must have at least one category tag from creation onward — `categoryIds` requires `@ArrayMinSize(1)` on both create and (when supplied) update.
@@ -132,4 +140,4 @@ A consolidated reference of every enforced business rule in the platform, groupe
 
 ## Related documents
 
-Every rule above is explained in full mechanical detail, with sequence/state diagrams, in its owning subsystem document: [09](./09-booking-engine.md), [10](./10-scheduling.md), [11](./11-payment-system.md), [12](./12-wallet.md), [13](./13-financial-system.md), [14](./14-commission.md).
+Every rule above is explained in full mechanical detail, with sequence/state diagrams, in its owning subsystem document: [09](./09-booking-engine.md), [10](./10-scheduling.md), [11](./11-payment-system.md), [12](./12-wallet.md), [13](./13-financial-system.md), [14](./14-commission.md), [30](./30-subscription-plan-foundation.md), [31](./31-public-handle-and-attribution.md), [32](./32-salon-crm.md).

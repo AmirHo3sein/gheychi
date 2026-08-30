@@ -71,6 +71,7 @@ const upcomingBookings = computed(() =>
 )
 
 const QUICK_LINKS: Array<{ to: string; label: string; icon: IconName }> = [
+  { to: '/customers', label: 'مشتریان', icon: 'customers' },
   { to: '/hours', label: 'ساعات کاری', icon: 'hours' },
   { to: '/photos', label: 'تصاویر', icon: 'photos' },
   { to: '/stories', label: 'استوری‌ها', icon: 'stories' },
@@ -92,11 +93,11 @@ function formatBookingTime(iso: string): string {
   <div class="mx-auto w-full max-w-5xl space-y-6 p-4 lg:p-6">
     <h1 class="text-lg font-bold text-(--color-text)">داشبورد</h1>
 
-    <!-- These eight tiles are the only route to the screens the nav bar doesn't carry, so
+    <!-- These nine tiles are the only route to the screens the nav bar doesn't carry, so
          they matter at every width: 3-up on a phone (90px tiles at 320px, enough for a
          two-line label), then more columns rather than taller tiles as the viewport grows,
-         landing on a single 8-across row on a laptop. -->
-    <div class="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-8 lg:gap-3">
+         landing on a single 9-across row on a laptop. -->
+    <div class="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-9 lg:gap-3">
       <RouterLink
         v-for="link in QUICK_LINKS"
         :key="link.to"

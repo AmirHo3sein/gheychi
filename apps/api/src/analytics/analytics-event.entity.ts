@@ -19,6 +19,12 @@ export class AnalyticsEventRecord {
   @Column({ name: 'user_id', type: 'uuid', nullable: true })
   userId: string | null;
 
+  // Lifted out of `properties.salonId` at write time (PostgresAnalyticsProvider) whenever
+  // it's present -- not every event has salon context, so this stays nullable. Exists so a
+  // per-salon funnel query is a plain indexed column lookup instead of a jsonb reach-in.
+  @Column({ name: 'salon_id', type: 'uuid', nullable: true })
+  salonId: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 }

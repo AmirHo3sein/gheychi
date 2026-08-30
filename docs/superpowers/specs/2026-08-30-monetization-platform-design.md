@@ -78,7 +78,11 @@ read from, so it's built before the features that will eventually be gated by it
    `docs/technical-overview/31-public-handle-and-attribution.md`).
 5. Salon CRM (customer list/detail/notes, revenue dashboard with precise gross/collected/
    commission/estimated-revenue terminology, backed by a new aggregation endpoint following
-   the `salons/mine/earnings` pattern; `analytics_events.salon_id` added here).
+   the `salons/mine/earnings` pattern; `analytics_events.salon_id` added here). ✅ shipped
+   2026-08-30 (see `docs/technical-overview/32-salon-crm.md`). No entitlement-gated CRM cap
+   was actually wired in this phase — `MAX_CUSTOMERS_LISTED` is a plain defensive ceiling, not
+   a per-plan entitlement key — since no plan currently has a reason to differ on this; left
+   for whenever a real product need for a per-plan customer-list cap shows up.
 6. Salon SMS + quota (reuses the existing `notifyConfirmed`/`SmsProvider` send path; quota
    numbers read from the Phase 2/3 entitlement engine).
 7. Subscription coupons + the remaining billing-architecture scaffolding — last, since it's

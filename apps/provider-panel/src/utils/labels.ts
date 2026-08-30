@@ -36,6 +36,16 @@ export function invoiceStatusLabel(status: string): LabelMeta {
   return INVOICE_STATUS[status] ?? { label: status, tone: 'neutral' }
 }
 
+const CUSTOMER_SEGMENT: Record<string, LabelMeta> = {
+  new: { label: 'مشتری جدید', tone: 'info' },
+  returning: { label: 'مشتری وفادار', tone: 'success' },
+  lapsed: { label: 'مدتی است نیامده', tone: 'warning' },
+}
+
+export function customerSegmentLabel(segment: string): LabelMeta {
+  return CUSTOMER_SEGMENT[segment] ?? { label: segment, tone: 'neutral' }
+}
+
 const JALALI_MONTHS = [
   'فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور',
   'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند',

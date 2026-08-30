@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bookingStatusLabel, invoiceStatusLabel, jalaliMonthLabel } from './labels'
+import { bookingStatusLabel, customerSegmentLabel, invoiceStatusLabel, jalaliMonthLabel } from './labels'
 
 describe('bookingStatusLabel', () => {
   // The two manual-approval statuses must never fall through to the raw-value fallback:
@@ -24,6 +24,18 @@ describe('invoiceStatusLabel', () => {
 
   it('falls back to the raw value for an unknown status', () => {
     expect(invoiceStatusLabel('weird')).toEqual({ label: 'weird', tone: 'neutral' })
+  })
+})
+
+describe('customerSegmentLabel', () => {
+  it('maps every segment to a Farsi label and tone', () => {
+    expect(customerSegmentLabel('new')).toEqual({ label: 'مشتری جدید', tone: 'info' })
+    expect(customerSegmentLabel('returning')).toEqual({ label: 'مشتری وفادار', tone: 'success' })
+    expect(customerSegmentLabel('lapsed')).toEqual({ label: 'مدتی است نیامده', tone: 'warning' })
+  })
+
+  it('falls back to the raw value for an unknown segment', () => {
+    expect(customerSegmentLabel('weird')).toEqual({ label: 'weird', tone: 'neutral' })
   })
 })
 

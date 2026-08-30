@@ -29,6 +29,11 @@ export class PostgresAnalyticsProvider implements AnalyticsProvider {
 
   async track(event: AnalyticsEvent): Promise<void> {
     try {
+      // Every booking-funnel event already carries a bare salonId reference in its own
+      // properties (see AnalyticsService's own doc comment on that convention) -- lifted out
+      // here rather than widening AnalyticsService.track()'s signature, so this stays a
+      // zero-call-site-change addition.
+      const salonId = typeof event.properties?.salonId === 'string' ? event.properties.salonId : null;
       await this.events.insert({
         eventName: event.name,
         // TypeORM's QueryDeepPartialEntity recurses into object-typed columns; an
@@ -38,6 +43,7 @@ export class PostgresAnalyticsProvider implements AnalyticsProvider {
         // unaffected -- the pg driver serializes it as-is.
         properties: (event.properties ?? null) as any,
         userId: event.userId ?? null,
+        salonId,
         createdAt: event.timestamp,
       });
     } catch (err) {

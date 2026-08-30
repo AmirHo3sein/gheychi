@@ -27,6 +27,7 @@ import { SitemapBlogController } from './content/sitemap-blog.controller';
 import { AdminCouponsController } from './coupons/admin-coupons.controller';
 import { CouponValidationController } from './coupons/coupon-validation.controller';
 import { SalonCouponsController } from './coupons/salon-coupons.controller';
+import { SalonCustomersController } from './crm/salon-customers.controller';
 import { CspReportController } from './csp-report/csp-report.controller';
 import { FavoritesController } from './favorites/favorites.controller';
 import { HealthController } from './health/health.controller';
@@ -98,6 +99,7 @@ const ALL_CONTROLLERS: Function[] = [
   AdminCouponsController,
   CouponValidationController,
   SalonCouponsController,
+  SalonCustomersController,
   CspReportController,
   FavoritesController,
   HealthController,

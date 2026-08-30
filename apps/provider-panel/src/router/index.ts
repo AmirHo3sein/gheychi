@@ -27,6 +27,8 @@ const routes = [
       { path: 'reviews', name: 'reviews', component: () => import('@/pages/ReviewsView.vue') },
       { path: 'earnings', name: 'earnings', component: () => import('@/pages/EarningsView.vue') },
       { path: 'plan', name: 'plan', component: () => import('@/pages/PlanView.vue') },
+      { path: 'customers', name: 'customers', component: () => import('@/pages/CustomersView.vue') },
+      { path: 'customers/:id', name: 'customer-detail', component: () => import('@/pages/CustomerDetailView.vue') },
     ],
   },
 ]
