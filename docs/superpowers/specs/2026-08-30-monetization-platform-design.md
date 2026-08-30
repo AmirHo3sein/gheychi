@@ -84,7 +84,9 @@ read from, so it's built before the features that will eventually be gated by it
    a per-plan entitlement key — since no plan currently has a reason to differ on this; left
    for whenever a real product need for a per-plan customer-list cap shows up.
 6. Salon SMS + quota (reuses the existing `notifyConfirmed`/`SmsProvider` send path; quota
-   numbers read from the Phase 2/3 entitlement engine).
+   numbers read from the Phase 2/3 entitlement engine). ✅ shipped 2026-08-30 (see
+   `docs/technical-overview/33-salon-sms-quota.md`) — the first phase to actually *enforce*
+   an entitlement (`entitlements.smsMonthlyQuota`) rather than just resolve one.
 7. Subscription coupons + the remaining billing-architecture scaffolding — last, since it's
    explicitly the "don't overbuild" cluster.
 

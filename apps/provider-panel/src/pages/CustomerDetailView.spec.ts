@@ -15,9 +15,18 @@ function makeDetail() {
     notes: [{ id: 'n1', note: 'همیشه دیر می‌رسد', createdAt: '2026-08-01T10:00:00.000Z' }],
   }
 }
+function makeQuota() {
+  return { quota: 20, used: 2, remaining: 18 }
+}
 
 async function mountView(fetchImpl: (url: string, opts?: { method?: string }) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>) {
-  vi.stubGlobal('fetch', vi.fn(fetchImpl))
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((url: string, opts?: { method?: string }) => {
+      if (url.includes('/sms-quota')) return Promise.resolve({ ok: true, status: 200, json: async () => makeQuota() })
+      return fetchImpl(url, opts)
+    }),
+  )
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/customers/:id', component: CustomerDetailView }],
@@ -84,5 +93,30 @@ describe('CustomerDetailView', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     expect(wrapper.find('[data-testid="note-row"]').exists()).toBe(false)
+  })
+
+  it('shows the remaining monthly SMS quota', async () => {
+    const wrapper = await mountView(async () => ({ ok: true, status: 200, json: async () => makeDetail() }))
+
+    const line = wrapper.get('[data-testid="sms-quota-remaining"]')
+    expect(line.text()).toContain('18')
+    expect(line.text()).toContain('20')
+  })
+
+  it('sends an SMS to the customer and updates the remaining quota from the response', async () => {
+    const wrapper = await mountView(async (url, opts) => {
+      if (url.includes('/sms') && opts?.method === 'POST') {
+        return { ok: true, status: 201, json: async () => ({ quota: 20, used: 3, remaining: 17 }) }
+      }
+      return { ok: true, status: 200, json: async () => makeDetail() }
+    })
+
+    await wrapper.get('[data-testid="sms-message-input"]').setValue('یادآوری نوبت شما')
+    await wrapper.get('[data-testid="send-sms-button"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect((wrapper.get('[data-testid="sms-message-input"]').element as HTMLTextAreaElement).value).toBe('')
+    const line = wrapper.get('[data-testid="sms-quota-remaining"]')
+    expect(line.text()).toContain('17')
   })
 })

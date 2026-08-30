@@ -8,10 +8,12 @@ const CUSTOMERS = [
   { userId: 'u2', name: 'Sara', phone: '0913', bookingsCount: 5, completedCount: 4, lastVisitAt: '2026-08-15T10:00:00.000Z', grossValue: 1_500_000, segment: 'returning' },
 ]
 const SUMMARY = { bookingsCount: 6, grossBookingValue: 1_800_000, onlineCollected: 360_000, commission: 36_000, estimatedSalonRevenue: 1_764_000 }
+const SMS_QUOTA = { quota: 20, used: 3, remaining: 17 }
 
-function stubFetchByUrl(overrides: { customers?: unknown; summary?: unknown; customersOk?: boolean } = {}) {
+function stubFetchByUrl(overrides: { customers?: unknown; summary?: unknown; customersOk?: boolean; smsQuota?: unknown } = {}) {
   const fetchMock = vi.fn((url: string) => {
     if (url.includes('/dashboard-summary')) return Promise.resolve({ ok: true, status: 200, json: async () => overrides.summary ?? SUMMARY })
+    if (url.includes('/sms-quota')) return Promise.resolve({ ok: true, status: 200, json: async () => overrides.smsQuota ?? SMS_QUOTA })
     return Promise.resolve({
       ok: overrides.customersOk ?? true,
       status: overrides.customersOk === false ? 500 : 200,
@@ -51,6 +53,14 @@ describe('CustomersView', () => {
     expect(wrapper.text()).toContain('کارمزد پلتفرم')
     expect(wrapper.text()).toContain('درآمد تخمینی سالن')
     expect(wrapper.text()).toContain('تخمینی')
+  })
+
+  it('shows the remaining monthly SMS quota', async () => {
+    stubFetchByUrl()
+    const wrapper = await mountView()
+
+    expect(wrapper.get('[data-testid="sms-quota-summary"]').text()).toContain('17')
+    expect(wrapper.get('[data-testid="sms-quota-summary"]').text()).toContain('20')
   })
 
   it('lists each customer with their name, phone, and segment badge', async () => {

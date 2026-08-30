@@ -144,13 +144,26 @@ export class CrmService {
   }
 
   /** Throws the same NotFoundException getCustomerDetail would, without re-running its
-   *  bigger query -- addNote() needs the same ownership check but not the booking history. */
-  private async requireCustomerBelongsToSalon(salonId: string, customerId: string): Promise<void> {
+   *  bigger query -- addNote() (and customer-sms.service.ts's send()) need the same
+   *  ownership check but not the booking history. Public: it's the one shared "is this
+   *  really this salon's customer" seam, not private to this service alone. */
+  async requireCustomerBelongsToSalon(salonId: string, customerId: string): Promise<void> {
     const [row] = await this.dataSource.query(
       `SELECT 1 FROM bookings WHERE salon_id = $1 AND user_id = $2 LIMIT 1`,
       [salonId, customerId],
     );
     if (!row) throw new NotFoundException('No customer found for this salon');
+  }
+
+  /** Ownership-checked customer identity only -- no booking history/notes, for callers
+   *  (customer-sms.service.ts) that just need a name/phone to act on. */
+  async getCustomerContact(salonId: string, customerId: string): Promise<{ id: string; name: string | null; phone: string }> {
+    await this.requireCustomerBelongsToSalon(salonId, customerId);
+    const [userRow]: Array<{ id: string; name: string | null; phone: string }> = await this.dataSource.query(
+      `SELECT id, name, phone FROM users WHERE id = $1`,
+      [customerId],
+    );
+    return { id: userRow!.id, name: userRow!.name, phone: userRow!.phone };
   }
 
   async addNote(salonId: string, customerId: string, actorId: string, note: string): Promise<CustomerNote> {

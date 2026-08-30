@@ -118,6 +118,12 @@ A consolidated reference of every enforced business rule in the platform, groupe
 - `grossBookingValue` is the full service price (`bookings.price_snapshot`); it is never conflated with `financial_transactions.gross_amount`, which is the online deposit only. `estimatedSalonRevenue` (gross − commission) is explicitly labeled estimated — the salon's own cash portion is never actually observed by the platform.
 - Customer notes are owner-only (create/delete, no edit), salon-scoped, and never audited — self-service data about the caller's own customers, matching the codebase's "audit_log = which admin did what" semantics.
 
+## Salon SMS + quota rules
+
+- `entitlements.smsMonthlyQuota` is a plain number resolved through the existing entitlement engine; a missing or non-numeric value means **0 (blocked)**, never unlimited — the opposite default from the referral system's `maxReferralsPerReferrer: null → unlimited` convention, deliberately, since an SMS quota bounds a real per-message platform cost.
+- Usage is derived, not stored — `COUNT(*)` of `salon_sms_messages` rows within the current Jalali calendar month, the same period boundary `MonthlyInvoiceGenerationJob` uses. There is no separate counter to reset or drift out of sync.
+- A send is quota-checked, then actually sent, then logged — in that order, so a failed send never consumes quota. Unlike every automated notification SMS in this codebase, a real send failure is NOT swallowed; it's the owner's own primary action, so it must surface as a real error.
+
 ## Category rules
 
 - A salon must have at least one category tag from creation onward — `categoryIds` requires `@ArrayMinSize(1)` on both create and (when supplied) update.
@@ -140,4 +146,4 @@ A consolidated reference of every enforced business rule in the platform, groupe
 
 ## Related documents
 
-Every rule above is explained in full mechanical detail, with sequence/state diagrams, in its owning subsystem document: [09](./09-booking-engine.md), [10](./10-scheduling.md), [11](./11-payment-system.md), [12](./12-wallet.md), [13](./13-financial-system.md), [14](./14-commission.md), [30](./30-subscription-plan-foundation.md), [31](./31-public-handle-and-attribution.md), [32](./32-salon-crm.md).
+Every rule above is explained in full mechanical detail, with sequence/state diagrams, in its owning subsystem document: [09](./09-booking-engine.md), [10](./10-scheduling.md), [11](./11-payment-system.md), [12](./12-wallet.md), [13](./13-financial-system.md), [14](./14-commission.md), [30](./30-subscription-plan-foundation.md), [31](./31-public-handle-and-attribution.md), [32](./32-salon-crm.md), [33](./33-salon-sms-quota.md).

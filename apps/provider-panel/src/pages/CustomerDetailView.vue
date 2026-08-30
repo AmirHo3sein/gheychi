@@ -3,6 +3,7 @@
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -18,15 +19,18 @@ interface CustomerDetail {
   bookings: CustomerBooking[]
   notes: CustomerNote[]
 }
+interface SmsQuota { quota: number; used: number; remaining: number }
 
 const route = useRoute()
 const customerId = route.params.id as string
 const { apiFetch } = useApi()
+const { push: pushToast } = useToast()
 
 const detail = ref<CustomerDetail | null>(null)
 const loading = ref(true)
 const loadError = ref(false)
 const notFound = ref(false)
+const quota = ref<SmsQuota | null>(null)
 
 async function load() {
   loading.value = true
@@ -47,7 +51,36 @@ async function load() {
   }
   loadError.value = true
 }
-onMounted(load)
+
+async function loadQuota() {
+  // Silent + independent of load() -- a failure here shouldn't block the rest of the page,
+  // it just means the remaining-count line doesn't render; the send endpoint itself still
+  // enforces the real limit either way.
+  const { data } = await apiFetch<SmsQuota>('/salons/mine/sms-quota', { silent: true })
+  quota.value = data
+}
+
+onMounted(() => {
+  load()
+  loadQuota()
+})
+
+const smsMessage = ref('')
+const sendingSms = ref(false)
+async function sendSms() {
+  if (!smsMessage.value.trim()) return
+  sendingSms.value = true
+  const { data } = await apiFetch<SmsQuota>(`/salons/mine/customers/${customerId}/sms`, {
+    method: 'POST',
+    body: { message: smsMessage.value.trim() },
+  })
+  sendingSms.value = false
+  if (data) {
+    quota.value = data
+    smsMessage.value = ''
+    pushToast('پیامک ارسال شد')
+  }
+}
 
 function formatDate(iso: string): string {
   return new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
@@ -100,6 +133,31 @@ async function removeNote(noteId: string) {
           <p dir="ltr" class="tnum text-sm text-(--color-text-muted)">{{ detail.customer.phone }}</p>
         </div>
       </div>
+
+      <AppCard>
+        <h2 class="mb-2 text-base font-bold text-(--color-text)">ارسال پیامک</h2>
+        <p v-if="quota" data-testid="sms-quota-remaining" class="mb-2 text-xs text-(--color-text-muted)">
+          <span dir="ltr" class="tnum">{{ quota.remaining }}</span> از <span dir="ltr" class="tnum">{{ quota.quota }}</span> پیامک این ماه برای سالن شما باقی مانده است.
+        </p>
+        <textarea
+          v-model="smsMessage"
+          data-testid="sms-message-input"
+          rows="3"
+          placeholder="متنی برای این مشتری بنویسید…"
+          class="w-full rounded-xl border border-(--color-text-muted) p-3 text-sm"
+        />
+        <AppButton
+          type="button"
+          variant="secondary"
+          data-testid="send-sms-button"
+          class="mt-2"
+          :loading="sendingSms"
+          :disabled="sendingSms || !smsMessage.trim()"
+          @click="sendSms"
+        >
+          ارسال پیامک
+        </AppButton>
+      </AppCard>
 
       <div>
         <h2 class="mb-2 text-base font-bold text-(--color-text)">تاریخچه نوبت‌ها</h2>

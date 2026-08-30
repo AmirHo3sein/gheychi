@@ -4,16 +4,22 @@ import { AuthGuard } from '../auth/auth.guard';
 import { SalonOwnerGuard } from '../salons/salon-owner.guard';
 import { User } from '../users/user.entity';
 import { CrmService } from './crm.service';
+import { CustomerSmsService } from './customer-sms.service';
 import { CreateCustomerNoteDto } from './dto/customer-note.dto';
 import { DashboardSummaryQueryDto } from './dto/dashboard-summary-query.dto';
+import { SendCustomerSmsDto } from './dto/send-customer-sms.dto';
 
 // Salon-scoped CRM (Phase 5 of the monetization initiative -- see
-// docs/technical-overview/32-salon-crm.md). Strictly the salon owner's own data: every
+// docs/technical-overview/32-salon-crm.md) plus salon-initiated customer SMS (Phase 6 -- see
+// docs/technical-overview/33-salon-sms-quota.md). Strictly the salon owner's own data: every
 // method routes through req.salonId from SalonOwnerGuard, never a caller-supplied salon id.
 @Controller('salons/mine')
 @UseGuards(AuthGuard, SalonOwnerGuard)
 export class SalonCustomersController {
-  constructor(private readonly crm: CrmService) {}
+  constructor(
+    private readonly crm: CrmService,
+    private readonly customerSms: CustomerSmsService,
+  ) {}
 
   @Get('customers')
   listCustomers(@Req() req: Request) {
@@ -52,5 +58,19 @@ export class SalonCustomersController {
     const to = query.to ? new Date(query.to) : new Date();
     const from = query.from ? new Date(query.from) : new Date(to.getTime() - 30 * 86_400_000);
     return this.crm.getDashboardSummary(req.salonId!, from, to);
+  }
+
+  @Get('sms-quota')
+  getSmsQuota(@Req() req: Request) {
+    return this.customerSms.getQuotaStatus(req.salonId!);
+  }
+
+  @Post('customers/:customerId/sms')
+  sendSms(
+    @Req() req: Request,
+    @Param('customerId', ParseUUIDPipe) customerId: string,
+    @Body() dto: SendCustomerSmsDto,
+  ) {
+    return this.customerSms.send(req.salonId!, customerId, (req.user as User).id, dto.message);
   }
 }

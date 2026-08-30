@@ -34,19 +34,22 @@ interface DashboardSummary {
   commission: number
   estimatedSalonRevenue: number
 }
+interface SmsQuota { quota: number; used: number; remaining: number }
 
 const { apiFetch } = useApi()
 const customers = ref<Customer[]>([])
 const summary = ref<DashboardSummary | null>(null)
+const smsQuota = ref<SmsQuota | null>(null)
 const loading = ref(true)
 const loadError = ref(false)
 
 async function load() {
   loading.value = true
   loadError.value = false
-  const [customersRes, summaryRes] = await Promise.all([
+  const [customersRes, summaryRes, quotaRes] = await Promise.all([
     apiFetch<Customer[]>('/salons/mine/customers', { silent: true }),
     apiFetch<DashboardSummary>('/salons/mine/dashboard-summary', { silent: true }),
+    apiFetch<SmsQuota>('/salons/mine/sms-quota', { silent: true }),
   ])
   if (customersRes.error) {
     loadError.value = true
@@ -55,6 +58,7 @@ async function load() {
   }
   customers.value = customersRes.data ?? []
   summary.value = summaryRes.data
+  smsQuota.value = quotaRes.data
   loading.value = false
 }
 onMounted(load)
@@ -68,6 +72,9 @@ function formatDate(iso: string | null): string {
 <template>
   <div class="mx-auto w-full max-w-5xl space-y-4 p-4 lg:p-6">
     <h1 class="text-lg font-bold text-(--color-text)">مشتریان</h1>
+    <p v-if="smsQuota" data-testid="sms-quota-summary" class="text-xs text-(--color-text-muted)">
+      پیامک این ماه: <span dir="ltr" class="tnum">{{ smsQuota.remaining }}</span> از <span dir="ltr" class="tnum">{{ smsQuota.quota }}</span> باقی مانده
+    </p>
 
     <div v-if="loading" class="flex items-center justify-center py-14 text-(--color-text-muted)">
       <AppIcon name="spinner" :size="20" class="animate-spin" />

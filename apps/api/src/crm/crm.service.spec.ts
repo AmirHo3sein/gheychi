@@ -79,6 +79,20 @@ describe('CrmService', () => {
     });
   });
 
+  describe('getCustomerContact', () => {
+    it('404s when the customer does not belong to this salon', async () => {
+      dataSourceQuery.mockResolvedValueOnce([]); // ownership check finds nothing
+      await expect(service.getCustomerContact('salon-1', 'stranger')).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('returns just the identity, not booking history or notes', async () => {
+      dataSourceQuery
+        .mockResolvedValueOnce([{ '?column?': 1 }]) // ownership check
+        .mockResolvedValueOnce([{ id: 'u1', name: 'Ali', phone: '0912' }]);
+      await expect(service.getCustomerContact('salon-1', 'u1')).resolves.toEqual({ id: 'u1', name: 'Ali', phone: '0912' });
+    });
+  });
+
   describe('addNote', () => {
     it('404s when the customer does not belong to this salon', async () => {
       dataSourceQuery.mockResolvedValueOnce([]); // ownership check finds nothing

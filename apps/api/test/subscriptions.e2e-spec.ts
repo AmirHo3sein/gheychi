@@ -219,8 +219,10 @@ describe('Plans & salon subscriptions (e2e)', () => {
       expect(res.body.subscription.status).toBe('canceled');
       // Nominal plan is whatever the row still references (free, from the earlier re-assign
       // in this file) -- resolvedEntitlements is what's ACTUALLY in effect, which falls back
-      // to the platform default plan's entitlements while canceled.
-      expect(res.body.resolvedEntitlements).toEqual({});
+      // to the platform default plan's entitlements while canceled. {smsMonthlyQuota: 20} is
+      // the Phase 6 migration's own placeholder backfill onto the (only, default) free plan --
+      // see salon-sms-messages migration and docs/technical-overview/33-salon-sms-quota.md.
+      expect(res.body.resolvedEntitlements).toEqual({ smsMonthlyQuota: 20 });
     });
 
     it('re-assigning a plan reactivates a canceled subscription', async () => {

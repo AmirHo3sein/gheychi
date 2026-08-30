@@ -46,4 +46,14 @@ test('log in as an approved provider and mark a confirmed booking completed', as
   await page.getByTestId('add-note-button').click()
   await expect(page.getByTestId('note-row')).toHaveCount(1)
   await expect(page.getByTestId('note-row')).toContainText('مشتری همیشگی')
+
+  // Salon-initiated customer SMS + monthly quota (Phase 6 -- see
+  // docs/technical-overview/33-salon-sms-quota.md): reuses the same real SmsProvider send
+  // path notifyConfirmed already exercises elsewhere, gated by the real entitlement engine
+  // (20/month, the migration-seeded placeholder on this e2e salon's default plan).
+  await expect(page.getByTestId('sms-quota-remaining')).toContainText('20')
+  await page.getByTestId('sms-message-input').fill('یادآوری نوبت فردا شما ساعت ۱۰')
+  await page.getByTestId('send-sms-button').click()
+  await expect(page.getByTestId('sms-quota-remaining')).toContainText('19')
+  await expect(page.getByTestId('sms-message-input')).toHaveValue('')
 })
