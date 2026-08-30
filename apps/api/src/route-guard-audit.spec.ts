@@ -49,6 +49,7 @@ import { SalonReviewsController } from './reviews/salon-reviews.controller';
 import { AdminSalonsController } from './salons/admin-salons.controller';
 import { AdminShowcaseController } from './salons/admin-showcase.controller';
 import { PublicSalonContentController } from './salons/public-salon-content.controller';
+import { SalonMineSubscriptionController } from './salons/salon-mine-subscription.controller';
 import { SalonPhotosController } from './salons/salon-photos.controller';
 import { SalonPortfolioController } from './salons/salon-portfolio.controller';
 import { SalonServicesController } from './salons/salon-services.controller';
@@ -126,6 +127,7 @@ const ALL_CONTROLLERS: Function[] = [
   SalonStoriesController,
   SalonWorkersController,
   SalonsController,
+  SalonMineSubscriptionController,
   ScheduleController,
   SitemapSalonsController,
   SearchController,

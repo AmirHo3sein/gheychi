@@ -274,6 +274,13 @@ describe('admin mutation audit wiring', () => {
       targetType: 'salon-subscription',
       targetIdParam: 'salonId',
     },
+    {
+      label: 'salon subscription overrides set',
+      handler: AdminSalonSubscriptionsController.prototype.setOverrides,
+      action: 'subscription.overrides.set',
+      targetType: 'salon-subscription',
+      targetIdParam: 'salonId',
+    },
   ];
 
   for (const { label, handler, action, targetType, targetIdParam = 'id' } of cases) {

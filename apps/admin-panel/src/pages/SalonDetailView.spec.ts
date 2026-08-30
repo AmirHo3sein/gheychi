@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import SalonDetailView from './SalonDetailView.vue'
 import SalonBookingSettingsCard from '@/components/salons/SalonBookingSettingsCard.vue'
+import SalonSubscriptionCard from '@/components/salons/SalonSubscriptionCard.vue'
 
 const fetchMock = vi.fn()
 
@@ -66,11 +67,11 @@ describe('SalonDetailView', () => {
     })
     router.push('/salons/s1')
     await router.isReady()
-    // SalonBookingSettingsCard fetches its own settings endpoint on mount; stubbing it keeps
-    // this file's sequential apiFetch mock chains about the salon record itself. The card's
-    // own behaviour is covered in SalonBookingSettingsCard.spec.ts.
+    // SalonBookingSettingsCard/SalonSubscriptionCard each fetch their own data on mount;
+    // stubbing both keeps this file's sequential apiFetch mock chains about the salon record
+    // itself. Their own behaviour is covered in their own spec files.
     const wrapper = mount(SalonDetailView, {
-      global: { plugins: [router], stubs: { SalonBookingSettingsCard: true } },
+      global: { plugins: [router], stubs: { SalonBookingSettingsCard: true, SalonSubscriptionCard: true } },
     })
     await flushPromises()
     return wrapper
@@ -312,7 +313,7 @@ describe('SalonDetailView', () => {
     expect(images[1]!.attributes('alt')).toBeTruthy()
   })
 
-  it('shows the per-salon booking-settings card on the info tab only', async () => {
+  it('shows the per-salon booking-settings and subscription cards on the info tab only', async () => {
     fetchMock
       .mockResolvedValueOnce({ data: salon, error: null })
       // GET /admin/salons/s1/stories on tab activation
@@ -321,11 +322,14 @@ describe('SalonDetailView', () => {
     const wrapper = await mountWithRouter()
     expect(wrapper.findComponent(SalonBookingSettingsCard).exists()).toBe(true)
     expect(wrapper.findComponent(SalonBookingSettingsCard).props('salonId')).toBe('s1')
+    expect(wrapper.findComponent(SalonSubscriptionCard).exists()).toBe(true)
+    expect(wrapper.findComponent(SalonSubscriptionCard).props('salonId')).toBe('s1')
 
-    // The showcase tabs are moderation surfaces -- the timing settings don't belong there.
+    // The showcase tabs are moderation surfaces -- neither settings card belongs there.
     await wrapper.get('[data-testid="tab-stories"]').trigger('click')
     await flushPromises()
     expect(wrapper.findComponent(SalonBookingSettingsCard).exists()).toBe(false)
+    expect(wrapper.findComponent(SalonSubscriptionCard).exists()).toBe(false)
   })
 
   it('marks the tab control with ARIA tab semantics', async () => {

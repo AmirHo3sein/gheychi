@@ -102,6 +102,9 @@ async function main() {
   // requests/phone/hour and 01/02/03 above already spend all three on that phone within
   // this same suite run. 04-admin-gap-coverage.spec.ts logs in as this one instead.
   await seed.query(`INSERT INTO users (phone, role) VALUES ('09120000506', 'admin')`)
+  // A THIRD admin account -- 05-plans-and-subscriptions.spec.ts logs in as this one, same
+  // rate-limit reasoning as the second account above.
+  await seed.query(`INSERT INTO users (phone, role) VALUES ('09120000507', 'admin')`)
 
   // -- Seed data for 04-admin-gap-coverage.spec.ts (categories, invoices, analytics --
   // previously zero e2e coverage despite solid unit coverage on each of these pages) --
@@ -133,6 +136,19 @@ async function main() {
   // One analytics event -- AnalyticsView's totals table had zero e2e coverage (only its
   // component-level spec exercised it against a mocked API response).
   await seed.query(`INSERT INTO analytics_events (event_name, properties) VALUES ('user_registered', '{}')`)
+
+  // Every salon above was inserted directly via raw SQL, bypassing SalonsService.createForOwner
+  // -- the app-layer hook that normally gives a brand-new salon its initial subscription row
+  // in the same transaction as the insert (see docs/technical-overview/30-subscription-plan-foundation.md).
+  // Backfills the same invariant the real migration does for pre-existing salons, so
+  // 05-plans-and-subscriptions.spec.ts's salon has a resolvable subscription to read/edit.
+  await seed.query(`
+    INSERT INTO salon_subscriptions (salon_id, plan_id, status, started_at)
+    SELECT s.id, p.id, 'active', now()
+    FROM salons s, plans p
+    WHERE p.is_default = true
+      AND NOT EXISTS (SELECT 1 FROM salon_subscriptions ss WHERE ss.salon_id = s.id)
+  `)
 
   await seed.end()
 }

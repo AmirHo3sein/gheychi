@@ -210,15 +210,17 @@ describe('Plans & salon subscriptions (e2e)', () => {
         .expect(409);
     });
 
-    it('a canceled subscription resolves to the default plan\'s entitlements', async () => {
-      // No dedicated endpoint yet (entitlement enforcement is a later phase) -- asserted
-      // directly against the service's own DB state via the subscription row.
-      const [sub, [freePlan]] = await Promise.all([
-        ds.query(`SELECT status FROM salon_subscriptions WHERE salon_id = $1`, [salonId]),
-        ds.query(`SELECT entitlements FROM plans WHERE is_default = true`),
-      ]);
-      expect(sub[0].status).toBe('canceled');
-      expect(freePlan.entitlements).toEqual({});
+    it('a canceled subscription resolves to the default plan\'s entitlements, not the nominal plan\'s', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/api/admin/salons/${salonId}/subscription`)
+        .set('Cookie', adminCookie)
+        .expect(200);
+
+      expect(res.body.subscription.status).toBe('canceled');
+      // Nominal plan is whatever the row still references (free, from the earlier re-assign
+      // in this file) -- resolvedEntitlements is what's ACTUALLY in effect, which falls back
+      // to the platform default plan's entitlements while canceled.
+      expect(res.body.resolvedEntitlements).toEqual({});
     });
 
     it('re-assigning a plan reactivates a canceled subscription', async () => {
@@ -237,6 +239,76 @@ describe('Plans & salon subscriptions (e2e)', () => {
         .get(`/api/admin/salons/${salonId}/subscription`)
         .set('Cookie', ownerCookie)
         .expect(403);
+    });
+  });
+
+  describe('admin salon-specific entitlement overrides', () => {
+    it('merges an override on top of the plan entitlements in resolvedEntitlements', async () => {
+      await request(app.getHttpServer())
+        .patch(`/api/admin/plans/${freePlanId}`)
+        .set('Cookie', adminCookie)
+        .send({ entitlements: { smsMonthlyQuota: 50, crmCustomerCap: 100 } })
+        .expect(200);
+
+      const res = await request(app.getHttpServer())
+        .patch(`/api/admin/salons/${salonId}/subscription/overrides`)
+        .set('Cookie', adminCookie)
+        .send({ overrides: { smsMonthlyQuota: 500 } })
+        .expect(200);
+
+      expect(res.body.subscription.entitlementOverrides).toEqual({ smsMonthlyQuota: 500 });
+      expect(res.body.resolvedEntitlements).toEqual({ smsMonthlyQuota: 500, crmCustomerCap: 100 });
+    });
+
+    it('clears every override when sent null', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/admin/salons/${salonId}/subscription/overrides`)
+        .set('Cookie', adminCookie)
+        .send({ overrides: null })
+        .expect(200);
+
+      expect(res.body.subscription.entitlementOverrides).toBeNull();
+      expect(res.body.resolvedEntitlements).toEqual({ smsMonthlyQuota: 50, crmCustomerCap: 100 });
+    });
+
+    it('rejects a body with neither null nor an object', async () => {
+      await request(app.getHttpServer())
+        .patch(`/api/admin/salons/${salonId}/subscription/overrides`)
+        .set('Cookie', adminCookie)
+        .send({ overrides: 'not-an-object' })
+        .expect(400);
+    });
+
+    it('rejects a non-admin caller', async () => {
+      await request(app.getHttpServer())
+        .patch(`/api/admin/salons/${salonId}/subscription/overrides`)
+        .set('Cookie', ownerCookie)
+        .send({ overrides: null })
+        .expect(403);
+    });
+  });
+
+  describe('GET /salons/mine/subscription (provider, read-only)', () => {
+    it('lets the owner read their own plan and resolved entitlements', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/salons/mine/subscription')
+        .set('Cookie', ownerCookie)
+        .expect(200);
+
+      expect(res.body.subscription.salonId).toBe(salonId);
+      expect(res.body.resolvedEntitlements).toEqual({ smsMonthlyQuota: 50, crmCustomerCap: 100 });
+    });
+
+    it('has no write route at all -- the owner cannot change plan/status/overrides here', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/salons/mine/subscription')
+        .set('Cookie', ownerCookie)
+        .send({ planId: freePlanId })
+        .expect(404);
+    });
+
+    it('rejects an unauthenticated caller', async () => {
+      await request(app.getHttpServer()).get('/api/salons/mine/subscription').expect(401);
     });
   });
 });

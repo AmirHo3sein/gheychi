@@ -6,7 +6,11 @@ import { SalonSubscription } from './salon-subscription.entity';
 
 export interface ResolvedSubscription {
   subscription: SalonSubscription;
+  // The plan the subscription row itself references, regardless of active/canceled -- "what
+  // the salon is nominally on." Distinct from resolvedEntitlements, which is "what's
+  // actually in effect right now" (the two differ exactly when status is canceled).
   plan: Plan;
+  resolvedEntitlements: Record<string, unknown>;
 }
 
 @Injectable()
@@ -44,30 +48,34 @@ export class SubscriptionsService {
     });
   }
 
-  async getForSalon(salonId: string): Promise<ResolvedSubscription> {
-    const subscription = await this.repo.findOneBy({ salonId });
-    if (!subscription) throw new NotFoundException('No subscription for this salon');
-    const plan = await this.plans.findOneBy({ id: subscription.planId });
-    if (!plan) throw new InternalServerErrorException(`Subscription ${subscription.id} references a missing plan`);
-    return { subscription, plan };
-  }
-
   /**
    * The one entitlement-resolution seam every later phase (CRM/SMS quota, custom-handle
-   * access, ...) is meant to read from -- returns the salon's live plan entitlements,
-   * falling back to the platform's current default plan if the salon's own subscription is
-   * canceled (a salon must never be left with no resolvable entitlements at all). Not
-   * wired into any enforcement yet -- that is deliberately the next phase's job (see the
-   * monetization spec's phase order).
+   * access, ...) is meant to read from. Three-way precedence, matching the owner's own
+   * GLOBAL flag / PLAN entitlement / SALON-SPECIFIC override split: an active
+   * subscription's plan entitlements, with any admin-set per-salon override merged in
+   * key-by-key on top; falls back to the platform's current default plan (no overrides
+   * applied -- those belonged to the now-ended arrangement) when the subscription is
+   * canceled or missing, so a salon is never left with no resolvable entitlements at all.
+   * Not wired into any enforcement yet -- that's each later phase's own job as it
+   * introduces the specific keys it needs.
    */
   async getEntitlements(salonId: string): Promise<Record<string, unknown>> {
     const subscription = await this.repo.findOneBy({ salonId });
     if (subscription && subscription.status === 'active') {
       const plan = await this.plans.findOneBy({ id: subscription.planId });
-      if (plan) return plan.entitlements;
+      if (plan) return { ...plan.entitlements, ...(subscription.entitlementOverrides ?? {}) };
     }
     const defaultPlan = await this.getDefaultPlan();
     return defaultPlan.entitlements;
+  }
+
+  async getForSalon(salonId: string): Promise<ResolvedSubscription> {
+    const subscription = await this.repo.findOneBy({ salonId });
+    if (!subscription) throw new NotFoundException('No subscription for this salon');
+    const plan = await this.plans.findOneBy({ id: subscription.planId });
+    if (!plan) throw new InternalServerErrorException(`Subscription ${subscription.id} references a missing plan`);
+    const resolvedEntitlements = await this.getEntitlements(salonId);
+    return { subscription, plan, resolvedEntitlements };
   }
 
   async assignPlan(salonId: string, planId: string): Promise<ResolvedSubscription> {
@@ -87,6 +95,22 @@ export class SubscriptionsService {
     if (existing.status === 'canceled') throw new ConflictException('این اشتراک از قبل لغو شده است');
 
     await this.repo.update({ salonId }, { status: 'canceled', canceledAt: new Date() });
+    return this.getForSalon(salonId);
+  }
+
+  /**
+   * The SALON-SPECIFIC override half of the three-way entitlement split -- admin-only
+   * (never provider-editable, matching the owner's "salon owner picks only booking mode,
+   * nothing commercial" decision). `overrides: null` clears every override back to
+   * inheriting the plan verbatim; an object replaces the whole bag (not a per-key patch).
+   */
+  async setOverrides(salonId: string, overrides: Record<string, unknown> | null): Promise<ResolvedSubscription> {
+    const existing = await this.repo.findOneBy({ salonId });
+    if (!existing) throw new NotFoundException('No subscription for this salon');
+
+    // Same TypeORM QueryDeepPartialEntity/jsonb escape hatch as PlansService.update's own
+    // entitlements write.
+    await this.repo.update({ salonId }, { entitlementOverrides: overrides as any });
     return this.getForSalon(salonId);
   }
 }

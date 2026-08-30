@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import SalonBookingSettingsCard from '@/components/salons/SalonBookingSettingsCard.vue'
 import SalonStatusActions from '@/components/salons/SalonStatusActions.vue'
+import SalonSubscriptionCard from '@/components/salons/SalonSubscriptionCard.vue'
 import ShowcaseStatusActions from '@/components/salons/ShowcaseStatusActions.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
@@ -249,6 +250,8 @@ onMounted(load)
              record itself), so it also owns its loading/error state rather than gating this
              whole page on a second request. -->
         <SalonBookingSettingsCard :salon-id="salon.id" />
+
+        <SalonSubscriptionCard :salon-id="salon.id" />
 
         <AppCard>
           <!-- suspendedCause is passed through so the actions can refuse to offer a

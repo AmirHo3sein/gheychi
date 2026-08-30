@@ -32,6 +32,13 @@ export class SalonSubscription {
   @Column({ name: 'canceled_at', type: 'timestamptz', nullable: true })
   canceledAt: Date | null;
 
+  // The SALON-SPECIFIC half of the three-way split (global flag / plan entitlement / this)
+  // -- admin-set only (SubscriptionsService.setOverrides), merged over the plan's own
+  // entitlements key-by-key in getEntitlements(). Null means "no overrides, inherit the
+  // plan verbatim", the default and by far the common case.
+  @Column({ name: 'entitlement_overrides', type: 'jsonb', nullable: true })
+  entitlementOverrides: Record<string, unknown> | null;
+
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 }

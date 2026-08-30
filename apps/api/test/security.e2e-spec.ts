@@ -82,6 +82,11 @@ describe('Security regression suite (e2e)', () => {
         path: '/api/admin/salons/00000000-0000-0000-0000-000000000000/subscription',
         body: { planId: '00000000-0000-0000-0000-000000000000' },
       },
+      {
+        method: 'patch',
+        path: '/api/admin/salons/00000000-0000-0000-0000-000000000000/subscription/overrides',
+        body: { overrides: null },
+      },
     ];
 
     it.each(ADMIN_ROUTES)('401s $method $path with no session at all', async ({ method, path, body }) => {

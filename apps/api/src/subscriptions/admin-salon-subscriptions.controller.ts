@@ -4,7 +4,7 @@ import { AuditAction } from '../audit/audit.decorator';
 import { AuditInterceptor } from '../audit/audit.interceptor';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
-import { AssignPlanDto } from './dto/subscription.dto';
+import { AssignPlanDto, SetOverridesDto } from './dto/subscription.dto';
 import { SubscriptionsService } from './subscriptions.service';
 
 @Controller('admin/salons/:salonId/subscription')
@@ -40,6 +40,22 @@ export class AdminSalonSubscriptionsController {
 
     const result = await this.subscriptions.cancel(salonId);
     req.auditAfter = { planId: result.subscription.planId, status: result.subscription.status };
+    return result;
+  }
+
+  @Patch('overrides')
+  @UseInterceptors(AuditInterceptor)
+  @AuditAction('subscription.overrides.set', 'salon-subscription', 'salonId')
+  async setOverrides(
+    @Param('salonId', ParseUUIDPipe) salonId: string,
+    @Body() dto: SetOverridesDto,
+    @Req() req: Request,
+  ) {
+    const before = await this.subscriptions.getForSalon(salonId).catch(() => null);
+    if (before) req.auditBefore = { entitlementOverrides: before.subscription.entitlementOverrides };
+
+    const result = await this.subscriptions.setOverrides(salonId, dto.overrides);
+    req.auditAfter = { entitlementOverrides: result.subscription.entitlementOverrides };
     return result;
   }
 }

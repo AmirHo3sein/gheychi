@@ -101,6 +101,7 @@ A consolidated reference of every enforced business rule in the platform, groupe
 - A plan referenced by any salon's subscription cannot be deleted, enforced by the database's own foreign-key restrict behavior — same pattern as category delete.
 - The default plan itself cannot be deleted, and its `is_default` flag cannot be unset without moving it to another plan first — the platform must never be left with zero resolvable default.
 - A plan's `key` (internal identifier) is set at creation only — never editable, since later phases branch on it in code.
+- A salon's resolved entitlements are its active plan's entitlements with any admin-set salon-specific override merged in key-by-key (override wins); a canceled subscription resolves to the default plan alone, with no override applied.
 - Entitlement enforcement does not exist yet — `SubscriptionsService.getEntitlements()` is a resolution seam only, not wired into any feature gate. See [30-subscription-plan-foundation.md](./30-subscription-plan-foundation.md).
 
 ## Category rules

@@ -35,6 +35,7 @@ const routes = [
         meta: { title: 'درخواست‌های دسته‌بندی' },
       },
       { path: 'coupons', name: 'coupons', component: () => import('@/pages/CouponsView.vue'), meta: { title: 'کدهای تخفیف' } },
+      { path: 'plans', name: 'plans', component: () => import('@/pages/PlansView.vue'), meta: { title: 'پلن‌های اشتراک' } },
       { path: 'wallet', name: 'wallet', component: () => import('@/pages/WalletView.vue'), meta: { title: 'کیف پول' } },
       { path: 'invoices', name: 'invoices', component: () => import('@/pages/InvoicesView.vue'), meta: { title: 'صورتحساب‌ها' } },
       { path: 'referrals', name: 'referrals', component: () => import('@/pages/ReferralsView.vue'), meta: { title: 'معرفی‌ها' } },

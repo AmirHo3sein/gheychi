@@ -18,6 +18,7 @@ import { AdminShowcaseController } from './admin-showcase.controller';
 import { PortfolioItem } from './portfolio-item.entity';
 import { PublicSalonContentController } from './public-salon-content.controller';
 import { SalonCategory } from './salon-category.entity';
+import { SalonMineSubscriptionController } from './salon-mine-subscription.controller';
 import { SalonOwnerGuard } from './salon-owner.guard';
 import { SalonPhoto } from './salon-photo.entity';
 import { SalonPhotosController } from './salon-photos.controller';
@@ -90,6 +91,7 @@ import { WorkingHour } from './working-hour.entity';
     SalonPortfolioController,
     SalonWorkersController,
     SalonsController,
+    SalonMineSubscriptionController,
     AdminSalonsController,
     AdminShowcaseController,
     SitemapSalonsController,
@@ -97,7 +99,8 @@ import { WorkingHour } from './working-hour.entity';
     // NestJS/Express matches routes in registration order, not by specificity, so it MUST stay registered
     // after any controller with a literal `salons/mine/...`-shaped route of the same depth (currently
     // SalonServicesController, ScheduleController, SalonPhotosController, SalonStoriesController,
-    // SalonPortfolioController, SalonWorkersController) or it will silently shadow them.
+    // SalonPortfolioController, SalonWorkersController, SalonMineSubscriptionController) or it will
+    // silently shadow them.
     PublicSalonContentController,
   ],
   providers: [SalonsService, SalonOwnerGuard, StoryCleanupJob, WorkerEligibilityService],

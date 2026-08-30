@@ -1,13 +1,15 @@
 # 30 — Subscription/plan foundation
 
-Phase 2 of the monetization/subscription initiative
-(`docs/superpowers/specs/2026-08-30-monetization-platform-design.md`). Introduces the
+Phases 2 and 3 of the monetization/subscription initiative
+(`docs/superpowers/specs/2026-08-30-monetization-platform-design.md`). Phase 2 introduced the
 `Plan`/`SalonSubscription` backbone every later phase (entitlement enforcement, salon CRM,
-SMS quota, custom-handle access) is meant to read from. **Backend-only** — no provider-panel
-or admin-panel UI ships in this phase; the owner decision that the salon owner picks only
-`automatic`/`manual_approval` booking mode, nothing commercial, means there is no
-owner-facing subscription surface to build yet, and the admin dashboard for browsing/
-managing subscriptions is explicitly the next phase's job.
+SMS quota, custom-handle access) is meant to read from, backend-only. Phase 3 adds the
+salon-specific entitlement override (the third leg of the owner's GLOBAL flag / PLAN
+entitlement / SALON-SPECIFIC override split) plus the first real UI: an admin plan/
+subscription management surface and a read-only provider "my plan" page. The owner decision
+that the salon owner picks only `automatic`/`manual_approval` booking mode, nothing
+commercial, is why the provider-panel page has no controls at all — it exists to inform, not
+to let the owner change anything commercial.
 
 ## Data model
 
@@ -51,27 +53,45 @@ default plan, not that anything expired automatically.
 ## Entitlement resolution
 
 `SubscriptionsService.getEntitlements(salonId)` is the one seam every later phase is meant
-to read from: returns the salon's live plan entitlements when its subscription is `active`,
-falling back to the current default plan's entitlements otherwise (canceled or, in
-principle, missing). **Not wired into any enforcement yet** — that is deliberately the next
-phase's job, so this phase can be verified in isolation before anything depends on it.
+to read from. Three-way precedence, matching the owner's GLOBAL / PLAN / SALON-SPECIFIC
+split: an `active` subscription's plan entitlements, with any admin-set per-salon override
+(`salon_subscriptions.entitlement_overrides`, jsonb, nullable) merged on top key-by-key;
+falls back to the current default plan's entitlements (no override applied — it belonged to
+the now-ended arrangement) when the subscription is canceled or missing. **Still not wired
+into any enforcement** — that's each later phase's own job as it introduces the specific
+keys it needs, so this backbone stays verifiable in isolation.
+
+`GET /admin/salons/:salonId/subscription` (and the provider read-only equivalent below)
+return both `plan` (whatever the subscription row nominally references, even while canceled)
+and `resolvedEntitlements` (what's actually in effect right now) as distinct fields — an
+admin inspecting a canceled subscription can see both "was on Plus" and "currently getting
+Free" at once, rather than one number silently standing in for both questions.
 
 ## Admin surface
 
-- `GET`/`POST /admin/plans`, `PATCH`/`DELETE /admin/plans/:id` (`admin-plans.controller.ts`)
-  — full plan CRUD. Delete uses the same restrict semantics as category delete: a plan
-  referenced by any salon's subscription cannot be deleted, enforced by the database's own
-  FK behavior (`isForeignKeyViolation`), not an app-level pre-check.
-- `GET`/`PATCH /admin/salons/:salonId/subscription`, `POST .../subscription/cancel`
-  (`admin-salon-subscriptions.controller.ts`) — view, reassign, or cancel a salon's
-  subscription. Reassigning a canceled subscription reactivates it (`status` back to
-  `active`, `canceledAt` cleared).
+- `GET`/`POST /admin/plans`, `PATCH`/`DELETE /admin/plans/:id` (`admin-plans.controller.ts`,
+  UI: `PlansView.vue`, `/plans` in the sidebar) — full plan CRUD, entitlements edited as raw
+  JSON (no key has real meaning yet — see above). Delete uses the same restrict semantics as
+  category delete: a plan referenced by any salon's subscription cannot be deleted, enforced
+  by the database's own FK behavior (`isForeignKeyViolation`), not an app-level pre-check.
+- `GET`/`PATCH /admin/salons/:salonId/subscription`, `POST .../subscription/cancel`,
+  `PATCH .../subscription/overrides` (`admin-salon-subscriptions.controller.ts`, UI:
+  `SalonSubscriptionCard.vue` on `SalonDetailView`'s info tab) — view, reassign, cancel, or
+  set/clear a salon's override. Reassigning a canceled subscription reactivates it (`status`
+  back to `active`, `canceledAt` cleared). `SetOverridesDto.overrides` distinguishes `null`
+  (clear every override) from an object (replace the whole bag) via `@ValidateIf`, not
+  `@IsOptional` — the field must always be present in the PATCH body.
 
 Every mutation goes through the existing `AuditInterceptor`/`@AuditAction` pattern — no
 second audit system. `SubscriptionsModule` has no dependency on `SalonsModule`: salon
 existence is enforced by `salon_subscriptions.salon_id`'s own FK, not a `Salon` repository
 lookup, which is what lets `SalonsModule` import `SubscriptionsModule` (for
-`createDefaultSubscription`) without a cycle.
+`createDefaultSubscription`) without a cycle. The provider-facing read-only equivalent,
+`GET /salons/mine/subscription` (UI: `PlanView.vue`, `/plan` in provider-panel), lives in
+`SalonsModule` instead of `SubscriptionsModule` for the same reason — it needs
+`SalonOwnerGuard`, which only `SalonsModule` exports, and `SubscriptionsModule` importing
+`SalonsModule` back would close the cycle `SalonsModule` already avoids by importing
+`SubscriptionsModule` one-directionally.
 
 ## Migration safety
 
@@ -79,3 +99,15 @@ lookup, which is what lets `SalonsModule` import `SubscriptionsModule` (for
 (`monthly_price_toman: 0`, `is_default: true`) and backfills a `salon_subscriptions` row for
 every salon that already existed at migration time — no salon, old or new, is ever left
 without a resolvable subscription, per the monetization spec's migration-safety requirement.
+`1755700000000-subscription-entitlement-overrides.ts` adds the nullable
+`entitlement_overrides` column, defaulting every existing subscription to "no override,
+inherit the plan verbatim."
+
+Every Playwright e2e harness (`admin-panel`, `provider-panel`, `user-app`,
+`e2e-cross-app`) seeds its fixture salons via raw SQL directly against `salons`, bypassing
+`SalonsService.createForOwner`'s own subscription-insert hook entirely. Each `prepare-db.cjs`
+now backfills the same invariant the migration does, via one idempotent query run after all
+salon seeding: `INSERT INTO salon_subscriptions ... SELECT ... FROM salons s, plans p WHERE
+p.is_default = true AND NOT EXISTS (...)`. Discovered via `05-plans-and-subscriptions.spec.ts`
+failing against a real seeded salon with no subscription row — a genuine gap in every
+raw-SQL seed fixture, not a backend bug (the real `createForOwner` path was never affected).

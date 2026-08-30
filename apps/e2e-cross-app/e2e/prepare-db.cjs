@@ -40,6 +40,11 @@ async function main() {
 
   const seed = makeClient()
   await seed.connect()
+  // The migration seeds feature_online_payment_enabled=false (see
+  // docs/technical-overview/29-global-payment-toggle.md) -- this suite's own booking flow
+  // exercises a real mock Zarinpal payment (پرداخت و رزرو), same reasoning as user-app's
+  // own prepare-db.cjs fix.
+  await seed.query(`UPDATE platform_config SET value = 'true' WHERE key = 'feature_online_payment_enabled'`)
   // Same owner phone + salon slug + service as user-app's own seed -- the customer-facing
   // half of this spec (search, view salon, book, pay) is a near-verbatim reuse of
   // user-app's 01-happy-path.spec.ts flow, so it needs the identical fixture. The owner
@@ -66,6 +71,16 @@ async function main() {
       [salonId, weekday],
     )
   }
+  // Bypassed SalonsService.createForOwner's own subscription-insert hook by inserting the
+  // salon directly via raw SQL above -- backfill the same invariant the real migration does
+  // (see admin-panel's own prepare-db.cjs for the fuller rationale).
+  await seed.query(`
+    INSERT INTO salon_subscriptions (salon_id, plan_id, status, started_at)
+    SELECT s.id, p.id, 'active', now()
+    FROM salons s, plans p
+    WHERE p.is_default = true
+      AND NOT EXISTS (SELECT 1 FROM salon_subscriptions ss WHERE ss.salon_id = s.id)
+  `)
   await seed.end()
 }
 

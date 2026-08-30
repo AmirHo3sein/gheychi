@@ -78,6 +78,7 @@ const QUICK_LINKS: Array<{ to: string; label: string; icon: IconName }> = [
   { to: '/coupons', label: 'کدهای تخفیف', icon: 'coupons' },
   { to: '/team', label: 'تیم', icon: 'team' },
   { to: '/settings', label: 'تنظیمات', icon: 'settings' },
+  { to: '/plan', label: 'پلن من', icon: 'plan' },
 ]
 // Pinned to the salon's timezone, not the browser's -- see BookingsView's equivalent.
 function formatBookingTime(iso: string): string {
@@ -91,11 +92,11 @@ function formatBookingTime(iso: string): string {
   <div class="mx-auto w-full max-w-5xl space-y-6 p-4 lg:p-6">
     <h1 class="text-lg font-bold text-(--color-text)">داشبورد</h1>
 
-    <!-- These seven tiles are the only route to the screens the nav bar doesn't carry, so
+    <!-- These eight tiles are the only route to the screens the nav bar doesn't carry, so
          they matter at every width: 3-up on a phone (90px tiles at 320px, enough for a
          two-line label), then more columns rather than taller tiles as the viewport grows,
-         landing on a single 7-across row on a laptop. -->
-    <div class="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-7 lg:gap-3">
+         landing on a single 8-across row on a laptop. -->
+    <div class="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-8 lg:gap-3">
       <RouterLink
         v-for="link in QUICK_LINKS"
         :key="link.to"

@@ -26,6 +26,7 @@ const routes = [
       { path: 'settings', name: 'settings', component: () => import('@/pages/SalonSettingsView.vue') },
       { path: 'reviews', name: 'reviews', component: () => import('@/pages/ReviewsView.vue') },
       { path: 'earnings', name: 'earnings', component: () => import('@/pages/EarningsView.vue') },
+      { path: 'plan', name: 'plan', component: () => import('@/pages/PlanView.vue') },
     ],
   },
 ]

@@ -88,6 +88,16 @@ async function main() {
       [salonId, weekday],
     )
   }
+  // Bypassed SalonsService.createForOwner's own subscription-insert hook by inserting the
+  // salon directly via raw SQL above -- backfill the same invariant the real migration does
+  // (see admin-panel's own prepare-db.cjs for the fuller rationale).
+  await seedClient.query(`
+    INSERT INTO salon_subscriptions (salon_id, plan_id, status, started_at)
+    SELECT s.id, p.id, 'active', now()
+    FROM salons s, plans p
+    WHERE p.is_default = true
+      AND NOT EXISTS (SELECT 1 FROM salon_subscriptions ss WHERE ss.salon_id = s.id)
+  `)
   await seedClient.end()
 }
 

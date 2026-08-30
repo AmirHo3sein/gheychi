@@ -9,10 +9,28 @@ describe('SubscriptionsService', () => {
   let service: SubscriptionsService;
   let subRepo: { findOneBy: jest.Mock; update: jest.Mock };
   let planRepo: { findOneBy: jest.Mock };
+  // In-memory fakes rather than exact-call-order mockResolvedValueOnce chains -- getForSalon
+  // now internally calls getEntitlements (which re-reads both repos), so the number of
+  // findOneBy calls per public method is an implementation detail this suite shouldn't pin.
+  let subscriptionsById: Record<string, Record<string, unknown>>;
+  let plansById: Record<string, Record<string, unknown>>;
 
   beforeEach(async () => {
-    subRepo = { findOneBy: jest.fn(), update: jest.fn().mockResolvedValue(undefined) };
-    planRepo = { findOneBy: jest.fn() };
+    subscriptionsById = {};
+    plansById = {};
+    subRepo = {
+      findOneBy: jest.fn(({ salonId }: { salonId: string }) => Promise.resolve(subscriptionsById[salonId] ?? null)),
+      update: jest.fn(({ salonId }: { salonId: string }, patch: Record<string, unknown>) => {
+        Object.assign(subscriptionsById[salonId], patch);
+        return Promise.resolve(undefined);
+      }),
+    };
+    planRepo = {
+      findOneBy: jest.fn((where: { id?: string; isDefault?: boolean }) => {
+        if (where.id !== undefined) return Promise.resolve(plansById[where.id] ?? null);
+        return Promise.resolve(Object.values(plansById).find((p) => p.isDefault) ?? null);
+      }),
+    };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -26,13 +44,11 @@ describe('SubscriptionsService', () => {
 
   describe('getDefaultPlan', () => {
     it('returns the plan flagged as default', async () => {
-      planRepo.findOneBy.mockResolvedValue({ id: 'free', isDefault: true });
-      await expect(service.getDefaultPlan()).resolves.toEqual({ id: 'free', isDefault: true });
-      expect(planRepo.findOneBy).toHaveBeenCalledWith({ isDefault: true });
+      plansById.free = { id: 'free', isDefault: true, entitlements: {} };
+      await expect(service.getDefaultPlan()).resolves.toEqual(plansById.free);
     });
 
     it('throws InternalServerErrorException if somehow no plan is default', async () => {
-      planRepo.findOneBy.mockResolvedValue(null);
       await expect(service.getDefaultPlan()).rejects.toBeInstanceOf(InternalServerErrorException);
     });
   });
@@ -61,79 +77,121 @@ describe('SubscriptionsService', () => {
   });
 
   describe('getEntitlements', () => {
-    it('returns the salon plan entitlements when the subscription is active', async () => {
-      subRepo.findOneBy.mockResolvedValue({ salonId: 's1', planId: 'plus', status: 'active' });
-      planRepo.findOneBy.mockResolvedValue({ id: 'plus', entitlements: { smsQuota: 100 } });
-
-      await expect(service.getEntitlements('s1')).resolves.toEqual({ smsQuota: 100 });
-      expect(planRepo.findOneBy).toHaveBeenCalledWith({ id: 'plus' });
+    beforeEach(() => {
+      plansById.free = { id: 'free', isDefault: true, entitlements: { crmCap: 50 } };
     });
 
-    it('falls back to the default plan when the subscription is canceled', async () => {
-      subRepo.findOneBy.mockResolvedValue({ salonId: 's1', planId: 'plus', status: 'canceled' });
-      planRepo.findOneBy.mockResolvedValue({ id: 'free', isDefault: true, entitlements: {} });
+    it('returns the salon plan entitlements when the subscription is active', async () => {
+      plansById.plus = { id: 'plus', isDefault: false, entitlements: { smsQuota: 100 } };
+      subscriptionsById.s1 = { salonId: 's1', planId: 'plus', status: 'active', entitlementOverrides: null };
 
-      const result = await service.getEntitlements('s1');
+      await expect(service.getEntitlements('s1')).resolves.toEqual({ smsQuota: 100 });
+    });
 
-      expect(result).toEqual({});
-      expect(planRepo.findOneBy).toHaveBeenCalledWith({ isDefault: true });
+    it('merges a salon-specific override on top of the plan entitlements, override winning per key', async () => {
+      plansById.plus = { id: 'plus', isDefault: false, entitlements: { smsQuota: 100, crmCap: 10 } };
+      subscriptionsById.s1 = {
+        salonId: 's1',
+        planId: 'plus',
+        status: 'active',
+        entitlementOverrides: { smsQuota: 500 },
+      };
+
+      await expect(service.getEntitlements('s1')).resolves.toEqual({ smsQuota: 500, crmCap: 10 });
+    });
+
+    it('falls back to the default plan (no overrides applied) when the subscription is canceled', async () => {
+      plansById.plus = { id: 'plus', isDefault: false, entitlements: { smsQuota: 100 } };
+      subscriptionsById.s1 = {
+        salonId: 's1',
+        planId: 'plus',
+        status: 'canceled',
+        entitlementOverrides: { smsQuota: 999 },
+      };
+
+      await expect(service.getEntitlements('s1')).resolves.toEqual({ crmCap: 50 });
     });
 
     it('falls back to the default plan when the salon has no subscription row at all', async () => {
-      subRepo.findOneBy.mockResolvedValue(null);
-      planRepo.findOneBy.mockResolvedValue({ id: 'free', isDefault: true, entitlements: { crmCap: 50 } });
-
       await expect(service.getEntitlements('s1')).resolves.toEqual({ crmCap: 50 });
+    });
+  });
+
+  describe('getForSalon', () => {
+    it('404s when the salon has no subscription row', async () => {
+      await expect(service.getForSalon('missing')).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('reports the plan the subscription nominally references, plus what is actually resolved', async () => {
+      plansById.free = { id: 'free', isDefault: true, entitlements: {} };
+      plansById.plus = { id: 'plus', isDefault: false, entitlements: { smsQuota: 100 } };
+      subscriptionsById.s1 = { salonId: 's1', planId: 'plus', status: 'canceled', entitlementOverrides: null };
+
+      const result = await service.getForSalon('s1');
+
+      // Nominal plan is still 'plus' even though the subscription is canceled -- distinct
+      // from resolvedEntitlements, which correctly falls back to the default plan's.
+      expect(result.plan).toEqual(plansById.plus);
+      expect(result.resolvedEntitlements).toEqual({});
     });
   });
 
   describe('assignPlan', () => {
     it('404s when the target plan does not exist', async () => {
-      planRepo.findOneBy.mockResolvedValue(null);
       await expect(service.assignPlan('s1', 'missing-plan')).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('refuses to assign an inactive plan', async () => {
-      planRepo.findOneBy.mockResolvedValue({ id: 'p1', isActive: false });
+      plansById.p1 = { id: 'p1', isActive: false };
       await expect(service.assignPlan('s1', 'p1')).rejects.toBeInstanceOf(ConflictException);
       expect(subRepo.update).not.toHaveBeenCalled();
     });
 
     it('404s when the salon has no subscription row to update', async () => {
-      planRepo.findOneBy.mockResolvedValue({ id: 'p1', isActive: true });
-      subRepo.findOneBy.mockResolvedValueOnce(null);
+      plansById.p1 = { id: 'p1', isActive: true, entitlements: {} };
       await expect(service.assignPlan('s1', 'p1')).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('updates the plan and reactivates a previously canceled subscription', async () => {
-      planRepo.findOneBy.mockResolvedValue({ id: 'p1', isActive: true, entitlements: {} });
-      subRepo.findOneBy
-        .mockResolvedValueOnce({ salonId: 's1', status: 'canceled' }) // existence check
-        .mockResolvedValueOnce({ salonId: 's1', planId: 'p1', status: 'active' }); // getForSalon re-read
+      plansById.free = { id: 'free', isDefault: true, entitlements: {} };
+      plansById.p1 = { id: 'p1', isActive: true, entitlements: {} };
+      subscriptionsById.s1 = {
+        salonId: 's1',
+        planId: 'free',
+        status: 'canceled',
+        canceledAt: new Date(),
+        entitlementOverrides: null,
+      };
 
-      await service.assignPlan('s1', 'p1');
+      const result = await service.assignPlan('s1', 'p1');
 
       expect(subRepo.update).toHaveBeenCalledWith({ salonId: 's1' }, { planId: 'p1', status: 'active', canceledAt: null });
+      expect(result.subscription.status).toBe('active');
+      expect(result.subscription.canceledAt).toBeNull();
     });
   });
 
   describe('cancel', () => {
     it('404s when the salon has no subscription row', async () => {
-      subRepo.findOneBy.mockResolvedValue(null);
       await expect(service.cancel('s1')).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('rejects canceling an already-canceled subscription', async () => {
-      subRepo.findOneBy.mockResolvedValue({ salonId: 's1', status: 'canceled' });
+      plansById.free = { id: 'free', isDefault: true, entitlements: {} };
+      subscriptionsById.s1 = { salonId: 's1', planId: 'free', status: 'canceled', entitlementOverrides: null };
       await expect(service.cancel('s1')).rejects.toBeInstanceOf(ConflictException);
       expect(subRepo.update).not.toHaveBeenCalled();
     });
 
     it('marks an active subscription canceled with a timestamp', async () => {
-      planRepo.findOneBy.mockResolvedValue({ id: 'p1' });
-      subRepo.findOneBy
-        .mockResolvedValueOnce({ salonId: 's1', planId: 'p1', status: 'active' }) // existence check
-        .mockResolvedValueOnce({ salonId: 's1', planId: 'p1', status: 'canceled' }); // getForSalon re-read
+      plansById.free = { id: 'free', isDefault: true, entitlements: {} };
+      subscriptionsById.s1 = {
+        salonId: 's1',
+        planId: 'free',
+        status: 'active',
+        canceledAt: null,
+        entitlementOverrides: null,
+      };
 
       await service.cancel('s1');
 
@@ -141,6 +199,32 @@ describe('SubscriptionsService', () => {
         { salonId: 's1' },
         { status: 'canceled', canceledAt: expect.any(Date) },
       );
+    });
+  });
+
+  describe('setOverrides', () => {
+    it('404s when the salon has no subscription row', async () => {
+      await expect(service.setOverrides('s1', { smsQuota: 10 })).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('sets the override bag and reflects it in the resolved entitlements', async () => {
+      plansById.free = { id: 'free', isDefault: true, entitlements: { crmCap: 5 } };
+      subscriptionsById.s1 = { salonId: 's1', planId: 'free', status: 'active', entitlementOverrides: null };
+
+      const result = await service.setOverrides('s1', { crmCap: 999 });
+
+      expect(subRepo.update).toHaveBeenCalledWith({ salonId: 's1' }, { entitlementOverrides: { crmCap: 999 } });
+      expect(result.resolvedEntitlements).toEqual({ crmCap: 999 });
+    });
+
+    it('clears every override when passed null', async () => {
+      plansById.free = { id: 'free', isDefault: true, entitlements: { crmCap: 5 } };
+      subscriptionsById.s1 = { salonId: 's1', planId: 'free', status: 'active', entitlementOverrides: { crmCap: 999 } };
+
+      const result = await service.setOverrides('s1', null);
+
+      expect(subRepo.update).toHaveBeenCalledWith({ salonId: 's1' }, { entitlementOverrides: null });
+      expect(result.resolvedEntitlements).toEqual({ crmCap: 5 });
     });
   });
 });

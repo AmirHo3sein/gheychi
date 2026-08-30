@@ -64,8 +64,13 @@ read from, so it's built before the features that will eventually be gated by it
    service, admin plan CRUD, lifecycle states, migration backfill of a FREE subscription for
    every existing salon). ✅ shipped 2026-08-30, backend-only (see
    `docs/technical-overview/30-subscription-plan-foundation.md`).
-3. Entitlement enforcement + admin override (with audit) + usage/plan dashboards (provider and
-   admin sides), reading from the Phase 2 backbone.
+3. **Admin override + usage/plan dashboards** (salon-specific entitlement override with audit,
+   admin plan/subscription management UI, provider-facing read-only "my plan" page). ✅ shipped
+   2026-08-30 (see `docs/technical-overview/30-subscription-plan-foundation.md`). Entitlement
+   *enforcement* itself is still not wired into any feature — deliberately deferred to each
+   later phase as it introduces the specific keys it needs (SMS quota in Phase 6, CRM caps in
+   Phase 5, custom-handle access in Phase 4), rather than a hollow generic gate with nothing
+   real to enforce yet.
 4. Public handle + QR + attribution (`salon.slug` made provider-editable with reserved-word
    checking, client-side QR generation, `source` field threaded into
    `AnalyticsService.track('booking_started', ...)`).
