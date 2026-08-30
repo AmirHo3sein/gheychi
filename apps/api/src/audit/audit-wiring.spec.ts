@@ -39,6 +39,12 @@ describe('admin mutation audit wiring', () => {
       targetType: 'salon',
     },
     {
+      label: 'salon handle set',
+      handler: AdminSalonsController.prototype.setHandle,
+      action: 'salon.handle.set',
+      targetType: 'salon',
+    },
+    {
       label: 'story status',
       handler: AdminShowcaseController.prototype.setStoryStatus,
       action: 'salon.story.status.set',

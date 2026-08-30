@@ -14,6 +14,7 @@ vi.mock('@/composables/useApi', () => ({
 const salon = {
   id: 's1',
   name: 'سالن نمونه',
+  slug: 'salon-nemooneh',
   description: null,
   status: 'pending',
   genderTarget: 'women',
@@ -71,7 +72,10 @@ describe('SalonDetailView', () => {
     // stubbing both keeps this file's sequential apiFetch mock chains about the salon record
     // itself. Their own behaviour is covered in their own spec files.
     const wrapper = mount(SalonDetailView, {
-      global: { plugins: [router], stubs: { SalonBookingSettingsCard: true, SalonSubscriptionCard: true } },
+      global: {
+        plugins: [router],
+        stubs: { SalonBookingSettingsCard: true, SalonSubscriptionCard: true, SalonHandleCard: true },
+      },
     })
     await flushPromises()
     return wrapper

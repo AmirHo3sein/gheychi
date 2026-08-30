@@ -341,6 +341,7 @@ jobs:
           push: true
           build-args: |
             VITE_API_BASE=${{ vars.VITE_API_BASE_PROD }}
+            VITE_CUSTOMER_APP_BASE=${{ vars.VITE_CUSTOMER_APP_BASE_PROD }}
           tags: |
             ghcr.io/${{ env.OWNER_LC }}/gheychi-provider-panel:${{ github.sha }}
             ghcr.io/${{ env.OWNER_LC }}/gheychi-provider-panel:latest

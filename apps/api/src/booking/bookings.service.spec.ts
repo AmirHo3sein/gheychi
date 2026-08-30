@@ -527,9 +527,20 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
 
       expect(analyticsTrack).toHaveBeenCalledWith(
         'booking_started',
-        { salonId: 'salon-1', serviceId: 'service-1', workerId: 'worker-1', hasCoupon: false, flow: 'online' },
+        { salonId: 'salon-1', serviceId: 'service-1', workerId: 'worker-1', hasCoupon: false, flow: 'online', source: null },
         { userId: 'customer-1' },
       );
+    });
+
+    it('carries the marketing-attribution source through when the client sends one', async () => {
+      await service.createHold('customer-1', { ...DTO, attributionSource: 'qr' });
+
+      expect(analyticsTrack).toHaveBeenCalledWith(
+        'booking_started',
+        expect.objectContaining({ source: 'qr' }),
+        { userId: 'customer-1' },
+      );
+      expect(emSave).toHaveBeenCalledWith(Booking, expect.objectContaining({ attributionSource: 'qr' }));
     });
 
     it('still creates the booking when the analytics provider fails (never affects the real booking flow)', async () => {

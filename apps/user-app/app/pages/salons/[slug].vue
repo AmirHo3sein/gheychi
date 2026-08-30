@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { SalonPortfolioItem, SalonStoryItem } from '../../utils/types'
+import { resolveAttributionSource } from '../../utils/attribution'
 import { resolveSalonDescription } from '../../utils/salon-seo'
 import { readStorySeen } from '../../utils/story-seen'
 import { applyDiscount } from '../../utils/discount'
@@ -44,6 +45,20 @@ const session = useSessionStore()
 // link both render unconditionally (an empty reviews array still shows a "no reviews yet"
 // state, which would misrepresent the feature as off-by-content rather than off-by-flag).
 const { flags: featureFlags } = useFeatureFlags()
+
+// Resolved once, client-side (document.referrer is empty/unavailable during SSR anyway) --
+// carried onto the "Book" link's own query string so the booking page can read it at
+// submission time. See utils/attribution.ts's own doc comment for why this lives here
+// rather than sessionStorage: the salon page is always the entry point a QR/shareable link
+// lands on, never the booking page directly.
+const attributionSource = ref<string | null>(null)
+onMounted(() => {
+  attributionSource.value = resolveAttributionSource(route.query.source, document.referrer)
+})
+function bookingLink(serviceId: string): string {
+  const base = `/booking/${slug}/${serviceId}`
+  return attributionSource.value ? `${base}?source=${attributionSource.value}` : base
+}
 
 const { data: page } = await useAsyncData(`salon-${slug}`, async () => {
   const salonRes = await apiFetch<Salon>(`/salons/${slug}`, { silent: true })
@@ -436,7 +451,7 @@ function scrollToSection(id: string) {
       <ul v-if="page.services.length" class="space-y-2">
         <li v-for="service in page.services" :key="service.id">
           <NuxtLink
-            :to="`/booking/${slug}/${service.id}`"
+            :to="bookingLink(service.id)"
             class="block rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 text-sm shadow-(--shadow-sm) transition-shadow hover:shadow-(--shadow-md)"
           >
             <!-- Same shape as the booking page's price row, and for the same reason: at

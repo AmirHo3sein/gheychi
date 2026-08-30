@@ -155,6 +155,12 @@ Real third-party credentials can't be exercised in CI — run these by hand once
 
 `provider-panel` and `admin-panel` bake `VITE_API_BASE` into their static bundle at *build* time (it's a public URL, not a secret). Changing it requires a new CI build+push — update the `VITE_API_BASE_PROD` repository variable and re-run the workflow (e.g. push an empty commit to `main`), then redeploy. A VPS-side `.env` edit alone won't affect these two apps.
 
+`provider-panel` also bakes in `VITE_CUSTOMER_APP_BASE` the same way — the customer-facing user-app's own public base URL, used only to build the shareable public-salon link/QR shown on the salon-settings screen. Same change procedure (repository variable + rebuild) applies.
+
 ## CI setup (one-time, before the first `main` merge)
 
-`.github/workflows/ci.yml`'s `build-and-push` job needs one repository variable defined before it can build the two SPA images: **Settings → Secrets and variables → Actions → Variables tab → New repository variable**, name `VITE_API_BASE_PROD`, value `https://api.<yourdomain>/api` (matching whatever `DOMAIN_API` is actually set to). This is a manual GitHub UI step — no commit can create it. No other secrets are needed; GHCR auth uses the built-in `secrets.GITHUB_TOKEN`.
+`.github/workflows/ci.yml`'s `build-and-push` job needs repository variables defined before it can build the SPA images: **Settings → Secrets and variables → Actions → Variables tab → New repository variable**:
+- `VITE_API_BASE_PROD`, value `https://api.<yourdomain>/api` (matching whatever `DOMAIN_API` is actually set to) — needed by `provider-panel` and `admin-panel`.
+- `VITE_CUSTOMER_APP_BASE_PROD`, value `https://<yourdomain>` (matching `DOMAIN_APEX`, no trailing slash) — needed by `provider-panel` only.
+
+This is a manual GitHub UI step — no commit can create it. No other secrets are needed; GHCR auth uses the built-in `secrets.GITHUB_TOKEN`.

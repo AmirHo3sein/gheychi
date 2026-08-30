@@ -54,6 +54,40 @@ describe('Bookings — create hold (e2e)', () => {
     expect(res.body.paymentUrl).toContain('Authority=MOCK-');
   });
 
+  it('persists an optional marketing-attribution source (distinct from Booking.source)', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/bookings')
+      .set('Cookie', customerCookie)
+      .send({ salonId, serviceId, startsAt: futureIso(30), attributionSource: 'qr' })
+      .expect(201);
+
+    const ds = app.get(DataSource);
+    const [row] = await ds.query(`SELECT source, attribution_source FROM bookings WHERE id = $1`, [
+      res.body.booking.id,
+    ]);
+    expect(row.source).toBe('online');
+    expect(row.attribution_source).toBe('qr');
+  });
+
+  it('rejects an attribution source outside the fixed set', () =>
+    request(app.getHttpServer())
+      .post('/api/bookings')
+      .set('Cookie', customerCookie)
+      .send({ salonId, serviceId, startsAt: futureIso(31), attributionSource: 'facebook-ads' })
+      .expect(400));
+
+  it('leaves attribution_source null when the client sends none', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/bookings')
+      .set('Cookie', customerCookie)
+      .send({ salonId, serviceId, startsAt: futureIso(32) })
+      .expect(201);
+
+    const ds = app.get(DataSource);
+    const [row] = await ds.query(`SELECT attribution_source FROM bookings WHERE id = $1`, [res.body.booking.id]);
+    expect(row.attribution_source).toBeNull();
+  });
+
   it('rejects a startsAt in the past', () =>
     request(app.getHttpServer())
       .post('/api/bookings')

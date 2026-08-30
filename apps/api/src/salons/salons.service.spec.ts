@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, QueryFailedError } from 'typeorm';
 import { AdminNotificationsService } from '../admin-notifications/admin-notifications.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { ServiceCategory } from '../catalog/service-category.entity';
@@ -455,6 +455,36 @@ describe('SalonsService', () => {
     it('404s when the salon does not exist', async () => {
       repo.update.mockResolvedValue({ affected: 0 });
       await expect(service.setFeatured('missing', { isFeatured: true })).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('updateHandle', () => {
+    it('rejects a reserved word without touching the database', async () => {
+      await expect(service.updateHandle('s1', 'mine')).rejects.toBeInstanceOf(BadRequestException);
+      expect(repo.findOneBy).not.toHaveBeenCalled();
+    });
+
+    it('404s when the salon does not exist', async () => {
+      repo.findOneBy.mockResolvedValue(null);
+      await expect(service.updateHandle('missing', 'my-salon')).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('translates a duplicate handle into a clean conflict', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 's1', slug: 'old-handle' });
+      const driverError = Object.assign(new Error('duplicate'), { code: '23505' });
+      repo.update.mockRejectedValue(new QueryFailedError('', [], driverError));
+
+      await expect(service.updateHandle('s1', 'taken-handle')).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('updates the slug and returns the salon with the new handle', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 's1', slug: 'old-handle' });
+      repo.update.mockResolvedValue({ affected: 1 });
+
+      const result = await service.updateHandle('s1', 'my-new-handle');
+
+      expect(repo.update).toHaveBeenCalledWith({ id: 's1' }, { slug: 'my-new-handle' });
+      expect(result.slug).toBe('my-new-handle');
     });
   });
 });

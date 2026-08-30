@@ -13,8 +13,11 @@ const fetchStub = Object.assign((...args: unknown[]) => fetchMock(...args), {
 })
 
 // The page reads slug/serviceId from the route params -- mockNuxtImport lets us pin
-// them to fixed test values regardless of where the spec file lives.
-mockNuxtImport('useRoute', () => () => ({ params: { slug: 'test-salon', serviceId: 'svc-1' } }))
+// them to fixed test values regardless of where the spec file lives. `routeQuery` is a
+// mutable outer binding (not a literal in the factory) so a specific test can override the
+// query string (e.g. `?source=qr`) before mounting; reset in beforeEach below.
+let routeQuery: Record<string, string> = {}
+mockNuxtImport('useRoute', () => () => ({ params: { slug: 'test-salon', serviceId: 'svc-1' }, query: routeQuery }))
 
 const { navigateToMock } = vi.hoisted(() => ({ navigateToMock: vi.fn() }))
 mockNuxtImport('navigateTo', () => navigateToMock)
@@ -124,6 +127,7 @@ describe('booking confirm page', () => {
     vi.stubGlobal('$fetch', fetchStub)
     wrapper?.unmount()
     wrapper = undefined
+    routeQuery = {}
     clearNuxtData('booking-test-salon-svc-1')
     // useState has no $reset() -- shared across every test in this file (see the
     // feature-flags gating test below).
@@ -791,6 +795,30 @@ describe('booking confirm page', () => {
 
     expect(navigateToMock).toHaveBeenCalledWith('/bookings/b-request')
     expect(navigateToMock).not.toHaveBeenCalledWith(expect.stringContaining('http'), expect.anything())
+  })
+
+  // Carried over from the salon page's own "Book" link (see utils/attribution.ts) as a
+  // `?source=` query param on this very page's URL.
+  it('forwards the ?source query param from the URL as attributionSource on submit', async () => {
+    routeQuery = { source: 'qr' }
+    stubPageLoad('success')
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await pickSlotAndSubmit(wrapper)
+
+    const bookingCall = fetchMock.mock.calls.find(([path]) => path === '/bookings')
+    expect(bookingCall?.[1]).toMatchObject({ body: expect.objectContaining({ attributionSource: 'qr' }) })
+  })
+
+  it('sends no attributionSource when the URL carries no (or an unrecognized) source', async () => {
+    routeQuery = { source: 'not-a-real-channel' }
+    stubPageLoad('success')
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await pickSlotAndSubmit(wrapper)
+
+    const bookingCall = fetchMock.mock.calls.find(([path]) => path === '/bookings')
+    expect(bookingCall?.[1]).toMatchObject({ body: expect.objectContaining({ attributionSource: undefined }) })
   })
 
   // With the platform's global online-payment flag off, the API never opens a payment

@@ -104,6 +104,12 @@ A consolidated reference of every enforced business rule in the platform, groupe
 - A salon's resolved entitlements are its active plan's entitlements with any admin-set salon-specific override merged in key-by-key (override wins); a canceled subscription resolves to the default plan alone, with no override applied.
 - Entitlement enforcement does not exist yet — `SubscriptionsService.getEntitlements()` is a resolution seam only, not wired into any feature gate. See [30-subscription-plan-foundation.md](./30-subscription-plan-foundation.md).
 
+## Public handle & attribution rules
+
+- A salon's public handle (`slug`) is provider-editable, checked against a reserved-word list (route collisions + platform-page-lookalikes) before every write, and DB-unique-backstopped.
+- `Booking.attributionSource` ('qr'/'direct'/'search'/null) is distinct from `Booking.source` ('online'/'manual') — the former is a marketing channel, the latter is how the row was created. Resolved once client-side, never recomputed.
+- Attribution is best-effort and additive only — never blocks or alters a booking's own creation logic, and an unrecognized/malformed value is silently dropped rather than rejected loudly on this specific field.
+
 ## Category rules
 
 - A salon must have at least one category tag from creation onward — `categoryIds` requires `@ArrayMinSize(1)` on both create and (when supplied) update.

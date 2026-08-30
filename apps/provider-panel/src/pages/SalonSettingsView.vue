@@ -7,6 +7,7 @@ import { useSalon } from '@/composables/useSalon'
 import { useServiceCategories } from '@/composables/useServiceCategories'
 import { useToast } from '@/composables/useToast'
 import SalonInfoStep from '@/components/onboarding/SalonInfoStep.vue'
+import PublicLinkCard from '@/components/salon/PublicLinkCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
@@ -261,6 +262,8 @@ onMounted(loadCities)
           <p v-if="form.about.trim()" class="mt-1 break-words whitespace-pre-line text-sm text-(--color-text)">{{ aboutExcerpt }}</p>
         </div>
       </div>
+
+      <PublicLinkCard />
 
       <div class="space-y-4 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-5 shadow-(--shadow-sm)">
         <div>

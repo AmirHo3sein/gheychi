@@ -3,6 +3,7 @@ import { Request } from 'express';
 import { Public } from '../auth/public.decorator';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
 import { User } from '../users/user.entity';
+import { UpdateHandleDto } from './dto/salon-handle.dto';
 import { CreateSalonDto, UpdateSalonDto } from './dto/salon.dto';
 import { SalonOwnerGuard } from './salon-owner.guard';
 import { SalonsService } from './salons.service';
@@ -28,6 +29,16 @@ export class SalonsController {
   @UseGuards(SalonOwnerGuard)
   update(@Req() req: Request, @Body() dto: UpdateSalonDto) {
     return this.salons.updateMine(req.salonId!, dto);
+  }
+
+  // Deliberately its own route/DTO, not folded into UpdateSalonDto -- updateMine() applies
+  // its DTO with a blanket Object.assign, so slug's mere presence there would let a stray
+  // client-supplied field silently rename a salon's public URL (same privilege-escalation
+  // reasoning as the booking-approval timeout columns' own exclusion from UpdateSalonDto).
+  @Patch('mine/handle')
+  @UseGuards(SalonOwnerGuard)
+  updateHandle(@Req() req: Request, @Body() dto: UpdateHandleDto) {
+    return this.salons.updateHandle(req.salonId!, dto.handle);
   }
 
   @Post('mine/resubmit')

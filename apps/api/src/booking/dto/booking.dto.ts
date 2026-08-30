@@ -43,6 +43,16 @@ export class CreateBookingDto {
   @IsOptional()
   @IsUUID()
   workerId?: string;
+
+  // Marketing-channel attribution, resolved client-side (user-app's attribution.ts) from a
+  // `?source=` query param (QR codes always encode one) or a search-engine referrer -- NOT
+  // to be confused with `Booking.source` ('online'/'manual', how the row was created).
+  // Omitted (not just falsy) means "no attributable channel", the common organic-navigation
+  // case -- an open-ended free-text field would invite unbounded values with no product
+  // meaning; validated against the fixed set the platform itself currently generates.
+  @IsOptional()
+  @IsIn(['qr', 'direct', 'search'])
+  attributionSource?: 'qr' | 'direct' | 'search';
 }
 
 export class UpdateBookingStatusDto {

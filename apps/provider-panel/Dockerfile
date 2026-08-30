@@ -14,6 +14,8 @@ RUN pnpm install --frozen-lockfile
 COPY --from=pruner /app/out/full/ .
 ARG VITE_API_BASE=http://localhost:3002/api
 ENV VITE_API_BASE=$VITE_API_BASE
+ARG VITE_CUSTOMER_APP_BASE=http://localhost:3003
+ENV VITE_CUSTOMER_APP_BASE=$VITE_CUSTOMER_APP_BASE
 RUN pnpm turbo run build --filter=@gheychi/provider-panel
 
 FROM nginx:1.27-alpine AS runner

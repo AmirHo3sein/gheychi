@@ -9,7 +9,10 @@ const fetchStub = Object.assign((...args: unknown[]) => fetchMock(...args), {
   create: () => fetchStub,
 })
 
-mockNuxtImport('useRoute', () => () => ({ params: { slug: 'test-salon' }, query: {} }))
+// Mutable so a specific test can override the query string (e.g. `?source=qr`) before
+// mounting -- reset in beforeEach below.
+let routeQuery: Record<string, string> = {}
+mockNuxtImport('useRoute', () => () => ({ params: { slug: 'test-salon' }, query: routeQuery }))
 
 const SALON = {
   id: 's1',
@@ -64,6 +67,7 @@ describe('salon detail page', () => {
     vi.stubGlobal('$fetch', fetchStub)
     wrapper?.unmount()
     wrapper = undefined
+    routeQuery = {}
     clearNuxtData('salon-test-salon')
     // useState has no $reset() -- this ref is shared across every test in this file, so
     // an earlier test's override (see the feature-flags gating test below) would
@@ -243,6 +247,28 @@ describe('salon detail page', () => {
 
     const button = wrapper.get('[data-testid="favorite-button"]')
     expect(button.attributes('aria-pressed')).toBe('false')
+  })
+
+  // See utils/attribution.ts -- the salon page is always the entry point a QR/shareable link
+  // lands on, so it resolves the channel once and tags the "Book" link's own query string
+  // rather than using sessionStorage.
+  it('tags the booking link with ?source=qr when the page itself was opened with one', async () => {
+    routeQuery = { source: 'qr' }
+    mockEndpoints()
+    wrapper = await mountSuspended(SalonDetailPage)
+    await new Promise((r) => setTimeout(r, 0)) // onMounted's attribution resolution
+
+    const link = wrapper.get('a[href^="/booking/test-salon/svc1"]')
+    expect(link.attributes('href')).toBe('/booking/test-salon/svc1?source=qr')
+  })
+
+  it('leaves the booking link untagged with no query source and no search referrer', async () => {
+    mockEndpoints()
+    wrapper = await mountSuspended(SalonDetailPage)
+    await new Promise((r) => setTimeout(r, 0))
+
+    const link = wrapper.get('a[href^="/booking/test-salon/svc1"]')
+    expect(link.attributes('href')).toBe('/booking/test-salon/svc1')
   })
 
   it('shows an empty-state instead of a bare header when there are no services', async () => {

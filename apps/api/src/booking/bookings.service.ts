@@ -182,6 +182,10 @@ export class BookingsService {
           workerId: dto.workerId ?? null,
           hasCoupon: Boolean(dto.couponCode),
           flow: 'online',
+          // Marketing-channel attribution (direct-link/QR/search) -- see
+          // CreateBookingDto.attributionSource's own doc comment. null (not omitted) when
+          // absent, so this key is always present in the funnel's own event shape.
+          source: dto.attributionSource ?? null,
         },
         { userId },
       )
@@ -404,6 +408,7 @@ export class BookingsService {
             // earlier write path onto the same nullable column, not a replacement for it.
             workerId: dto.workerId ?? null,
             status,
+            attributionSource: dto.attributionSource ?? null,
             // Only the coupon that actually produced the price is recorded against the
             // booking -- a losing coupon was never applied to it in any sense.
             couponId: couponApplied ? coupon!.id : null,

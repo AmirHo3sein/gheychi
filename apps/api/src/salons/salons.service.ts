@@ -5,11 +5,13 @@ import { AdminNotificationsService } from '../admin-notifications/admin-notifica
 import { AnalyticsService } from '../analytics/analytics.service';
 import { ServiceCategory } from '../catalog/service-category.entity';
 import { CitiesService } from '../cities/cities.service';
+import { isUniqueViolation } from '../common/postgres-error-codes';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { UsersService } from '../users/users.service';
 import { UpdateSalonStatusDto } from './dto/admin-salon-status.dto';
 import { SetFeaturedDto } from './dto/admin-salon.dto';
 import { CreateSalonDto, UpdateSalonDto } from './dto/salon.dto';
+import { RESERVED_SALON_HANDLES } from './reserved-handles';
 import { SalonCategory } from './salon-category.entity';
 import { Salon } from './salon.entity';
 import { makeSlug } from '../common/slug.util';
@@ -174,6 +176,29 @@ export class SalonsService {
 
     const [withCategories] = await this.attachCategories([salon]);
     return withCategories;
+  }
+
+  /**
+   * Changes a salon's public handle (salon.slug, reused directly as the shareable link --
+   * see the monetization spec's owner decision). Called by both the owner's own route and
+   * the admin-override route; the admin caller additionally records an audit entry at the
+   * controller layer, this method itself has no notion of who's calling.
+   */
+  async updateHandle(salonId: string, handle: string): Promise<Salon> {
+    if (RESERVED_SALON_HANDLES.has(handle)) {
+      throw new BadRequestException('این آدرس رزرو شده و قابل استفاده نیست');
+    }
+    const salon = await this.repo.findOneBy({ id: salonId });
+    if (!salon) throw new NotFoundException('No salon for this account');
+
+    try {
+      await this.repo.update({ id: salonId }, { slug: handle });
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new ConflictException('این آدرس قبلا توسط سالن دیگری استفاده شده است');
+      throw err;
+    }
+    salon.slug = handle;
+    return salon;
   }
 
   async resubmitMine(salonId: string): Promise<Salon> {

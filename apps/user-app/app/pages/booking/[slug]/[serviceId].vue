@@ -35,6 +35,14 @@ interface CouponValidationResult {
 }
 
 const route = useRoute()
+// Carried over as a query param from the salon profile page's own "Book" link (see
+// utils/attribution.ts) -- only the platform's own fixed value set is trusted, since the
+// query string is otherwise customer/attacker-controlled; anything else is silently dropped
+// rather than forwarded to the API, which would reject it anyway (CreateBookingDto.attributionSource).
+const ATTRIBUTION_SOURCES = new Set(['qr', 'direct', 'search'])
+const attributionSource = ATTRIBUTION_SOURCES.has(String(route.query.source))
+  ? (route.query.source as string)
+  : undefined
 const slug = route.params.slug as string
 const serviceId = route.params.serviceId as string
 const { apiFetch } = useApi()
@@ -280,6 +288,7 @@ async function confirmBooking() {
       couponCode: appliedCoupon.value ? appliedCoupon.value.code : undefined,
       applyWalletBalance: applyWalletBalance.value || undefined,
       workerId: selectedWorkerId.value || undefined,
+      attributionSource,
     },
     silent: true,
   })

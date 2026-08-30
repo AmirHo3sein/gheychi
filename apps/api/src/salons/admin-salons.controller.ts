@@ -9,6 +9,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { AdminSalonQueryDto } from './dto/admin-salon-query.dto';
 import { UpdateSalonStatusDto } from './dto/admin-salon-status.dto';
 import { SetFeaturedDto } from './dto/admin-salon.dto';
+import { UpdateHandleDto } from './dto/salon-handle.dto';
 import { PortfolioItem } from './portfolio-item.entity';
 import { SalonStory } from './salon-story.entity';
 import { Salon } from './salon.entity';
@@ -97,6 +98,21 @@ export class AdminSalonsController {
   @AuditAction('salon.featured.set', 'salon')
   setFeatured(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SetFeaturedDto) {
     return this.salonsService.setFeatured(id, dto);
+  }
+
+  // Admin override of a salon's own handle -- the same route the owner has
+  // (PATCH /salons/mine/handle) reused here for recourse if a salon picks something
+  // inappropriate, not a separate feature.
+  @Patch(':id/handle')
+  @UseInterceptors(AuditInterceptor)
+  @AuditAction('salon.handle.set', 'salon')
+  async setHandle(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateHandleDto, @Req() req: Request) {
+    const before = await this.salons.findOneBy({ id });
+    if (before) req.auditBefore = { slug: before.slug };
+
+    const updated = await this.salonsService.updateHandle(id, dto.handle);
+    req.auditAfter = { slug: updated.slug };
+    return updated;
   }
 
   private async requireSalon(id: string): Promise<void> {

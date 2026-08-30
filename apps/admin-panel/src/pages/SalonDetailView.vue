@@ -4,6 +4,7 @@ import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import SalonBookingSettingsCard from '@/components/salons/SalonBookingSettingsCard.vue'
+import SalonHandleCard from '@/components/salons/SalonHandleCard.vue'
 import SalonStatusActions from '@/components/salons/SalonStatusActions.vue'
 import SalonSubscriptionCard from '@/components/salons/SalonSubscriptionCard.vue'
 import ShowcaseStatusActions from '@/components/salons/ShowcaseStatusActions.vue'
@@ -17,6 +18,7 @@ import { genderTargetLabel, salonStatusLabel, showcaseStatusLabel } from '@/util
 interface SalonDetail {
   id: string
   name: string
+  slug: string
   description: string | null
   status: 'pending' | 'approved' | 'rejected' | 'suspended'
   genderTarget: 'women' | 'men'
@@ -228,6 +230,12 @@ onMounted(load)
               <p class="tnum mt-1 font-semibold">{{ salon.capacity }} نفر</p>
             </div>
           </div>
+
+          <SalonHandleCard
+            :salon-id="salon.id"
+            :slug="salon.slug"
+            @updated="(slug) => (salon!.slug = slug)"
+          />
 
           <div v-if="salon.rejectionReason" class="mt-5 flex gap-2.5 rounded-xl bg-(--tone-danger-bg) p-3.5">
             <AppIcon name="warning" :size="17" class="mt-0.5 shrink-0 text-(--tone-danger-text)" />

@@ -121,6 +121,14 @@ export class Booking {
   @Column({ type: 'varchar', default: 'online' })
   source: 'online' | 'manual';
 
+  // Marketing-channel attribution -- distinct from `source` above (creation mechanism, not
+  // marketing channel). Null means no attributable channel (organic in-app navigation, the
+  // common case) or a 'manual' booking (nothing to attribute). Set once at creation from
+  // CreateBookingDto.attributionSource, never recomputed -- a durable per-booking join for
+  // "how did this customer find us", see docs/technical-overview/31-public-handle-and-attribution.md.
+  @Column({ name: 'attribution_source', type: 'varchar', length: 20, nullable: true })
+  attributionSource: 'qr' | 'direct' | 'search' | null;
+
   // Owner-authored free text on a manual booking (e.g. "تماس تلفنی - مشتری قدیمی") -- always
   // null for an online booking; there's nowhere in that flow for a customer to write one.
   @Column({ type: 'varchar', length: 500, nullable: true })

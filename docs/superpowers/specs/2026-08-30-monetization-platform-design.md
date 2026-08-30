@@ -71,9 +71,11 @@ read from, so it's built before the features that will eventually be gated by it
    later phase as it introduces the specific keys it needs (SMS quota in Phase 6, CRM caps in
    Phase 5, custom-handle access in Phase 4), rather than a hollow generic gate with nothing
    real to enforce yet.
-4. Public handle + QR + attribution (`salon.slug` made provider-editable with reserved-word
-   checking, client-side QR generation, `source` field threaded into
-   `AnalyticsService.track('booking_started', ...)`).
+4. **Public handle + QR + attribution** (`salon.slug` made provider-editable with
+   reserved-word checking, client-side QR generation, `source` field threaded into
+   `AnalyticsService.track('booking_started', ...)` and a new `Booking.attributionSource`
+   column). ✅ shipped 2026-08-30 (see
+   `docs/technical-overview/31-public-handle-and-attribution.md`).
 5. Salon CRM (customer list/detail/notes, revenue dashboard with precise gross/collected/
    commission/estimated-revenue terminology, backed by a new aggregation endpoint following
    the `salons/mine/earnings` pattern; `analytics_events.salon_id` added here).
