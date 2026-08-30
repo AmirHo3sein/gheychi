@@ -92,6 +92,14 @@ describe('Security regression suite (e2e)', () => {
         path: '/api/admin/salons/00000000-0000-0000-0000-000000000000/handle',
         body: { handle: 'x-security-check' },
       },
+      { method: 'get', path: '/api/admin/subscription-coupons' },
+      { method: 'post', path: '/api/admin/subscription-coupons', body: { code: 'X', discountPercent: 10 } },
+      { method: 'get', path: '/api/admin/salons/00000000-0000-0000-0000-000000000000/subscription/billing-periods' },
+      {
+        method: 'post',
+        path: '/api/admin/salons/00000000-0000-0000-0000-000000000000/subscription/billing-periods',
+        body: { periodStart: '2026-01-01T00:00:00.000Z', periodEnd: '2026-02-01T00:00:00.000Z' },
+      },
     ];
 
     it.each(ADMIN_ROUTES)('401s $method $path with no session at all', async ({ method, path, body }) => {

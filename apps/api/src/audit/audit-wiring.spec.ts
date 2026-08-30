@@ -1,4 +1,6 @@
 import 'reflect-metadata';
+import { AdminSubscriptionBillingController } from '../billing/admin-subscription-billing.controller';
+import { AdminSubscriptionCouponsController } from '../billing/admin-subscription-coupons.controller';
 import { AdminBookingSettingsController } from '../booking/admin-booking-settings.controller';
 import { SalonBookingsController } from '../booking/salon-bookings.controller';
 import { AdminCategoriesController } from '../catalog/admin-categories.controller';
@@ -286,6 +288,38 @@ describe('admin mutation audit wiring', () => {
       action: 'subscription.overrides.set',
       targetType: 'salon-subscription',
       targetIdParam: 'salonId',
+    },
+    {
+      label: 'subscription coupon create',
+      handler: AdminSubscriptionCouponsController.prototype.create,
+      action: 'subscription-coupon.create',
+      targetType: 'subscription-coupon',
+    },
+    {
+      label: 'subscription coupon update',
+      handler: AdminSubscriptionCouponsController.prototype.update,
+      action: 'subscription-coupon.update',
+      targetType: 'subscription-coupon',
+    },
+    {
+      label: 'subscription coupon delete',
+      handler: AdminSubscriptionCouponsController.prototype.remove,
+      action: 'subscription-coupon.delete',
+      targetType: 'subscription-coupon',
+    },
+    {
+      label: 'subscription billing period create',
+      handler: AdminSubscriptionBillingController.prototype.create,
+      action: 'subscription.billing-period.create',
+      targetType: 'subscription-billing-period',
+      targetIdParam: 'salonId',
+    },
+    {
+      label: 'subscription billing period status set',
+      handler: AdminSubscriptionBillingController.prototype.setStatus,
+      action: 'subscription.billing-period.status.set',
+      targetType: 'subscription-billing-period',
+      targetIdParam: 'periodId',
     },
   ];
 

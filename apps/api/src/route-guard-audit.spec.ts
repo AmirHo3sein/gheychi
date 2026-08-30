@@ -10,6 +10,9 @@ import { AuthController } from './auth/auth.controller';
 import { AuthGuard } from './auth/auth.guard';
 import { IS_PUBLIC_KEY, Public } from './auth/public.decorator';
 import { BackupReportController } from './backup-monitoring/backup-report.controller';
+import { AdminSubscriptionBillingController } from './billing/admin-subscription-billing.controller';
+import { AdminSubscriptionCouponsController } from './billing/admin-subscription-coupons.controller';
+import { SalonBillingPeriodsController } from './billing/salon-billing-periods.controller';
 import { AdminBookingSettingsController } from './booking/admin-booking-settings.controller';
 import { AvailabilityController } from './booking/availability.controller';
 import { BookingsController } from './booking/bookings.controller';
@@ -82,6 +85,9 @@ const ALL_CONTROLLERS: Function[] = [
   AdminAuditController,
   AuthController,
   BackupReportController,
+  AdminSubscriptionBillingController,
+  AdminSubscriptionCouponsController,
+  SalonBillingPeriodsController,
   AdminBookingSettingsController,
   AvailabilityController,
   BookingsController,

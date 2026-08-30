@@ -15,6 +15,7 @@ const LINKS: { to: string; label: string; icon: IconName }[] = [
   { to: '/category-requests', label: 'درخواست‌های دسته‌بندی', icon: 'plus' },
   { to: '/coupons', label: 'کدهای تخفیف', icon: 'coupon' },
   { to: '/plans', label: 'پلن‌های اشتراک', icon: 'plan' },
+  { to: '/subscription-coupons', label: 'کدهای تخفیف اشتراک', icon: 'coupon' },
   { to: '/wallet', label: 'کیف پول', icon: 'wallet' },
   { to: '/invoices', label: 'صورتحساب‌ها', icon: 'invoice' },
   { to: '/referrals', label: 'معرفی‌ها', icon: 'user-plus' },

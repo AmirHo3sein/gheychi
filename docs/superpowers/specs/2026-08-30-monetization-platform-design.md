@@ -88,7 +88,15 @@ read from, so it's built before the features that will eventually be gated by it
    `docs/technical-overview/33-salon-sms-quota.md`) — the first phase to actually *enforce*
    an entitlement (`entitlements.smsMonthlyQuota`) rather than just resolve one.
 7. Subscription coupons + the remaining billing-architecture scaffolding — last, since it's
-   explicitly the "don't overbuild" cluster.
+   explicitly the "don't overbuild" cluster. ✅ shipped 2026-08-30 (see
+   `docs/technical-overview/34-subscription-coupons-and-billing.md`) — the final phase.
+   `SubscriptionCoupon`/`SubscriptionCouponRedemption` are a genuinely separate entity from
+   the booking `Coupon`, redeemed by salon (not user) at billing-period-creation time.
+   `SubscriptionBillingPeriod` gives the `Plan → Subscription → BillingPeriod → Invoice`
+   shape real substance without a dedicated `Invoice` entity yet (deliberately deferred until
+   real billing goes live) and without any cron auto-generating periods (admin-created only,
+   to keep the "architecture-only" boundary honest — an automated recurring job would read as
+   real billing when it isn't).
 
 Each phase gets its own implementation record under `docs/superpowers/plans/` (or a
 `docs/technical-overview/` entry for a self-contained one like Phase 1) rather than one giant

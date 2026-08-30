@@ -9,6 +9,7 @@ import { AlertsModule } from './alerts/alerts.module';
 import { AuthGuard } from './auth/auth.guard';
 import { AuthModule } from './auth/auth.module';
 import { BackupMonitoringModule } from './backup-monitoring/backup-monitoring.module';
+import { BillingModule } from './billing/billing.module';
 import { BookingModule } from './booking/booking.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { CategoryRequestsModule } from './catalog/category-requests.module';
@@ -87,6 +88,7 @@ import { WalletModule } from './wallet/wallet.module';
     StorageModule,
     ActivityModule,
     CrmModule,
+    BillingModule,
   ],
   controllers: [HealthController],
   providers: [

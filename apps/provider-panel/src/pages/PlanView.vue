@@ -8,17 +8,27 @@ import { onMounted, ref } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useApi } from '@/composables/useApi'
 import { formatToman } from '@/utils/format-toman'
 
 interface Plan { id: string; key: string; name: string; description: string | null; monthlyPriceToman: number }
 interface Subscription { status: 'active' | 'canceled' }
 interface SubscriptionResponse { subscription: Subscription; plan: Plan; resolvedEntitlements: Record<string, unknown> }
+interface BillingPeriod {
+  id: string
+  periodStart: string
+  periodEnd: string
+  amountToman: number
+  discountPercent: number | null
+  status: 'pending' | 'paid' | 'comped' | 'void'
+}
 
 const { apiFetch } = useApi()
 const data = ref<SubscriptionResponse | null>(null)
 const loading = ref(true)
 const loadError = ref(false)
+const billingPeriods = ref<BillingPeriod[]>([])
 
 async function load() {
   loading.value = true
@@ -32,9 +42,28 @@ async function load() {
   data.value = result
   loading.value = false
 }
-onMounted(load)
+
+async function loadBillingPeriods() {
+  const { data: result } = await apiFetch<BillingPeriod[]>('/salons/mine/subscription/billing-periods', { silent: true })
+  billingPeriods.value = result ?? []
+}
+
+onMounted(() => {
+  load()
+  loadBillingPeriods()
+})
 
 const entitlementEntries = () => Object.entries(data.value?.resolvedEntitlements ?? {})
+
+function formatBillingDate(iso: string): string {
+  return new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
+}
+const BILLING_STATUS_LABEL: Record<BillingPeriod['status'], { label: string; tone: 'neutral' | 'success' | 'info' | 'warning' }> = {
+  pending: { label: 'در انتظار', tone: 'warning' },
+  paid: { label: 'پرداخت‌شده', tone: 'success' },
+  comped: { label: 'رایگان', tone: 'info' },
+  void: { label: 'باطل‌شده', tone: 'neutral' },
+}
 </script>
 
 <template>
@@ -82,6 +111,24 @@ const entitlementEntries = () => Object.entries(data.value?.resolvedEntitlements
             <span dir="ltr" class="tnum font-semibold text-(--color-text)">{{ JSON.stringify(value) }}</span>
           </div>
         </AppCard>
+      </div>
+
+      <div v-if="billingPeriods.length > 0">
+        <h2 class="mb-2 text-base font-bold text-(--color-text)">تاریخچه صورتحساب</h2>
+        <p class="mb-2 text-xs text-(--color-text-muted)">این تاریخچه به‌صورت دستی توسط پلتفرم ثبت می‌شود.</p>
+        <div class="space-y-2">
+          <AppCard v-for="period in billingPeriods" :key="period.id" data-testid="billing-period-row" :padded="false" class="p-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p class="tnum text-xs text-(--color-text-muted)">{{ formatBillingDate(period.periodStart) }} تا {{ formatBillingDate(period.periodEnd) }}</p>
+                <p class="mt-0.5 text-sm font-bold text-(--color-text)">
+                  <span dir="ltr" class="tnum">{{ formatToman(period.amountToman) }}</span> تومان
+                </p>
+              </div>
+              <StatusBadge :label="BILLING_STATUS_LABEL[period.status].label" :tone="BILLING_STATUS_LABEL[period.status].tone" />
+            </div>
+          </AppCard>
+        </div>
       </div>
     </template>
   </div>

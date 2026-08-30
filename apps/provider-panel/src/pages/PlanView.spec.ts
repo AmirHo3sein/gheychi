@@ -71,6 +71,44 @@ describe('PlanView', () => {
     expect(wrapper.text()).toContain('این پلن هنوز محدودیت یا امکان خاصی تعریف‌شده ندارد.')
   })
 
+  it('renders a read-only billing history when periods exist', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => RESPONSE })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            id: 'period-1',
+            periodStart: '2026-08-01T00:00:00.000Z',
+            periodEnd: '2026-09-01T00:00:00.000Z',
+            amountToman: 490000,
+            discountPercent: null,
+            status: 'paid',
+          },
+        ],
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = await mountPlan()
+
+    const row = wrapper.get('[data-testid="billing-period-row"]')
+    expect(row.text()).toContain('پرداخت‌شده')
+  })
+
+  it('shows no billing-history section at all when there are no periods yet', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => RESPONSE })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = await mountPlan()
+
+    expect(wrapper.find('[data-testid="billing-period-row"]').exists()).toBe(false)
+  })
+
   it('explains a canceled subscription instead of silently showing the fallback plan as normal', async () => {
     vi.stubGlobal(
       'fetch',
