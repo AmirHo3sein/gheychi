@@ -29,6 +29,16 @@ export class Payment {
   @Column({ name: 'refund_requested_at', type: 'timestamptz', nullable: true })
   refundRequestedAt: Date | null;
 
+  // The refund's in-flight claim, CAS'd from NULL (or from a stale value) by
+  // attemptRefund immediately BEFORE it calls the gateway, so that of two concurrent
+  // attempts -- the inline one from cancel() and RefundRetryJob's, or two API replicas --
+  // exactly one ever reaches Zarinpal. Cleared on every failure path so the retry job can
+  // pick the payment up again on its next tick; deliberately a timestamp rather than a
+  // boolean so a claim orphaned by a process crash mid-gateway-call self-heals after
+  // REFUND_CLAIM_TTL_MS instead of stranding the refund forever.
+  @Column({ name: 'refund_claimed_at', type: 'timestamptz', nullable: true })
+  refundClaimedAt: Date | null;
+
   // Zarinpal's refund reference (refund.json ref_id). Non-null iff status is 'refunded'
   // via the real gateway (mock writes MOCKREFUND-* values).
   @Column({ name: 'refund_ref_id', type: 'varchar', nullable: true })

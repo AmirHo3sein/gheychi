@@ -37,12 +37,18 @@ export class ReferralExpiryJob {
   async run(): Promise<number> {
     // A single conditional bulk UPDATE, not a select-then-loop: there is no per-row side
     // effect to perform (unlike ReferralGrantJob's tryGrantReward calls) and no
-    // transaction needed beyond the statement's own atomicity. The WHERE clause is the
-    // same CAS idiom used everywhere else in this codebase for a state transition --
-    // `status = 'awaiting_qualifying_event'` is re-checked in the same statement as the
-    // write, so a referral that ReferralGrantJob's own sweep grants (or partially grants)
-    // in the instant between this job's candidate scan and its write can never be
-    // incorrectly expired out from under it: the UPDATE simply matches zero rows for it.
+    // transaction needed beyond the statement's own atomicity.
+    //
+    // The status CAS is repeated in the OUTER WHERE, not only in the subquery, and that
+    // duplication is load-bearing. Under READ COMMITTED, if tryGrantReward holds a row
+    // lock on a candidate and commits `reward_granted` while this UPDATE waits on it,
+    // Postgres re-evaluates only the OUTER qual against the new row version
+    // (EvalPlanQual) -- the subquery's own `status = 'awaiting_qualifying_event'` is NOT
+    // re-run. With a bare `id IN (...)` outer qual, the recheck trivially still passes and
+    // a referral that was granted a microsecond ago gets stamped 'expired', destroying a
+    // real reward. Repeating the status test outside makes the recheck see the new
+    // 'reward_granted' value and drop the row, which is what a CAS is supposed to do.
+    //
     // Unlike a plain SELECT (which returns rows directly), dataSource.query() on an
     // UPDATE ... RETURNING resolves to a [rows, affectedCount] tuple -- only the first
     // element is the RETURNING rows.
@@ -50,14 +56,15 @@ export class ReferralExpiryJob {
       `
       UPDATE referrals
       SET status = 'expired'
-      WHERE id IN (
-        SELECT id FROM referrals
-        WHERE status = 'awaiting_qualifying_event'
-          AND expires_at IS NOT NULL
-          AND expires_at < now()
-        ORDER BY expires_at ASC
-        LIMIT $1
-      )
+      WHERE status = 'awaiting_qualifying_event'
+        AND id IN (
+          SELECT id FROM referrals
+          WHERE status = 'awaiting_qualifying_event'
+            AND expires_at IS NOT NULL
+            AND expires_at < now()
+          ORDER BY expires_at ASC
+          LIMIT $1
+        )
       RETURNING id
       `,
       [BATCH_SIZE],

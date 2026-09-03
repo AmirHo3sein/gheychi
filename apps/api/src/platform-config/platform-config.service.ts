@@ -27,6 +27,7 @@ export const REQUIRED_PLATFORM_CONFIG_KEYS = [
   'booking_approval_timeout_minutes',
   'reminder_lead_hours',
   'review_edit_window_hours',
+  'no_show_grace_minutes',
 ] as const;
 
 // Separate from REQUIRED_PLATFORM_CONFIG_KEYS/getNumber() on purpose: describeInvalidConfigValue
@@ -83,9 +84,15 @@ const PERCENT_KEYS = new Set<string>(['deposit_percent', 'commission_percent']);
 // override's own DTO + DB CHECK (1..1440), so the global default and a salon-level
 // override of the SAME concept can never disagree about what a legal value is.
 const MINUTE_TIMEOUT_KEYS = new Set<string>(['booking_approval_timeout_minutes', 'booking_hold_ttl_minutes']);
+// How long after a booking's start a salon must wait before recording a no-show. 0 is
+// deliberately legal (a platform that wants no grace at all), so this is not a
+// MINUTE_TIMEOUT_KEY -- but it is capped at a day, past which the booking-completion
+// window is long over anyway.
+const GRACE_MINUTE_KEYS = new Set<string>(['no_show_grace_minutes']);
 function boundsFor(key: string): ConfigBounds {
   if (PERCENT_KEYS.has(key)) return { min: 0, max: 100 };
   if (MINUTE_TIMEOUT_KEYS.has(key)) return { min: 1, max: 1440 };
+  if (GRACE_MINUTE_KEYS.has(key)) return { min: 0, max: 1440 };
   return { min: 0, max: null };
 }
 
@@ -216,6 +223,17 @@ export class PlatformConfigService implements OnApplicationBootstrap {
 
   getReviewEditWindowHours(): Promise<number> {
     return this.getNumber('review_edit_window_hours');
+  }
+
+  /**
+   * How long after a booking's start time a salon must wait before it may record a
+   * no-show. Platform-wide and admin-only on purpose: this is the customer's protection
+   * against a salon forfeiting a deposit for an appointment that hasn't happened yet, so
+   * the salon being protected against must not be able to set it (same reasoning that
+   * keeps the approval/payment timeouts out of UpdateSalonDto).
+   */
+  getNoShowGraceMinutes(): Promise<number> {
+    return this.getNumber('no_show_grace_minutes');
   }
 
   private async getBoolean(key: string): Promise<boolean> {

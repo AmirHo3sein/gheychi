@@ -136,7 +136,8 @@ describe('PaymentsService.attemptRefund', () => {
     refundPayment.mockResolvedValue({ success: false, refundRefId: null });
     const outcome = await service.attemptRefund('booking-1');
     expect(outcome).toBe('pending');
-    expect(paymentsUpdate).not.toHaveBeenCalled();
+    // The claim and its release are the only writes -- the status is never advanced.
+    expect(paymentsUpdate).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ status: 'refunded' }));
     expect(smsSend).not.toHaveBeenCalled();
     expect(raise).toHaveBeenCalledWith(
       expect.objectContaining({ key: 'refund-refused:pay-1', severity: 'warning' }),
@@ -148,13 +149,85 @@ describe('PaymentsService.attemptRefund', () => {
     refundPayment.mockRejectedValue(new Error('Zarinpal refund failed: fetch failed'));
     const outcome = await service.attemptRefund('booking-1');
     expect(outcome).toBe('pending');
-    expect(paymentsUpdate).not.toHaveBeenCalled();
+    expect(paymentsUpdate).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ status: 'refunded' }));
+  });
+
+  it('claims the payment BEFORE calling the gateway, and only claims an unclaimed (or stale) one', async () => {
+    paymentsFindOneBy.mockResolvedValue({ ...REFUND_PENDING_PAYMENT });
+    refundPayment.mockResolvedValue({ success: true, refundRefId: 'RR-1' });
+
+    await service.attemptRefund('booking-1');
+
+    const [criteria, patch] = paymentsUpdate.mock.calls[0];
+    expect(criteria).toEqual(
+      expect.objectContaining({ id: 'pay-1', status: 'refund_pending', refundClaimedAt: expect.anything() }),
+    );
+    expect(patch).toEqual({ refundClaimedAt: expect.any(Date) });
+    // ...and the gateway is only reached after that claim won.
+    expect(paymentsUpdate.mock.invocationCallOrder[0]).toBeLessThan(refundPayment.mock.invocationCallOrder[0]);
+  });
+
+  it('lets exactly ONE of two concurrent attempts reach the gateway', async () => {
+    // The real bug: both callers pass the unlocked read, so without the claim both call
+    // Zarinpal -- which permits one refund request per transaction. Here the claim UPDATE
+    // succeeds once and then matches zero rows, exactly as the DB would behave.
+    paymentsFindOneBy.mockResolvedValue({ ...REFUND_PENDING_PAYMENT });
+    refundPayment.mockResolvedValue({ success: true, refundRefId: 'RR-1' });
+    let claims = 0;
+    paymentsUpdate.mockImplementation((criteria: Record<string, unknown>) => {
+      if ('refundClaimedAt' in criteria) return Promise.resolve({ affected: claims++ === 0 ? 1 : 0 });
+      return Promise.resolve({ affected: 1 });
+    });
+
+    const outcomes = await Promise.all([service.attemptRefund('booking-1'), service.attemptRefund('booking-1')]);
+
+    expect(refundPayment).toHaveBeenCalledTimes(1);
+    expect(outcomes.sort()).toEqual(['pending', 'refunded']); // the loser reports the refund as still owed
+  });
+
+  it('releases the claim when the gateway throws, so the retry job can try again', async () => {
+    paymentsFindOneBy.mockResolvedValue({ ...REFUND_PENDING_PAYMENT });
+    refundPayment.mockRejectedValue(new Error('Zarinpal refund failed: fetch failed'));
+
+    expect(await service.attemptRefund('booking-1')).toBe('pending');
+    expect(paymentsUpdate).toHaveBeenLastCalledWith({ id: 'pay-1', status: 'refund_pending' }, { refundClaimedAt: null });
+  });
+
+  it('releases the claim when the gateway refuses the refund', async () => {
+    paymentsFindOneBy.mockResolvedValue({ ...REFUND_PENDING_PAYMENT });
+    refundPayment.mockResolvedValue({ success: false, refundRefId: null });
+
+    expect(await service.attemptRefund('booking-1')).toBe('pending');
+    expect(paymentsUpdate).toHaveBeenCalledWith({ id: 'pay-1', status: 'refund_pending' }, { refundClaimedAt: null });
+    expect(raise).toHaveBeenCalledWith(expect.objectContaining({ key: 'refund-refused:pay-1' }));
+  });
+
+  it('never strands a refund when releasing the claim itself fails -- the claim TTL covers it', async () => {
+    paymentsFindOneBy.mockResolvedValue({ ...REFUND_PENDING_PAYMENT });
+    refundPayment.mockRejectedValue(new Error('fetch failed'));
+    paymentsUpdate
+      .mockResolvedValueOnce({ affected: 1 }) // the claim
+      .mockRejectedValueOnce(new Error('DB down')); // the release
+
+    await expect(service.attemptRefund('booking-1')).resolves.toBe('pending'); // never propagates
+  });
+
+  it('reports pending without touching the gateway when another caller holds the claim', async () => {
+    paymentsFindOneBy.mockResolvedValue({ ...REFUND_PENDING_PAYMENT });
+    paymentsUpdate.mockResolvedValue({ affected: 0 });
+
+    expect(await service.attemptRefund('booking-1')).toBe('pending');
+    expect(refundPayment).not.toHaveBeenCalled();
   });
 
   it('does not notify when a concurrent attempt already won the conditional update', async () => {
     paymentsFindOneBy.mockResolvedValue({ ...REFUND_PENDING_PAYMENT });
     refundPayment.mockResolvedValue({ success: true, refundRefId: 'RR-1' });
-    paymentsUpdate.mockResolvedValue({ affected: 0 });
+    // The claim is won here; it's the trailing status CAS that loses -- e.g. a caller whose
+    // claim went stale and was taken over while its own gateway call was still running.
+    paymentsUpdate.mockImplementation((_criteria: unknown, patch: Record<string, unknown>) =>
+      Promise.resolve({ affected: patch.status === 'refunded' ? 0 : 1 }),
+    );
 
     const outcome = await service.attemptRefund('booking-1');
 
@@ -543,8 +616,11 @@ describe('PaymentsService.handleCallback — capture, dead bookings and unknown 
   it('tracks payment_succeeded on a genuine capture, with no PII beyond bare id references', async () => {
     await service.handleCallback('AUTH123', 'OK');
 
+    // salonId is what makes this stage attributable in the per-salon funnel -- it is
+    // looked up from the booking, since the capture path only holds the payment.
     expect(analyticsTrack).toHaveBeenCalledWith('payment_succeeded', {
       bookingId: 'booking-1',
+      salonId: 'salon-1',
       amount: 200_000,
       gateway: 'zarinpal',
     });

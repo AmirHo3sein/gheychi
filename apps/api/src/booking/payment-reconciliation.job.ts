@@ -5,10 +5,12 @@ import { DataSource, IsNull, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { CronJobRunner } from '../common/cron-job-runner.service';
 import { WalletService } from '../wallet/wallet.service';
-import { Booking } from './booking.entity';
+import { BookingEventsService } from './booking-events.service';
 import { releaseBookingHold } from './booking-hold-release.util';
+import { Booking } from './booking.entity';
 import { PAYMENT_GATEWAY, PaymentGateway } from './payment-gateway';
 import { Payment } from './payment.entity';
+import { PaymentsService } from './payments.service';
 
 const STALE_AFTER_MINUTES = 20;
 // Bounds one run's work per tick -- each stale payment can involve a real network round
@@ -29,6 +31,9 @@ export class PaymentReconciliationJob {
     private readonly alerts: AlertsService,
     private readonly walletService: WalletService,
     private readonly jobRunner: CronJobRunner,
+    // Appended at the end, matching this codebase's own constructor convention.
+    private readonly bookingEvents: BookingEventsService,
+    private readonly paymentsService: PaymentsService,
   ) {}
 
   @Cron('*/5 * * * *')
@@ -110,6 +115,12 @@ export class PaymentReconciliationJob {
         // to the outer catch (unknown state -- retried next tick), never treated as a
         // decline.
         const verified = await this.verifyAny(authorities, payment.amount);
+        // Set inside the transaction, acted on after it commits: a booking this job is the
+        // one to confirm (the callback never arrived -- the exact case this job exists for)
+        // used to notify nobody and record no lifecycle event. The customer paid, the
+        // booking became real, and neither party was ever told; the admin timeline showed a
+        // booking that turned confirmed by magic.
+        let confirmedHere = false;
         await this.dataSource.transaction(async (em) => {
           if (verified) {
             const result = await em.update(
@@ -154,6 +165,25 @@ export class PaymentReconciliationJob {
                 { id: payment.id, status: 'initiated' },
                 { status: 'paid', refId: verified.refId, paidAt: new Date(), authority: verified.authority },
               );
+              await this.bookingEvents.record(
+                {
+                  bookingId: payment.bookingId,
+                  eventType: 'PAYMENT_SUCCEEDED',
+                  actorType: 'system',
+                  metadata: { via: 'reconciliation', authority: verified.authority },
+                },
+                em,
+              );
+              await this.bookingEvents.record(
+                {
+                  bookingId: payment.bookingId,
+                  eventType: 'BOOKING_CONFIRMED',
+                  actorType: 'system',
+                  metadata: { via: 'reconciliation' },
+                },
+                em,
+              );
+              confirmedHere = true;
             }
           } else {
             // Same reasoning in reverse: only cancel a booking that's still
@@ -177,6 +207,19 @@ export class PaymentReconciliationJob {
             await releaseBookingHold(em, this.walletService, payment.bookingId);
           }
         });
+
+        // Post-commit and best-effort, exactly like every other notification in this
+        // codebase: the confirmation is already durable, so a failed SMS must never make
+        // this payment look unreconciled and get retried on the next tick.
+        if (confirmedHere) {
+          try {
+            await this.paymentsService.notifyConfirmed(payment.bookingId);
+          } catch (notifyErr) {
+            this.logger.error(
+              `Reconciled booking ${payment.bookingId} but failed to notify it: ${notifyErr instanceof Error ? notifyErr.message : String(notifyErr)}`,
+            );
+          }
+        }
         reconciled++;
       } catch (err) {
         // A single payment's verify/DB call failing (network error, or an

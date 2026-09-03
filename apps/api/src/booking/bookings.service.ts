@@ -3,15 +3,16 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { randomUUID } from 'node:crypto';
 import Redis from 'ioredis';
 import { DataSource, In, LessThan, MoreThan, Not, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { isUniqueViolation } from '../common/postgres-error-codes';
+import { acquireLock, releaseLockIfOwner } from '../common/redis-lock.util';
 import { resolveNamesById } from '../common/resolve-names-by-id';
 import { COUPON_ALREADY_REDEEMED } from '../coupons/coupon-error-codes';
 import { CouponRedemption } from '../coupons/coupon-redemption.entity';
+import { formatIranDateTimeFa } from '../common/iran-time.util';
 import { CouponsService } from '../coupons/coupons.service';
 import { REDIS } from '../redis/redis.module';
 import { SalonService } from '../salons/salon-service.entity';
@@ -23,15 +24,16 @@ import { InvoicingService } from '../invoicing/invoicing.service';
 import { httpExceptionReasonCode } from '../metrics/http-exception-reason.util';
 import { MetricsService } from '../metrics/metrics.service';
 import { ReferralsService } from '../referrals/referrals.service';
+import { SalonSmsQuotaService } from '../sms/salon-sms-quota.service';
 import { User } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
 import { WalletTransaction } from '../wallet/wallet-transaction.entity';
 import { WalletService } from '../wallet/wallet.service';
-import { Booking, BookingStatus, SLOT_BLOCKING_STATUSES } from './booking.entity';
+import { Booking, BookingStatus, DEAD_BOOKING_STATUSES, SLOT_BLOCKING_STATUSES } from './booking.entity';
 import { BookingEventsService } from './booking-events.service';
 import { BookingSettingsService } from './booking-settings.service';
 import { BOOKING_UNAVAILABLE, WORKER_UNAVAILABLE } from './booking-error-codes';
-import { releaseBookingHold } from './booking-hold-release.util';
+import { releaseBookingHold, reverseWalletSpend } from './booking-hold-release.util';
 import { CreateBookingDto, CreateManualBookingDto } from './dto/booking.dto';
 import { calculateDeposit } from './deposit.util';
 import { DiscountCandidate, resolveBestPriceWithWinner } from './discount.util';
@@ -54,22 +56,6 @@ type EnrichedBooking = Booking & {
 };
 
 const LOCK_TTL_MS = 5000;
-// Ownership-aware release: DEL-ing a lock key unconditionally is unsafe once the lock has
-// any TTL, because the caller that set it can no longer tell whether the key it's about to
-// delete is still its own. If this caller's critical section runs past LOCK_TTL_MS, Redis
-// expires the key on its own and a second caller can legitimately acquire it -- an
-// unconditional DEL from the FIRST caller's `finally` would then delete the SECOND
-// caller's still-live lock, letting a third caller in while the second is still working.
-// GET-then-compare-then-DEL from application code has the identical race one level up (the
-// key could be re-acquired by someone else between the GET and the DEL), so the compare
-// and the delete must happen as one atomic step on the Redis server -- hence EVAL.
-const RELEASE_LOCK_IF_OWNER_LUA = `
-if redis.call("get", KEYS[1]) == ARGV[1] then
-  return redis.call("del", KEYS[1])
-else
-  return 0
-end
-`;
 // See listForSalon()'s own comment -- a defensive ceiling, not a UX pagination feature.
 const MAX_SALON_BOOKINGS_LISTED = 1000;
 // Same rationale as MAX_SALON_BOOKINGS_LISTED, scaled down: one customer's own booking
@@ -107,6 +93,7 @@ export class BookingsService {
     private readonly metrics: MetricsService,
     private readonly bookingSettings: BookingSettingsService,
     private readonly bookingEvents: BookingEventsService,
+    private readonly smsQuota: SalonSmsQuotaService,
   ) {}
 
   // Wraps createHoldImpl/createManualImpl with the shared attempt/success/failure
@@ -135,20 +122,18 @@ export class BookingsService {
   // lock this call acquired, not one a different caller acquired after this one's
   // TTL expired. Returns null (never throws) on a lost NX race -- callers decide
   // their own user-facing message for "someone else is already booking this salon".
-  private async acquireSalonLock(salonId: string): Promise<string | null> {
-    const token = randomUUID();
-    const acquired = await this.redis.set(`lock:booking:${salonId}`, token, 'PX', LOCK_TTL_MS, 'NX');
-    return acquired ? token : null;
+  private acquireSalonLock(salonId: string): Promise<string | null> {
+    return acquireLock(this.redis, `lock:booking:${salonId}`, LOCK_TTL_MS);
   }
 
   // Deletes the lock ONLY if it still holds the exact token this caller's own
-  // acquireSalonLock call returned -- see RELEASE_LOCK_IF_OWNER_LUA's own comment for
-  // why this must be a single atomic Redis-side compare-and-delete rather than a
+  // acquireSalonLock call returned -- see releaseLockIfOwner's own comment for why
+  // this must be a single atomic Redis-side compare-and-delete rather than a
   // GET-then-DEL from here. A caller whose lock already expired and was re-acquired
   // by someone else simply no-ops: its token no longer matches, so the Lua script's
   // GET check fails and the second caller's still-live lock is left untouched.
-  private async releaseSalonLock(salonId: string, token: string): Promise<void> {
-    await this.redis.eval(RELEASE_LOCK_IF_OWNER_LUA, 1, `lock:booking:${salonId}`, token);
+  private releaseSalonLock(salonId: string, token: string): Promise<void> {
+    return releaseLockIfOwner(this.redis, `lock:booking:${salonId}`, token);
   }
 
   // Public entry point: instruments booking_attempts_total/booking_successes_total/
@@ -589,11 +574,11 @@ export class BookingsService {
   // Public entry point: instruments booking_attempts_total/booking_successes_total/
   // booking_failures_total{flow:'manual'} around createManualImpl -- see
   // trackBookingAttempt's own doc comment.
-  createManual(salonId: string, dto: CreateManualBookingDto): Promise<EnrichedBooking> {
-    return this.trackBookingAttempt('manual', () => this.createManualImpl(salonId, dto));
+  createManual(salonId: string, dto: CreateManualBookingDto, actorId: string): Promise<EnrichedBooking> {
+    return this.trackBookingAttempt('manual', () => this.createManualImpl(salonId, dto, actorId));
   }
 
-  private async createManualImpl(salonId: string, dto: CreateManualBookingDto): Promise<EnrichedBooking> {
+  private async createManualImpl(salonId: string, dto: CreateManualBookingDto, actorId: string): Promise<EnrichedBooking> {
     // Same funnel-entry event as createHold's own, fired before any validation here too
     // -- see that call's comment for the fire-and-forget/no-PII rationale, both apply
     // verbatim. No userId in context: the customer isn't resolved from dto.phone until
@@ -709,8 +694,24 @@ export class BookingsService {
     // customer a real confirmation (and pings the owner too -- a small, accepted redundancy
     // since they just entered this themselves) without letting a notification failure
     // surface as a failed request.
+    //
+    // METERED, unlike createHold's identical-looking call: this booking was entered BY THE
+    // SALON for a phone number the salon chose, which made it an unbounded platform-paid SMS
+    // channel. A customer-initiated online booking is not metered, because the customer --
+    // not the salon -- caused it. One quota unit covers the notification as a whole; the
+    // owner half goes to the salon's own number and is not what the quota is protecting.
+    // tryConsume, so an exhausted quota skips the text rather than undoing a real booking.
     try {
-      await this.paymentsService.notifyConfirmed(booking.id);
+      await this.smsQuota.tryConsume(
+        salonId,
+        () => this.paymentsService.notifyConfirmed(booking.id),
+        {
+          customerId: booking.userId,
+          phone: dto.phone,
+          message: `تایید نوبت حضوری — ${formatIranDateTimeFa(booking.startsAt)}`,
+          sentBy: actorId,
+        },
+      );
     } catch (err) {
       this.logger.error(
         `Failed to notify the manual booking confirmation of booking ${booking.id}: ${err instanceof Error ? err.message : String(err)}`,
@@ -801,6 +802,19 @@ export class BookingsService {
     // the capture lands on a dead booking and has to be refunded.
     if (booking.paymentExpiresAt && booking.paymentExpiresAt <= new Date()) {
       throw new ConflictException('مهلت پرداخت این نوبت به پایان رسیده است');
+    }
+
+    // Minting a NEW gateway session while online collection is switched off platform-wide
+    // would contradict the toggle outright: createHold and approve() both stopped opening
+    // payment windows the moment it flipped, and this route would quietly keep opening them
+    // for any booking already in pending_payment. Deliberately scoped to minting a new
+    // authority -- an ALREADY-OPEN window is left alone. The customer was sent to Zarinpal
+    // under a live window with a snapshotted deadline; refusing the callback mid-redirect
+    // would strand a real payment, and BookingExpiryJob already retires the unpaid ones at
+    // that deadline. See docs/technical-overview/29-global-payment-toggle.md.
+    const { onlinePaymentEnabled } = await this.config.getFeatureFlags();
+    if (!onlinePaymentEnabled) {
+      throw new ConflictException('پرداخت آنلاین در حال حاضر غیرفعال است؛ هزینه در سالن دریافت می‌شود');
     }
 
     const salon = await this.salons.findOneBy({ id: booking.salonId });
@@ -1025,6 +1039,12 @@ export class BookingsService {
               status: 'initiated',
             }),
           );
+        } else if (!onlinePaymentEnabled && booking.walletAmountUsed) {
+          // Collection was ON when the customer staked wallet balance at request time and
+          // is OFF now: nothing will ever be captured against this booking, so the debit
+          // must be handed back (createHold's own flag-off path never takes it) -- see
+          // reverseWalletSpend's doc comment. Inside the same transaction as the CAS above.
+          await reverseWalletSpend(em, this.walletService, bookingId);
         }
 
         await this.bookingEvents.record(
@@ -1041,7 +1061,12 @@ export class BookingsService {
                   paymentTimeoutMinutes: settings.paymentTimeoutMinutes,
                   paymentExpiresAt: paymentExpiresAt?.toISOString() ?? null,
                 }
-              : { reason: 'zero_deposit' },
+              // Two genuinely different reasons a confirmation needed no payment window,
+              // and the admin timeline has to tell them apart: nothing was owed at all, vs
+              // a real deposit that the platform is simply not collecting online right now.
+              // Recording both as 'zero_deposit' made the timeline state something false
+              // about every booking taken while the toggle was off.
+              : { reason: booking.depositAmount > 0 ? 'online_payment_disabled' : 'zero_deposit' },
           },
           em,
         );
@@ -1159,7 +1184,7 @@ export class BookingsService {
     userId: string,
     id: string,
   ): Promise<
-    EnrichedBooking & { refundStatus: 'pending' | 'done' | null }
+    EnrichedBooking & { refundStatus: 'pending' | 'done' | null; depositPaid: boolean }
   > {
     const booking = await this.bookings.findOneBy({ id, userId });
     if (!booking) throw new NotFoundException('Booking not found');
@@ -1172,18 +1197,43 @@ export class BookingsService {
       payment?.status === 'refund_pending' ? ('pending' as const)
       : payment?.status === 'refunded' ? ('done' as const)
       : null;
-    return { ...withNames, refundStatus };
+    const [depositPaid] = await this.depositPaidFor([id]);
+    return { ...withNames, refundStatus, depositPaid: depositPaid ?? false };
   }
 
   async listMine(
     userId: string,
-  ): Promise<Array<EnrichedBooking>> {
+  ): Promise<Array<EnrichedBooking & { depositPaid: boolean }>> {
     const bookings = await this.bookings.find({
       where: { userId },
       order: { startsAt: 'DESC' },
       take: MAX_MY_BOOKINGS_LISTED,
     });
-    return this.attachNames(bookings);
+    const [withNames, paidFlags] = await Promise.all([
+      this.attachNames(bookings),
+      this.depositPaidFor(bookings.map((b) => b.id)),
+    ]);
+    return withNames.map((b, i) => ({ ...b, depositPaid: paidFlags[i] ?? false }));
+  }
+
+  /**
+   * Whether real money was ever captured online for each booking -- a Payment that
+   * reached 'paid' (including one since moved on to refund_pending/refunded). The
+   * customer UI needs this to tell the truth about deposits: `depositAmount` on the row
+   * is what WOULD have been owed, and with the global payment toggle off (the seeded
+   * default) it stays non-zero on bookings nothing was ever collected for. Same
+   * "the paid Payment row is the source of truth" rule InvoicingService.recordCommission
+   * applies to commission; exposed explicitly so no frontend has to infer it from
+   * paymentExpiresAt or other side-channel columns.
+   */
+  private async depositPaidFor(bookingIds: string[]): Promise<boolean[]> {
+    if (bookingIds.length === 0) return [];
+    const rows = await this.payments.find({
+      where: { bookingId: In(bookingIds), status: In(['paid', 'refund_pending', 'refunded']) },
+      select: ['bookingId'],
+    });
+    const paid = new Set(rows.map((r) => r.bookingId));
+    return bookingIds.map((id) => paid.has(id));
   }
 
   async cancel(bookingId: string, callerId: string): Promise<Booking> {
@@ -1263,6 +1313,19 @@ export class BookingsService {
           { bookingId: booking.id },
           refund ? { status: 'refund_pending', refundRequestedAt: new Date() } : { status: 'paid' },
         );
+        // A late cancellation FORFEITS the deposit to the salon -- economically identical
+        // to a no-show, which has always accrued commission here. The design spec's own
+        // rule ("user cancels late, or no-show -> forfeited -> paid to salon minus platform
+        // commission") covers both, but only the no-show half was implemented: the platform
+        // kept 100% of every late-cancellation deposit and the salon's invoice/earnings
+        // never showed it at all. Written inside this transaction, exactly like
+        // updateStatus's own call, so the ledger row can never disagree with the status
+        // flip that justified it. Refunded cancellations accrue nothing (the money goes
+        // back to the customer), and recordCommission itself no-ops without a paid Payment,
+        // so a never-collected deposit still writes no row.
+        if (!refund) {
+          await this.invoicing.recordCommission(em, { id: booking.id, salonId: booking.salonId });
+        }
       } else {
         // Guarded on 'initiated' as defense-in-depth: if a payment callback
         // captures the money around this cancellation, the callback's own
@@ -1413,6 +1476,16 @@ export class BookingsService {
 
         const booking = await em.findOneBy(Booking, { id: bookingId, salonId });
         if (!booking) throw new NotFoundException('Booking not found');
+        // Assigning staff to a booking that never happened is meaningless: it stamps a
+        // worker onto a dead row and makes that row visible to the worker's own overlap
+        // count, blocking a slot nobody is actually occupying. Deliberately keyed on
+        // DEAD_BOOKING_STATUSES rather than "still slot-blocking": a completed or no-show
+        // booking is a real historical record, and recording after the fact who actually
+        // did the work is a legitimate (and load-bearing) action -- the customer's worker
+        // rating hangs off exactly that assignment.
+        if (DEAD_BOOKING_STATUSES.includes(booking.status)) {
+          throw new BadRequestException('این نوبت لغو یا منقضی شده است و کارمندی برای آن ثبت نمی‌شود');
+        }
 
         const eligible = await this.workerEligibility.isWorkerEligibleForService(workerId, booking.serviceId, em);
         if (!eligible) throw new BadRequestException('این کارمند این خدمت را انجام نمی‌دهد');
@@ -1438,10 +1511,196 @@ export class BookingsService {
           });
         }
 
-        await em.update(Booking, { id: bookingId }, { workerId });
+        // Status-conditioned, like every other booking write in this service: the checks
+        // above ran against the row as read at the top of this transaction, and a
+        // cancellation or expiry can commit in between. A losing write must fail loudly
+        // rather than silently stamp a worker onto a row whose state has moved on.
+        const result = await em.update(Booking, { id: bookingId, status: booking.status }, { workerId });
+        if (!result.affected) {
+          throw new ConflictException('وضعیت این نوبت تغییر کرد؛ دوباره تلاش کنید');
+        }
       });
     } finally {
       await this.releaseSalonLock(salonId, lockToken);
+    }
+
+    const updated = (await this.bookings.findOneBy({ id: bookingId }))!;
+    const [withNames] = await this.attachNames([updated]);
+    return withNames;
+  }
+
+  /**
+   * Moves an existing booking to a new time, keeping the SAME booking row -- its id, its
+   * payment, its coupon/wallet stake and its whole event history survive. This is the
+   * missing alternative to the only path that existed before: cancel and rebook, which for
+   * a within-window cancellation forfeited the customer's deposit through no fault of
+   * their own, and for any other case destroyed the booking's history.
+   *
+   * Who may call it, and why the rules differ:
+   *  - The SALON owner, always (subject to the status rules below). A salon moving a
+   *    booking is accommodating the customer, and it is already trusted with cancelling.
+   *  - The CUSTOMER, only while they are still inside the cancellation window -- measured
+   *    against the booking's ORIGINAL start, never the requested new one. Without that,
+   *    reschedule would be a free escape hatch from the forfeiture rule: a customer an hour
+   *    from their appointment could push it a week out and then cancel it "early" for a
+   *    full refund, which is exactly what the cancellation window exists to prevent.
+   *
+   * Payment is deliberately untouched. A captured deposit follows the appointment: nothing
+   * is re-captured and nothing is refunded, because the same booking is still owed. For a
+   * booking still in `pending_payment`, `paymentExpiresAt` is likewise NOT extended --
+   * deadlines are snapshots (see 28-booking-approval-workflow.md), and a reschedule is not
+   * a reason to hand the customer more time to pay for a slot they are already holding.
+   */
+  async reschedule(
+    bookingId: string,
+    newStartsAtIso: string,
+    actor: { type: 'customer' | 'salon_owner'; userId: string; salonId?: string },
+  ): Promise<EnrichedBooking> {
+    const booking = await this.bookings.findOneBy({ id: bookingId });
+    if (!booking) throw new NotFoundException('Booking not found');
+
+    if (actor.type === 'salon_owner') {
+      if (booking.salonId !== actor.salonId) throw new NotFoundException('Booking not found');
+    } else if (booking.userId !== actor.userId) {
+      throw new ForbiddenException('You cannot reschedule this booking');
+    }
+
+    // Only a live booking can move. A completed/no-show one already happened, and a dead
+    // one (cancelled/expired/rejected) is not something to resurrect by moving it -- the
+    // honest action there is a new booking.
+    if (!SLOT_BLOCKING_STATUSES.includes(booking.status)) {
+      throw new BadRequestException('این نوبت در وضعیتی نیست که قابل جابه‌جایی باشد');
+    }
+
+    const newStartsAt = new Date(newStartsAtIso);
+    if (Number.isNaN(newStartsAt.getTime()) || newStartsAt.getTime() <= Date.now()) {
+      throw new BadRequestException('زمان جدید باید در آینده باشد');
+    }
+
+    if (actor.type === 'customer') {
+      const cancellationWindowHours = await this.config.getCancellationWindowHours();
+      const hoursUntilOriginalStart = (booking.startsAt.getTime() - Date.now()) / 3_600_000;
+      if (hoursUntilOriginalStart < cancellationWindowHours) {
+        throw new ConflictException(
+          `تغییر زمان نوبت تا ${cancellationWindowHours} ساعت پیش از شروع ممکن است؛ برای تغییر با سالن تماس بگیرید`,
+        );
+      }
+    }
+
+    const salon = await this.salons.findOneBy({ id: booking.salonId });
+    if (!salon) throw new NotFoundException('Salon not found');
+    if (salon.status !== 'approved') {
+      throw new ConflictException('تا زمانی که وضعیت سالن تایید‌شده نباشد، امکان جابه‌جایی نوبت وجود ندارد');
+    }
+
+    const service = await this.services.findOneBy({ id: booking.serviceId });
+    if (!service) throw new NotFoundException('Service not found');
+    // Recomputed, never taken from the client -- the service's duration is what defines
+    // how much of the salon's day this booking occupies.
+    const newEndsAt = new Date(newStartsAt.getTime() + service.durationMin * 60_000);
+
+    // Same per-salon lock createHold/approve use: the availability re-check and the write
+    // have to be one atomic critical section, or two reschedules (or a reschedule racing a
+    // new hold) can both pass the overlap count before either commits.
+    const lockToken = await this.acquireSalonLock(booking.salonId);
+    if (!lockToken) {
+      throw new ConflictException({
+        message: 'سیستم در حال بررسی این سالن است، لطفا دوباره تلاش کنید',
+        code: BOOKING_UNAVAILABLE,
+      });
+    }
+
+    const previousStartsAt = booking.startsAt;
+    try {
+      await this.dataSource.transaction(async (em) => {
+        // Both checks exclude this booking's own row: moving a booking must never conflict
+        // with the slot it is vacating.
+        const overlapping = await em.count(Booking, {
+          where: {
+            salonId: booking.salonId,
+            status: In(SLOT_BLOCKING_STATUSES),
+            id: Not(bookingId),
+            startsAt: LessThan(newEndsAt),
+            endsAt: MoreThan(newStartsAt),
+          },
+        });
+        if (overlapping >= salon.capacity) {
+          throw new ConflictException({ message: 'ظرفیت این بازه زمانی پر است', code: BOOKING_UNAVAILABLE });
+        }
+
+        if (booking.workerId) {
+          const worker = await em.findOneBy(Worker, { id: booking.workerId, salonId: booking.salonId });
+          if (!worker || !worker.active) {
+            throw new ConflictException({ message: 'این کارمند دیگر فعال نیست', code: WORKER_UNAVAILABLE });
+          }
+          const workerOverlapping = await em.count(Booking, {
+            where: {
+              workerId: booking.workerId,
+              status: In(SLOT_BLOCKING_STATUSES),
+              id: Not(bookingId),
+              startsAt: LessThan(newEndsAt),
+              endsAt: MoreThan(newStartsAt),
+            },
+          });
+          if (workerOverlapping > 0) {
+            throw new ConflictException({ message: 'این کارمند در این زمان نوبت دیگری دارد', code: WORKER_UNAVAILABLE });
+          }
+        }
+
+        // Status-conditioned like every other booking write here: a cancellation or expiry
+        // committing between the read above and this write must lose, not be silently
+        // resurrected at a new time. `remindedAt` is cleared so the reminder job fires
+        // again for the NEW time -- otherwise a booking reminded for its old slot would
+        // never be reminded again.
+        const result = await em.update(
+          Booking,
+          { id: bookingId, status: booking.status },
+          { startsAt: newStartsAt, endsAt: newEndsAt, remindedAt: null },
+        );
+        if (!result.affected) {
+          throw new ConflictException('وضعیت این نوبت تغییر کرد؛ دوباره تلاش کنید');
+        }
+
+        await this.bookingEvents.record(
+          {
+            bookingId,
+            eventType: 'BOOKING_RESCHEDULED',
+            actorType: actor.type,
+            actorId: actor.userId,
+            metadata: {
+              fromStartsAt: previousStartsAt.toISOString(),
+              toStartsAt: newStartsAt.toISOString(),
+            },
+          },
+          em,
+        );
+        await this.bookingEvents.record(
+          {
+            bookingId,
+            eventType: 'SLOT_RELEASED',
+            actorType: 'system',
+            metadata: { cause: 'rescheduled', releasedStartsAt: previousStartsAt.toISOString() },
+          },
+          em,
+        );
+      });
+    } finally {
+      await this.releaseSalonLock(booking.salonId, lockToken);
+    }
+
+    this.logger.log(
+      `booking.rescheduled bookingId=${bookingId} salonId=${booking.salonId} customerId=${booking.userId} ` +
+        `from=${previousStartsAt.toISOString()} to=${newStartsAt.toISOString()} actor=${actor.type} actorId=${actor.userId}`,
+    );
+
+    // Best-effort, post-commit: the move is already durable, so a failed notification must
+    // never surface as a failed reschedule (the caller would retry into a 409).
+    try {
+      await this.paymentsService.notifyRescheduled(bookingId, previousStartsAt, actor.type);
+    } catch (err) {
+      this.logger.error(
+        `Failed to notify the reschedule of booking ${bookingId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
 
     const updated = (await this.bookings.findOneBy({ id: bookingId }))!;
@@ -1495,6 +1754,23 @@ export class BookingsService {
     if (!booking) throw new NotFoundException('Booking not found');
     if (booking.status !== 'confirmed') {
       throw new BadRequestException('Only confirmed bookings can be marked completed or no-show');
+    }
+    // A no-show forfeits the customer's deposit AND takes the booking out of every
+    // cancellable status, so it must not be recordable before the appointment could
+    // possibly have been missed. Without this a salon could mark a booking days ahead
+    // no_show the moment its deposit was captured, pocketing money while the customer was
+    // still inside their own cancellation window with no route back. The grace period is
+    // platform config (admin-only, never salon-editable -- it is the protection AGAINST
+    // the salon). Completion is deliberately NOT time-guarded: finishing early is a real
+    // thing that happens, and it is the honest, non-punitive outcome either way.
+    if (status === 'no_show') {
+      const graceMinutes = await this.config.getNoShowGraceMinutes();
+      const eligibleAt = new Date(booking.startsAt.getTime() + graceMinutes * 60_000);
+      if (Date.now() < eligibleAt.getTime()) {
+        throw new BadRequestException(
+          `تا ${graceMinutes} دقیقه پس از زمان شروع نوبت، امکان ثبت عدم حضور وجود ندارد`,
+        );
+      }
     }
     // Both outcomes leave the payment `paid` -- a no-show forfeits the deposit to the
     // salon (no refund), and a completion's deposit is deducted from the in-salon total,
@@ -1557,6 +1833,20 @@ export class BookingsService {
       } catch (err) {
         this.logger.error(
           `tryGrantReward threw for booking ${booking.id} (user ${booking.userId}) after marking it completed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    // A no-show forfeits the customer's deposit and accrues commission against it -- they
+    // must be told. Best-effort and post-commit, like every other notification in this
+    // service: the status flip is already durable, so a failed SMS must never surface to
+    // the salon as a failed update they would then retry into a 409.
+    if (status === 'no_show') {
+      try {
+        await this.paymentsService.notifyNoShow(bookingId);
+      } catch (err) {
+        this.logger.error(
+          `Failed to notify the no-show of booking ${bookingId}: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
     }

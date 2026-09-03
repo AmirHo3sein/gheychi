@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, IsNull, LessThan, Or, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { formatIranDateTimeFa } from '../common/iran-time.util';
@@ -33,6 +33,14 @@ type CaptureOutcome = 'captured' | 'duplicate' | 'dead-booking';
 
 // What recoverCapturedOnDeadBooking found/did -- see its doc comment.
 type CaptureRecovery = 'refund-queued' | 'already-paid' | 'already-handled';
+
+// How long a refund claim (payments.refund_claimed_at) is honoured before another caller
+// may take it over. This is a crash-recovery ceiling, not a timeout on the gateway call:
+// nothing here cancels an in-flight refund, so the value only has to exceed the longest a
+// real refundPayment() round-trip could plausibly take, while staying far inside
+// RefundRetryJob's 24h escalation so a claim orphaned by a killed process resumes on its
+// own rather than waiting for an operator.
+const REFUND_CLAIM_TTL_MS = 10 * 60_000;
 
 /**
  * Translates a late-capture recovery into what the customer is told. Every path into
@@ -232,8 +240,21 @@ export class PaymentsService {
       // a single real payment in the funnel, exactly the reason notifyConfirmed itself
       // is skipped on that branch. No PII: amount/gateway describe the transaction, not
       // the payer, and bookingId is a bare id reference.
-      void this.analytics
-        .track('payment_succeeded', { bookingId: payment.bookingId, amount: payment.amount, gateway: payment.gateway })
+      // salonId is what makes this event usable in a PER-SALON funnel: analytics_events
+      // lifts it out of the properties into its own indexed column, and without it this
+      // stage was invisible to `GET /salons/mine/funnel` even though every other stage
+      // carried it. Looked up rather than threaded through, since the capture path only
+      // ever holds the payment. Still no PII -- a bare id reference, like bookingId.
+      void this.bookings
+        .findOneBy({ id: payment.bookingId })
+        .then((booking) =>
+          this.analytics.track('payment_succeeded', {
+            bookingId: payment.bookingId,
+            salonId: booking?.salonId ?? null,
+            amount: payment.amount,
+            gateway: payment.gateway,
+          }),
+        )
         .catch(() => {});
       // Same "genuine first-time capture only" scope as the analytics call just above
       // -- best-effort, see MetricsService's own doc comment.
@@ -352,9 +373,12 @@ export class PaymentsService {
    * job's next tick), but an unexpected error -- e.g. a transient DB failure in
    * the reads/update below -- CAN still propagate, so callers for whom a throw
    * must not surface (cancel(), the retry job's batch loop) wrap this call.
-   * Idempotent at both layers -- the conditional UPDATE means only one
-   * concurrent attempt records the refund (and sends the one notification),
-   * and the gateway treats a repeat refund of the same authority as success.
+   * Single-flighted at BOTH layers, which is the point of refundClaimedAt: the
+   * conditional UPDATE at the end means only one concurrent attempt records the
+   * refund (and sends the one notification), and the claim at the start means only
+   * one ever reaches the GATEWAY. Both are needed -- the trailing CAS alone kept the
+   * database consistent while still letting two callers hit Zarinpal, which permits
+   * one refund request per transaction (docs/deployment/ZARINPAL-REFUND-VERIFICATION.md).
    */
   async attemptRefund(bookingId: string): Promise<'refunded' | 'pending' | 'skipped'> {
     const payment = await this.payments.findOneBy({ bookingId });
@@ -372,6 +396,27 @@ export class PaymentsService {
       return 'pending';
     }
 
+    // Claim the payment BEFORE the gateway call. The read above is unlocked, so without
+    // this a second caller could pass it and call Zarinpal too; the claim is a conditional
+    // UPDATE, so exactly one caller can win it. A loser reports 'pending' (the refund is
+    // genuinely still owed, just not by this caller) and the winner carries on.
+    // `refundClaimedAt IS NULL OR < cutoff` rather than just IS NULL: a process that dies
+    // between claiming and resolving the gateway call would otherwise leave the payment
+    // claimed forever, which is precisely the permanent-stranding failure RefundRetryJob
+    // exists to prevent. REFUND_CLAIM_TTL_MS is the deliberate tradeoff -- long enough that
+    // a live gateway call is never re-attempted underneath itself, short enough that a
+    // crashed one resumes well inside the 24h escalation window.
+    const now = new Date();
+    const claim = await this.payments.update(
+      {
+        id: payment.id,
+        status: 'refund_pending',
+        refundClaimedAt: Or(IsNull(), LessThan(new Date(now.getTime() - REFUND_CLAIM_TTL_MS))),
+      },
+      { refundClaimedAt: now },
+    );
+    if (!claim.affected) return 'pending';
+
     let result: PaymentRefundResult;
     try {
       result = await this.gateway.refundPayment(payment.authority);
@@ -379,10 +424,12 @@ export class PaymentsService {
       this.logger.error(
         `Zarinpal refund threw for payment ${payment.id} (authority ${payment.authority}): ${err instanceof Error ? err.message : String(err)}`,
       );
+      await this.releaseRefundClaim(payment.id);
       return 'pending';
     }
     if (!result.success) {
       this.logger.error(`Zarinpal refused the refund for payment ${payment.id} (authority ${payment.authority}) -- will retry`);
+      await this.releaseRefundClaim(payment.id);
       await this.alerts.raise({
         key: `refund-refused:${payment.id}`,
         severity: 'warning',
@@ -420,6 +467,27 @@ export class PaymentsService {
     }
 
     return 'refunded';
+  }
+
+  /**
+   * Hands the refund claim back after a gateway call that did NOT succeed, so the next
+   * RefundRetryJob tick can pick the payment up immediately instead of waiting out
+   * REFUND_CLAIM_TTL_MS. Scoped to `status: 'refund_pending'` so it can never clear the
+   * claim on a payment some other writer has meanwhile settled.
+   *
+   * Never allowed to throw: a failure here only costs a delayed retry (the TTL still
+   * frees the claim), whereas propagating would turn a merely-unsuccessful refund attempt
+   * into an exception at every call site -- including BookingsService.cancel(), where the
+   * customer's cancellation itself has already committed.
+   */
+  private async releaseRefundClaim(paymentId: string): Promise<void> {
+    try {
+      await this.payments.update({ id: paymentId, status: 'refund_pending' }, { refundClaimedAt: null });
+    } catch (err) {
+      this.logger.error(
+        `Failed to release the refund claim on payment ${paymentId} -- it will free itself after the claim TTL: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /**
@@ -545,6 +613,72 @@ export class PaymentsService {
       customer,
       `درخواست نوبت شما در ${salon.name} برای ${when} تایید نشد. دلیل: ${reason}`,
       { title: 'درخواست نوبت تایید نشد', body: `${salon.name} — ${when}` },
+      bookingId,
+    );
+  }
+
+  /**
+   * A booking moved to a new time. Both sides are told, and both get SMS: unlike most
+   * lifecycle events, this changes an appointment the recipient has already planned their
+   * day around, and the one who did NOT initiate it has no other way to find out. The
+   * initiator is told too -- a reschedule is worth a written record on both phones, and
+   * suppressing it for the initiator would make the two parties' message histories
+   * disagree about what was agreed.
+   */
+  async notifyRescheduled(
+    bookingId: string,
+    previousStartsAt: Date,
+    rescheduledBy: 'customer' | 'salon_owner',
+  ): Promise<void> {
+    const booking = await this.bookings.findOneBy({ id: bookingId });
+    if (!booking) return;
+    const salon = await this.salonsService.findById(booking.salonId);
+    if (!salon) return;
+    const customer = await this.usersService.findById(booking.userId);
+    if (!customer) return;
+
+    const from = formatIranDateTimeFa(previousStartsAt);
+    const to = formatIranDateTimeFa(booking.startsAt);
+    const by = rescheduledBy === 'salon_owner' ? 'توسط سالن' : 'توسط شما';
+
+    await this.notifyOne(
+      customer,
+      `زمان نوبت شما در ${salon.name} ${by} تغییر کرد: از ${from} به ${to}.`,
+      { title: 'زمان نوبت تغییر کرد', body: `${salon.name} — ${to}` },
+      bookingId,
+    );
+
+    const owner = await this.usersService.findById(salon.ownerId);
+    if (owner) {
+      await this.notifyOne(
+        owner,
+        `زمان یک نوبت در ${salon.name} تغییر کرد: از ${from} به ${to}.`,
+        { title: 'زمان یک نوبت تغییر کرد', body: to },
+        bookingId,
+      );
+    }
+  }
+
+  /**
+   * The salon recorded the customer as a no-show. The customer's deposit is forfeited and
+   * platform commission accrues against it, so staying silent about it is not an option:
+   * this is the one lifecycle event where the customer LOSES money without ever having
+   * asked for anything, and it is also their only cue to contact the salon if they believe
+   * it was recorded in error. SMS is deliberately spent here for exactly that reason --
+   * unlike a completion, which costs them nothing and is notified by the salon in person.
+   */
+  async notifyNoShow(bookingId: string): Promise<void> {
+    const booking = await this.bookings.findOneBy({ id: bookingId });
+    if (!booking) return;
+    const salon = await this.salonsService.findById(booking.salonId);
+    if (!salon) return;
+    const customer = await this.usersService.findById(booking.userId);
+    if (!customer) return;
+    const when = formatIranDateTimeFa(booking.startsAt);
+    await this.notifyOne(
+      customer,
+      `نوبت شما در ${salon.name} برای ${when} به دلیل عدم حضور ثبت شد و پیش‌پرداخت آن بازگردانده نمی‌شود.`,
+      { title: 'عدم حضور ثبت شد', body: `${salon.name} — ${when}` },
       bookingId,
     );
   }

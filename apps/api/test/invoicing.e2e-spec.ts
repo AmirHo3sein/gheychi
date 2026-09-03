@@ -3,7 +3,7 @@ import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { MonthlyInvoiceGenerationJob } from '../src/invoicing/monthly-invoice-generation.job';
 import { loginAs, loginAsAdmin } from './utils/auth-helper';
-import { resetDatabase } from './utils/db';
+import { enableOnlinePayments, resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
 
 describe('Commission ledger + monthly invoicing (e2e)', () => {
@@ -22,6 +22,10 @@ describe('Commission ledger + monthly invoicing (e2e)', () => {
 
   beforeAll(async () => {
     await resetDatabase();
+    // Money must actually be captured for commission to accrue (recordCommission reads the
+    // paid Payment row, not booking.depositAmount) -- with the seeded flag off the "pay it
+    // through the callback" step below would silently be a no-op.
+    await enableOnlinePayments();
     app = await createTestApp();
     ds = app.get(DataSource);
 

@@ -32,6 +32,7 @@ describe('Admin platform config (e2e)', () => {
       'commission_percent',
       'deposit_min_toman',
       'deposit_percent',
+      'no_show_grace_minutes',
       'reminder_lead_hours',
       'review_edit_window_hours',
     ]);

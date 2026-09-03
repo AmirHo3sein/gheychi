@@ -104,3 +104,15 @@ export class CreateManualBookingDto {
   @Length(1, 500)
   notes?: string;
 }
+
+/**
+ * Moving an existing booking to a new time. Deliberately carries ONLY the new start:
+ * `endsAt` is always recomputed from the service's own duration (a client-supplied end
+ * could silently shorten a booking and free part of a slot it still occupies), and the
+ * service/worker/price are unchanged by definition -- changing those is a different
+ * booking, not a reschedule.
+ */
+export class RescheduleBookingDto {
+  @IsISO8601()
+  startsAt: string;
+}

@@ -109,6 +109,64 @@ describe('Global online-payment toggle (e2e)', () => {
       );
       expect(spends).toHaveLength(0);
     });
+
+    it('accrues NO commission when the uncollected booking is later marked completed', async () => {
+      // depositAmount is stored on the row but nothing was ever captured -- the ledger
+      // (and therefore the salon invoice and /salons/mine/earnings) must not claim the
+      // platform holds money it never collected. Regression: recordCommission used to
+      // trust booking.depositAmount instead of the paid Payment row.
+      const created = await request(app.getHttpServer())
+        .post('/api/bookings')
+        .set('Cookie', customerCookie)
+        .send({ salonId, serviceId, startsAt: futureIso(60) })
+        .expect(201);
+      const bookingId = created.body.booking.id;
+      expect(created.body.booking.depositAmount).toBeGreaterThan(0);
+
+      await request(app.getHttpServer())
+        .patch(`/api/salons/mine/bookings/${bookingId}`)
+        .set('Cookie', ownerCookie)
+        .send({ status: 'completed' })
+        .expect(200);
+
+      const ledger = await ds.query(`SELECT id FROM financial_transactions WHERE booking_id = $1`, [bookingId]);
+      expect(ledger).toHaveLength(0);
+
+      const earnings = await request(app.getHttpServer())
+        .get('/api/salons/mine/earnings')
+        .set('Cookie', ownerCookie)
+        .expect(200);
+      expect(earnings.body.totalCollected).toBe(0);
+    });
+  });
+
+  it('refuses to mint a new gateway session while collection is off, even for an already-pending payment', async () => {
+    // Set up a real pending_payment booking WITH the flag on, then turn it off underneath.
+    const setFlag = (onlinePaymentEnabled: boolean) =>
+      request(app.getHttpServer()).patch('/api/admin/feature-flags').set('Cookie', adminCookie).send({ onlinePaymentEnabled }).expect(200);
+
+    await setFlag(true);
+    const created = await request(app.getHttpServer())
+      .post('/api/bookings')
+      .set('Cookie', customerCookie)
+      .send({ salonId, serviceId, startsAt: futureIso(200) })
+      .expect(201);
+    const bookingId = created.body.booking.id;
+    expect(created.body.booking.status).toBe('pending_payment');
+    // Retry works normally while collection is on.
+    await request(app.getHttpServer()).post(`/api/bookings/${bookingId}/retry-payment`).set('Cookie', customerCookie).expect(200);
+
+    await setFlag(false);
+
+    await request(app.getHttpServer())
+      .post(`/api/bookings/${bookingId}/retry-payment`)
+      .set('Cookie', customerCookie)
+      .expect(409);
+
+    // The booking is untouched -- the toggle does not retroactively kill an open window,
+    // it only stops new gateway sessions being opened. The expiry cron retires it.
+    const [row] = await ds.query(`SELECT status FROM bookings WHERE id = $1`, [bookingId]);
+    expect(row.status).toBe('pending_payment');
   });
 
   describe('manual-approval mode', () => {
@@ -143,6 +201,52 @@ describe('Global online-payment toggle (e2e)', () => {
 
       const payments = await ds.query(`SELECT id FROM payments WHERE booking_id = $1`, [bookingId]);
       expect(payments).toHaveLength(0);
+    });
+
+    it('hands back wallet balance staked while the flag was ON when the flag is OFF by approval time', async () => {
+      const setFlag = (onlinePaymentEnabled: boolean) =>
+        request(app.getHttpServer()).patch('/api/admin/feature-flags').set('Cookie', adminCookie).send({ onlinePaymentEnabled }).expect(200);
+
+      const userId = await userIdForPhone('09181110002');
+      const balanceOf = async () => {
+        const res = await request(app.getHttpServer()).get('/api/wallet/mine').set('Cookie', customerCookie).expect(200);
+        return Number(res.body.balances.find((b: { currency: string }) => b.currency === 'toman')?.balance ?? 0);
+      };
+      // The earlier automatic-mode test already granted 500,000 and (correctly) spent none.
+      const before = await balanceOf();
+      expect(before).toBeGreaterThan(0);
+
+      await setFlag(true);
+      const created = await request(app.getHttpServer())
+        .post('/api/bookings')
+        .set('Cookie', customerCookie)
+        .send({ salonId, serviceId, startsAt: futureIso(120), applyWalletBalance: true })
+        .expect(201);
+      const bookingId = created.body.booking.id;
+      expect(created.body.booking.status).toBe('pending_approval');
+      const [{ wallet_amount_used }] = await ds.query(`SELECT wallet_amount_used FROM bookings WHERE id = $1`, [bookingId]);
+      expect(Number(wallet_amount_used)).toBeGreaterThan(0);
+      expect(await balanceOf()).toBe(before - Number(wallet_amount_used));
+
+      // Admin turns collection off while the request sits in pending_approval.
+      await setFlag(false);
+      const approved = await request(app.getHttpServer())
+        .post(`/api/salons/mine/bookings/${bookingId}/approve`)
+        .set('Cookie', ownerCookie)
+        .expect(200);
+      expect(approved.body.status).toBe('confirmed');
+
+      // Nothing will ever be captured against this booking, so the debit is reversed --
+      // the customer pays the full price in cash and keeps their credit (regression: this
+      // used to silently vanish the staked balance).
+      expect(await balanceOf()).toBe(before);
+      const [{ wallet_amount_used: after }] = await ds.query(`SELECT wallet_amount_used FROM bookings WHERE id = $1`, [bookingId]);
+      expect(Number(after)).toBe(0);
+      const reversals = await ds.query(
+        `SELECT id FROM wallet_transactions WHERE user_id = $1 AND type = 'booking_spend_reversal'`,
+        [userId],
+      );
+      expect(reversals).toHaveLength(1);
     });
   });
 });

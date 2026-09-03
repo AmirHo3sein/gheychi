@@ -26,7 +26,8 @@ export type BookingEventType =
   | 'SLOT_RELEASED'
   | 'BOOKING_CANCELLED'
   | 'BOOKING_COMPLETED'
-  | 'BOOKING_NO_SHOW';
+  | 'BOOKING_NO_SHOW'
+  | 'BOOKING_RESCHEDULED';
 
 /**
  * Who caused the event. `system` covers every cron-driven transition (approval/payment

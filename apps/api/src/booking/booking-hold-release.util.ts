@@ -49,6 +49,31 @@ export async function releaseBookingHold(
   if (ids.length === 0) return;
 
   await em.delete(CouponRedemption, { bookingId: In(ids) });
+  await reverseWalletSpend(em, walletService, ids);
+}
+
+/**
+ * The wallet half of releaseBookingHold on its own -- credits back whatever wallet
+ * balance a booking staked toward its deposit, leaving any coupon redemption in place.
+ *
+ * Needed separately by BookingsService.approve(): a manual-approval request staked its
+ * wallet balance while online payment was ON, but by the time the salon approves an admin
+ * may have turned collection OFF platform-wide. The booking then confirms outright with
+ * no Payment row, exactly like createHold's own flag-off path -- which never debits the
+ * wallet in the first place ("there is nothing an applied wallet credit would be
+ * reducing"). The already-taken debit must be handed back here, or the customer pays the
+ * full price in cash AND loses real wallet credit. The coupon stays: it discounted the
+ * price the salon will still collect in person, so it was genuinely used.
+ *
+ * Same conditional-UPDATE idempotency guard as releaseBookingHold (see its doc comment).
+ */
+export async function reverseWalletSpend(
+  em: EntityManager,
+  walletService: WalletService,
+  bookingIds: string | string[],
+): Promise<void> {
+  const ids = Array.isArray(bookingIds) ? bookingIds : [bookingIds];
+  if (ids.length === 0) return;
 
   const rows = await em.find(Booking, {
     where: { id: In(ids) },

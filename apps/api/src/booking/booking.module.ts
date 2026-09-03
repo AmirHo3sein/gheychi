@@ -11,12 +11,15 @@ import { PlatformConfigModule } from '../platform-config/platform-config.module'
 import { PushModule } from '../push/push.module';
 import { ReferralsModule } from '../referrals/referrals.module';
 import { SalonsModule } from '../salons/salons.module';
+import { SalonSmsQuotaModule } from '../sms/salon-sms-quota.module';
 import { SmsModule } from '../sms/sms.module';
 import { UsersModule } from '../users/users.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { AvailabilityController } from './availability.controller';
 import { AvailabilityService } from './availability.service';
 import { AdminBookingSettingsController } from './admin-booking-settings.controller';
+import { AdminBookingsController } from './admin-bookings.controller';
+import { AdminBookingsService } from './admin-bookings.service';
 import { Booking } from './booking.entity';
 import { BookingApprovalExpiryJob } from './booking-approval-expiry.job';
 import { BookingEvent } from './booking-event.entity';
@@ -49,6 +52,7 @@ import { ZarinpalGateway } from './zarinpal-payment.gateway';
     AnalyticsModule,
     AuthModule,
     SmsModule,
+    SalonSmsQuotaModule,
     PushModule,
     UsersModule,
     // ReferralsModule has no dependency back on BookingModule (its tryGrantReward/
@@ -68,6 +72,7 @@ import { ZarinpalGateway } from './zarinpal-payment.gateway';
   ],
   controllers: [
     AdminBookingSettingsController,
+    AdminBookingsController,
     AvailabilityController,
     BookingsController,
     PaymentsController,
@@ -75,6 +80,7 @@ import { ZarinpalGateway } from './zarinpal-payment.gateway';
     SalonEarningsController,
   ],
   providers: [
+    AdminBookingsService,
     AvailabilityService,
     BookingEventsService,
     BookingSettingsService,

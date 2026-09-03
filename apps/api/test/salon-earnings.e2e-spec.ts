@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { loginAs, loginAsAdmin } from './utils/auth-helper';
-import { resetDatabase } from './utils/db';
+import { enableOnlinePayments, resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
 
 describe('Salon earnings (e2e)', () => {
@@ -19,6 +19,10 @@ describe('Salon earnings (e2e)', () => {
 
   beforeAll(async () => {
     await resetDatabase();
+    // Money must actually be captured for commission to accrue (recordCommission reads the
+    // paid Payment row, not booking.depositAmount) -- with the seeded flag off the "pay it
+    // through the callback" step below would silently be a no-op.
+    await enableOnlinePayments();
     app = await createTestApp();
     ds = app.get(DataSource);
     cookie = await loginAs(app, '09122220002');

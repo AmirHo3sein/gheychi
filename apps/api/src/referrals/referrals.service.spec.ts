@@ -79,6 +79,8 @@ function makeGrantFakeEm(opts: {
   referral: FakeReferralRow | null;
   payment?: { status: string; paid_at: string | null } | null;
   existingRewards?: FakeRewardRow[];
+  /** The triggering booking's salon -- only consulted for a salon-scoped (salon_id non-null) referral. */
+  bookingSalonId?: string;
 }) {
   const rewards: FakeRewardRow[] = [...(opts.existingRewards ?? [])];
   const coupons: FakeCouponRow[] = [];
@@ -92,6 +94,9 @@ function makeGrantFakeEm(opts: {
     }
     if (sql.includes('FROM payments WHERE booking_id')) {
       return opts.payment ? [opts.payment] : [];
+    }
+    if (sql.includes('SELECT salon_id FROM bookings WHERE id')) {
+      return opts.bookingSalonId ? [{ salon_id: opts.bookingSalonId }] : [];
     }
     if (sql.includes('INSERT INTO wallet_balances')) return [];
     if (sql.includes('SELECT user_id FROM wallet_balances')) return [];
@@ -686,6 +691,31 @@ describe('ReferralsService', () => {
       expect(wallet.credit).not.toHaveBeenCalled();
     });
 
+    it('R6: a salon-scoped referral no-ops on a booking at a DIFFERENT salon (completed trigger), leaving the referral open', async () => {
+      const { em, referralUpdates } = makeGrantFakeEm({
+        referral: makeFakeReferral({ qualifying_event: 'first_completed_booking', salon_id: 'salon-referrer' }),
+        bookingSalonId: 'salon-other',
+      });
+      dataSource.transaction.mockImplementation((cb: (em: EntityManager) => unknown) => cb(em));
+
+      await service.tryGrantReward('referred-1', 'booking-1', 'completed');
+
+      expect(wallet.credit).not.toHaveBeenCalled();
+      expect(referralUpdates).toHaveLength(0);
+    });
+
+    it('R6: a salon-scoped referral grants on a booking AT the referring salon', async () => {
+      const { em } = makeGrantFakeEm({
+        referral: makeFakeReferral({ qualifying_event: 'first_completed_booking', salon_id: 'salon-referrer' }),
+        bookingSalonId: 'salon-referrer',
+      });
+      dataSource.transaction.mockImplementation((cb: (em: EntityManager) => unknown) => cb(em));
+
+      await service.tryGrantReward('referred-1', 'booking-1', 'completed');
+
+      expect(wallet.credit).toHaveBeenCalledTimes(2);
+    });
+
     it('no-ops for first_paid_booking when the hold-back window has not yet elapsed', async () => {
       const { em } = makeGrantFakeEm({
         referral: makeFakeReferral({ qualifying_event: 'first_paid_booking', grant_holdback_hours: 72 }),
@@ -819,6 +849,7 @@ describe('ReferralsService', () => {
 
     it('fixed_discount coupon: reward_max caps the fixed amount and rounds a fractional resolved value, salon_id copied from the referral row', async () => {
       const { em, coupons, rewards } = makeGrantFakeEm({
+        bookingSalonId: 'salon-owner-1', // R6: the qualifying booking is at the referring salon
         referral: makeFakeReferral({
           salon_id: 'salon-owner-1',
           referrer_reward_kind: 'fixed_discount',
@@ -863,6 +894,7 @@ describe('ReferralsService', () => {
 
     it('percent_discount coupon: salon_id is copied directly from the referral row (not re-derived), and rounds a fractional resolved percent', async () => {
       const { em, rewards, coupons } = makeGrantFakeEm({
+        bookingSalonId: 'salon-owner-1', // R6: the qualifying booking is at the referring salon
         referral: makeFakeReferral({
           salon_id: 'salon-owner-1',
           referrer_reward_kind: 'percent_discount',

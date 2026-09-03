@@ -39,6 +39,20 @@ export type BookingConfirmationMode = 'automatic' | 'manual_approval';
  */
 export const SLOT_BLOCKING_STATUSES: BookingStatus[] = ['pending_approval', 'pending_payment', 'confirmed'];
 
+/**
+ * Statuses where the appointment is definitively off -- it never happened and never will.
+ * Distinct from "not slot-blocking": a completed or no-show booking also stops blocking its
+ * slot, but it is a real historical record a salon may still legitimately annotate (most
+ * importantly, assigning the worker who actually did the work, which is what a customer's
+ * worker rating hangs off). Only these statuses mean "there is nothing here to edit".
+ */
+export const DEAD_BOOKING_STATUSES: BookingStatus[] = [
+  'cancelled_by_user',
+  'cancelled_by_salon',
+  'rejected_by_salon',
+  'expired',
+];
+
 @Entity('bookings')
 export class Booking {
   @PrimaryGeneratedColumn('uuid')

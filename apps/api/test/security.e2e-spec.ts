@@ -72,6 +72,7 @@ describe('Security regression suite (e2e)', () => {
       { method: 'patch', path: '/api/admin/stories/00000000-0000-0000-0000-000000000000/status', body: { status: 'removed' } },
       { method: 'get', path: '/api/admin/notifications' },
       { method: 'get', path: '/api/admin/invoices' },
+      { method: 'get', path: '/api/admin/bookings' },
       { method: 'get', path: '/api/admin/worker-ratings' },
       { method: 'get', path: '/api/admin/reviews' },
       { method: 'get', path: '/api/admin/plans' },

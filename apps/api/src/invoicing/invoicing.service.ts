@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { resolveNamesById } from '../common/resolve-names-by-id';
+import { Payment } from '../booking/payment.entity';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
 import { Salon } from '../salons/salon.entity';
 import { RecordInvoicePaymentDto, AdminInvoiceQueryDto } from './dto/invoice.dto';
@@ -28,17 +29,21 @@ export class InvoicingService {
    * (em is the caller's EntityManager, not a fresh one) -- see
    * BookingsService.updateStatus, the only real caller.
    *
-   * Commission applies to depositAmount (the only money the platform ever captures
-   * online), never priceSnapshot -- see FinancialTransaction's own doc comment. A
-   * booking whose deposit was fully wallet-covered or fully discounted has nothing to
-   * accrue commission against, so this is a deliberate no-op for grossAmount <= 0, not
-   * a zero-amount row.
+   * Commission applies to the deposit the platform ACTUALLY CAPTURED online, never
+   * priceSnapshot -- see FinancialTransaction's own doc comment. The source of truth
+   * for "captured" is the booking's `paid` Payment row, not `booking.depositAmount`:
+   * with the global online-payment flag off (the seeded production default), every
+   * deposit-owing booking is confirmed outright with depositAmount still recorded on
+   * the row but no Payment row and no money collected (see doc 29). Accruing on
+   * depositAmount there would invoice the salon a "net payout" of money the platform
+   * never held. A booking whose deposit was fully wallet-covered, fully discounted, or
+   * never collected online therefore has nothing to accrue against, so this is a
+   * deliberate no-op (no zero-amount row) whenever no paid Payment exists.
    */
-  async recordCommission(
-    em: EntityManager,
-    booking: { id: string; salonId: string; depositAmount: number },
-  ): Promise<void> {
-    const grossAmount = booking.depositAmount;
+  async recordCommission(em: EntityManager, booking: { id: string; salonId: string }): Promise<void> {
+    const payment = await em.getRepository(Payment).findOne({ where: { bookingId: booking.id, status: 'paid' } });
+    if (!payment) return;
+    const grossAmount = payment.amount;
     if (grossAmount <= 0) return;
 
     const commissionPercent = await this.config.getCommissionPercent();
@@ -100,8 +105,18 @@ export class InvoicingService {
    */
   async recordPayment(id: string, adminId: string, dto: RecordInvoicePaymentDto): Promise<Invoice> {
     return this.dataSource.transaction(async (em) => {
-      const invoice = await em.findOneBy(Invoice, { id });
+      // Row-locked (same idiom as WalletService.debit / CouponsService's cap check): the
+      // paidTotal written below is read-then-add, so two concurrent records (an admin
+      // double-click, two admins) would otherwise both insert an invoice_payments row but
+      // leave paid_total reflecting only one of them -- a lost update on a money field.
+      const invoice = await em
+        .getRepository(Invoice)
+        .createQueryBuilder('invoice')
+        .setLock('pessimistic_write')
+        .where('invoice.id = :id', { id })
+        .getOne();
       if (!invoice) throw new NotFoundException();
+      if (invoice.status === 'void') throw new ConflictException('این صورتحساب باطل شده است و پرداختی روی آن ثبت نمی‌شود');
 
       await em.insert(InvoicePayment, {
         invoiceId: id,

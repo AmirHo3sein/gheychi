@@ -18,6 +18,7 @@ import { WalletTransaction } from '../wallet/wallet-transaction.entity';
 import { WalletService } from '../wallet/wallet.service';
 import { PAYMENT_GATEWAY } from './payment-gateway';
 import { Booking } from './booking.entity';
+import { SalonSmsQuotaService } from '../sms/salon-sms-quota.service';
 import { BookingEventsService } from './booking-events.service';
 import { BookingSettingsService } from './booking-settings.service';
 import { BOOKING_UNAVAILABLE, WORKER_UNAVAILABLE } from './booking-error-codes';
@@ -57,6 +58,18 @@ const bookingSettingsStub = () => ({
   }),
 });
 const bookingEventsStub = () => ({ record: jest.fn().mockResolvedValue(undefined), listForBooking: jest.fn() });
+// Quota available by default, so a metered salon-triggered SMS actually goes out; the
+// exhausted path has its own dedicated tests.
+const salonSmsQuotaStub = () => ({
+  hasRemaining: jest.fn().mockResolvedValue(true),
+  getStatus: jest.fn().mockResolvedValue({ quota: 20, used: 0, remaining: 20 }),
+  record: jest.fn().mockResolvedValue(undefined),
+  countUsedThisMonth: jest.fn().mockResolvedValue(0),
+  tryConsume: jest.fn(async (_salonId: string, send: () => Promise<void>) => {
+    await send();
+    return true;
+  }),
+});
 
 describe('BookingsService.getEarnings', () => {
   let service: BookingsService;
@@ -96,6 +109,7 @@ describe('BookingsService.getEarnings', () => {
         { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService: jest.fn().mockResolvedValue(true) } },
         { provide: BookingSettingsService, useValue: bookingSettingsStub() },
         { provide: BookingEventsService, useValue: bookingEventsStub() },
+        { provide: SalonSmsQuotaService, useValue: salonSmsQuotaStub() },
       ],
     }).compile();
 
@@ -172,6 +186,7 @@ describe('BookingsService.getEarnings', () => {
         { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService: jest.fn().mockResolvedValue(true) } },
         { provide: BookingSettingsService, useValue: bookingSettingsStub() },
         { provide: BookingEventsService, useValue: bookingEventsStub() },
+        { provide: SalonSmsQuotaService, useValue: salonSmsQuotaStub() },
       ],
     }).compile();
     const serviceWithNewRate = moduleRef.get(BookingsService);
@@ -309,6 +324,7 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
         { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService: jest.fn().mockResolvedValue(true) } },
         { provide: BookingSettingsService, useValue: bookingSettingsStub() },
         { provide: BookingEventsService, useValue: bookingEventsStub() },
+        { provide: SalonSmsQuotaService, useValue: salonSmsQuotaStub() },
       ],
     }).compile();
 
@@ -632,6 +648,7 @@ describe('BookingsService.createManual', () => {
         { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService } },
         { provide: BookingSettingsService, useValue: bookingSettingsStub() },
         { provide: BookingEventsService, useValue: bookingEventsStub() },
+        { provide: SalonSmsQuotaService, useValue: salonSmsQuotaStub() },
       ],
     }).compile();
 
@@ -639,7 +656,7 @@ describe('BookingsService.createManual', () => {
   });
 
   it('resolves the customer by phone, inserts a confirmed manual booking with no Payment row, and notifies', async () => {
-    const result = await service.createManual('salon-1', { ...DTO });
+    const result = await service.createManual('salon-1', { ...DTO }, 'owner-1');
 
     expect(findOrCreateByPhone).toHaveBeenCalledWith('09120000000');
     expect(savedBooking()).toMatchObject({
@@ -659,7 +676,7 @@ describe('BookingsService.createManual', () => {
   });
 
   it('sets the name on a brand-new shadow customer when one is given', async () => {
-    await service.createManual('salon-1', { ...DTO, name: 'علی رضایی' });
+    await service.createManual('salon-1', { ...DTO, name: 'علی رضایی' }, 'owner-1');
 
     expect(updateProfile).toHaveBeenCalledWith('customer-1', { name: 'علی رضایی' });
   });
@@ -667,7 +684,7 @@ describe('BookingsService.createManual', () => {
   it('never overwrites an existing customer\'s own name, even when a different name is typed', async () => {
     findOrCreateByPhone.mockResolvedValue({ user: { ...CUSTOMER, name: 'مشتری قدیمی' }, isNew: false });
 
-    await service.createManual('salon-1', { ...DTO, name: 'یک اسم دیگر' });
+    await service.createManual('salon-1', { ...DTO, name: 'یک اسم دیگر' }, 'owner-1');
 
     expect(updateProfile).not.toHaveBeenCalled();
   });
@@ -675,20 +692,20 @@ describe('BookingsService.createManual', () => {
   it('sets a name for an existing (not new) customer who never had one', async () => {
     findOrCreateByPhone.mockResolvedValue({ user: { ...CUSTOMER, name: null }, isNew: false });
 
-    await service.createManual('salon-1', { ...DTO, name: 'مشتری بدون نام' });
+    await service.createManual('salon-1', { ...DTO, name: 'مشتری بدون نام' }, 'owner-1');
 
     expect(updateProfile).toHaveBeenCalledWith('customer-1', { name: 'مشتری بدون نام' });
   });
 
   it('carries owner-authored notes onto the booking', async () => {
-    await service.createManual('salon-1', { ...DTO, notes: 'تماس تلفنی' });
+    await service.createManual('salon-1', { ...DTO, notes: 'تماس تلفنی' }, 'owner-1');
     expect(savedBooking().notes).toBe('تماس تلفنی');
   });
 
   it('409s with BOOKING_UNAVAILABLE when the salon is already at capacity for that time', async () => {
     emCount.mockResolvedValue(1); // salon.capacity is 1
 
-    await expect(service.createManual('salon-1', { ...DTO })).rejects.toMatchObject({
+    await expect(service.createManual('salon-1', { ...DTO }, 'owner-1')).rejects.toMatchObject({
       response: { message: 'این زمان قبلا پر شده است', code: BOOKING_UNAVAILABLE },
     });
     expect(emSave).not.toHaveBeenCalledWith(Booking, expect.anything());
@@ -697,7 +714,7 @@ describe('BookingsService.createManual', () => {
   it('409s with BOOKING_UNAVAILABLE, without opening a transaction, when the per-salon lock is already held', async () => {
     redisSet.mockResolvedValueOnce(null); // NX failed -- someone else holds the lock
 
-    await expect(service.createManual('salon-1', { ...DTO })).rejects.toMatchObject({
+    await expect(service.createManual('salon-1', { ...DTO }, 'owner-1')).rejects.toMatchObject({
       response: {
         message: 'این عملیات توسط درخواست دیگری در حال انجام است، دوباره تلاش کنید',
         code: BOOKING_UNAVAILABLE,
@@ -708,26 +725,26 @@ describe('BookingsService.createManual', () => {
 
   it('400s on a startsAt that is not a valid future date-time', async () => {
     await expect(
-      service.createManual('salon-1', { ...DTO, startsAt: new Date(Date.now() - 86_400_000).toISOString() }),
+      service.createManual('salon-1', { ...DTO, startsAt: new Date(Date.now() - 86_400_000).toISOString() }, 'owner-1'),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('404s when the chosen worker does not belong to this salon', async () => {
     workersFindOneBy.mockResolvedValue(null);
 
-    await expect(service.createManual('salon-1', { ...DTO, workerId: 'worker-9' })).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.createManual('salon-1', { ...DTO, workerId: 'worker-9' }, 'owner-1')).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('400s when the chosen worker belongs to the salon but is inactive', async () => {
     workersFindOneBy.mockResolvedValue({ id: 'worker-1', salonId: 'salon-1', active: false });
 
-    await expect(service.createManual('salon-1', { ...DTO, workerId: 'worker-1' })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.createManual('salon-1', { ...DTO, workerId: 'worker-1' }, 'owner-1')).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('400s when the chosen worker cannot perform this service', async () => {
     isWorkerEligibleForService.mockResolvedValue(false);
 
-    await expect(service.createManual('salon-1', { ...DTO, workerId: 'worker-1' })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.createManual('salon-1', { ...DTO, workerId: 'worker-1' }, 'owner-1')).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('409s with WORKER_UNAVAILABLE when the chosen worker already has an overlapping booking, even with spare salon capacity', async () => {
@@ -735,7 +752,7 @@ describe('BookingsService.createManual', () => {
     // per-worker overlap check, same shape as createHold's own equivalent test.
     emCount.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
 
-    await expect(service.createManual('salon-1', { ...DTO, workerId: 'worker-1' })).rejects.toMatchObject({
+    await expect(service.createManual('salon-1', { ...DTO, workerId: 'worker-1' }, 'owner-1')).rejects.toMatchObject({
       response: { message: 'این کارمند در این زمان نوبت دیگری دارد', code: WORKER_UNAVAILABLE },
     });
     expect(emSave).not.toHaveBeenCalledWith(Booking, expect.anything());
@@ -744,7 +761,7 @@ describe('BookingsService.createManual', () => {
   it('still returns the created booking when the confirmation notification fails', async () => {
     notifyConfirmed.mockRejectedValue(new Error('sms provider down'));
 
-    const result = await service.createManual('salon-1', { ...DTO });
+    const result = await service.createManual('salon-1', { ...DTO }, 'owner-1');
 
     expect(result.id).toBe('booking-1');
   });
@@ -752,13 +769,13 @@ describe('BookingsService.createManual', () => {
   it('releases the per-salon lock even when the transaction throws', async () => {
     emCount.mockResolvedValue(1); // forces the capacity ConflictException
 
-    await expect(service.createManual('salon-1', { ...DTO })).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.createManual('salon-1', { ...DTO }, 'owner-1')).rejects.toBeInstanceOf(ConflictException);
     expect(redisEval).toHaveBeenCalled();
   });
 
   describe('analytics', () => {
     it('tracks booking_started before any validation, with no customer PII (the phone is not yet resolved to a user)', async () => {
-      await service.createManual('salon-1', { ...DTO, workerId: 'worker-1' });
+      await service.createManual('salon-1', { ...DTO, workerId: 'worker-1' }, 'owner-1');
 
       expect(analyticsTrack).toHaveBeenCalledWith('booking_started', {
         salonId: 'salon-1',
@@ -771,7 +788,7 @@ describe('BookingsService.createManual', () => {
     it('still creates the booking when the analytics provider fails (never affects the real booking flow)', async () => {
       analyticsTrack.mockRejectedValue(new Error('analytics vendor down'));
 
-      const result = await service.createManual('salon-1', { ...DTO });
+      const result = await service.createManual('salon-1', { ...DTO }, 'owner-1');
 
       expect(result.id).toBe('booking-1');
     });
@@ -787,6 +804,7 @@ describe('BookingsService.cancel', () => {
   let attemptRefund: jest.Mock;
   let notifyCancelled: jest.Mock;
   let analyticsTrack: jest.Mock;
+  let recordCommission: jest.Mock;
 
   const BOOKING = {
     id: 'booking-1',
@@ -804,6 +822,7 @@ describe('BookingsService.cancel', () => {
     bookingsFindOneBy = jest.fn();
     salonsFindOneBy = jest.fn().mockResolvedValue({ id: 'salon-1', ownerId: 'owner-1' });
     analyticsTrack = jest.fn().mockResolvedValue(undefined);
+    recordCommission = jest.fn().mockResolvedValue(undefined);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -847,14 +866,52 @@ describe('BookingsService.cancel', () => {
             credit: jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' }),
           },
         },
-        { provide: InvoicingService, useValue: { recordCommission: jest.fn().mockResolvedValue(undefined) } },
+        { provide: InvoicingService, useValue: { recordCommission } },
         { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService: jest.fn().mockResolvedValue(true) } },
         { provide: BookingSettingsService, useValue: bookingSettingsStub() },
         { provide: BookingEventsService, useValue: bookingEventsStub() },
+        { provide: SalonSmsQuotaService, useValue: salonSmsQuotaStub() },
       ],
     }).compile();
 
     service = moduleRef.get(BookingsService);
+  });
+
+  describe('forfeited-deposit commission', () => {
+    it('accrues commission when a late customer cancellation forfeits the deposit -- same rule as a no-show', async () => {
+      bookingsFindOneBy.mockResolvedValue({ ...BOOKING, startsAt: new Date(Date.now() + 2 * 60 * 60_000) });
+
+      await service.cancel('booking-1', 'customer-1');
+
+      expect(recordCommission).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ id: 'booking-1', salonId: 'salon-1' }),
+      );
+    });
+
+    it('accrues nothing when the cancellation is refunded -- the money goes back to the customer', async () => {
+      bookingsFindOneBy.mockResolvedValue({ ...BOOKING });
+
+      await service.cancel('booking-1', 'customer-1');
+
+      expect(recordCommission).not.toHaveBeenCalled();
+    });
+
+    it('accrues nothing on an owner cancellation, which always refunds', async () => {
+      bookingsFindOneBy.mockResolvedValue({ ...BOOKING, startsAt: new Date(Date.now() + 2 * 60 * 60_000) });
+
+      await service.cancel('booking-1', 'owner-1');
+
+      expect(recordCommission).not.toHaveBeenCalled();
+    });
+
+    it('accrues nothing when the booking never reached confirmed (nothing was ever captured)', async () => {
+      bookingsFindOneBy.mockResolvedValue({ ...BOOKING, status: 'pending_payment', startsAt: new Date(Date.now() + 2 * 60 * 60_000) });
+
+      await service.cancel('booking-1', 'customer-1');
+
+      expect(recordCommission).not.toHaveBeenCalled();
+    });
   });
 
   it('marks the payment refund_pending (with refundRequestedAt) and attempts the refund inline on an owner cancel', async () => {
@@ -1015,7 +1072,9 @@ describe('BookingsService.retryPayment authority persist failure', () => {
             transaction: jest.fn((cb: (em: unknown) => unknown) => cb({ update: paymentsUpdate, query: authoritiesInsert })),
           },
         },
-        { provide: PlatformConfigService, useValue: {} },
+        // retryPayment refuses to mint a new gateway session while online collection is off,
+        // so these tests need the flag to read as on.
+        { provide: PlatformConfigService, useValue: { getFeatureFlags: jest.fn().mockResolvedValue({ onlinePaymentEnabled: true }) } },
         { provide: ConfigService, useValue: { getOrThrow: jest.fn().mockReturnValue('http://localhost:3002') } },
         { provide: REDIS, useValue: {} },
         { provide: PAYMENT_GATEWAY, useValue: { requestPayment } },
@@ -1034,6 +1093,7 @@ describe('BookingsService.retryPayment authority persist failure', () => {
         { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService: jest.fn().mockResolvedValue(true) } },
         { provide: BookingSettingsService, useValue: bookingSettingsStub() },
         { provide: BookingEventsService, useValue: bookingEventsStub() },
+        { provide: SalonSmsQuotaService, useValue: salonSmsQuotaStub() },
       ],
     }).compile();
 
@@ -1065,6 +1125,9 @@ describe('BookingsService.assignWorker', () => {
     id: 'booking-1',
     salonId: 'salon-1',
     serviceId: 'service-1',
+    // A live (slot-blocking) booking -- assignWorker refuses anything else, and its final
+    // UPDATE is conditioned on the status still being this one.
+    status: 'confirmed' as const,
     startsAt: new Date('2026-08-10T09:00:00.000Z'),
     endsAt: new Date('2026-08-10T09:30:00.000Z'),
   };
@@ -1124,6 +1187,7 @@ describe('BookingsService.assignWorker', () => {
         { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService } },
         { provide: BookingSettingsService, useValue: bookingSettingsStub() },
         { provide: BookingEventsService, useValue: bookingEventsStub() },
+        { provide: SalonSmsQuotaService, useValue: salonSmsQuotaStub() },
       ],
     }).compile();
 
@@ -1230,11 +1294,45 @@ describe('BookingsService.assignWorker', () => {
   it('assigns the worker to the booking when both belong to the caller salon, the worker is active, eligible, and free', async () => {
     const result = await service.assignWorker('salon-1', 'booking-1', 'worker-1');
 
-    expect(emUpdate).toHaveBeenCalledWith(Booking, { id: 'booking-1' }, { workerId: 'worker-1' });
+    // Status-conditioned: a cancellation committing between the read and this write must
+    // lose, rather than stamping a worker onto a dead row.
+    expect(emUpdate).toHaveBeenCalledWith(Booking, { id: 'booking-1', status: 'confirmed' }, { workerId: 'worker-1' });
     expect(redisEval).toHaveBeenCalledWith(expect.any(String), 1, 'lock:booking:salon-1', expect.any(String));
     expect(result.workerId).toBe('worker-1');
     expect(result.workerName).toBe('Sara');
   });
+
+  it('409s rather than silently losing the write when the booking status moved on mid-transaction', async () => {
+    emUpdate.mockResolvedValue({ affected: 0 });
+
+    await expect(service.assignWorker('salon-1', 'booking-1', 'worker-1')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it.each(['completed', 'no_show'])(
+    'still allows assigning a worker to a %s booking -- recording who actually did the work is what a worker rating hangs off',
+    async (status) => {
+      bookingsFindOneBy.mockResolvedValue({ ...BOOKING, status });
+      emFindOneBy.mockImplementation((entity: unknown) =>
+        entity === Booking ? Promise.resolve({ ...BOOKING, status }) : Promise.resolve(ACTIVE_WORKER),
+      );
+
+      await expect(service.assignWorker('salon-1', 'booking-1', 'worker-1')).resolves.toBeDefined();
+      expect(emUpdate).toHaveBeenCalledWith(Booking, { id: 'booking-1', status }, { workerId: 'worker-1' });
+    },
+  );
+
+  it.each(['cancelled_by_user', 'cancelled_by_salon', 'expired', 'rejected_by_salon'])(
+    'refuses to assign a worker to a %s booking -- it never happened and never will',
+    async (status) => {
+      bookingsFindOneBy.mockResolvedValue({ ...BOOKING, status });
+      emFindOneBy.mockImplementation((entity: unknown) =>
+        entity === Booking ? Promise.resolve({ ...BOOKING, status }) : Promise.resolve(ACTIVE_WORKER),
+      );
+
+      await expect(service.assignWorker('salon-1', 'booking-1', 'worker-1')).rejects.toBeInstanceOf(BadRequestException);
+      expect(emUpdate).not.toHaveBeenCalled();
+    },
+  );
 
   describe('concurrency', () => {
     it('serializes two concurrent assignments of the same worker to overlapping bookings -- exactly one succeeds', async () => {
@@ -1340,6 +1438,7 @@ describe('BookingsService.listMine / findMine -- workerName enrichment', () => {
   let servicesFind: jest.Mock;
   let workersFind: jest.Mock;
   let paymentsFindOneBy: jest.Mock;
+  let paymentsFind: jest.Mock;
 
   beforeEach(async () => {
     bookingsFind = jest.fn();
@@ -1348,13 +1447,14 @@ describe('BookingsService.listMine / findMine -- workerName enrichment', () => {
     servicesFind = jest.fn().mockResolvedValue([{ id: 'service-1', name: 'Cut' }]);
     workersFind = jest.fn().mockResolvedValue([{ id: 'worker-1', name: 'Sara' }]);
     paymentsFindOneBy = jest.fn().mockResolvedValue(null);
+    paymentsFind = jest.fn().mockResolvedValue([]);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         BookingsService,
         MetricsService,
         { provide: getRepositoryToken(Booking), useValue: { find: bookingsFind, findOneBy: bookingsFindOneBy } },
-        { provide: getRepositoryToken(Payment), useValue: { findOneBy: paymentsFindOneBy } },
+        { provide: getRepositoryToken(Payment), useValue: { findOneBy: paymentsFindOneBy, find: paymentsFind } },
         { provide: getRepositoryToken(Salon), useValue: { find: salonsFind } },
         { provide: getRepositoryToken(SalonService), useValue: { find: servicesFind } },
         { provide: getRepositoryToken(Worker), useValue: { find: workersFind } },
@@ -1381,6 +1481,7 @@ describe('BookingsService.listMine / findMine -- workerName enrichment', () => {
         { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService: jest.fn().mockResolvedValue(true) } },
         { provide: BookingSettingsService, useValue: bookingSettingsStub() },
         { provide: BookingEventsService, useValue: bookingEventsStub() },
+        { provide: SalonSmsQuotaService, useValue: salonSmsQuotaStub() },
       ],
     }).compile();
 
@@ -1408,6 +1509,32 @@ describe('BookingsService.listMine / findMine -- workerName enrichment', () => {
       order: { startsAt: 'DESC' },
       take: 1000,
     });
+  });
+
+  it('listMine flags depositPaid from the Payment row (paid/refund states), never from depositAmount', async () => {
+    bookingsFind.mockResolvedValue([
+      { id: 'booking-paid', salonId: 'salon-1', serviceId: 'service-1', workerId: null, depositAmount: 100_000 },
+      { id: 'booking-refunded', salonId: 'salon-1', serviceId: 'service-1', workerId: null, depositAmount: 100_000 },
+      // Flag-off booking: a deposit is recorded on the row but nothing was ever captured.
+      { id: 'booking-uncollected', salonId: 'salon-1', serviceId: 'service-1', workerId: null, depositAmount: 100_000 },
+    ]);
+    paymentsFind.mockResolvedValue([{ bookingId: 'booking-paid' }, { bookingId: 'booking-refunded' }]);
+
+    const results = await service.listMine('customer-1');
+
+    expect(paymentsFind).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ status: expect.anything() }) }),
+    );
+    expect(results.map((r) => r.depositPaid)).toEqual([true, true, false]);
+  });
+
+  it('findMine carries depositPaid too', async () => {
+    bookingsFindOneBy.mockResolvedValue({ id: 'booking-1', salonId: 'salon-1', serviceId: 'service-1', workerId: null });
+    paymentsFind.mockResolvedValue([{ bookingId: 'booking-1' }]);
+
+    const result = await service.findMine('customer-1', 'booking-1');
+
+    expect(result.depositPaid).toBe(true);
   });
 
   it('listMine bounds the query with its own (smaller) defensive take cap', async () => {
@@ -1439,6 +1566,7 @@ describe('BookingsService.updateStatus -- first-completed-booking referral trigg
   let tryGrantReward: jest.Mock;
   let recordCommission: jest.Mock;
   let getFeatureFlags: jest.Mock;
+  let getNoShowGraceMinutes: jest.Mock;
 
   const CONFIRMED_BOOKING = {
     id: 'booking-1',
@@ -1446,6 +1574,9 @@ describe('BookingsService.updateStatus -- first-completed-booking referral trigg
     salonId: 'salon-1',
     status: 'confirmed',
     depositAmount: 40_000,
+    // Already started and past the grace period -- no_show is only recordable after that
+    // (see updateStatus). Individual tests override this to exercise the guard itself.
+    startsAt: new Date(Date.now() - 3 * 60 * 60_000),
   };
 
   beforeEach(async () => {
@@ -1454,6 +1585,7 @@ describe('BookingsService.updateStatus -- first-completed-booking referral trigg
     tryGrantReward = jest.fn().mockResolvedValue(undefined);
     recordCommission = jest.fn().mockResolvedValue(undefined);
     getFeatureFlags = jest.fn().mockResolvedValue({ referralsEnabled: true });
+    getNoShowGraceMinutes = jest.fn().mockResolvedValue(30);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -1471,7 +1603,7 @@ describe('BookingsService.updateStatus -- first-completed-booking referral trigg
           provide: DataSource,
           useValue: { transaction: jest.fn((cb: (em: unknown) => unknown) => cb({ update: emUpdate })) },
         },
-        { provide: PlatformConfigService, useValue: { getFeatureFlags } },
+        { provide: PlatformConfigService, useValue: { getFeatureFlags, getNoShowGraceMinutes } },
         { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
         { provide: REDIS, useValue: {} },
         { provide: PAYMENT_GATEWAY, useValue: {} },
@@ -1490,6 +1622,7 @@ describe('BookingsService.updateStatus -- first-completed-booking referral trigg
         { provide: WorkerEligibilityService, useValue: { isWorkerEligibleForService: jest.fn().mockResolvedValue(true) } },
         { provide: BookingSettingsService, useValue: bookingSettingsStub() },
         { provide: BookingEventsService, useValue: bookingEventsStub() },
+        { provide: SalonSmsQuotaService, useValue: salonSmsQuotaStub() },
       ],
     }).compile();
 
@@ -1524,6 +1657,44 @@ describe('BookingsService.updateStatus -- first-completed-booking referral trigg
 
     expect(result).toBeDefined();
     expect(tryGrantReward).toHaveBeenCalled();
+  });
+
+  describe('no-show grace period', () => {
+    it('refuses a no_show before the booking has even started', async () => {
+      bookingsFindOneBy.mockResolvedValue({ ...CONFIRMED_BOOKING, startsAt: new Date(Date.now() + 3 * 60 * 60_000) });
+
+      await expect(service.updateStatus('salon-1', 'booking-1', 'no_show')).rejects.toBeInstanceOf(BadRequestException);
+      expect(emUpdate).not.toHaveBeenCalled();
+      expect(recordCommission).not.toHaveBeenCalled();
+    });
+
+    it('refuses a no_show inside the grace window after the start time', async () => {
+      bookingsFindOneBy.mockResolvedValue({ ...CONFIRMED_BOOKING, startsAt: new Date(Date.now() - 10 * 60_000) });
+
+      await expect(service.updateStatus('salon-1', 'booking-1', 'no_show')).rejects.toBeInstanceOf(BadRequestException);
+      expect(emUpdate).not.toHaveBeenCalled();
+    });
+
+    it('allows a no_show once the grace window has elapsed', async () => {
+      bookingsFindOneBy.mockResolvedValue({ ...CONFIRMED_BOOKING, startsAt: new Date(Date.now() - 31 * 60_000) });
+
+      await expect(service.updateStatus('salon-1', 'booking-1', 'no_show')).resolves.toBeDefined();
+      expect(emUpdate).toHaveBeenCalled();
+    });
+
+    it('never time-guards a completion -- finishing early is legitimate', async () => {
+      bookingsFindOneBy.mockResolvedValue({ ...CONFIRMED_BOOKING, startsAt: new Date(Date.now() + 3 * 60 * 60_000) });
+
+      await expect(service.updateStatus('salon-1', 'booking-1', 'completed')).resolves.toBeDefined();
+      expect(getNoShowGraceMinutes).not.toHaveBeenCalled();
+    });
+
+    it('honours a grace period of 0 (platform opts out of any grace at all)', async () => {
+      getNoShowGraceMinutes.mockResolvedValue(0);
+      bookingsFindOneBy.mockResolvedValue({ ...CONFIRMED_BOOKING, startsAt: new Date(Date.now() - 1000) });
+
+      await expect(service.updateStatus('salon-1', 'booking-1', 'no_show')).resolves.toBeDefined();
+    });
   });
 
   it('records a commission ledger row for a completed booking, inside the same transaction as the status write', async () => {

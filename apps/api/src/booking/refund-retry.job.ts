@@ -8,8 +8,11 @@ import { Payment } from './payment.entity';
 import { PaymentsService } from './payments.service';
 
 // Skip refunds younger than this: the producing cancel() very likely just ran its own
-// inline attemptRefund(), and giving that a head start keeps the (harmless, idempotent)
-// double gateway call rare instead of routine.
+// inline attemptRefund(), and giving that a head start avoids pointless contention on the
+// refund claim. The grace period is an optimisation, NOT the safety mechanism -- a second
+// gateway call is prevented by attemptRefund's own refundClaimedAt claim, since Zarinpal
+// permits one refund request per transaction and its "a repeat is idempotent" behaviour
+// was never verifiable against a sandbox.
 const RETRY_GRACE_MINUTES = 2;
 // A refund the gateway has refused/failed for a full day won't fix itself -- an operator
 // needs to look at it (Zarinpal wallet balance, revoked access token, etc.).

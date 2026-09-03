@@ -66,6 +66,21 @@ describe('ReferralExpiryJob', () => {
     expect(sql).toContain('RETURNING id');
   });
 
+  it('guards the status in the OUTER where too, not only inside the candidate subquery', async () => {
+    // Regression guard for a real READ COMMITTED hazard: Postgres re-evaluates only the
+    // outer qual (EvalPlanQual) when it unblocks on a row another transaction just
+    // committed, so a bare `id IN (...)` outer qual would stamp 'expired' onto a referral
+    // tryGrantReward had granted a microsecond earlier. See the job's own comment.
+    await job.run();
+
+    const [sql] = query.mock.calls[0];
+    const outerWhere = sql.slice(sql.indexOf('SET status'), sql.indexOf('AND id IN'));
+    expect(outerWhere).toContain("WHERE status = 'awaiting_qualifying_event'");
+    // ...and the subquery still carries its own copy (the two are not interchangeable:
+    // the inner one picks candidates, the outer one is what survives the recheck).
+    expect(sql.match(/status = 'awaiting_qualifying_event'/g)).toHaveLength(2);
+  });
+
   it('handleCron delegates to run()', async () => {
     const runSpy = jest.spyOn(job, 'run').mockResolvedValue(3);
 

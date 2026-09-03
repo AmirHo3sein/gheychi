@@ -116,6 +116,12 @@ describe('admin mutation audit wiring', () => {
       targetType: 'booking',
     },
     {
+      label: 'booking rescheduled',
+      handler: SalonBookingsController.prototype.reschedule,
+      action: 'booking.rescheduled',
+      targetType: 'booking',
+    },
+    {
       label: 'salon booking settings update',
       handler: AdminBookingSettingsController.prototype.update,
       action: 'booking-settings.update',

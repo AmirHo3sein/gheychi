@@ -3,12 +3,16 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, IsNull } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { CronJobRunner } from '../common/cron-job-runner.service';
+import { BookingEventsService } from './booking-events.service';
+import { PaymentsService } from './payments.service';
 import { Booking } from './booking.entity';
 import { CouponRedemption } from '../coupons/coupon-redemption.entity';
 import { WalletService } from '../wallet/wallet.service';
 import { PAYMENT_GATEWAY } from './payment-gateway';
 import { Payment } from './payment.entity';
 import { PaymentReconciliationJob } from './payment-reconciliation.job';
+
+const notifyConfirmed = jest.fn().mockResolvedValue(undefined);
 
 describe('PaymentReconciliationJob', () => {
   let job: PaymentReconciliationJob;
@@ -77,6 +81,10 @@ describe('PaymentReconciliationJob', () => {
         { provide: AlertsService, useValue: { raise } },
         { provide: WalletService, useValue: { debit: jest.fn(), credit: jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' }) } },
         { provide: CronJobRunner, useValue: { run: jest.fn((_name: string, fn: () => Promise<void>) => fn()) } },
+        { provide: BookingEventsService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
+        // A booking this job confirms (the callback never arrived) must be notified like
+        // any other confirmation -- it used to tell nobody at all.
+        { provide: PaymentsService, useValue: { notifyConfirmed: notifyConfirmed } },
       ],
     }).compile();
 
@@ -99,6 +107,16 @@ describe('PaymentReconciliationJob', () => {
     expect(raise).not.toHaveBeenCalled();
     // Money moved: the coupon this booking consumed stays spent.
     expect(emDelete).not.toHaveBeenCalled();
+  });
+
+  it('notifies the customer when IT is the one that confirms the booking -- the callback never arrived, so nothing else will', async () => {
+    notifyConfirmed.mockClear();
+    paymentsFind.mockResolvedValue([{ ...STALE_PAYMENT }]);
+    verifyPayment.mockResolvedValue({ success: true, refId: 'REF-1' });
+
+    await job.run();
+
+    expect(notifyConfirmed).toHaveBeenCalledWith('booking-1');
   });
 
   it('queues an automatic refund when the money was captured but the booking already moved on', async () => {

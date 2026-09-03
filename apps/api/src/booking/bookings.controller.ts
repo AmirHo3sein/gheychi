@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Req } from
 import { Request } from 'express';
 import { User } from '../users/user.entity';
 import { BookingsService } from './bookings.service';
-import { CreateBookingDto } from './dto/booking.dto';
+import { CreateBookingDto, RescheduleBookingDto } from './dto/booking.dto';
 
 @Controller('bookings')
 export class BookingsController {
@@ -33,5 +33,14 @@ export class BookingsController {
   @HttpCode(200)
   retryPayment(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
     return this.bookings.retryPayment((req.user as User).id, id);
+  }
+
+  // Customer-initiated move. Allowed only while still inside the cancellation window,
+  // measured against the ORIGINAL start -- see BookingsService.reschedule for why that
+  // matters (otherwise it is a free escape hatch from deposit forfeiture).
+  @Post(':id/reschedule')
+  @HttpCode(200)
+  reschedule(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body() dto: RescheduleBookingDto) {
+    return this.bookings.reschedule(id, dto.startsAt, { type: 'customer', userId: (req.user as User).id });
   }
 }

@@ -131,6 +131,7 @@ const VALID_CONFIG_VALUES: Record<string, number> = {
   booking_approval_timeout_minutes: 30,
   reminder_lead_hours: 3,
   review_edit_window_hours: 72,
+  no_show_grace_minutes: 30,
 };
 
 describe('PlatformConfigService -- getter failure handling', () => {
@@ -373,6 +374,14 @@ describe('PlatformConfigService.onApplicationBootstrap -- startup validation', (
       ],
     }).compile();
     service = moduleRef.get(PlatformConfigService);
+  });
+
+  it('has a valid fixture value for EVERY required key -- a new config key must not silently skip boot validation', () => {
+    // REQUIRED_PLATFORM_CONFIG_KEYS is the list onApplicationBootstrap validates against.
+    // Without this, adding a key there and forgetting it here makes the happy-path test
+    // below fail with a confusing "undefined is not a valid number" instead of saying so.
+    const missing = REQUIRED_PLATFORM_CONFIG_KEYS.filter((key) => VALID_CONFIG_VALUES[key] === undefined);
+    expect(missing).toEqual([]);
   });
 
   it('boots cleanly when every required key and feature flag is present with a valid value', async () => {

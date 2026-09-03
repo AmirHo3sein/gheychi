@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, LessThanOrEqual, Repository } from 'typeorm';
+import { And, IsNull, LessThanOrEqual, MoreThan, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { CronJobRunner } from '../common/cron-job-runner.service';
 import { formatIranDateTimeFa } from '../common/iran-time.util';
@@ -44,14 +44,21 @@ export class BookingReminderJob {
     const now = new Date();
     const cutoff = new Date(now.getTime() + leadHours * 60 * 60_000);
 
+    // Lower-bounded on startsAt > now (not just filtered in the loop below): a confirmed
+    // booking whose appointment has passed while the salon never marked it completed/
+    // no_show stays `confirmed` with remindedAt NULL forever. Without the bound those dead
+    // rows are re-selected on every tick, and once more than BATCH_SIZE of them exist the
+    // unordered batch can be filled entirely by them -- silently starving every real
+    // upcoming reminder. Ordered soonest-first so the batch always drains in urgency order.
     const due = await this.bookings.find({
-      where: { status: 'confirmed', remindedAt: IsNull(), startsAt: LessThanOrEqual(cutoff) },
+      where: { status: 'confirmed', remindedAt: IsNull(), startsAt: And(MoreThan(now), LessThanOrEqual(cutoff)) },
+      order: { startsAt: 'ASC' },
       take: BATCH_SIZE,
     });
 
     let remindedCount = 0;
     for (const booking of due) {
-      if (booking.startsAt <= now) continue; // don't remind about a booking that already started
+      if (booking.startsAt <= now) continue; // belt-and-braces; the query already excludes these
 
       // Conditional update guards against this job double-reminding the same booking if
       // two ticks overlap (or in a future multi-instance deployment) -- same pattern as the

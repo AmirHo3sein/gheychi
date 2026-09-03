@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { IsNull } from 'typeorm';
+import { And, IsNull, MoreThan } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { CronJobRunner } from '../common/cron-job-runner.service';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
@@ -94,6 +94,18 @@ describe('BookingReminderJob', () => {
     await job.run();
 
     expect(bookingsFind).toHaveBeenCalledWith(expect.objectContaining({ take: expect.any(Number) }));
+  });
+
+  it('excludes already-started bookings IN THE QUERY (not just the loop) and drains soonest-first', async () => {
+    // A confirmed booking the salon never closed out stays confirmed with remindedAt NULL
+    // forever; if such rows were only skipped in the loop they would keep filling the
+    // batch and, past BATCH_SIZE of them, starve every real upcoming reminder.
+    await job.run();
+
+    const [args] = bookingsFind.mock.calls[0];
+    expect(args.order).toEqual({ startsAt: 'ASC' });
+    // TypeORM's And() wrapper composes MoreThan(now) with the lead-time upper bound.
+    expect(args.where.startsAt).toEqual(And(MoreThan(NOW), expect.anything()));
   });
 
   describe('SMS failure (the real, reportable delivery signal)', () => {

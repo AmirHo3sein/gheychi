@@ -8,7 +8,7 @@ import { SalonOwnerGuard } from '../salons/salon-owner.guard';
 import { AssignWorkerDto } from '../salons/dto/worker.dto';
 import { BookingsService } from './bookings.service';
 import { User } from '../users/user.entity';
-import { CreateManualBookingDto, RejectBookingDto, UpdateBookingStatusDto } from './dto/booking.dto';
+import { CreateManualBookingDto, RejectBookingDto, RescheduleBookingDto, UpdateBookingStatusDto } from './dto/booking.dto';
 
 @Controller('salons/mine/bookings')
 @UseGuards(SalonOwnerGuard)
@@ -24,7 +24,22 @@ export class SalonBookingsController {
   // BookingsService.createManual's own comment for the full design.
   @Post()
   createManual(@Req() req: Request, @Body() dto: CreateManualBookingDto) {
-    return this.bookings.createManual(req.salonId!, dto);
+    return this.bookings.createManual(req.salonId!, dto, (req.user as User).id);
+  }
+
+  // Salon-initiated move. Unlike the customer's own route this has no cancellation-window
+  // restriction: a salon moving a booking is accommodating the customer, and it is already
+  // trusted with cancelling outright.
+  @Post(':id/reschedule')
+  @HttpCode(200)
+  @UseInterceptors(AuditInterceptor)
+  @AuditAction('booking.rescheduled', 'booking', 'id')
+  reschedule(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body() dto: RescheduleBookingDto) {
+    return this.bookings.reschedule(id, dto.startsAt, {
+      type: 'salon_owner',
+      userId: (req.user as User).id,
+      salonId: req.salonId!,
+    });
   }
 
   @Patch(':id')
