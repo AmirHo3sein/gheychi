@@ -14,7 +14,15 @@ export const RATE_WINDOW_SEC = 3600;
 // requesting a code for their own phone) aren't penalized -- it targets one attacker
 // working through many numbers, not a few genuine users behind one NAT.
 export const IP_RATE_LIMIT_MAX = 10;
-const MAX_VERIFY_ATTEMPTS = 5;
+// Wrong-guess budget per (phone, IP). Keyed per IP, not per phone alone, so a stranger who
+// knows a victim's number can't burn the victim's own budget: with a single per-phone
+// counter, five junk guesses from anywhere killed the victim's freshly-issued code, and
+// combined with the 3-codes-per-hour issue cap that was a cheap, targeted login lockout.
+export const MAX_VERIFY_ATTEMPTS_PER_IP = 5;
+// Brute-force backstop across ALL IPs for one code: past this the code itself is killed.
+// 6 digits / 30 guesses = a 0.003% success chance per issued code even from a botnet, while
+// a targeted lockout now costs the attacker 6+ distinct IPs per victim login instead of one.
+export const MAX_VERIFY_ATTEMPTS_PER_PHONE = 30;
 
 export interface IssuedOtp {
   code: string;
@@ -57,7 +65,7 @@ export class OtpService {
     }
     const code = randomInt(100000, 1000000).toString();
     await this.redis.set(`otp:${phone}`, code, 'EX', OTP_TTL_SEC);
-    await this.redis.del(`otp:att:${phone}`);
+    await this.redis.del(`otp:att:${phone}`, `otp:att:${phone}:${ip}`);
     return {
       code,
       expiresInSec: OTP_TTL_SEC,
@@ -65,21 +73,27 @@ export class OtpService {
     };
   }
 
-  async verify(phone: string, code: string): Promise<boolean> {
+  async verify(phone: string, code: string, ip: string): Promise<boolean> {
     const key = `otp:${phone}`;
     const attemptsKey = `otp:att:${phone}`;
+    const ipAttemptsKey = `otp:att:${phone}:${ip}`;
     const stored = await this.redis.get(key);
     if (!stored) return false;
 
+    const ipAttempts = await this.redis.incr(ipAttemptsKey);
+    if (ipAttempts === 1) await this.redis.expire(ipAttemptsKey, OTP_TTL_SEC);
+    // This IP is done guessing for this code; the code itself stays alive for the owner.
+    if (ipAttempts > MAX_VERIFY_ATTEMPTS_PER_IP) return false;
+
     const attempts = await this.redis.incr(attemptsKey);
     if (attempts === 1) await this.redis.expire(attemptsKey, OTP_TTL_SEC);
-    if (attempts > MAX_VERIFY_ATTEMPTS) {
-      await this.redis.del(key, attemptsKey);
+    if (attempts > MAX_VERIFY_ATTEMPTS_PER_PHONE) {
+      await this.redis.del(key, attemptsKey, ipAttemptsKey);
       return false;
     }
     if (stored !== code) return false;
 
-    await this.redis.del(key, attemptsKey);
+    await this.redis.del(key, attemptsKey, ipAttemptsKey);
     return true;
   }
 }

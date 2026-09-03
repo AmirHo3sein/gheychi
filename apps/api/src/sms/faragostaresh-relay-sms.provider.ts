@@ -12,8 +12,8 @@ import { SmsProvider } from './sms.provider';
  * it sends comes back GetDeliveryResult=9 ("blocked by the line owner") -- confirmed
  * three times, two different real phone numbers. The panel owner's own SendSms
  * (the "advanced" method) returns SendSmsResult=100 ("not authorized to use the web
- * service") when WE call it with the exact same voltan/anakin113071 credentials that
- * work for him from his own server -- strongly suggesting a per-method IP allowlist
+ * service") when WE call it with the exact same panel credentials that work for him
+ * from his own server -- strongly suggesting a per-method IP allowlist
  * he hasn't added our server to yet, not a real code problem on our side.
  *
  * Until that's sorted directly with the panel, this relays through a small PHP
@@ -23,7 +23,6 @@ import { SmsProvider } from './sms.provider';
  * someone else's server, with none of the SOAP-envelope logic that class has.
  */
 const RELAY_URL = 'https://www.faragostaresh.com/sms/send.php';
-const RELAY_TOKEN = '7f3c9a2e8b1d46f0a5c7e9d2b8f14a63';
 const RELAY_TIMEOUT_MS = 15_000;
 
 // The line behind this relay silently drops (SendSmsResult reports success, but
@@ -49,6 +48,11 @@ function toBareMobile(phone: string): string {
 @Injectable()
 export class FaragostareshRelaySmsProvider implements SmsProvider {
   private readonly logger = new Logger('FaragostareshRelaySmsProvider');
+
+  // The bearer token is a real credential on someone else's server and this repo is
+  // public -- it MUST come from the environment (FARAGOSTARESH_RELAY_TOKEN), never a
+  // literal here. An earlier revision hardcoded it; that value is burned and was rotated.
+  constructor(private readonly relayToken: string) {}
 
   async sendOtp(phone: string, code: string): Promise<void> {
     await this.send(phone, `کد تایید شما در قیچی: ${code}`);
@@ -92,7 +96,7 @@ export class FaragostareshRelaySmsProvider implements SmsProvider {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${RELAY_TOKEN}`,
+            Authorization: `Bearer ${this.relayToken}`,
           },
           body: JSON.stringify({ mobile: bareMobile, message }),
           signal: AbortSignal.timeout(RELAY_TIMEOUT_MS),

@@ -2,6 +2,7 @@ import {
   Body, Controller, ForbiddenException, Get, HttpCode, Inject, Logger, Patch, Post, Req, Res, UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { randomUUID } from 'crypto';
 import { Request, Response } from 'express';
 import { DataSource } from 'typeorm';
 import { AnalyticsService } from '../analytics/analytics.service';
@@ -13,6 +14,7 @@ import { SESSION_COOKIE } from './auth.guard';
 import { RequestOtpDto, UpdateProfileDto, VerifyOtpDto } from './dto/auth.dto';
 import { OtpService } from './otp.service';
 import { Public } from './public.decorator';
+import { SessionRevocationService } from './session-revocation.service';
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -36,6 +38,7 @@ export class AuthController {
     // constructors -- every existing positional `new AuthController(...)` call site
     // only needs an arg added at the tail, not threaded through the middle.
     private readonly analytics: AnalyticsService,
+    private readonly revocations: SessionRevocationService,
   ) {}
 
   @Post('request-otp')
@@ -50,8 +53,8 @@ export class AuthController {
 
   @Post('verify-otp')
   @Public()
-  async verifyOtp(@Body() dto: VerifyOtpDto, @Res({ passthrough: true }) res: Response) {
-    const valid = await this.otp.verify(dto.phone, dto.code);
+  async verifyOtp(@Body() dto: VerifyOtpDto, @Res({ passthrough: true }) res: Response, @Req() req: Request) {
+    const valid = await this.otp.verify(dto.phone, dto.code, req.ip ?? 'unknown');
     if (!valid) throw new UnauthorizedException('Invalid or expired code');
 
     let user: User;
@@ -115,7 +118,10 @@ export class AuthController {
     }
 
     if (user.status === 'suspended') throw new ForbiddenException('This account has been suspended');
-    const token = await this.jwt.signAsync({ sub: user.id, role: user.role });
+    // `jti` makes this specific session revocable (see SessionRevocationService) -- without
+    // one, logout could only clear the caller's own cookie and a copied token stayed live
+    // for its full 30 days.
+    const token = await this.jwt.signAsync({ sub: user.id, role: user.role, jti: randomUUID() });
     res.cookie(SESSION_COOKIE, token, {
       httpOnly: true,
       sameSite: 'lax',
@@ -142,7 +148,18 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(204)
-  logout(@Res({ passthrough: true }) res: Response) {
+  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    // Clearing the cookie only ends the session in THIS browser. Revoking the token's own
+    // jti is what actually ends it everywhere -- the point of logging out on a shared or
+    // stolen device. Decoded rather than re-verified: the request already passed AuthGuard,
+    // and a token we cannot decode is one there is nothing to revoke for.
+    const token = req.cookies?.[SESSION_COOKIE];
+    if (token) {
+      const payload = this.jwt.decode(token) as { jti?: string; exp?: number } | null;
+      if (payload?.jti && payload.exp) {
+        await this.revocations.revoke(payload.jti, payload.exp);
+      }
+    }
     res.clearCookie(SESSION_COOKIE);
   }
 }

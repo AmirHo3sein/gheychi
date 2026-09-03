@@ -227,6 +227,17 @@ describe('Search (e2e)', () => {
       .query({ lat: ANCHOR.lat, lng: ANCHOR.lng })
       .expect(400));
 
+  // Regression: these used to pass DTO validation (@Min alone) and then fail the ::bigint
+  // bind inside Postgres -- a 500 (and an error-tracking event) on a public route.
+  it.each([['1.5'], ['Infinity'], ['NaN'], ['99999999999999999999']])(
+    'rejects a non-integer or out-of-range price filter (%s) with a 400, never a 500',
+    (priceMin) =>
+      request(app.getHttpServer())
+        .get('/api/search')
+        .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', priceMin })
+        .expect(400),
+  );
+
   it('flags hasActiveStory only for an unexpired published story', async () => {
     const ds = app.get(DataSource);
     // near: active published story; far: one expired + one removed-but-unexpired story --

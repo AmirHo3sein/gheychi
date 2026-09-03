@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsLatitude, IsLongitude, IsOptional, IsString, Length, Max, Min } from 'class-validator';
+import { MAX_PRICE_TOMAN } from '../../common/money-limits';
 
 export class SearchQueryDto {
   // Substring match against the salon's own name (ILIKE, same simple pattern as every
@@ -38,14 +39,20 @@ export class SearchQueryDto {
   // which would silently exclude a salon whose affordable service isn't its very cheapest
   // one. Same discounted-price expression as minPrice below, so a result here is never
   // inconsistent with what the card/checkout would actually charge.
+  // @IsInt (not just @Min): `1.5`, `Infinity` or `NaN` pass a bare @Min(0)/@Type(Number)
+  // and are then bound as ::bigint, which Postgres rejects -- a 500 on a public route.
   @IsOptional()
   @Type(() => Number)
+  @IsInt()
   @Min(0)
+  @Max(MAX_PRICE_TOMAN)
   priceMin?: number;
 
   @IsOptional()
   @Type(() => Number)
+  @IsInt()
   @Min(0)
+  @Max(MAX_PRICE_TOMAN)
   priceMax?: number;
 
   @IsOptional()

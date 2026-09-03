@@ -1,10 +1,10 @@
 import {
-  Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Req,
+  Controller, Delete, Get, HttpCode, NotFoundException, Param, ParseUUIDPipe, Post, Req,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
 import { DataSource, Repository } from 'typeorm';
-import { isUniqueViolation } from '../common/postgres-error-codes';
+import { isForeignKeyViolation, isUniqueViolation } from '../common/postgres-error-codes';
 import { User } from '../users/user.entity';
 import { Favorite } from './favorite.entity';
 
@@ -83,6 +83,12 @@ export class FavoritesController {
       // two truly concurrent POSTs can both pass the check above before either
       // inserts. Treat the resulting unique violation as the no-op it
       // semantically is, rather than letting it surface as an unhandled 500.
+      if (isForeignKeyViolation(err)) {
+        // No such salon. Reported as a clean 404 rather than an unhandled 500: a 500 here
+        // is both an error-tracking false alarm and a weak existence oracle, since the two
+        // outcomes are distinguishable from outside.
+        throw new NotFoundException('Salon not found');
+      }
       if (!isUniqueViolation(err)) {
         throw err;
       }

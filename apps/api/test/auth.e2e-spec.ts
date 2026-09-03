@@ -120,4 +120,34 @@ describe('Auth (e2e)', () => {
     const cleared = res.get('Set-Cookie')!.find((c: string) => c.startsWith('session='));
     expect(cleared).toContain('Expires=Thu, 01 Jan 1970');
   });
+
+  it('logout REVOKES the token itself, so a copy of the cookie stops working everywhere', async () => {
+    await redis.del(`otp:rl:${phone}`);
+    await clearOtpIpRateLimit(redis);
+    const { loginAs } = await import('./utils/auth-helper');
+    // A second holder of the very same token -- a stolen/copied cookie, or the same
+    // account on another device. Clearing the cookie in one browser must not be the only
+    // thing standing between them and a live 30-day session.
+    const cookie = await loginAs(app, phone);
+    await request(app.getHttpServer()).get('/api/auth/me').set('Cookie', cookie).expect(200);
+
+    await request(app.getHttpServer()).post('/api/auth/logout').set('Cookie', cookie).expect(204);
+
+    await request(app.getHttpServer()).get('/api/auth/me').set('Cookie', cookie).expect(401);
+  });
+
+  it('leaves other sessions of the same user alone -- logging out one device is not logging out all of them', async () => {
+    await redis.del(`otp:rl:${phone}`);
+    await clearOtpIpRateLimit(redis);
+    const { loginAs } = await import('./utils/auth-helper');
+    const firstDevice = await loginAs(app, phone);
+    await redis.del(`otp:rl:${phone}`);
+    await clearOtpIpRateLimit(redis);
+    const secondDevice = await loginAs(app, phone);
+
+    await request(app.getHttpServer()).post('/api/auth/logout').set('Cookie', firstDevice).expect(204);
+
+    await request(app.getHttpServer()).get('/api/auth/me').set('Cookie', firstDevice).expect(401);
+    await request(app.getHttpServer()).get('/api/auth/me').set('Cookie', secondDevice).expect(200);
+  });
 });

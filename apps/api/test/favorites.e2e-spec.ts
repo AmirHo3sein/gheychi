@@ -116,4 +116,12 @@ describe('Favorites (e2e)', () => {
       .set('Cookie', cookie)
       .expect(204);
   });
+
+  it('404s rather than 500s when favouriting a salon that does not exist', async () => {
+    // A 500 here was both an error-tracking false alarm and a weak existence oracle.
+    await request(app.getHttpServer())
+      .post('/api/salons/00000000-0000-4000-8000-000000000000/favorite')
+      .set('Cookie', cookie)
+      .expect(404);
+  });
 });

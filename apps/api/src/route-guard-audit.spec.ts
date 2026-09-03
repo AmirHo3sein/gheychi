@@ -1,19 +1,23 @@
 import 'reflect-metadata';
 import { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ActivityController } from './activity/activity.controller';
 import { AdminNotificationsController } from './admin-notifications/admin-notifications.controller';
+import { AdminAnalyticsController } from './analytics/admin-analytics.controller';
 import { AdminAuditController } from './audit/admin-audit.controller';
 import { AuthController } from './auth/auth.controller';
 import { AuthGuard } from './auth/auth.guard';
 import { IS_PUBLIC_KEY, Public } from './auth/public.decorator';
+import { ROLES_KEY } from './auth/roles.decorator';
+import { RolesGuard } from './auth/roles.guard';
 import { BackupReportController } from './backup-monitoring/backup-report.controller';
 import { AdminSubscriptionBillingController } from './billing/admin-subscription-billing.controller';
 import { AdminSubscriptionCouponsController } from './billing/admin-subscription-coupons.controller';
 import { SalonBillingPeriodsController } from './billing/salon-billing-periods.controller';
 import { AdminBookingSettingsController } from './booking/admin-booking-settings.controller';
+import { AdminBookingsController } from './booking/admin-bookings.controller';
 import { AvailabilityController } from './booking/availability.controller';
 import { BookingsController } from './booking/bookings.controller';
 import { PaymentsController } from './booking/payments.controller';
@@ -54,6 +58,7 @@ import { AdminSalonsController } from './salons/admin-salons.controller';
 import { AdminShowcaseController } from './salons/admin-showcase.controller';
 import { PublicSalonContentController } from './salons/public-salon-content.controller';
 import { SalonMineSubscriptionController } from './salons/salon-mine-subscription.controller';
+import { SalonOwnerGuard } from './salons/salon-owner.guard';
 import { SalonPhotosController } from './salons/salon-photos.controller';
 import { SalonPortfolioController } from './salons/salon-portfolio.controller';
 import { SalonServicesController } from './salons/salon-services.controller';
@@ -74,6 +79,8 @@ import { WalletController } from './wallet/wallet.controller';
 // @nestjs/common/constants) -- hardcoded here rather than imported, matching the existing
 // precedent in audit/audit-wiring.spec.ts (INTERCEPTORS_METADATA).
 const PATH_METADATA = 'path';
+// Likewise GUARDS_METADATA -- the key @UseGuards() stores its guard classes under.
+const GUARDS_METADATA = '__guards__';
 
 // Every controller in the app, so a newly-added controller file that forgets to be imported
 // here fails loudly (via the "every route is either public or must reject an anonymous
@@ -82,6 +89,7 @@ const PATH_METADATA = 'path';
 const ALL_CONTROLLERS: Function[] = [
   ActivityController,
   AdminNotificationsController,
+  AdminAnalyticsController,
   AdminAuditController,
   AuthController,
   BackupReportController,
@@ -89,6 +97,7 @@ const ALL_CONTROLLERS: Function[] = [
   AdminSubscriptionCouponsController,
   SalonBillingPeriodsController,
   AdminBookingSettingsController,
+  AdminBookingsController,
   AvailabilityController,
   BookingsController,
   PaymentsController,
@@ -196,6 +205,10 @@ const PUBLIC_ROUTES: Array<[Function, string]> = [
   [PublicSalonContentController, 'listWorkers'],
   [PublicSalonContentController, 'listWorkerRatings'],
   [SalonsController, 'publicProfile'],
+  // Handle-history resolution behind the public 301 -- must be anonymous for the same reason
+  // publicProfile is (an unauthenticated visitor scanning a printed QR code), and it exposes
+  // strictly less: one approved salon's current public slug, or a 404.
+  [SalonsController, 'canonical'],
   [SitemapSalonsController, 'list'],
   [SearchController, 'run'],
 ];
@@ -234,25 +247,87 @@ function mockExecutionContext(handler: object, controllerClass: Function): Execu
 }
 
 describe('route guard audit (security regression test)', () => {
-  it('covers every controller file currently in src/ (fails if a controller is added but not imported above)', () => {
+  it('covers every @Controller class currently in src/ (fails if a controller is added but not imported above)', () => {
     // A cheap, independent cross-check against a plain recursive filesystem walk -- keeps
-    // this spec from silently going stale as new controllers are added. No glob dependency
-    // needed for a one-off recursive *.controller.ts count.
-    function countControllerFiles(dir: string): number {
+    // this spec from silently going stale as new controllers are added. Counts @Controller(
+    // DECORATORS, not files, and asserts EXACT equality: a file holding two controller
+    // classes (admin-referrals.controller.ts) used to let a whole missing controller
+    // (AdminAnalyticsController) slip past a mere `>= fileCount` check.
+    function countControllerClasses(dir: string): number {
       let count = 0;
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         const path = join(dir, entry.name);
         if (entry.isDirectory()) {
-          count += countControllerFiles(path);
+          count += countControllerClasses(path);
         } else if (entry.isFile() && entry.name.endsWith('.controller.ts')) {
-          count += 1;
+          count += (readFileSync(path, 'utf8').match(/^@Controller\(/gm) ?? []).length;
         }
       }
       return count;
     }
-    const controllerFileCount = countControllerFiles(__dirname);
-    expect(controllerFileCount).toBeGreaterThan(0);
-    expect(ALL_CONTROLLERS.length).toBeGreaterThanOrEqual(controllerFileCount);
+    const controllerClassCount = countControllerClasses(__dirname);
+    expect(controllerClassCount).toBeGreaterThan(0);
+    expect(ALL_CONTROLLERS.length).toBe(controllerClassCount);
+  });
+
+  // The actor-scoping guards are NOT global (only AuthGuard is), so a new admin/ or
+  // salons/mine/ route that forgets its guard is authenticated-but-unauthorized: any logged-
+  // in customer could call it. Derived from the real route path so the rule can't drift from
+  // the URL convention CLAUDE.md documents.
+  function fullRoutePaths(controller: Function, methodName: string): string[] {
+    const classPath = Reflect.getMetadata(PATH_METADATA, controller) as string | string[] | undefined;
+    const proto = controller.prototype as Record<string, unknown>;
+    const methodPath = Reflect.getMetadata(PATH_METADATA, proto[methodName] as object) as string | string[];
+    const classPaths = ([] as string[]).concat(classPath ?? '');
+    const methodPaths = ([] as string[]).concat(methodPath ?? '');
+    return classPaths.flatMap((c) =>
+      methodPaths.map((m) => [c, m].filter((seg) => seg && seg !== '/').join('/').replace(/^\//, '')),
+    );
+  }
+
+  function guardsOn(controller: Function, methodName: string): Function[] {
+    const proto = controller.prototype as Record<string, unknown>;
+    const classGuards = (Reflect.getMetadata(GUARDS_METADATA, controller) as Function[] | undefined) ?? [];
+    const methodGuards = (Reflect.getMetadata(GUARDS_METADATA, proto[methodName] as object) as Function[] | undefined) ?? [];
+    return [...classGuards, ...methodGuards];
+  }
+
+  it('every admin/* route carries RolesGuard AND @Roles(\'admin\')', () => {
+    const reflector = new Reflector();
+    const offenders: string[] = [];
+    for (const controller of ALL_CONTROLLERS) {
+      for (const method of routeHandlerNames(controller)) {
+        const adminPaths = fullRoutePaths(controller, method).filter((p) => p === 'admin' || p.startsWith('admin/'));
+        if (adminPaths.length === 0) continue;
+        const proto = controller.prototype as Record<string, unknown>;
+        const roles = reflector.getAllAndOverride<string[]>(ROLES_KEY, [proto[method] as Function, controller]) ?? [];
+        const hasRolesGuard = guardsOn(controller, method).includes(RolesGuard);
+        if (!hasRolesGuard || !roles.includes('admin')) {
+          offenders.push(`${controller.name}.${method} (${adminPaths.join(', ')})`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  // GET /salons/mine is the one deliberate exception: it is the provider-panel's "do I have
+  // a salon yet?" probe, so it must answer (404) for an owner-less user instead of being
+  // guard-rejected -- SalonsService.findMine scopes by ownerId itself.
+  const SALON_OWNER_GUARD_EXCEPTIONS: Array<[Function, string]> = [[SalonsController, 'mine']];
+
+  it('every salons/mine* route carries SalonOwnerGuard (except the documented onboarding probe)', () => {
+    const offenders: string[] = [];
+    for (const controller of ALL_CONTROLLERS) {
+      for (const method of routeHandlerNames(controller)) {
+        if (SALON_OWNER_GUARD_EXCEPTIONS.some(([c, m]) => c === controller && m === method)) continue;
+        const minePaths = fullRoutePaths(controller, method).filter((p) => p === 'salons/mine' || p.startsWith('salons/mine/'));
+        if (minePaths.length === 0) continue;
+        if (!guardsOn(controller, method).includes(SalonOwnerGuard)) {
+          offenders.push(`${controller.name}.${method} (${minePaths.join(', ')})`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 
   it('every PUBLIC_ROUTES entry resolves to a real, currently-existing route handler', () => {
@@ -306,7 +381,7 @@ describe('route guard audit (security regression test)', () => {
     it('skips the auth check for a class marked @Public()', async () => {
       const jwt = { verifyAsync: jest.fn() } as any;
       const users = { findById: jest.fn() } as any;
-      const guard = new AuthGuard(jwt, users, new Reflector());
+      const guard = new AuthGuard(jwt, users, new Reflector(), { isRevoked: jest.fn().mockResolvedValue(false) } as never);
 
       const context = mockExecutionContext(PublicDummyController.prototype.handler, PublicDummyController);
       await expect(guard.canActivate(context)).resolves.toBe(true);
@@ -316,7 +391,7 @@ describe('route guard audit (security regression test)', () => {
     it('still enforces auth (throws with no session cookie) for a route with no @Public()', async () => {
       const jwt = { verifyAsync: jest.fn() } as any;
       const users = { findById: jest.fn() } as any;
-      const guard = new AuthGuard(jwt, users, new Reflector());
+      const guard = new AuthGuard(jwt, users, new Reflector(), { isRevoked: jest.fn().mockResolvedValue(false) } as never);
 
       const context = mockExecutionContext(ProtectedDummyController.prototype.handler, ProtectedDummyController);
       await expect(guard.canActivate(context)).rejects.toThrow();

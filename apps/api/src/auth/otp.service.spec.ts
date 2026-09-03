@@ -45,20 +45,32 @@ describe('OtpService', () => {
 
   it('verifies a correct code and consumes it', async () => {
     const { code } = await service.issue(phone, ip);
-    expect(await service.verify(phone, code)).toBe(true);
-    expect(await service.verify(phone, code)).toBe(false); // consumed
+    expect(await service.verify(phone, code, ip)).toBe(true);
+    expect(await service.verify(phone, code, ip)).toBe(false); // consumed
   });
 
   it('rejects a wrong code but allows a later correct attempt', async () => {
     const { code } = await service.issue(phone, ip);
-    expect(await service.verify(phone, '000000')).toBe(false);
-    expect(await service.verify(phone, code)).toBe(true);
+    expect(await service.verify(phone, '000000', ip)).toBe(false);
+    expect(await service.verify(phone, code, ip)).toBe(true);
   });
 
-  it('kills the code after 5 failed attempts', async () => {
+  it('locks an IP out of a code after 5 failed attempts from that IP', async () => {
     const { code } = await service.issue(phone, ip);
-    for (let i = 0; i < 5; i++) await service.verify(phone, '000000');
-    expect(await service.verify(phone, code)).toBe(false);
+    for (let i = 0; i < 5; i++) await service.verify(phone, '000000', ip);
+    expect(await service.verify(phone, code, ip)).toBe(false);
+  });
+
+  it("a stranger's failed guesses do NOT burn the code's owner out of their own login (targeted-lockout fix)", async () => {
+    const { code } = await service.issue(phone, ip);
+    for (let i = 0; i < 5; i++) await service.verify(phone, '000000', '203.0.113.9');
+    expect(await service.verify(phone, code, ip)).toBe(true);
+  });
+
+  it('kills the code outright once total guesses across all IPs pass the brute-force backstop', async () => {
+    const { code } = await service.issue(phone, ip);
+    for (let i = 0; i < 30; i++) await service.verify(phone, '000000', `198.51.100.${i}`);
+    expect(await service.verify(phone, code, ip)).toBe(false);
   });
 
   describe('per-IP limit (independent of the per-phone limit)', () => {

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, HttpCode, Post, Req } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, HttpCode, Post, Req } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
 import { Repository } from 'typeorm';
@@ -18,6 +18,14 @@ export class PushController {
     const userId = (req.user as User).id;
     const existing = await this.subs.findOneBy({ endpoint: dto.endpoint });
     if (existing) {
+      // Re-pointing an endpoint to a DIFFERENT user is refused. A browser push endpoint is
+      // an opaque, unguessable URL, but it is not a secret the way a token is -- it is
+      // handed to whatever page holds the subscription. Allowing a re-point meant anyone
+      // who learned another user's endpoint could claim it: the victim silently stopped
+      // receiving push, and the attacker's notifications landed on the victim's device.
+      // The legitimate case this used to serve -- the same person re-subscribing on the
+      // same device -- is unaffected, since the userId matches.
+      if (existing.userId !== userId) throw new ForbiddenException();
       await this.subs.update({ endpoint: dto.endpoint }, { userId, p256dh: dto.p256dh, auth: dto.auth });
       return { ok: true };
     }

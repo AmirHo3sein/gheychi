@@ -43,13 +43,14 @@ describe('AuthController.verifyOtp -- referral-code extension', () => {
       dataSource as never,
       sms as never,
       analytics as unknown as AnalyticsService,
+      { revoke: jest.fn(), isRevoked: jest.fn().mockResolvedValue(false) } as never,
     );
   });
 
   it('never opens a transaction when no referralCode is provided', async () => {
     users.findOrCreateByPhone.mockResolvedValue({ user: NEW_USER, isNew: true });
 
-    const result = await controller.verifyOtp({ phone: NEW_USER.phone, code: '123456' }, res as never);
+    const result = await controller.verifyOtp({ phone: NEW_USER.phone, code: '123456' }, res as never, { ip: '127.0.0.1' } as never);
 
     expect(dataSource.transaction).not.toHaveBeenCalled();
     expect(users.findOrCreateByPhone).toHaveBeenCalledWith(NEW_USER.phone);
@@ -61,7 +62,7 @@ describe('AuthController.verifyOtp -- referral-code extension', () => {
 
     const result = await controller.verifyOtp(
       { phone: NEW_USER.phone, code: '123456', referralCode: 'ABC12345' },
-      res as never,
+      res as never, { ip: '127.0.0.1' } as never,
     );
 
     expect(referrals.applyReferralAtRegistration).not.toHaveBeenCalled();
@@ -74,7 +75,7 @@ describe('AuthController.verifyOtp -- referral-code extension', () => {
 
     const result = await controller.verifyOtp(
       { phone: NEW_USER.phone, code: '123456', referralCode: 'ABC12345' },
-      res as never,
+      res as never, { ip: '127.0.0.1' } as never,
     );
 
     expect(referrals.applyReferralAtRegistration).toHaveBeenCalledWith(NEW_USER.id, 'ABC12345', expect.anything());
@@ -88,7 +89,7 @@ describe('AuthController.verifyOtp -- referral-code extension', () => {
 
     const result = await controller.verifyOtp(
       { phone: NEW_USER.phone, code: '123456', referralCode: 'ABC12345' },
-      res as never,
+      res as never, { ip: '127.0.0.1' } as never,
     );
 
     expect(result).toMatchObject({ referralStatus: 'referral_type_disabled' });
@@ -100,7 +101,7 @@ describe('AuthController.verifyOtp -- referral-code extension', () => {
 
     const result = await controller.verifyOtp(
       { phone: NEW_USER.phone, code: '123456', referralCode: 'ABC12345' },
-      res as never,
+      res as never, { ip: '127.0.0.1' } as never,
     );
 
     // The whole call resolves successfully -- registration is NOT rolled back or
@@ -120,7 +121,7 @@ describe('AuthController.verifyOtp -- referral-code extension', () => {
 
     const result = await controller.verifyOtp(
       { phone: NEW_USER.phone, code: '123456', referralCode: 'GARBAGE' },
-      res as never,
+      res as never, { ip: '127.0.0.1' } as never,
     );
 
     expect(res.cookie).toHaveBeenCalledWith('session', 'signed-token', expect.any(Object));
@@ -131,7 +132,7 @@ describe('AuthController.verifyOtp -- referral-code extension', () => {
     it('tracks user_registered for a brand-new account, never for a returning one', async () => {
       users.findOrCreateByPhone.mockResolvedValue({ user: NEW_USER, isNew: true });
 
-      await controller.verifyOtp({ phone: NEW_USER.phone, code: '123456' }, res as never);
+      await controller.verifyOtp({ phone: NEW_USER.phone, code: '123456' }, res as never, { ip: '127.0.0.1' } as never);
 
       expect(analytics.track).toHaveBeenCalledWith(
         'user_registered',
@@ -142,7 +143,7 @@ describe('AuthController.verifyOtp -- referral-code extension', () => {
       analytics.track.mockClear();
       users.findOrCreateByPhone.mockResolvedValue({ user: NEW_USER, isNew: false });
 
-      await controller.verifyOtp({ phone: NEW_USER.phone, code: '123456' }, res as never);
+      await controller.verifyOtp({ phone: NEW_USER.phone, code: '123456' }, res as never, { ip: '127.0.0.1' } as never);
 
       expect(analytics.track).not.toHaveBeenCalled();
     });
@@ -151,7 +152,7 @@ describe('AuthController.verifyOtp -- referral-code extension', () => {
       users.findOrCreateByPhone.mockResolvedValue({ user: NEW_USER, isNew: true });
       analytics.track.mockRejectedValue(new Error('analytics vendor down'));
 
-      const result = await controller.verifyOtp({ phone: NEW_USER.phone, code: '123456' }, res as never);
+      const result = await controller.verifyOtp({ phone: NEW_USER.phone, code: '123456' }, res as never, { ip: '127.0.0.1' } as never);
 
       expect(result).toMatchObject({ isNewUser: true });
       expect(res.cookie).toHaveBeenCalled();
