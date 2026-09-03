@@ -2,6 +2,7 @@ import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
+import RescheduleForm from '@/components/booking/RescheduleForm.vue'
 import { resetToast, useToast } from '@/composables/useToast'
 import BookingsView from './BookingsView.vue'
 
@@ -448,6 +449,173 @@ describe('BookingsView', () => {
     expect(wrapper.find('[data-testid="pending-request-req1"]').exists()).toBe(false)
     // ...and the booking is still on the agenda, now reading as expired.
     expect(wrapper.get('[data-testid="booking-req1"]').text()).toContain('منقضی شده')
+  })
+})
+
+// -- Reschedule: move a booking to a new time, same row, same identity. Covers the three
+// contexts BookingsView actually offers it in (the pending-approval queue, a confirmed
+// agenda card, a pending_payment agenda card), that a terminal status never offers it, the
+// current-time display, the 409/refetch-keeps-form-open path, and the submittingId double-
+// submit guard shared with every other write on this page.
+describe('BookingsView reschedule', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const CONFIRMED_BOOKING = {
+    id: 'b1', serviceId: 's1', serviceName: 'کوتاهی مو', priceSnapshot: 150000,
+    startsAt: '2026-08-01T09:00:00.000Z', status: 'confirmed', workerId: null, workerName: null,
+    customerName: null, customerPhone: '', source: 'online',
+  }
+
+  it('shows the current time and moves a confirmed booking to the newly picked one', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([CONFIRMED_BOOKING]) }) // GET bookings
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET workers
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) }) // POST reschedule
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ([{ ...CONFIRMED_BOOKING, startsAt: '2026-08-02T06:30:00.000Z' }]),
+      }) // GET bookings again
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(BookingsView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    await wrapper.get('[data-testid="reschedule-booking"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    // The booking's own current slot, stated plainly before the picker.
+    const card = wrapper.get('[data-testid="booking-b1"]')
+    expect(card.text()).toContain('زمان فعلی')
+
+    wrapper.findComponent<typeof JalaliDatePicker>('[data-testid="reschedule-date"]').vm.$emit('update:modelValue', '2026-08-02')
+    await wrapper.find('[data-testid="reschedule-time"]').setValue('10:00')
+    await wrapper.get('[data-testid="reschedule-submit"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(fetchMock.mock.calls[3]![0]).toContain('/salons/mine/bookings/b1/reschedule')
+    // 10:00 Tehran wall-clock (+03:30, no DST) is 06:30 UTC -- same conversion the manual-
+    // booking form's own date+time pair already uses.
+    expect(fetchMock.mock.calls[3]![1]).toMatchObject({ method: 'POST', body: JSON.stringify({ startsAt: '2026-08-02T06:30:00.000Z' }) })
+    // Refetched and the inline form closed, replaced by the normal action row again.
+    expect(fetchMock.mock.calls[4]![0]).toContain('/salons/mine/bookings')
+    expect(wrapper.find('[data-testid="reschedule-date"]').exists()).toBe(false)
+    // wrapper.get() throws if the element is missing, so reaching this assertion at all is
+    // the proof the normal action row came back.
+    expect(wrapper.get('[data-testid="mark-completed"]').text()).toContain('انجام شد')
+  })
+
+  it('offers reschedule for a pending_payment booking, which otherwise has no agenda action', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([{ ...CONFIRMED_BOOKING, status: 'pending_payment' }]) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(BookingsView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    const card = wrapper.get('[data-testid="booking-b1"]')
+    expect(card.find('[data-testid="reschedule-booking"]').exists()).toBe(true)
+    // No other action exists for an unpaid booking on this page.
+    expect(card.find('[data-testid="mark-completed"]').exists()).toBe(false)
+    expect(card.find('[data-testid="cancel-booking"]').exists()).toBe(false)
+  })
+
+  it('offers reschedule from the pending-approval queue and posts to the salon-side route', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([PENDING_REQUEST]) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) }) // POST reschedule
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([PENDING_REQUEST]) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(BookingsView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    const queueCard = wrapper.get('[data-testid="pending-request-req1"]')
+    await queueCard.get('[data-testid="reschedule-booking"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    wrapper.findComponent<typeof JalaliDatePicker>('[data-testid="reschedule-date"]').vm.$emit('update:modelValue', '2030-07-01')
+    await wrapper.find('[data-testid="reschedule-time"]').setValue('09:00')
+    await wrapper.get('[data-testid="reschedule-submit"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(fetchMock.mock.calls[3]![0]).toContain('/salons/mine/bookings/req1/reschedule')
+    expect(fetchMock.mock.calls[3]![1]).toMatchObject({ method: 'POST' })
+  })
+
+  it('never offers reschedule for a booking whose status can no longer move', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([{ ...CONFIRMED_BOOKING, status: 'completed' }]) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(BookingsView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(wrapper.get('[data-testid="booking-b1"]').find('[data-testid="reschedule-booking"]').exists()).toBe(false)
+  })
+
+  it('refetches after a reschedule conflict but keeps the form open for an immediate retry', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([CONFIRMED_BOOKING]) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) })
+      .mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ message: 'ظرفیت این بازه زمانی پر است' }) }) // POST reschedule
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([CONFIRMED_BOOKING]) }) // GET bookings again
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(BookingsView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    await wrapper.get('[data-testid="reschedule-booking"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+    wrapper.findComponent<typeof JalaliDatePicker>('[data-testid="reschedule-date"]').vm.$emit('update:modelValue', '2026-08-02')
+    await wrapper.find('[data-testid="reschedule-time"]').setValue('10:00')
+    await wrapper.get('[data-testid="reschedule-submit"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    // Refetched (same as approve/reject's own lost-race handling)...
+    expect(fetchMock.mock.calls[4]![0]).toContain('/salons/mine/bookings')
+    // ...but the picker itself stays open -- the booking was never the problem, just the
+    // time it was pointed at, so the owner should be able to retry without re-opening it.
+    expect(wrapper.find('[data-testid="reschedule-date"]').exists()).toBe(true)
+  })
+
+  it('guards against a double-submit while a reschedule write is already in flight', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([CONFIRMED_BOOKING]) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) })
+    // The reschedule POST itself never settles -- the window in which a second submit
+    // attempt could otherwise double-fire.
+    fetchMock.mockReturnValueOnce(new Promise(() => {}))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(BookingsView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    await wrapper.get('[data-testid="reschedule-booking"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    const form = wrapper.findComponent(RescheduleForm)
+    form.vm.$emit('submit', '2026-08-02T06:30:00.000Z')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(fetchMock).toHaveBeenCalledTimes(4) // 3 initial + the hanging POST
+
+    // A second submit while the first is still in flight must be a no-op: the guard at the
+    // top of submitReschedule reads the same submittingId every other write on this page
+    // already uses.
+    form.vm.$emit('submit', '2026-08-02T07:00:00.000Z')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(fetchMock).toHaveBeenCalledTimes(4)
   })
 })
 

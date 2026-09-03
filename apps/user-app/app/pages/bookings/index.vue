@@ -34,6 +34,14 @@ interface BookingItem {
   // with the platform's online-payment flag off it stays non-zero on bookings nothing was
   // collected for.
   depositPaid: boolean
+  // The plain Booking entity's own columns -- always present on /bookings/mine (no
+  // serialization exclusion strips them), just never read by this page until now. Needed to
+  // reuse SlotPicker for the reschedule dialog below: it fetches this exact salon+service's
+  // live availability, and workerId narrows that to the specific staff member already
+  // assigned (reschedule never changes who -- only when).
+  salonId: string
+  serviceId: string
+  workerId: string | null
 }
 
 // Whether real money sits behind this booking. Deliberately NOT the live feature flag: a
@@ -222,6 +230,58 @@ async function confirmCancel() {
 
 const cancelDialogRoot = ref<HTMLElement | null>(null)
 const { titleId: cancelTitleId } = useDialog(cancelDialogRoot, { onClose: closeCancelConfirm })
+
+// Reschedule -- moves the SAME booking to a new time (POST /bookings/:id/reschedule) rather
+// than cancel-and-rebook, which for a within-window cancellation forfeited the deposit and
+// in every case lost the booking's own history. See BookingsService.reschedule and
+// 09-booking-engine.md's "Rescheduling" section for the full rule set this page deliberately
+// does NOT re-derive client-side: only that the customer's ORIGINAL start (not the requested
+// new one) still has to clear the cancellation window, enforced with a 409 this dialog
+// surfaces via useApi's own default toast. Same one-at-a-time dialog shape as cancel above,
+// and the exact same eligible statuses (CANCELLABLE_STATUSES already IS the API's
+// SLOT_BLOCKING_STATUSES -- a completed/no-show booking already happened, a dead one is not
+// something to resurrect by moving it).
+const rescheduleTarget = ref<BookingItem | null>(null)
+const rescheduling = ref(false)
+// The picked replacement instant, fed by SlotPicker's own `select` emit -- reusing the exact
+// picker booking/[slug]/[serviceId].vue uses for a NEW booking, since choosing a new time for
+// an existing one is the same problem: real, salon-authoritative availability, not a bare
+// date+time input that could offer a slot the server will just reject.
+const newSlot = ref<string | null>(null)
+
+function openRescheduleDialog(booking: BookingItem) {
+  rescheduleTarget.value = booking
+  newSlot.value = null
+}
+
+function closeRescheduleDialog() {
+  if (rescheduling.value) return
+  rescheduleTarget.value = null
+}
+
+async function confirmReschedule() {
+  // Guards both a genuine double-click (matching cancelling's own established pattern) and a
+  // submit attempt before a slot is actually chosen -- the button is disabled for the second
+  // case too, this is the belt to that suspenders.
+  if (rescheduling.value || !rescheduleTarget.value || !newSlot.value) return
+  rescheduling.value = true
+  const { error } = await apiFetch(`/bookings/${rescheduleTarget.value.id}/reschedule`, {
+    method: 'POST',
+    body: { startsAt: newSlot.value },
+  })
+  rescheduling.value = false
+  // A 400 (past time / wrong status) or 409 (outside the cancellation window, or the new
+  // slot filled from under the customer) is already toasted by useApi with the API's own
+  // Persian explanation -- this dialog stays open so the customer can immediately pick a
+  // different time rather than having to re-open it from the list.
+  if (!error) {
+    rescheduleTarget.value = null
+    await load()
+  }
+}
+
+const rescheduleDialogRoot = ref<HTMLElement | null>(null)
+const { titleId: rescheduleTitleId } = useDialog(rescheduleDialogRoot, { onClose: closeRescheduleDialog })
 </script>
 
 <template>
@@ -327,6 +387,18 @@ const { titleId: cancelTitleId } = useDialog(cancelDialogRoot, { onClose: closeC
           {{ booking.status === 'pending_approval' ? 'لغو درخواست' : 'لغو نوبت' }}
         </BaseButton>
 
+        <!-- Same eligible statuses as the cancel button above (CANCELLABLE_STATUSES mirrors
+             the API's own SLOT_BLOCKING_STATUSES) -- anything that can still be cancelled can
+             also be moved instead. -->
+        <BaseButton
+          v-if="CANCELLABLE_STATUSES.includes(booking.status)"
+          variant="secondary"
+          data-testid="reschedule-booking-button"
+          @click="openRescheduleDialog(booking)"
+        >
+          تغییر زمان نوبت
+        </BaseButton>
+
         <template v-if="booking.status === 'completed'">
           <!-- A review already on file stays viewable/editable even with the flag off,
                only net-new "ثبت نظر" is hidden -- same reasoning as bookings/[id].vue. -->
@@ -389,6 +461,49 @@ const { titleId: cancelTitleId } = useDialog(cancelDialogRoot, { onClose: closeC
           </BaseButton>
           <BaseButton variant="danger" block data-testid="cancel-confirm-submit" :loading="cancelling" @click="confirmCancel">
             {{ cancelActionLabel }}
+          </BaseButton>
+        </div>
+      </div>
+    </div>
+
+    <!-- Same overlay shape as the cancel dialog above, just wider (max-w-md, not max-w-sm) --
+         SlotPicker's own date pills/time grid need more room than a one-line confirmation. -->
+    <div v-if="rescheduleTarget" class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-black/40 p-4">
+      <div
+        ref="rescheduleDialogRoot"
+        role="dialog"
+        aria-modal="true"
+        :aria-labelledby="rescheduleTitleId"
+        tabindex="-1"
+        data-testid="reschedule-dialog"
+        class="my-auto w-full max-w-md space-y-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-6 shadow-(--shadow-lg) outline-none"
+      >
+        <h2 :id="rescheduleTitleId" class="text-lg font-bold text-(--color-text)">تغییر زمان نوبت</h2>
+        <p class="text-sm break-words text-(--color-text)">{{ rescheduleTarget.salonName }} — {{ rescheduleTarget.serviceName }}</p>
+        <!-- The booking's own current time, stated plainly before the picker so it's clear
+             what's actually being changed. -->
+        <p data-testid="reschedule-current-time" class="text-sm text-(--color-text-muted)">
+          زمان فعلی: {{ new Date(rescheduleTarget.startsAt).toLocaleString('fa-IR') }}
+        </p>
+        <SlotPicker
+          :salon-id="rescheduleTarget.salonId"
+          :service-id="rescheduleTarget.serviceId"
+          :worker-id="rescheduleTarget.workerId"
+          :selected-slot="newSlot"
+          @select="newSlot = $event"
+        />
+        <div class="flex gap-2 pt-1">
+          <BaseButton variant="secondary" block data-testid="reschedule-dismiss" :disabled="rescheduling" @click="closeRescheduleDialog">
+            انصراف
+          </BaseButton>
+          <BaseButton
+            block
+            data-testid="reschedule-submit"
+            :disabled="!newSlot"
+            :loading="rescheduling"
+            @click="confirmReschedule"
+          >
+            ثبت زمان جدید
           </BaseButton>
         </div>
       </div>

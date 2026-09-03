@@ -37,7 +37,13 @@ describe('PublicLinkCard', () => {
     vi.unstubAllGlobals()
   })
 
-  async function mountCard() {
+  // Queues the response to the entitlements read (GET /salons/mine/subscription) the
+  // component fires in onMounted -- must be registered before mount(), since it's the very
+  // first apiFetch call the component makes. Defaults to an empty bag, which resolves to
+  // "granted" for both customHandle/qrCode (the registry's own defaultValue: true), matching
+  // every pre-existing test's assumption that both are visible unless a test opts out.
+  async function mountCard(entitlements: Record<string, unknown> = {}) {
+    fetchMock.mockResolvedValueOnce({ data: { resolvedEntitlements: entitlements }, error: null })
     const wrapper = mount(PublicLinkCard)
     await flushPromises()
     return wrapper
@@ -66,27 +72,27 @@ describe('PublicLinkCard', () => {
     expect(wrapper.get('[data-testid="copy-link-button"]').text()).toBe('کپی شد')
   })
 
-  it('rejects an invalid handle client-side without calling the API', async () => {
+  it('rejects an invalid handle client-side without calling the handle API', async () => {
     const wrapper = await mountCard()
     await wrapper.get('[data-testid="edit-handle-button"]').trigger('click')
     await wrapper.get('[data-testid="handle-input"]').setValue('Not Valid!')
     await wrapper.get('[data-testid="save-handle-button"]').trigger('click')
 
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalledWith('/salons/mine/handle', expect.anything())
     expect(wrapper.text()).toContain('آدرس فقط می‌تواند شامل حروف انگلیسی کوچک')
   })
 
   it('saves a valid handle and refreshes the shared salon state', async () => {
+    const wrapper = await mountCard()
     fetchMock.mockResolvedValueOnce({ data: null, error: null }) // PATCH /salons/mine/handle
     fetchMock.mockResolvedValueOnce({ data: { ...SALON, slug: 'my-new-handle' }, error: null }) // refetch
 
-    const wrapper = await mountCard()
     await wrapper.get('[data-testid="edit-handle-button"]').trigger('click')
     await wrapper.get('[data-testid="handle-input"]').setValue('my-new-handle')
     await wrapper.get('[data-testid="save-handle-button"]').trigger('click')
     await flushPromises()
 
-    expect(fetchMock).toHaveBeenNthCalledWith(1, '/salons/mine/handle', {
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/salons/mine/handle', {
       method: 'PATCH',
       body: { handle: 'my-new-handle' },
     })
@@ -96,9 +102,9 @@ describe('PublicLinkCard', () => {
   })
 
   it('leaves the edit form open (does not silently drop the attempt) when the API rejects the handle', async () => {
+    const wrapper = await mountCard()
     fetchMock.mockResolvedValueOnce({ data: null, error: { status: 409, message: 'قبلا استفاده شده' } })
 
-    const wrapper = await mountCard()
     await wrapper.get('[data-testid="edit-handle-button"]').trigger('click')
     await wrapper.get('[data-testid="handle-input"]').setValue('taken-handle')
     await wrapper.get('[data-testid="save-handle-button"]').trigger('click')
@@ -106,5 +112,32 @@ describe('PublicLinkCard', () => {
 
     expect(wrapper.find('[data-testid="handle-input"]').exists()).toBe(true)
     expect(useSalon().salon.value?.slug).toBe('test-salon')
+  })
+
+  // Read-only UI gating off GET /salons/mine/subscription's resolvedEntitlements -- the real
+  // enforcement for handle changes is server-side (SalonsService.updateHandle); QR has no
+  // backend call to gate at all, so this IS the actual control for it.
+  describe('entitlement-gated UI', () => {
+    it('hides the edit-handle button and shows an upgrade note when customHandle is denied', async () => {
+      const wrapper = await mountCard({ customHandle: false })
+
+      expect(wrapper.find('[data-testid="edit-handle-button"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="handle-locked-note"]').text()).toContain('ویرایش نشانی اختصاصی')
+    })
+
+    it('hides the QR download button and image, showing an upgrade note instead, when qrCode is denied', async () => {
+      const wrapper = await mountCard({ qrCode: false })
+
+      expect(wrapper.find('[data-testid="qr-image"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="download-qr-button"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="qr-locked-note"]').text()).toContain('کد QR')
+    })
+
+    it('shows both when the entitlements bag omits the keys -- absent means granted, matching the registry default', async () => {
+      const wrapper = await mountCard({})
+
+      expect(wrapper.find('[data-testid="edit-handle-button"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="qr-image"]').exists()).toBe(true)
+    })
   })
 })

@@ -7,6 +7,7 @@ import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect, { type SelectOption } from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
+import RescheduleForm from '@/components/booking/RescheduleForm.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
@@ -62,6 +63,32 @@ const services = ref<Service[]>([])
 const loading = ref(true)
 const loadError = ref(false)
 const submittingId = ref<string | null>(null)
+
+// -- Reschedule: move a booking to a new time, same row, same identity. --
+//
+// The "تغییر زمان" button is offered exactly where the API's own SLOT_BLOCKING_STATUSES
+// allows it to actually succeed (see BookingsService.reschedule and 09-booking-engine.md's
+// "Rescheduling" section) -- the pending-request queue (pending_approval), the confirmed
+// agenda action row, and a dedicated pending_payment branch below. A completed/no-show
+// booking already happened, and a cancelled/rejected/expired one is not something to
+// resurrect by moving it, so none of those statuses gets the button. Unlike the customer-
+// facing /bookings/:id/reschedule, the salon-side route has no cancellation-window
+// restriction -- the API trusts the owner with this exactly as much as it already trusts
+// them with cancelling outright.
+
+// Which single card currently has its inline date/time form expanded -- same one-at-a-time
+// shape as rejectingId below. Not itself the double-submit guard (submittingId is, since a
+// reschedule write has to block the background poll exactly like approve/reject/markStatus
+// already do -- see refreshBlocked); this only tracks which card's form is open.
+const reschedulingId = ref<string | null>(null)
+
+function openReschedule(id: string) {
+  reschedulingId.value = id
+}
+
+function cancelReschedule() {
+  reschedulingId.value = null
+}
 
 async function fetchBookings(): Promise<boolean> {
   const { data, error } = await apiFetch<Booking[]>('/salons/mine/bookings', { silent: true })
@@ -323,6 +350,26 @@ async function submitReject(id: string) {
   }
 }
 
+// Guarded by submittingId (the same single-flight ref every other write on this page uses),
+// not a dedicated boolean -- a reschedule in flight has to block the background poll exactly
+// like approve/reject/markStatus already do (see refreshBlocked), and submittingId is what
+// that gate reads. Refetches unconditionally, success or failure, same reasoning as
+// approve/reject: a 409 here (the slot filled from under the owner, or a lock-contention
+// race) means the card on screen is already stale either way, and useApi has already toasted
+// the API's own explanation. The inline form only closes on an actual success -- a rejected
+// attempt stays open so the owner can immediately pick a different time.
+async function submitReschedule(id: string, startsAtIso: string) {
+  if (submittingId.value) return
+  submittingId.value = id
+  try {
+    const { error } = await apiFetch(`/salons/mine/bookings/${id}/reschedule`, { method: 'POST', body: { startsAt: startsAtIso } })
+    await fetchBookings()
+    if (!error) cancelReschedule()
+  } finally {
+    submittingId.value = null
+  }
+}
+
 async function cancelBooking(id: string) {
   if (!confirm('لغو این نوبت ممکن است مشمول جریمه شود. ادامه می‌دهید؟')) return
   submittingId.value = id
@@ -363,6 +410,13 @@ function formatDateLabel(dateStr: string): string {
   return new Intl.DateTimeFormat('fa-IR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Tehran' }).format(
     new Date(`${dateStr}T12:00:00Z`),
   )
+}
+
+// Date + time together -- the reschedule form's own "زمان فعلی" line needs both, unlike the
+// card's normal date-header/time-badge split (which relies on the two sitting next to each
+// other on screen already).
+function formatFullDateTime(iso: string): string {
+  return `${formatDateLabel(tehranDateString(new Date(iso)))} — ${formatBookingTime(iso)}`
 }
 
 // Same Tehran pinning as formatBookingTime, with the calendar date included -- a request
@@ -674,6 +728,20 @@ const groupedBookings = computed<BookingGroup[]>(() => {
               </div>
             </div>
 
+            <!-- Third branch of the same one-at-a-time expand as the reject form above: a
+                 request can move in place instead of being answered outright -- the salon
+                 side of reschedule has no cancellation-window restriction, so this is always
+                 offered here right alongside تایید/رد. -->
+            <div v-else-if="reschedulingId === b.id" class="space-y-2 border-t border-(--color-border-soft) pt-3">
+              <p class="text-xs text-(--color-text-muted)">زمان فعلی: <span class="tnum">{{ formatFullDateTime(b.startsAt) }}</span></p>
+              <RescheduleForm
+                :current-starts-at="b.startsAt"
+                :submitting="submittingId === b.id"
+                @submit="submitReschedule(b.id, $event)"
+                @cancel="cancelReschedule"
+              />
+            </div>
+
             <div v-else class="flex flex-wrap justify-end gap-2 border-t border-(--color-border-soft) pt-3">
               <AppButton
                 data-testid="approve-request"
@@ -686,6 +754,17 @@ const groupedBookings = computed<BookingGroup[]>(() => {
               >
                 <template #icon><AppIcon name="check" :size="13" /></template>
                 تایید درخواست
+              </AppButton>
+              <AppButton
+                data-testid="reschedule-booking"
+                type="button"
+                variant="secondary"
+                size="sm"
+                :disabled="submittingId === b.id"
+                @click="openReschedule(b.id)"
+              >
+                <template #icon><AppIcon name="hours" :size="13" /></template>
+                تغییر زمان
               </AppButton>
               <AppButton
                 data-testid="reject-request"
@@ -885,7 +964,20 @@ const groupedBookings = computed<BookingGroup[]>(() => {
                 کارمند: <span class="font-semibold text-(--color-text)">{{ b.workerName }}</span>
               </p>
 
-              <div v-if="b.status === 'confirmed'" class="flex flex-wrap justify-end gap-2 border-t border-(--color-border-soft) pt-3">
+              <!-- Reschedule's own inline form pre-empts EVERY other status branch below --
+                   whichever status this card is in, opening it swaps the whole action row for
+                   the date/time picker rather than living alongside it (same one-at-a-time
+                   shape as the pending-request queue's reject/reschedule split above). -->
+              <div v-if="reschedulingId === b.id" class="space-y-2 border-t border-(--color-border-soft) pt-3">
+                <p class="text-xs text-(--color-text-muted)">زمان فعلی: <span class="tnum">{{ formatFullDateTime(b.startsAt) }}</span></p>
+                <RescheduleForm
+                  :current-starts-at="b.startsAt"
+                  :submitting="submittingId === b.id"
+                  @submit="submitReschedule(b.id, $event)"
+                  @cancel="cancelReschedule"
+                />
+              </div>
+              <div v-else-if="b.status === 'confirmed'" class="flex flex-wrap justify-end gap-2 border-t border-(--color-border-soft) pt-3">
                 <AppButton
                   data-testid="mark-completed"
                   type="button"
@@ -911,6 +1003,17 @@ const groupedBookings = computed<BookingGroup[]>(() => {
                   عدم حضور
                 </AppButton>
                 <AppButton
+                  data-testid="reschedule-booking"
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  :disabled="submittingId === b.id"
+                  @click="openReschedule(b.id)"
+                >
+                  <template #icon><AppIcon name="hours" :size="13" /></template>
+                  تغییر زمان
+                </AppButton>
+                <AppButton
                   data-testid="cancel-booking"
                   type="button"
                   variant="danger"
@@ -920,6 +1023,21 @@ const groupedBookings = computed<BookingGroup[]>(() => {
                   @click="cancelBooking(b.id)"
                 >
                   لغو
+                </AppButton>
+              </div>
+              <!-- pending_payment has no other action on this page today (the customer is the
+                   one completing payment) besides moving the slot it's holding. -->
+              <div v-else-if="b.status === 'pending_payment'" class="flex flex-wrap justify-end gap-2 border-t border-(--color-border-soft) pt-3">
+                <AppButton
+                  data-testid="reschedule-booking"
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  :disabled="submittingId === b.id"
+                  @click="openReschedule(b.id)"
+                >
+                  <template #icon><AppIcon name="hours" :size="13" /></template>
+                  تغییر زمان
                 </AppButton>
               </div>
               <!-- Sibling branch of the confirmed-only actions above, deliberately a pointer

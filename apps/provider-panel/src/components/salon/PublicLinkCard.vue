@@ -7,7 +7,7 @@
      it) -- generated client-side (qrcode package) since it's public, non-sensitive data;
      no backend endpoint needed. -->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import QRCode from 'qrcode'
 import { useApi } from '@/composables/useApi'
 import { useSalon } from '@/composables/useSalon'
@@ -16,6 +16,16 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import { buildEnv } from '@/utils/build-env'
+
+// Read-only capability check for THIS UI only -- the real enforcement for handle changes is
+// server-side (SalonsService.updateHandle's entitlements.customHandle gate, apps/api). QR has
+// no backend call to gate at all (it's rendered client-side below), so hiding the download
+// button here IS the actual, sufficient control for it. Absent/malformed reads as granted,
+// mirroring the registry's own customHandle/qrCode defaultValue: true (apps/api/src/
+// subscriptions/entitlement-keys.ts) -- so a plan with no opinion never loses a capability.
+interface SubscriptionEntitlementsResponse { resolvedEntitlements: Record<string, unknown> }
+const customHandleAllowed = ref(true)
+const qrCodeAllowed = ref(true)
 
 // Public, non-secret -- baked into the static bundle at build time (see this app's own
 // Dockerfile ARG/ENV and docs/deployment/DEPLOY.md), mirroring VITE_API_BASE's own pattern.
@@ -28,6 +38,16 @@ const HANDLE_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/
 const { apiFetch } = useApi()
 const { salon, refetch } = useSalon()
 const { push: pushToast } = useToast()
+
+onMounted(async () => {
+  // Defensive against a mocked apiFetch resolving to undefined in a test that doesn't stub
+  // this particular call (real useApi() always resolves a {data, error} object) -- fails
+  // open to "granted", same as an empty entitlements bag would.
+  const result = await apiFetch<SubscriptionEntitlementsResponse>('/salons/mine/subscription', { silent: true })
+  const entitlements = result?.data?.resolvedEntitlements ?? {}
+  customHandleAllowed.value = entitlements.customHandle !== false
+  qrCodeAllowed.value = entitlements.qrCode !== false
+})
 
 const publicUrl = computed(() => (salon.value ? `${CUSTOMER_APP_BASE}/salons/${salon.value.slug}` : ''))
 const qrUrl = computed(() => (publicUrl.value ? `${publicUrl.value}?source=qr` : ''))
@@ -123,13 +143,24 @@ async function saveHandle() {
         <AppButton type="button" variant="secondary" data-testid="copy-link-button" @click="copyLink">
           {{ copied ? 'کپی شد' : 'کپی لینک' }}
         </AppButton>
-        <AppButton type="button" variant="ghost" data-testid="edit-handle-button" @click="startEdit">
+        <AppButton
+          v-if="customHandleAllowed"
+          type="button"
+          variant="ghost"
+          data-testid="edit-handle-button"
+          @click="startEdit"
+        >
           <template #icon><AppIcon name="pencil" :size="15" /></template>
           ویرایش آدرس
         </AppButton>
       </div>
+      <!-- Read-only capability check for UI purposes only -- the real enforcement is
+           server-side (SalonsService.updateHandle's entitlements.customHandle gate). -->
+      <p v-if="!customHandleAllowed" data-testid="handle-locked-note" class="text-xs text-(--color-text-muted)">
+        ویرایش نشانی اختصاصی در پلن فعلی سالن شما فعال نیست. برای ارتقا با پشتیبانی تماس بگیرید.
+      </p>
 
-      <div v-if="qrDataUrl" class="flex flex-wrap items-center gap-4">
+      <div v-if="qrDataUrl && qrCodeAllowed" class="flex flex-wrap items-center gap-4">
         <img
           :src="qrDataUrl"
           alt="کد QR صفحه عمومی سالن"
@@ -140,6 +171,9 @@ async function saveHandle() {
           دانلود کد QR
         </AppButton>
       </div>
+      <p v-else-if="!qrCodeAllowed" data-testid="qr-locked-note" class="text-xs text-(--color-text-muted)">
+        کد QR در پلن فعلی سالن شما فعال نیست. برای ارتقا با پشتیبانی تماس بگیرید.
+      </p>
     </div>
 
     <div v-else class="space-y-3">

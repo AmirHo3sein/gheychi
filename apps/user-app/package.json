@@ -23,7 +23,7 @@
     "jalaali-js": "^2.0.0",
     "leaflet": "^1.9.4",
     "markdown-it": "^14.1.0",
-    "nuxt": "^4.4.0",
+    "nuxt": "^4.4.8",
     "pinia": "^3.0.4",
     "tailwindcss": "^4.3.2",
     "vue-multiselect": "^3.5.0"
