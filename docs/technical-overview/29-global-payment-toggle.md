@@ -31,11 +31,23 @@ places; both now AND in the live flag value:
   0 && onlinePaymentEnabled`. If an admin turns payment off while a request is pending, the
   salon's approval confirms it outright instead of opening a payment window for a capability
   that's no longer enabled. This falls through the *existing* zero-deposit branch of
-  `approve()` (already used for a genuinely-free manual-approval booking) — no new branch.
+  `approve()` (already used for a genuinely-free manual-approval booking) — with one addition:
+  when `!onlinePaymentEnabled && booking.walletAmountUsed`, `approve()` calls
+  `reverseWalletSpend()` (`booking-hold-release.util.ts`, the wallet half of
+  `releaseBookingHold` — coupon left in place) inside the same transaction as its status CAS.
+  The request staked wallet balance while collection was on; nothing will ever be captured
+  against it now, and `createHold`'s own flag-off path never takes that debit, so leaving it
+  would make the customer pay the full price in cash *and* lose real wallet credit.
 - **Wallet debit** (inside `createHold`): gated on the same flag. With payment collection off,
   there is no online deposit for a wallet credit to reduce, so the debit is skipped entirely —
   otherwise a customer's wallet balance would be silently spent for zero effect (the salon
   still collects the full price in cash, unaware any wallet credit was applied).
+- **Commission** (`InvoicingService.recordCommission`, on `completed`/`no_show`): keys off the
+  booking's `paid` `Payment` row, not `booking.depositAmount` — with the flag off there is no
+  Payment row, so no `financial_transactions` row is written. Before this, every flag-off
+  completed booking accrued commission and a salon "net payout" on money the platform never
+  held, feeding both monthly invoices and `GET /salons/mine/earnings`. See
+  [14-commission.md](./14-commission.md).
 
 The post-commit branch in `createHold` that decides "is there a payment session to open" was
 changed from checking `depositAmount === 0` to checking `booking.status === 'confirmed'` —
@@ -45,7 +57,21 @@ strictly more general (every pre-existing zero-deposit case already implied `sta
 
 No new booking status, no new migration on the `bookings` table, no change to cancellation,
 refund, or reconciliation logic — a `Payment` row's absence already degrades every one of
-those paths to a no-op, which is exactly the state a payment-disabled booking is in.
+those paths to a no-op, which is exactly the state a payment-disabled booking is in. Commission
+accrual did **not** originally share that property (it read `depositAmount` straight off the
+booking row) and was brought in line on 2026-09-03; it now degrades the same way, pinned by
+`test/booking-payment-toggle.e2e-spec.ts` alongside the `approve()` wallet-reversal case.
+
+## `depositPaid` — what the customer is told
+
+Customer booking responses (`GET /bookings/mine` list and `GET /bookings/:id` detail) carry
+`depositPaid: boolean` — `true` iff a `Payment` row for the booking reached `paid` (including
+one since moved on to `refund_pending`/`refunded`), computed in one batched `depositPaidFor()`
+query for the list. The user-app branches its deposit/refund copy on this (plus `refundStatus`
+and `walletAmountUsed`) rather than inferring "you paid a deposit" from `paymentExpiresAt`, so
+a flag-off booking — which has a `depositAmount` but no Payment — never shows a deposit as
+collected, and the salon page's deposit callout branches on the live `onlinePaymentEnabled`
+flag for the same reason.
 
 ## Frontend
 
@@ -66,3 +92,30 @@ salon copy instead of "payment happens after the salon approves").
 Flipping the flag back on needs no migration or backfill — the very next `createHold`/
 `approve()` call simply starts requiring payment again, exactly as it did before this flag
 existed.
+
+## Flipping the flag while bookings are in flight
+
+The flag is read live at `createHold` and again at `approve()`. What that covers, state by
+state — this is the part the original write-up left unstated, and one case was genuinely
+broken until 2026-09-03:
+
+| In-flight state | Turning it OFF | Turning it ON |
+|---|---|---|
+| `pending_approval` (no `Payment` row) | `approve()` re-reads the flag, confirms outright, and hands back any staked wallet debit (`reverseWalletSpend`). | The request was submitted under cash-at-salon copy and now gets a payment window. Accepted: no money is lost, and the customer still chooses whether to pay. |
+| `pending_payment` with a live gateway session | **The open window is honoured.** The callback still captures and confirms. But `retry-payment` refuses to mint a *new* authority (409). | n/a — only reachable with the flag on. |
+| `confirmed`-unpaid | Nothing retroactively creates a `Payment`; no cron does either. | Nothing retroactively bills it. |
+| `confirmed`-paid | Refund paths never consult the flag — correct, refunding must never be gated. | no-op. |
+
+**Why an open window is honoured rather than cancelled.** The customer has already been
+redirected to Zarinpal under a deadline that was snapshotted when the window opened.
+Refusing the callback mid-redirect would strand a real payment that the gateway has already
+taken, which is strictly worse than letting a window the platform itself opened run out.
+`BookingExpiryJob` retires the unpaid ones at their own deadline, so the state cannot linger.
+What the toggle *does* stop immediately is opening any **new** gateway session.
+
+A confirmation that skipped its payment window now records **why**: `booking_events`
+metadata carries `reason: 'online_payment_disabled'` when a real deposit was owed but not
+collected, versus `'zero_deposit'` when nothing was owed at all. Both used to be recorded as
+`zero_deposit`, which made the admin timeline state something false about every booking
+taken while the toggle was off.
+

@@ -15,7 +15,7 @@ A consolidated reference of every enforced business rule in the platform, groupe
 | `reminder_lead_hours` | 3 | `BookingReminderJob` |
 | `review_edit_window_hours` | 72 | `ReviewsService.assertWithinEditWindow()` |
 
-`PlatformConfigService`'s numeric getter **throws a raw, unguarded `Error`** (not a NestJS exception) if a key is ever missing — a deleted config row would 500 every request path that needs it, with no schema validation to catch this earlier. See [24-technical-debt.md](./24-technical-debt.md).
+`PlatformConfigService.onApplicationBootstrap()` refuses to start the process (raw `Error`, listing every problem) unless every required `platform_config` key and feature-flag row is present and valid; its per-key getters are defense-in-depth on top of that — a row deleted or corrupted directly in the DB after boot throws a typed `InternalServerErrorException` (`Missing platform_config key: …` / `Invalid platform_config value: …`) rather than a silently-wrong number. Values are Redis-cached for 60s (`CACHE_TTL_SEC`).
 
 ## Booking rules
 
@@ -33,10 +33,15 @@ A consolidated reference of every enforced business rule in the platform, groupe
 - A request whose appointment time has already passed can no longer be approved — its approval deadline is independent of the booking's own `startsAt`, so a request can outlive the slot it asked for.
 - A salon owner cannot decline a `pending_approval` request through the customer cancel route; they must use `reject()`, which requires a reason.
 - `retry-payment` refuses once the booking's payment deadline has passed, even before the expiry cron has caught up.
-- Online payment collection is gated by a global admin flag (`feature_online_payment_enabled`, seeded off). With it off, every deposit-owing booking (automatic-mode `createHold`, or manual-approval `approve()`) rides the same zero-deposit path a 100%-discounted booking already used — confirmed outright, no `Payment` row, deposit still recorded for reporting but never collected online. Wallet credit is never debited toward a deposit that won't be collected. See [29-global-payment-toggle.md](./29-global-payment-toggle.md).
+- While `feature_online_payment_enabled` is off, `POST /bookings/:id/retry-payment` 409s rather than minting a **new** gateway session. An **already-open** payment window is deliberately left alone: the customer was sent to Zarinpal under a live, snapshotted deadline, and refusing the callback mid-redirect would strand a real payment — `BookingExpiryJob` retires the unpaid ones at that deadline instead.
+- Online payment collection is gated by a global admin flag (`feature_online_payment_enabled`, seeded off). With it off, every deposit-owing booking (automatic-mode `createHold`, or manual-approval `approve()`) rides the same zero-deposit path a 100%-discounted booking already used — confirmed outright, no `Payment` row, deposit still recorded for reporting but never collected online. Wallet credit is never debited toward a deposit that won't be collected — and if a manual-approval request staked wallet balance while the flag was on and the flag is off by the time the salon approves, `approve()` hands the debit back in the same transaction (`reverseWalletSpend`, the wallet half of `releaseBookingHold`; the coupon stays consumed since it discounted a price the salon still collects in person). See [29-global-payment-toggle.md](./29-global-payment-toggle.md).
+- Customer booking responses (`GET /bookings/mine`, `GET /bookings/:id`) carry `depositPaid: boolean` — true iff a `Payment` row reached `paid`/`refund_pending`/`refunded` — so a frontend never infers "you paid a deposit" from a deadline field.
 - Booking deadlines (`approval_expires_at`, `payment_expires_at`) are **snapshotted onto the row** when the clock starts, never recomputed from live config, so a later admin config change cannot move a deadline someone is already counting on.
 - Cancellation refunds unconditionally if the *salon* cancels; refunds for a *customer* cancellation only if `(startsAt - now) >= cancellation_window_hours`.
+- **A forfeited deposit accrues platform commission — however it was forfeited.** A late customer cancellation (inside the window, so no refund) and a no-show are economically identical: the deposit stays with the salon minus the platform's cut. `cancel()` writes the `financial_transactions` row in the same transaction as its status flip, exactly as `updateStatus` does for a no-show. Previously only the no-show half did, so the platform silently kept 100% of every late-cancellation deposit and the salon's invoice/earnings never showed the money at all. A refunded cancellation accrues nothing, and `recordCommission` still no-ops without a captured `Payment` — so a never-collected deposit writes no row either way. Pinned by `test/forfeited-deposit.e2e-spec.ts`.
 - A booking can only be marked `completed`/`no_show` from `confirmed`, and only by the salon owner.
+- **A no-show cannot be recorded before the appointment could have been missed.** `no_show_grace_minutes` (platform config, seeded **30**, admin-only, `0..1440`) gates it: `updateStatus` refuses `no_show` until `startsAt + grace`. Without this a salon could mark a booking days ahead as a no-show the moment its deposit was captured — forfeiting the money while the customer was still inside their own cancellation window, and with no route back since `no_show` is not a cancellable status. Deliberately **not** per-salon and never salon-editable: it is the customer's protection *against* the salon, the same reasoning that keeps the approval/payment timeouts out of `UpdateSalonDto`. A completion is deliberately *not* time-guarded — finishing early is legitimate and costs the customer nothing.
+- The customer is notified when a no-show is recorded (`notifyNoShow`) — it is the one lifecycle event where they lose money without having asked for anything, and their only cue to dispute it.
 - Every state transition uses a conditional CAS `UPDATE ... WHERE status = <expected>` — a lost race always produces a 409, never a silent double-apply. This idiom recurs across the codebase (salon resubmit, coupon/content moderation, blog publish/unpublish, report resolve) and should be treated as the house style for any new state-transition code. A booking-creation 409 now also carries a stable `BOOKING_UNAVAILABLE`/`WORKER_UNAVAILABLE` code (`booking-error-codes.ts`) alongside the status — see [15-api-reference.md](./15-api-reference.md).
 
 ## Availability rules
@@ -44,7 +49,7 @@ A consolidated reference of every enforced business rule in the platform, groupe
 - 14-day rolling window (`AVAILABILITY_WINDOW_DAYS`).
 - Slots are a fixed grid at exact multiples of the service's duration, starting at each working-hour range's open time — never staggered.
 - Iran is treated as a fixed UTC+3:30 offset year-round (no DST since 2022) — see [10-scheduling.md](./10-scheduling.md) for the full wall-clock↔instant conversion algorithm.
-- A `schedule_exceptions` row with `isClosed=true` blacks out that entire calendar date.
+- A `schedule_exceptions` row blacks out its `date` for the whole salon when `worker_id` is NULL, or for that one worker only when set (salon and every other worker unaffected); with `start_time`/`end_time` set it removes only that `[startTime, endTime)` window on the date, otherwise the whole day. The provider-panel's `HoursView` lists/deletes only whole-salon closures (`workerId === null`); per-worker days off live in `TeamView`.
 - A worker ineligible for the requested service returns zero availability outright, rather than slots that would fail at booking time.
 
 ## Discount & coupon rules
@@ -68,6 +73,7 @@ A consolidated reference of every enforced business rule in the platform, groupe
 - A `first_paid_booking` reward requires a 72-hour (config) holdback from `payments.paid_at` before granting, to close the pay→reward→refund fraud loop.
 - `max_referrals_per_referrer`, when set, is enforced under a row lock on the referrer's own code row — verified adversarially to hold under concurrent redemption attempts.
 - Reward granting is idempotent per `(referral, beneficiary_role)`, DB-backstopped by a unique constraint.
+- R6 — a salon-scoped referral (`referrals.salon_id` non-null, i.e. a salon_owner/worker referrer) qualifies only on a booking **at that salon**. Enforced inside `tryGrantReward` itself, not just in the hourly sweep's SQL, because the `completed` trigger calls in directly from `BookingsService.updateStatus` with whatever booking just completed; without it a booking at an unrelated salon paid the referring salon's reward and froze the referral as `reward_granted`.
 - On a confirmed refund, a wallet-kind reward is clawed back (capped, per the never-negative rule); a coupon-kind reward is voided **only if still unredeemed** — an already-redeemed discount coupon is explicitly, deliberately not reversible.
 
 ## Review rules
@@ -102,7 +108,9 @@ A consolidated reference of every enforced business rule in the platform, groupe
 - The default plan itself cannot be deleted, and its `is_default` flag cannot be unset without moving it to another plan first — the platform must never be left with zero resolvable default.
 - A plan's `key` (internal identifier) is set at creation only — never editable, since later phases branch on it in code.
 - A salon's resolved entitlements are its active plan's entitlements with any admin-set salon-specific override merged in key-by-key (override wins); a canceled subscription resolves to the default plan alone, with no override applied.
-- Entitlement enforcement does not exist yet — `SubscriptionsService.getEntitlements()` is a resolution seam only, not wired into any feature gate. See [30-subscription-plan-foundation.md](./30-subscription-plan-foundation.md).
+- The default plan can never be inactive: `PlansService.update` refuses to set `isActive=false` on the default plan or `isDefault=true` on an inactive plan (409). `createDefaultSubscription` reads `isDefault` only while `assignPlan` refuses inactive plans — the two must never disagree, or a new salon would be born on a plan no admin could assign.
+- Cancelling a subscription (`cancel()`) also clears `entitlementOverrides`, so a later `assignPlan` never resurrects stale per-salon overrides from a previous plan.
+- `SubscriptionsService.getEntitlements()` is the single resolution seam; each feature wires its own key as it needs one rather than through a generic gate. Today exactly one key is enforced — `smsMonthlyQuota` (below). See [30-subscription-plan-foundation.md](./30-subscription-plan-foundation.md).
 
 ## Public handle & attribution rules
 
@@ -121,14 +129,20 @@ A consolidated reference of every enforced business rule in the platform, groupe
 ## Salon SMS + quota rules
 
 - `entitlements.smsMonthlyQuota` is a plain number resolved through the existing entitlement engine; a missing or non-numeric value means **0 (blocked)**, never unlimited — the opposite default from the referral system's `maxReferralsPerReferrer: null → unlimited` convention, deliberately, since an SMS quota bounds a real per-message platform cost.
-- Usage is derived, not stored — `COUNT(*)` of `salon_sms_messages` rows within the current Jalali calendar month, the same period boundary `MonthlyInvoiceGenerationJob` uses. There is no separate counter to reset or drift out of sync.
+- Usage is derived, not stored — `COUNT(*)` of `salon_sms_messages` rows within the current Jalali calendar month as a half-open `[periodStart, periodEnd)` range (`And(MoreThanOrEqual, LessThan)`), the same `jalaliMonthBounds` and boundary convention every invoicing query uses. There is no separate counter to reset or drift out of sync.
+- Only an `approved` salon may send (409 otherwise) — the sender is the platform's shared number, so an unvetted `pending` salon must never be able to put words on it.
+- The wire text is always `"{salon.name}: {message}"` — the salon name prefix is delivery framing (anti-impersonation on a shared sender), not content; the logged `salon_sms_messages.message` stays the owner's own unprefixed text.
 - A send is quota-checked, then actually sent, then logged — in that order, so a failed send never consumes quota. Unlike every automated notification SMS in this codebase, a real send failure is NOT swallowed; it's the owner's own primary action, so it must surface as a real error.
+- The worker-added invite SMS (`salon-workers.controller.ts`) is likewise sent only when the salon is `approved`; the roster row is created either way. It is outside the quota (an automated platform notice, not owner free text), which is exactly why the approval gate is the only thing standing between a self-registered `pending` salon with an arbitrary name and attacker-worded SMS to any number.
 
 ## Subscription coupons + billing rules
 
 - Subscription coupons are a separate entity from the booking `Coupon` (the redeeming identity is the salon, not a user); billing stays architecture-only, so an admin manually records what was actually paid/comp'd rather than any real payment gateway charging a subscription.
+- A billing period can only be created for a salon whose subscription is `active` (409 otherwise) — a canceled subscription's nominal plan is not in force, so there is nothing to bill.
 - A `SubscriptionBillingPeriod`'s `baseAmountToman` is the plan's price frozen at creation time — a later plan-price change never retroactively alters an existing period.
-- A billing period is only resolvable (paid/comped/void) from `pending` — a settled period is never overwritten; a genuine correction is a fresh period, not an edit.
+- A billing period is only resolvable (paid/comped/void) from `pending`, as a real compare-and-swap (`UPDATE ... WHERE status = 'pending'`, 409 on zero rows) scoped to the salon in the route (`{id, salonId}` — another salon's period id 404s) — a settled period is never overwritten; a genuine correction is void-then-fresh-period, not an edit.
+- Voiding a coupon-discounted period deletes its `subscription_coupon_redemptions` row, handing back the salon's one-per-code redemption and a capped coupon's slot, so the void-then-recreate correction path works even when a coupon was applied.
+- One subscription-coupon redemption per salon per code; a capped coupon's count is checked under a row lock on the coupon (same pattern as booking coupons).
 - No cron ever creates a billing period — every one is admin-created, deliberately, so nothing about this scaffolding reads as real automated billing.
 
 ## Category rules
@@ -141,13 +155,15 @@ A consolidated reference of every enforced business rule in the platform, groupe
 
 - Gender filter (`women`/`men`) is mandatory and applied unconditionally — no result ever bypasses it.
 - Default search radius is 15km (raised from an original 5km after real salons were found being silently excluded in large metros).
-- Results are hard-capped at 50, with no pagination — an explicit MVP cut.
+- Results are cursor-paginated (`{items, nextCursor, hasMore}`, `DEFAULT_PAGE_SIZE = 50`) with a `MAX_FETCH_ROWS = 1000` safety ceiling past which `hasMore` is forced `false` — see [22-performance.md](./22-performance.md) for why page *N* costs *N* times page 1.
+- `priceMin`/`priceMax` must be integers in `0..MAX_PRICE_TOMAN` (`common/money-limits.ts`, 1,000,000,000) — the same ceiling `CreateServiceDto`/`UpdateServiceDto.price` enforce; a fractional/`Infinity`/`NaN` bound used to pass `@Min` and then 500 on the `::bigint` bind.
 - The minimum-price figure shown per salon reflects the *post-discount* minimum across active services, computed with the exact same rounding rule as checkout (`applyDiscount`) so the two numbers can never disagree by a rounding unit.
 
 ## Commission & invoicing rules
 
-- Commission accrues only against the online **deposit**, never the full service price.
+- Commission accrues only against money the platform **actually captured online** — `recordCommission` reads the booking's `paid` `Payment` row and uses `payment.amount` as gross; no paid Payment (flag-off booking, fully wallet-covered, fully discounted, or never collected) → no ledger row at all, never a zero-amount one. It never trusts `booking.depositAmount`, which with `feature_online_payment_enabled` off is non-zero even though nothing was collected — accruing on it invoiced salons a "net payout" of money the platform never held.
 - Commission rate is frozen at the moment of accrual — a later config change never retroactively affects an already-accrued row.
+- Recording a bank-transfer payment against an invoice (`recordPayment`) row-locks the invoice (`pessimistic_write`) before the read-then-add on `paidTotal`, and 409s on a `void` invoice.
 - An invoice is only generated once its Jalali month has fully closed; it is always recomputed from scratch (never incrementally) from its linked ledger rows.
 - Settlement is entirely manual — no automated payout exists anywhere in the system.
 

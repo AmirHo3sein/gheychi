@@ -73,6 +73,15 @@ This is deliberately the *existing* mechanism, not a new one: `releaseBookingHol
 "never captured" case. No new reversal logic exists, which is why a rejected request cannot burn a
 customer's single-use coupon.
 
+One approval-side case is a *partial* release: `approve()` re-reads the global online-payment flag
+live ([29](./29-global-payment-toggle.md)). If it was on when the customer staked wallet balance at
+request time but is off when the salon approves, the booking confirms outright with no `Payment` row
+and nothing will ever be captured — so `approve()` calls `reverseWalletSpend()` (the wallet half of
+`releaseBookingHold`, same conditional-UPDATE idempotency guard, in `booking-hold-release.util.ts`)
+inside the same transaction as its status CAS. The coupon is deliberately *not* released there: it
+discounted the price the salon will still collect in person, so it was genuinely used. Pinned by
+`test/booking-payment-toggle.e2e-spec.ts`.
+
 Commission and referral rewards are untouched: commission accrues only at `completed`/`no_show`, and
 `first_paid_booking` requires a genuinely `paid` payment. Neither can fire for a request.
 

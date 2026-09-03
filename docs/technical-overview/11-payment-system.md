@@ -112,7 +112,11 @@ booking already `expired` by the time reconciliation runs. This is **handled, no
 
 ## What refund does *not* reverse
 
-A refund reverses the referral reward tied to the booking (if any), but **does not** give back a spent coupon redemption or a wallet-balance debit once payment had actually captured — that reversal only happens via `releaseBookingHold()`, which only runs on the "never captured" paths (expired hold, cancel-while-unpaid, failed callback, reconciliation verify-failure). This asymmetry is explicit, documented, unbuilt-by-choice — see [24-technical-debt.md](./24-technical-debt.md).
+A refund reverses the referral reward tied to the booking (if any), but **does not** give back a spent coupon redemption or a wallet-balance debit once payment had actually captured — that reversal only happens via `releaseBookingHold()` (and its wallet-only half, `reverseWalletSpend()`), which only run on the "never captured" paths (expired hold, cancel-while-unpaid, failed callback, reconciliation verify-failure, rejected/expired approval request, and `approve()` when the global online-payment flag was turned off after the request staked wallet balance — see [29](./29-global-payment-toggle.md)). This asymmetry is explicit, documented, unbuilt-by-choice — see [24-technical-debt.md](./24-technical-debt.md).
+
+## When no Payment row exists at all
+
+With `feature_online_payment_enabled` off ([29-global-payment-toggle.md](./29-global-payment-toggle.md)), a deposit-owing booking is confirmed with **no `Payment` row** — `depositAmount` is still stored for reporting. Every path in this document is keyed off the Payment row, so all of them (callback, reconciliation, refund, cancellation refund, and — since 2026-09-03 — commission accrual, which reads the `paid` Payment's `amount` rather than `depositAmount`) degrade to a no-op for such a booking. Customer-facing responses expose `depositPaid: boolean` (true iff a Payment reached `paid`/`refund_pending`/`refunded`) so the user-app never presents an uncollected `depositAmount` as money paid.
 
 ## API surface
 
@@ -120,6 +124,7 @@ A refund reverses the referral reward tied to the booking (if any), but **does n
 POST /bookings                          — createHold, mints the payment session (see 09-booking-engine.md)
 POST /bookings/:id/retry-payment        — fresh session for a still-pending_payment booking
 GET  /payments/callback                 — Zarinpal redirect target (public)
+GET  /bookings/mine, /bookings/:id      — carry depositPaid (+ refundStatus on detail)
 ```
 
 ## Related documents

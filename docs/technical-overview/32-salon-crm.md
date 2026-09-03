@@ -94,3 +94,69 @@ No customer-initiated contact from the CRM (no in-app messaging — Phase 6 cove
 SMS separately), no CSV export, no customer merge/dedup (a customer is identified by their
 `User` row, and duplicate accounts are an existing, unrelated platform concern), no
 admin-side view of a salon's CRM data (this is provider-only, mirroring earnings/reviews).
+
+## Reworked 2026-09-03
+
+**The customer list is a real list now.** `GET /salons/mine/customers` takes `q` (free text
+over name/phone), `segment`, `sort`, `page`/`pageSize` and returns
+`{items, total, page, pageSize}`. Previously it took only `salonId` and returned everything
+up to a 2000-row ceiling, with no search on the client either — a salon with hundreds of
+customers had no way to find one. `pageSize` now bounds the result by construction, so that
+ceiling is gone.
+
+Two details worth knowing:
+
+- **`q` is escaped.** `escapeLikePattern`/`likeContains` (`common/like-pattern.ts`) escape
+  `\ % _` and every query writes `ESCAPE '\'` explicitly. No escape helper existed anywhere
+  in the repo before this; three other admin search endpoints still interpolate raw input,
+  which is a nuisance (full scans on a `%`) rather than an injection, since the value is
+  still a bound parameter.
+- **Segment is derived in SQL**, inside the same CTE that filters and paginates, so the
+  filter, the page and the total can never disagree about what segment a customer is in.
+
+**Visit semantics were wrong and are now explicit.** `lastVisitAt` was `MAX(starts_at)` over
+*every* status, so "last visit" could be a date that had not happened yet. A **visit** is now
+`starts_at < now() AND status IN ('confirmed','completed')` — the looser of the two candidate
+definitions, deliberately: marking completion is a manual action many salons never perform,
+and requiring it would make those salons' entire customer base read as never-visited and
+then `lapsed`. `no_show` is excluded (a recorded non-visit). `firstVisitAt` and `visitsCount`
+are new; `bookingsCount` still counts every status and the UI now says so.
+
+**The dashboard has metrics.** `DashboardView` never called the summary endpoint that
+existed. It now shows a selectable window (7/30/90 days) with a previous-period comparison,
+distinct/new/returning customers, completed/cancelled/no-show counts, average booking value,
+repeat rate, top services and workers, and busiest weekday/hour. Busiest-time uses
+`AT TIME ZONE 'Asia/Tehran'` — Iran's half-hour offset makes a UTC `EXTRACT(HOUR)` wrong,
+not merely shifted. A delta against an empty previous period renders as "no data", never a
+fake 0%.
+
+**Earnings labels stopped overstating revenue.** `totalCollected` ("مجموع دریافتی") is
+`SUM(financial_transactions.gross_amount)` — the online **deposit** only, and only for
+bookings that reached completed/no-show/forfeited. Nothing said "deposit", so a salon
+under-read its revenue and could not reconcile it against the CRM tile. Relabelled
+("مجموع بیعانهٔ آنلاین") with an explanatory note. **No number changed** — only what it is
+called.
+
+## Per-salon funnel
+
+`GET /salons/mine/funnel` (`SalonOwnerGuard`-scoped) returns per-stage counts and conversion
+rates over `analytics_events`, whose `salon_id` column had been written and indexed since
+Phase 5 and read by nothing.
+
+Stages: `salon_profile_viewed` → `booking_started` → `payment_succeeded` →
+`booking_confirmed`. Profile views are emitted by a global interceptor
+(`analytics/salon-profile-view.interceptor.ts`) matching only the public
+`GET /salons/:slug` — server-side, so it catches the SSR fetch that serves every first
+visit, which a client beacon would miss. It counts views, not uniques.
+
+Two honesty rules the implementation keeps:
+
+- A conversion is `null`, never `0`, when the previous stage has no data — "no denominator"
+  must not render as "0% of your viewers booked".
+- No backfill. `payment_succeeded` only started carrying `salonId` on 2026-09-03, so its
+  counts are meaningful only for windows after that date; earlier rows have
+  `salon_id = NULL` and are invisible rather than misattributed.
+
+Stages with no emit site at all (approved/rejected, completed, reviewed) are simply absent
+rather than reported as a hard zero.
+

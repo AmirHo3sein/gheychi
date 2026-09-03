@@ -36,11 +36,16 @@ export class AdminSubscriptionBillingController {
   @Patch(':periodId/status')
   @UseInterceptors(AuditInterceptor)
   @AuditAction('subscription.billing-period.status.set', 'subscription-billing-period', 'periodId')
-  async setStatus(@Param('periodId', ParseUUIDPipe) periodId: string, @Body() dto: SetBillingPeriodStatusDto, @Req() req: Request) {
-    const before = await this.periodsRepo.findOneBy({ id: periodId });
+  async setStatus(
+    @Param('salonId', ParseUUIDPipe) salonId: string,
+    @Param('periodId', ParseUUIDPipe) periodId: string,
+    @Body() dto: SetBillingPeriodStatusDto,
+    @Req() req: Request,
+  ) {
+    const before = await this.periodsRepo.findOneBy({ id: periodId, salonId });
     if (before) req.auditBefore = { status: before.status };
 
-    const period = await this.billing.setStatus(periodId, dto.status);
+    const period = await this.billing.setStatus(salonId, periodId, dto.status);
     req.auditAfter = { status: period.status };
     return period;
   }

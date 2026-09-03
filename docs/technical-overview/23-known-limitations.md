@@ -14,7 +14,7 @@ These are **deliberate** scope cuts — documented as such in code comments, the
 
 ## Referrals
 
-- No worker SMS invite flow — adding a worker requires already knowing a phone number that resolves via `findOrCreateByPhone`.
+- No invite-token/link flow for workers — adding a worker requires already knowing a phone number that resolves via `findOrCreateByPhone`. The worker *is* SMS-notified when added ("you were added as staff by «salon», log in with this number"), but only once the salon is `approved`; there is no accept/decline step, the roster row exists the moment the owner adds it.
 - Wallet balance is accrue-only from the platform's side, spend-only at checkout — there is no cash-out/withdrawal flow.
 - No referral campaigns, tiers, or multi-level referrals.
 - No IP/device fraud-signal capture beyond the redemption-eligibility rules already enforced.
@@ -54,7 +54,8 @@ These are **deliberate** scope cuts — documented as such in code comments, the
 
 - Migrations are never run automatically — always a manual `docker compose exec api pnpm migration:run` step, by design (avoids an unreviewed schema change firing on every container restart).
 - Daily full Postgres backups only — no point-in-time recovery (WAL archiving), an accepted up-to-24h data-loss window.
-- No automated alerting on backup failure — a failed backup is only discoverable by manually checking container logs (mirrors the same accepted-cut philosophy as payment-reconciliation error handling).
+- Backup-failure alerting is in place (`backup.sh` `report_backup()` → `POST /api/internal/backup-report` → `AlertsService` `backup-failed`, plus the 4-hourly `BackupStalenessCheckJob` raising `backup-stale` when no success has landed in 27h — see [18-background-jobs.md](./18-background-jobs.md)); the remaining cut is that the reporting POST is best-effort and never flips a successful backup's own exit code, and there is no restore drill automation — restore is a documented manual procedure in `docs/deployment/DEPLOY.md`.
+- Uploaded images in production (`STORAGE_PROVIDER=local`) live on a single named Docker volume (`api_uploads`) on the one host — no S3 replication, so the daily Postgres dump does not cover them; losing the host loses the images.
 
 ## General
 
@@ -66,3 +67,41 @@ These are **deliberate** scope cuts — documented as such in code comments, the
 
 - [24-technical-debt.md](./24-technical-debt.md) — gaps that look unintentional rather than deliberate
 - [25-future-improvements.md](./25-future-improvements.md) — reserved seams already visible in the schema/code for several of the items above
+
+## Closed 2026-09-03 (production-hardening sprint)
+
+Previously listed here, now genuinely implemented — do not re-report these as gaps:
+
+- **Rescheduling exists.** Both customer- and salon-initiated; see
+  [09-booking-engine.md](./09-booking-engine.md).
+- **Admin bookings list exists** (`GET /admin/bookings`, read-only) with a real admin-panel
+  page, which finally makes the booking timeline reachable without hand-typing a UUID.
+- **A provider is now told about a new booking request** while sitting in the panel
+  (visibility-aware polling with new-request detection). Still polling, not push:
+  provider-panel is a plain SPA with no service worker, so `POST /push/subscribe` is never
+  called for an owner and every owner-directed push resolves to zero subscriptions. Adding
+  a service worker there remains the real fix.
+- **Salon handles survive a rename** (history + permanent redirect + reservation).
+- **A salon owner can see their own referral code and wallet** from the provider panel.
+- **Uploaded files are backed up.**
+- **The frontends report production errors.**
+
+## Still open, deliberately
+
+- **Provider push** — see above; polling only, and only while the panel is open.
+- **Redis has no `requirepass`.** Not publicly exposed, but a compromised sibling container
+  on the internal Docker network can read live OTP codes.
+- **Every container receives the full shared `.env`**, so user-app's SSR process and Caddy
+  hold credentials they never use.
+- **Subscription billing remains architecture-only** — no plan billing interval (the column
+  is literally `monthly_price_toman`, so a quarterly period silently bills one month), no
+  applicable-plans restriction on subscription coupons, and no real charge flow. Unchanged
+  by this sprint and still the owner's explicit decision.
+- **Entitlement keys beyond `smsMonthlyQuota` are registered but not enforced** — the
+  registry ships them with behaviour-preserving defaults, so gating any one of them is now a
+  one-line change at the point of use rather than a design question. See
+  [35-entitlement-engine.md](./35-entitlement-engine.md).
+- **The salon-page JSON-LD is still thin** (`url`, `image`, `geo`, opening hours). A
+  ready-to-apply snippet is in the sprint report; `telephone` is impossible — `Salon` has no
+  phone column.
+

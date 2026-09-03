@@ -8,6 +8,7 @@ Salon discovery & booking marketplace (Iran). Spec: `docs/superpowers/specs/2026
 - `apps/user-app` — Nuxt 4, mobile-first PWA (Plan 4)
 - `apps/provider-panel` — Vue 3 SPA, salon-owner back office (Plan 5)
 - `apps/admin-panel` — Vue 3 SPA, platform admin back office (Plan 6)
+- `apps/e2e-cross-app` — Playwright-only package (no app of its own) that boots api + user-app + provider-panel together and drives one booking across both frontends
 
 ## Getting started
 
@@ -20,11 +21,11 @@ pnpm dev:api                  # http://localhost:3002/api/health
 ```
 
 ```bash
-cp apps/user-app/.env.example apps/user-app/.env   # set NUXT_PUBLIC_NESHAN_API_KEY and NUXT_PUBLIC_VAPID_PUBLIC_KEY for map/push features
+cp apps/user-app/.env.example apps/user-app/.env   # set NUXT_PUBLIC_VAPID_PUBLIC_KEY for push
 pnpm dev:user-app                                   # http://localhost:3003
 ```
 
-`NUXT_PUBLIC_VAPID_PUBLIC_KEY` must be the public half of the same keypair as the API's `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` (`.env.example` at the repo root) — generate one pair with `npx web-push generate-vapid-keys` and split the two halves between the two `.env` files. Map and push both degrade gracefully without real keys (map view fails silently back to list view; push subscribe UI just won't do anything meaningful) — neither blocks the rest of the app.
+`NUXT_PUBLIC_VAPID_PUBLIC_KEY` must be the public half of the same keypair as the API's `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` (`.env.example` at the repo root) — generate one pair with `npx web-push generate-vapid-keys` and split the two halves between the two `.env` files. Push degrades gracefully without real keys (the subscribe UI just won't do anything meaningful). Maps need no key at all (Leaflet + CARTO's free tiles).
 
 (Ports are non-default on this machine — see the "Port note" in `docs/superpowers/plans/2026-07-04-plan-1-foundation-backend-core.md`'s Task 2 section if setting up fresh elsewhere and `.env.example`'s values need adjusting for local port conflicts.)
 
@@ -35,7 +36,7 @@ pnpm --filter @gheychi/api test        # unit
 pnpm --filter @gheychi/api test:e2e    # e2e (needs docker services)
 ```
 
-Each frontend app also has its own Playwright e2e suite (`pnpm --filter @gheychi/user-app test:e2e`, and the same for `provider-panel`/`admin-panel`) against a real browser + a real running API. These reset their own `gheychi_e2e` database on every run — `docker/postgres-init/` provisions it automatically on a **fresh** `docker compose up -d` volume; if your `postgres` volume predates this (an existing checkout, `pgdata` already initialized), create it once manually:
+Each frontend app also has its own Playwright e2e suite (`pnpm --filter @gheychi/user-app test:e2e`, and the same for `provider-panel`/`admin-panel`) against a real browser + a real running API, and `pnpm --filter @gheychi/e2e-cross-app test:e2e` runs the cross-app suite (api + user-app + provider-panel booted together, one booking driven from a customer context and an owner context). All four run in CI. These reset their own `gheychi_e2e` database on every run — `docker/postgres-init/` provisions it automatically on a **fresh** `docker compose up -d` volume; if your `postgres` volume predates this (an existing checkout, `pgdata` already initialized), create it once manually:
 
 ```bash
 docker compose exec postgres psql -U gheychi -d postgres -c "CREATE DATABASE gheychi_e2e;"
@@ -52,7 +53,7 @@ docker compose exec postgres psql -U gheychi -d gheychi_e2e -c "CREATE EXTENSION
 
 **Payments run against `MockPaymentGateway` by default** (`PAYMENT_GATEWAY=mock` in `.env`/`.env.test`) — no real Zarinpal account is needed for local dev or tests. To use the real gateway, set `PAYMENT_GATEWAY=zarinpal`, `ZARINPAL_MERCHANT_ID`, and `ZARINPAL_ACCESS_TOKEN` (panel-issued, required for refund API auth — the API refuses to start in zarinpal mode without it), and **verify the payment contract against Zarinpal's sandbox first** — see the note at the top of `docs/superpowers/plans/2026-07-04-plan-2-booking-payments.md`. Refunds cannot be sandbox-tested at all — see `docs/deployment/ZARINPAL-REFUND-VERIFICATION.md` before enabling real refunds.
 
-Two background jobs run every 1 and 5 minutes respectively: expiring abandoned booking holds (`booking_hold_ttl_minutes`, seeded at 15) and reconciling payments whose Zarinpal callback never arrived (fixed 20-minute stale threshold). The 20-minute threshold is intentionally longer than the default hold TTL, so a genuinely-late-but-successful payment commonly finds its booking already expired by the time reconciliation runs — this is handled (the payment is still marked `paid`, the booking is not resurrected into a possibly-rebooked slot), not a bug, but the two numbers are tuned relative to each other and shouldn't be changed independently without re-checking that relationship.
+The two original background jobs run every 1 and 5 minutes respectively: expiring abandoned booking holds (`booking_hold_ttl_minutes`, seeded at 15) and reconciling payments whose Zarinpal callback never arrived (fixed 20-minute stale threshold). Eleven cron jobs exist today (`grep -rn "@Cron(" apps/api/src`) — approval-request expiry, reminders, refund retry, referral grant/expiry, story cleanup, storage reconciliation, monthly invoicing, backup staleness — all through the same `CronJobRunner` lock/alert wrapper. The 20-minute threshold is intentionally longer than the default hold TTL, so a genuinely-late-but-successful payment commonly finds its booking already expired by the time reconciliation runs — this is handled (the payment is still marked `paid`, the booking is not resurrected into a possibly-rebooked slot), not a bug, but the two numbers are tuned relative to each other and shouldn't be changed independently without re-checking that relationship.
 
 **Refunds are real as of Plan 8.** Cancelling a confirmed booking (salon cancel, or customer cancel outside the window) triggers an actual Zarinpal refund (`/pg/v4/payment/refund.json`, authenticated with a panel-issued access token): the payment moves `refund_pending → refunded` with the gateway's refund reference stored, a retry cron self-heals gateway failures, and the reconciliation job's "captured after the booking died" edge case now queues an automatic refund instead of a manual-review log. As of Plan 9, those operator signals page for real: every money-critical condition (stuck refund, refused refund, captured money on a dead booking, orphaned authority) becomes an in-app admin notification, and critical ones SMS `ALERT_ADMIN_PHONE`, deduped per condition so the 5-minute crons can't storm. The remaining caveat is bigger than a missing sandbox run: 2026-07-17 research found the implemented `refund.json` endpoint matches Zarinpal's *legacy, de-documented* REST contract (the current official refund API is GraphQL `AddRefund`), and no sandbox covers refunds — execute `docs/deployment/ZARINPAL-REFUND-VERIFICATION.md` against production before enabling real refunds.
 
@@ -75,7 +76,7 @@ A Vue 3 + Vite SPA (`apps/provider-panel`) covering onboarding, dashboard, booki
 
 - `POST /api/salons/mine/photos` — upload a salon photo (multipart `file` field, jpeg/png/webp, 5MB max); the first photo uploaded is automatically marked cover. `PATCH /api/salons/mine/photos/:id` (isCover/sortOrder), `DELETE /api/salons/mine/photos/:id`.
 - Photo storage goes through a swappable `StorageProvider` (`STORAGE_PROVIDER=local|s3`, same pattern as `SmsProvider`/`PaymentGateway`/`PushProvider`) — `local` writes under `apps/api/uploads/` and serves it at `/uploads/*`; `s3` talks to any S3-compatible bucket via `S3_ENDPOINT`/`S3_BUCKET`/`S3_REGION`/`S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY`/`S3_PUBLIC_BASE_URL`.
-- `GET /api/salons/mine/earnings` — `{ totalCollected, commissionPercent, commissionAmount, netPayout }`, computed from `paid` payments on the caller's own bookings. No new payment infrastructure; purely aggregates existing `Booking`/`Payment` rows.
+- `GET /api/salons/mine/earnings` — `{ totalCollected, commissionPercent, commissionAmount, netPayout }`. Originally aggregated `paid` payments live; it now sums the append-only `financial_transactions` commission ledger (one row per completed/no-show booking, written only when a `paid` Payment exists — so nothing accrues on money the platform never collected), which is also what monthly invoices are built from.
 - CORS now allows both `FRONTEND_BASE_URL` (user-app) and `PROVIDER_APP_BASE_URL` (provider-panel) as credentialed origins.
 - No salon-approval workflow was added by this plan — that gap is closed by Plan 6 below.
 
@@ -83,7 +84,7 @@ A Vue 3 + Vite SPA (`apps/provider-panel`) covering onboarding, dashboard, booki
 
 The first real UI: a Nuxt 4 SSR PWA covering login, discovery, salon profiles, booking, my bookings, and profile — plus an admin-controlled "featured salon" placement and push/SMS appointment notifications. Full design: `docs/superpowers/specs/2026-07-05-plan-4-user-app-frontend-design.md`.
 
-**New public (unauthenticated) surface, specifically for SEO:** salon profile pages (`/salons/:slug`) are the one part of this app reachable without logging in — they're SSR-rendered with JSON-LD/OG metadata as Google landing pages, matching the original marketplace spec's intent. Every other route requires a session.
+**New public (unauthenticated) surface, specifically for SEO:** salon profile pages (`/salons/:slug`) were the one part of this app reachable without logging in — SSR-rendered with JSON-LD/OG metadata as Google landing pages, matching the original marketplace spec's intent. Today `isPublicRoute()` (`app/utils/route-guard.ts`) also opens `/` (discovery) and `/blog*`; every other route requires a session.
 
 **Featured salons ("تبلیغ" / Ad badge):** `PATCH /api/admin/salons/:id/featured` (admin-only) flags a salon as featured with an optional expiry. Featured, still-approved, still-filter-matching salons are boosted to the top of `/api/search` results (capped at 2 per query) and rendered with a distinct badge — this can never bypass the gender/city/category filters every other result already goes through. There's no self-serve payment flow yet; an admin sets the flag directly (via the API, or — as of a later cleanup — `admin-panel`'s `/featured` page; this originally shipped as a bare-bones `/admin/featured` page inside `user-app` itself, since Plan 6's admin-panel didn't yet have featured-salon management, and was relocated once it did).
 
@@ -102,7 +103,7 @@ A new Vue 3 + Vite SPA (`apps/admin-panel`, port 3005) for platform staff, same 
 - **Review moderation** — a filterable list (salon/status/rating) so an admin can find the review a report was about and flip it published ↔ rejected via the existing `PATCH /api/admin/reviews/:id`.
 - **Categories** — create and rename service categories. ~~No delete (categories are FK'd from `salon_services`, so removing one in use needs a restrict-or-cascade decision left for later).~~ Closed by Plan 7: restrict-style delete shipped.
 - **Users & salons** — search/filter users (phone, name, role, join-date range) and salons (name, city, status, gender target), with suspend/unsuspend on both. ~~Suspending a user blocks their login only — it does not cascade to their salon.~~ Closed by Plan 7: suspension now cascades to the approved salon with cause tracking.
-- **Platform config** — a generic key/value editor over `platform_config`, no per-key curation or bounds checking.
+- **Platform config** — an editor over the numeric `platform_config` keys. Originally a generic key/value editor with no bounds; today `PlatformConfigService` enforces per-key bounds (`boundsFor()`: percent keys 0–100, `booking_*_minutes` keys 1–1440, everything else ≥ 0) both at startup and on every read, `GET /api/admin/config` returns only the numeric keys, and the boolean `feature_*_enabled` flags live behind their own `GET/PATCH /api/admin/feature-flags` (audited) with a public read at `GET /api/platform-config/feature-flags`.
 
 New/changed API endpoints:
 - `GET/PATCH /api/admin/salons` — now filterable by `status`/`city`/`name`/`genderTarget`, plus a `status=all` option; defaults to `status=pending`
@@ -112,7 +113,7 @@ New/changed API endpoints:
 - `GET /api/admin/reviews` — filterable review list for moderation
 - `POST/PATCH /api/admin/categories` — create/rename
 - `GET/PATCH /api/admin/users` — search/filter, and `PATCH /api/admin/users/:id/status` to suspend/unsuspend
-- `GET/PATCH /api/admin/config` — read all `platform_config` rows / bulk-update them
+- `GET/PATCH /api/admin/config` — read the numeric `platform_config` rows / bulk-update them (feature flags: `GET/PATCH /api/admin/feature-flags`)
 
 **Provider Panel addition:** a Salon Settings page (Dashboard → Settings, alongside Hours/Photos) reusing the onboarding `SalonInfoStep.vue` in edit mode, plus a `rejected`-status branch on the pending-approval screen showing the rejection reason with a link to Settings and a resubmit button — so a rejected provider has a real recovery path instead of a dead end.
 
@@ -135,12 +136,12 @@ Closes the six trust-and-safety gaps carried since Plans 5/6 — no new product 
 - **Reports** — a verified customer (at least one `completed` booking at the salon) can report a salon or one of its reviews from the salon profile page: `POST /api/reports` (one *open* report per reporter per target, enforced by a partial unique index → 409), `GET /api/reports/eligibility?salonId=` gates the UI. Admins work the queue via `GET/PATCH /api/admin/reports` and the admin-panel Reports page. Resolving a report doesn't itself moderate anything — the queue links to the existing, already-audited moderation actions.
 - **Category delete** — `DELETE /api/admin/categories/:id` with restrict semantics: a category referenced by any salon service (active or not) 409s, mirroring the DB's FK. Reassign-or-cascade is deferred until someone actually needs it.
 - **Cascade suspend** — suspending a user now also suspends their `approved` salon in the same transaction, recording `suspended_cause='owner_suspended'`; reactivating the user restores only cascade-suspended salons — a salon an admin suspended directly (`suspended_cause='admin'`) stays suspended. Public review listing (`GET /api/salons/:salonId/reviews`) now also requires the salon to be `approved`.
-- **Admin notifications** — a persisted queue (`admin_notifications`) polled by the admin panel (bell badge, 60s cadence), fed by two emit points: provider resubmits (`salon_resubmitted`) and new reports (`report_created`). One shared read-state for all admins is a deliberate cut.
+- **Admin notifications** — a persisted queue (`admin_notifications`) polled by the admin panel (bell badge, 60s cadence), fed by two emit points: provider resubmits (`salon_resubmitted`) and new reports (`report_created`); `AlertsService` also feeds it. Read state shipped as one shared column and was later made per-admin (`admin_notification_reads` join table).
 
 **Known gaps carried forward, not fixed by this plan:**
-- An admin can approve a pending salon whose owner is suspended — the salon goes publicly live while its owner is locked out of managing it; no guard exists on either side.
+- ~~An admin can approve a pending salon whose owner is suspended.~~ Since fixed: `PATCH /api/admin/salons/:id/status` 409s when the owner is suspended.
 - The salon-side effect of a user-suspension cascade is not separately audited (only the `user.status.set` row exists) — deliberate; reconstructing a salon's status timeline from audit rows alone has that gap.
-- Admin notifications are one shared queue (read = handled for everyone), not per-admin state — deliberate MVP cut.
+- ~~Admin notifications are one shared queue (read = handled for everyone), not per-admin state.~~ Since fixed: per-admin read rows in `admin_notification_reads`.
 
 ## Salon showcase — stories, profile, portfolio (2026-07-17)
 
@@ -175,7 +176,7 @@ Public endpoints (no auth):
 - `GET /api/blog/categories`
 - Published articles feed the user-app sitemap via a dedicated, paginated sitemap source (`apps/api/src/content/sitemap-blog.controller.ts`, `GET /sitemap/blog-posts?page=`, 5,000/page), same mechanism as salon profile pages (`apps/api/src/salons/sitemap-salons.controller.ts`). Both are consumed by hand-rolled Nitro routes (`apps/user-app/server/routes/sitemap*.ts` — no third-party sitemap module) that build a `/sitemap-index.xml` listing one `sitemap-salons-N.xml`/`sitemap-posts-N.xml` per page of each source, each fetching only its own slice; `/sitemap.xml` (the URL `robots.txt` has always advertised) now serves the same index content. Cover images get public URLs the same way salon photos do.
 
-User-app pages: `/blog` (SSR list — cover cards, category chips, pagination) and `/blog/[slug]` (SSR article with `useSeoMeta`, canonical URL, and JSON-LD `Article`). Both are public (unauthenticated) routes, joining `/salons/:slug` as the app's SEO surface. A post with neither `metaDescription` nor `excerpt` set emits no `description` meta tag at all — accepted rather than fabricating one. The article page also guards its whole template behind a root `v-if="post"` to sidestep a Suspense render-pass hazard around the not-found path; `salons/[slug].vue` and the booking page still use the older unguarded `page!` pattern and should get the same fix when next touched.
+User-app pages: `/blog` (SSR list — cover cards, category chips, pagination) and `/blog/[slug]` (SSR article with `useSeoMeta`, canonical URL, and JSON-LD `Article`). Both are public (unauthenticated) routes, joining `/salons/:slug` as the app's SEO surface. A post with neither `metaDescription` nor `excerpt` set now derives one from the Markdown body (`app/utils/markdown-excerpt.ts`); an effectively-empty body still emits none. The article page guards its whole template behind a root `v-if="post"` to sidestep a Suspense render-pass hazard around the not-found path; `salons/[slug].vue` and the booking page carry the same root `v-if="page"` guard.
 
 **The `html: false` safety invariant.** Posts store raw Markdown; nothing is sanitized because nothing needs to be. Both frontends render through their own three-line `markdown-it` utility configured `{ html: false, linkify: true }`, so raw HTML in a post body never parses into DOM — `<script>alert(1)</script>` and `<img src=x onerror=…>` come out escaped/inert, and each app's utility has an invariant test pinning exactly that (a config regression fails CI). The rendered output is bound with `v-html` in exactly two places (admin editor preview, user-app article body), each commented as sanctioned solely by this invariant. Do not loosen `html: false` or add a third `v-html` site without re-deciding the whole model.
 

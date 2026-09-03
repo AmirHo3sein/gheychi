@@ -35,7 +35,15 @@ export class SubscriptionBillingService {
     // The subscription's CURRENT plan, at the moment of billing -- frozen onto the period
     // row from here on (baseAmountToman), same "snapshot at creation, never re-derived"
     // convention as financial_transactions.commission_percent.
-    const { plan } = await this.subscriptions.getForSalon(salonId);
+    //
+    // Only an ACTIVE subscription can be billed: getForSalon() returns the nominal plan
+    // even while canceled (the salon is effectively on the default plan then, per
+    // getEntitlements), so billing a canceled subscription would record a real "owed"
+    // amount for a plan that is no longer in force. Reassign a plan first.
+    const { subscription, plan } = await this.subscriptions.getForSalon(salonId);
+    if (subscription.status !== 'active') {
+      throw new ConflictException('اشتراک این سالن فعال نیست؛ ابتدا یک پلن تخصیص دهید');
+    }
     const baseAmountToman = plan.monthlyPriceToman;
 
     return this.dataSource.transaction(async (em) => {
@@ -108,13 +116,28 @@ export class SubscriptionBillingService {
   // record, not something to silently overwrite by re-marking it. An admin who made a real
   // mistake corrects it by creating a fresh period, the same way a wrong invoice isn't
   // edited in place elsewhere in this codebase (see 13-financial-system.md).
-  async setStatus(id: string, status: BillingPeriodStatus): Promise<SubscriptionBillingPeriod> {
-    const period = await this.periods.findOneBy({ id });
-    if (!period) throw new NotFoundException('Billing period not found');
-    if (period.status !== 'pending') {
-      throw new ConflictException('این دوره صورتحساب قبلا نهایی شده است');
-    }
-    await this.periods.update({ id }, { status, resolvedAt: new Date() });
-    return (await this.periods.findOneBy({ id }))!;
+  //
+  // Scoped to the salon in the URL so a period id can't be resolved under another salon's
+  // route, and the status flip is a real compare-and-swap (`status: 'pending'` in the
+  // WHERE) rather than read-then-write: two admins clicking "paid" and "void" at the same
+  // moment must yield exactly one winner and one 409, never last-writer-wins.
+  async setStatus(salonId: string, id: string, status: BillingPeriodStatus): Promise<SubscriptionBillingPeriod> {
+    return this.dataSource.transaction(async (em) => {
+      const repo = em.getRepository(SubscriptionBillingPeriod);
+      const period = await repo.findOneBy({ id, salonId });
+      if (!period) throw new NotFoundException('Billing period not found');
+      const result = await repo.update({ id, salonId, status: 'pending' }, { status, resolvedAt: new Date() });
+      if (!result.affected) {
+        throw new ConflictException('این دوره صورتحساب قبلا نهایی شده است');
+      }
+      // Voiding hands the coupon back: the redemption was recorded atomically with this
+      // period, so a voided (i.e. never-owed) period must not keep consuming the salon's
+      // one-per-code redemption or a capped coupon's slot -- otherwise the documented
+      // "correct a mistake with a fresh period" path can never re-apply the discount.
+      if (status === 'void' && period.couponId !== null) {
+        await em.getRepository(SubscriptionCouponRedemption).delete({ billingPeriodId: id });
+      }
+      return (await repo.findOneBy({ id }))!;
+    });
   }
 }

@@ -36,6 +36,10 @@ deliberately no scheduled job generating these automatically, unlike the invoici
 `MonthlyInvoiceGenerationJob`. Auto-generating periods would read as real recurring billing
 when it isn't; keeping creation manual keeps the "architecture-only" boundary honest.
 
+- **Only an `active` subscription can be billed** — `createPeriod` 409s otherwise.
+  `getForSalon()` returns the nominal plan even while canceled (the salon is effectively on
+  the default plan then, per `getEntitlements`), so billing a canceled subscription would
+  record a real "owed" amount for a plan no longer in force. Reassign a plan first.
 - `baseAmountToman` is the subscription's current plan price, **frozen** at creation time —
   the same "snapshot, never re-derived" convention `financial_transactions.commission_percent`
   already established. A later plan-price change never retroactively alters an existing
@@ -44,10 +48,20 @@ when it isn't; keeping creation manual keeps the "architecture-only" boundary ho
   discountPercent/100)`, rounded) and atomically records the redemption in the same
   transaction as the period insert.
 - `status`: `pending → paid | comped | void`, admin-set via
-  `PATCH .../billing-periods/:periodId/status`. **Only resolvable from `pending`** — a
-  period that's already paid/comp'd/void is a settled financial record, not something to
-  silently overwrite; a genuine correction is a fresh period, not an edit, matching how this
-  codebase already treats an invoice as immutable once issued (see `13-financial-system.md`).
+  `PATCH .../billing-periods/:periodId/status`. `setStatus(salonId, id, status)` is
+  **salon-scoped** (the period is looked up by `{id, salonId}` from the route, so another
+  salon's period id 404s rather than being resolvable under the wrong salon) and a **real
+  compare-and-swap** — `UPDATE ... WHERE id AND salon_id AND status = 'pending'`, 409 on zero
+  rows — so two admins clicking "paid" and "void" at the same moment yield exactly one winner
+  and one 409, never last-writer-wins. A period that's already paid/comp'd/void is a settled
+  financial record, not something to silently overwrite; a genuine correction is
+  **void, then a fresh period**, matching how this codebase already treats an invoice as
+  immutable once issued (see `13-financial-system.md`).
+- **Voiding hands the coupon back.** The redemption was recorded atomically with the period,
+  so voiding a coupon-discounted period deletes its `subscription_coupon_redemptions` row in
+  the same transaction — the salon's one-per-code redemption and a capped coupon's slot are
+  released. Without this, the void-then-recreate correction path could never re-apply the
+  discount, which made it impossible in practice for any period that carried a coupon.
 - The owner has a read-only equivalent (`GET /salons/mine/subscription/billing-periods`) —
   no route lets them create or resolve one themselves, matching the "salon owner picks only
   booking mode, nothing commercial" decision already applied throughout this initiative.
@@ -55,9 +69,11 @@ when it isn't; keeping creation manual keeps the "architecture-only" boundary ho
 ## Accepted simplifications (explicit, not oversights)
 
 - **No lock across the whole create-period flow.** The coupon-redemption cap check is
-  lock-protected (see above), but nothing else about `createPeriod` is — this is a low-
-  frequency, admin-only, non-money-critical-in-the-automated-sense action (money only
-  actually moves once an admin manually records a real-world payment against a period).
+  lock-protected (see above), and the status flip is a CAS, but nothing else about
+  `createPeriod` is serialized (two admins creating overlapping periods for one salon both
+  succeed) — this is a low-frequency, admin-only, non-money-critical-in-the-automated-sense
+  action (money only actually moves once an admin manually records a real-world payment
+  against a period).
 - **No feature flag gates billing-period creation.** Every other admin-driven, potentially
   risky capability in this codebase that could go live accidentally is flag-gated (global
   payment toggle, coupons). Billing periods don't need one: nothing about creating a period
@@ -71,13 +87,15 @@ when it isn't; keeping creation manual keeps the "architecture-only" boundary ho
 
 ## Admin UI
 
-- `SubscriptionCouponsView.vue` (`/subscription-coupons`) — create + list + deactivate, no
-  edit, no fixed-amount kind. Deliberately simpler than the booking `CouponsView.vue` (no
-  edit-confirm-diff sub-step) since there's no equivalent provider-facing surface to keep
-  parity with.
+- `SubscriptionCouponsView.vue` (`/subscription-coupons`) — create + list + deactivate/
+  reactivate (`PATCH {isActive}` both ways), no edit, no fixed-amount kind. Deliberately
+  simpler than the booking `CouponsView.vue` (no edit-confirm-diff sub-step) since there's no
+  equivalent provider-facing surface to keep parity with.
 - `SalonSubscriptionCard.vue` (on `SalonDetailView`) gained a "دوره‌های صورتحساب" section:
   list existing periods, create a new one (date range + optional coupon code), and
-  paid/comped/void buttons on any still-`pending` row.
+  paid/comped/void buttons on any still-`pending` row — each behind an inline confirm step,
+  since settling a period is irreversible (the same confirm-before-commit the card's plan
+  change and cancel actions already use).
 
 ## Provider-panel UI
 

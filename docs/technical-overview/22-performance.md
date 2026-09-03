@@ -56,3 +56,22 @@ Every hot-path query reviewed during this audit has a supporting index: `salons_
   slow or failing SMS gateway holds no DB locks and cannot stall the batch.
 - `BookingSettingsService` resolves timeouts from the Redis-cached `platform_config` (60s TTL)
   and is called once per booking creation, outside the per-salon Redis lock.
+
+## Indexes and query shapes added 2026-09-03
+
+- `bookings(salon_id, created_at)` — the provider dashboard's period metrics all window on
+  `created_at` within one salon; mirrors the existing `financial_transactions_salon_created_idx`.
+- `salon_slug_history(salon_id)` — the reservation lookup on every handle change.
+- The CRM customer list is one CTE query: aggregate → segment (derived in SQL) → filter /
+  order / `LIMIT`+`OFFSET`, with `COUNT(*) OVER()` returning the filtered total in the same
+  round trip rather than a second query. Its previous 2000-row ceiling is gone because
+  `pageSize` now bounds the result by construction.
+- `GET /admin/bookings` is a single query with five many-to-one `LEFT JOIN`s plus a
+  correlated commission subquery — deliberately not a join to `financial_transactions`,
+  since a `commission_reversed` correction row would multiply the booking row and inflate
+  the page total.
+- `payment_succeeded` now looks up its booking to attach `salonId`. That is one extra
+  indexed primary-key read per successful capture, off the request's critical path
+  (fire-and-forget), and it is what makes the payment stage of the per-salon funnel
+  attributable at all.
+

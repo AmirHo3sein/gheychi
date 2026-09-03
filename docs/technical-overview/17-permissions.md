@@ -1,6 +1,6 @@
 # 17 — Permissions
 
-There are exactly **three** distinct authorization mechanisms in the backend, applied per-route (never globally), plus independent client-side gating in each of the three frontends. There is no fine-grained permission system, no per-resource ACLs, and no role beyond `customer|provider|admin` on the `users.role` column.
+There are exactly **four** distinct authorization mechanisms in the backend — one global (`AuthGuard`), two applied per-route (`RolesGuard`, `SalonOwnerGuard`), and one single-purpose shared-secret guard (`BackupReportSecretGuard`) — plus independent client-side gating in each of the three frontends. There is no fine-grained permission system, no per-resource ACLs, and no role beyond `customer|provider|admin` on the `users.role` column.
 
 ## Backend guards
 
@@ -8,25 +8,29 @@ There are exactly **three** distinct authorization mechanisms in the backend, ap
 The base gate. Reads the `session` HttpOnly cookie, verifies the JWT, loads the user, re-checks `status !== 'suspended'` on **every request** (not cached from login), attaches `req.user`. Full detail: [05-authentication.md](./05-authentication.md).
 
 ### `RolesGuard` (`apps/api/src/auth/roles.guard.ts`)
-Reads `@Roles(...roles)` metadata via `Reflector`. **Must run after `AuthGuard`.** The only role ever used anywhere in the codebase is `'admin'` — every admin controller declares `@UseGuards(AuthGuard, RolesGuard)` + `@Roles('admin')`. There is no `@Roles('provider')` — provider-facing routes are gated by ownership (below), not role.
+Reads `@Roles(...roles)` metadata via `Reflector`. **Must run after `AuthGuard`** (guaranteed, since `AuthGuard` is global and global guards run before controller-level ones). The only role ever used anywhere in the codebase is `'admin'` — every admin controller declares `@UseGuards(RolesGuard)` + `@Roles('admin')`. There is no `@Roles('provider')` — provider-facing routes are gated by ownership (below), not role.
 
 ### `SalonOwnerGuard` (`apps/api/src/salons/salon-owner.guard.ts`)
-Resolves `req.salonId = SalonsService.findMine(req.user.id).id`. **404s if the caller owns no salon at all.** Does **not** check the salon's moderation status — a `pending`/`rejected`/`suspended` salon's owner still passes this guard; individual handlers gate on status themselves where it matters. Always declared as `@UseGuards(AuthGuard, SalonOwnerGuard)`. Used by every `salons/mine/*` controller: photos, portfolio, stories, services, workers, schedule, bookings, earnings, coupons, review-reply, invoices.
+Resolves `req.salonId = SalonsService.findMine(req.user.id).id`. **404s if the caller owns no salon at all.** Does **not** check the salon's moderation status — a `pending`/`rejected`/`suspended` salon's owner still passes this guard; individual handlers gate on status themselves where it matters. Declared as `@UseGuards(SalonOwnerGuard)` (a few older controllers still spell out the redundant `AuthGuard, SalonOwnerGuard`). Used by every `salons/mine/*` controller: photos, portfolio, stories, services, workers, schedule, bookings, earnings, coupons, review-reply, invoices, CRM customers/SMS, subscription, billing periods.
 
-### No global guard exists
-`AppModule` registers no `APP_GUARD` provider. **A new route added without an explicit `@UseGuards(...)` is public by default.** This is a standing review-checklist risk for anyone adding endpoints — grep for the route in question and confirm a guard is present before assuming it's protected.
+### `BackupReportSecretGuard` (`apps/api/src/backup-monitoring/backup-report-secret.guard.ts`)
+Not user-facing at all: `POST /internal/backup-report` (the `backup` container's daily outcome report) is `@Public()` to `AuthGuard` and instead requires an `x-backup-report-secret` header that constant-time-matches (`timingSafeEqual` over SHA-256 digests) the `BACKUP_REPORT_SECRET` env var. A missing/empty configured secret fails closed — no header could ever satisfy it.
+
+### `AuthGuard` is global — routes opt *out*, never in
+`AppModule` registers `AuthGuard` as `APP_GUARD`, so **every route is authenticated by default**; a public route must carry `@Public()` (`auth/public.decorator.ts`), and `route-guard-audit.spec.ts` pins every `@Public()` handler against an explicit `PUBLIC_ROUTES` allowlist (a new `@Public()` without an allowlist entry fails the test). The two actor-scoping guards are **not** global, so the same spec also pins, by reflecting on each handler's real route path, that every `admin/*` route carries `RolesGuard` + `@Roles('admin')` and every `salons/mine*` route carries `SalonOwnerGuard` — with exactly one documented exception, `GET /salons/mine`, the provider-panel's "do I have a salon yet?" onboarding probe (which must answer 404 rather than be guard-rejected; `SalonsService.findMine` scopes by `ownerId` itself). It also asserts exact equality between the controllers it imports and a filesystem count of `@Controller(` decorators, so an unimported controller fails the audit rather than silently escaping it.
 
 ## Guard matrix by resource area
 
 | Area | Guard(s) | Notes |
 |---|---|---|
-| Auth (login/OTP) | none (login itself) → `AuthGuard` after | — |
-| `salons/mine/*` (all provider sub-resources) | `AuthGuard, SalonOwnerGuard` | ownership, not role-based |
-| `admin/*` (everything) | `AuthGuard, RolesGuard('admin')` | role-based |
-| `bookings/*` (customer) | `AuthGuard` | scoped by `userId` in queries, not a separate ownership guard |
-| Public content (`salons/:slug/*`, `/search`, `/categories`, `/cities`, `/blog/*`, `/health`) | none | approved/published-only filtering happens in the query itself |
-| `payments/callback` | none | intentionally public — it's Zarinpal's own browser redirect target |
-| `reports`, `reviews`, `wallet/mine`, `push/subscribe`, `favorites` | `AuthGuard` | scoped by `req.user.id` |
+| Auth (login/OTP) | `@Public()` (request/verify) → global `AuthGuard` after | — |
+| `salons/mine/*` (all provider sub-resources) | global `AuthGuard` + `SalonOwnerGuard` | ownership, not role-based; `GET /salons/mine` itself is the one route without `SalonOwnerGuard` |
+| `admin/*` (everything) | global `AuthGuard` + `RolesGuard('admin')` | role-based |
+| `bookings/*` (customer) | global `AuthGuard` | scoped by `userId` in queries, not a separate ownership guard |
+| Public content (`salons/:slug/*`, `/search`, `/categories`, `/cities`, `/blog/*`, `/health`, `/liveness`, `/readiness`) | `@Public()` | approved/published-only filtering happens in the query itself |
+| `payments/callback` | `@Public()` | intentionally public — it's Zarinpal's own browser redirect target |
+| `internal/backup-report` | `@Public()` + `BackupReportSecretGuard` | shared-secret header, not a user session |
+| `reports`, `reviews`, `wallet/mine`, `push/subscribe`, `favorites` | global `AuthGuard` | scoped by `req.user.id` |
 
 Full endpoint-by-endpoint guard listing: [15-api-reference.md](./15-api-reference.md).
 
@@ -69,3 +73,26 @@ The owner/admin split is load-bearing: the timeout columns are deliberately **ab
 `UpdateSalonDto`, because `SalonsService.updateMine()` applies its DTO via a blanket
 `Object.assign` and would otherwise let a provider set their own deadlines. See
 [28-booking-approval-workflow.md](./28-booking-approval-workflow.md).
+
+## What the route-guard spec actually pins (as of 2026-09-03)
+
+`src/route-guard-audit.spec.ts` is the regression backstop for this whole document, and it
+was weaker than its own comments claimed. It now asserts:
+
+1. **Exact** equality between `ALL_CONTROLLERS` and the number of `@Controller(` decorators
+   under `src/`. It previously asserted `>= <controller FILE count>`, which silently
+   tolerated a whole missing controller whenever one file held two classes — and one was in
+   fact missing (`AdminAnalyticsController`).
+2. Every route whose full path is `admin` or starts with `admin/` carries **both**
+   `RolesGuard` and `@Roles('admin')`. Neither is global, so an admin route that forgets one
+   is authenticated-but-unauthorized: any logged-in customer could call it.
+3. Every route under `salons/mine*` carries `SalonOwnerGuard`, with exactly one documented
+   exception — `GET /salons/mine`, the provider panel's "do I have a salon yet?" probe,
+   which must answer 404 for an owner-less user rather than being guard-rejected
+   (`SalonsService.findMine` scopes by `ownerId` itself).
+4. The `@Public()` allowlist, in both directions: every entry resolves to a real handler,
+   and no route outside the list is marked public.
+
+Paths are derived from the real `@Controller`/method route metadata, so the rules cannot
+drift from the URL convention this document describes.
+

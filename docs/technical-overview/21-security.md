@@ -6,7 +6,11 @@ Cookie-based, HttpOnly JWT session (`session` cookie), never exposed to JavaScri
 
 ## Authorization
 
-Three guards (`AuthGuard`, `RolesGuard`, `SalonOwnerGuard`), no global guard, applied per-route. Full matrix: [17-permissions.md](./17-permissions.md). **A new route without an explicit `@UseGuards(...)` is public by default** — the single biggest structural risk in the authorization model, mitigated only by developer discipline/code review, not by any automated check.
+`AuthGuard` is registered globally (`APP_GUARD` in `app.module.ts`), so **every route is authenticated by default and a public route must opt out with `@Public()`**; `RolesGuard` and `SalonOwnerGuard` are applied per-route, and `BackupReportSecretGuard` covers the one machine-to-machine route (`POST /internal/backup-report`, shared-secret header, constant-time compare). Full matrix: [17-permissions.md](./17-permissions.md). The residual structural risk — a new `admin/*` or `salons/mine/*` route that forgets its actor-scoping guard is *authenticated-but-unauthorized* (any logged-in customer could call it) — is closed by an automated check, not discipline: `route-guard-audit.spec.ts` derives every handler's full route path by reflection and fails if an `admin/*` route lacks `RolesGuard` + `@Roles('admin')`, if a `salons/mine*` route lacks `SalonOwnerGuard` (sole documented exception: the `GET /salons/mine` onboarding probe), or if any `@Public()` handler is missing from its `PUBLIC_ROUTES` allowlist.
+
+## Boot-time secret guard
+
+`auth/jwt-secret.util.ts` `assertProductionJwtSecret()` (wired into `AuthModule`'s `JwtModule.registerAsync`) refuses to start the api in `NODE_ENV=production` if `JWT_SECRET` is one of the known `.env.example` placeholders or shorter than 32 characters — a forgeable session secret fails the deploy at boot, not at first login. Deliberately production-only so `.env.test`/local dev keep their short fixed secrets.
 
 ## CORS
 
@@ -63,7 +67,15 @@ sequenceDiagram
 
 ## Secrets handling
 
-Every third-party credential (JWT secret, Kavenegar key, Zarinpal access token, S3 keys, VAPID keys) is an env var, loaded via `@nestjs/config`. `docs/deployment/DEPLOY.md` explicitly warns that `docker compose config` inlines every `env_file` secret in its output and must be redacted before ever being shared/pasted anywhere.
+Every third-party credential (JWT secret, Kavenegar key, PayamakYab credentials, the temporary `FARAGOSTARESH_RELAY_TOKEN` — `SmsModule` `getOrThrow`s it in `faragostaresh-relay` mode, so the api refuses to boot without it; the token was briefly hardcoded in the provider source and scrubbed on 2026-09-03, so treat that value as burned — Zarinpal access token, S3 keys, VAPID keys, `BACKUP_REPORT_SECRET`) is an env var, loaded via `@nestjs/config`. `docs/deployment/DEPLOY.md` explicitly warns that `docker compose config` inlines every `env_file` secret in its output and must be redacted before ever being shared/pasted anywhere. `docker-compose.prod.yml` mounts the *same* `.env` (`env_file: .env`) into the `api`, `user-app`, `caddy`, and `backup` containers, so every one of them can read every secret — accepted operational simplicity, tracked in [24-technical-debt.md](./24-technical-debt.md).
+
+## Transport & browser headers (Caddy)
+
+`Caddyfile` applies one `security_headers` snippet to every site block: `Strict-Transport-Security "max-age=31536000; includeSubDomains"` (no `preload` — deliberately, since that is a hard-to-reverse browser-list commitment), `X-Content-Type-Options nosniff`, `X-Frame-Options DENY`, `Referrer-Policy strict-origin-when-cross-origin`, and `-Server`. A `Permissions-Policy` denies camera/microphone/geolocation/payment/usb everywhere except that the user-app allows `geolocation=(self)` for its near-me search. A **Report-Only** `Content-Security-Policy-Report-Only` per site (user-app, the two panels, api — `default-src 'none'` for the api since it serves no HTML) posts violations to `POST /api/csp-report`; it is observation, not enforcement, and the directives are documented in `docs/deployment/csp-proposal.md`.
+
+## Uploaded files persist across deploys
+
+Production runs `STORAGE_PROVIDER=local`, so `docker-compose.prod.yml` mounts a named volume `api_uploads:/app/uploads` (the `Dockerfile` pre-creates the directory owned by `apiuser`). Before this, every uploaded image lived in the container's writable layer and was destroyed by each `docker compose up -d` after a pull — a data-loss bug, not merely a security one, but the fix is the reason `/uploads/*` on the api host is a stable, publicly served path worth keeping in mind for the CSP `img-src` above.
 
 ## Request-correlation id — validated before it's ever logged or echoed
 
@@ -77,11 +89,11 @@ Every third-party credential (JWT secret, Kavenegar key, Zarinpal access token, 
 
 Four independent audits, run together as part of the same production-hardening pass: IDOR (cross-tenant "mine"-scoped mutations), role/ownership boundaries (every `@Roles('admin')` controller and every `SalonOwnerGuard` route against an authenticated-but-wrong-role/wrong-tenant caller), upload MIME-spoofing (all 4 upload endpoints against a real byte-spoofed file, not just a wrong `Content-Type` header), and a static route-guard audit (`route-guard-audit.spec.ts`, reflection-based — every route handler is either guarded or on an explicit `PUBLIC_ROUTES` allowlist).
 
-**Zero real vulnerabilities were found by any of the four** — every ownership/role check and both upload-validation layers were already correctly implemented. The route-guard audit confirmed zero unintentional-exposure gaps across all 48 controllers (`/liveness`/`/readiness` are the only allowlist additions since — see [15-api-reference.md](./15-api-reference.md)). The gaps closed were entirely in *test coverage*, purely additive: cross-tenant mutation tests for coupon/portfolio/photo/story/review/schedule-exception routes, 9 of 16 admin-role controllers previously untested against an authenticated wrong-role caller, and true byte-spoofed uploads tested against 3 of 4 upload endpoints that weren't before. See `test/security.e2e-spec.ts` and the other `*.e2e-spec.ts` files it cross-references for the full case list.
+**Zero real vulnerabilities were found by any of the four** — every ownership/role check and both upload-validation layers were already correctly implemented. The route-guard audit confirmed zero unintentional-exposure gaps across every controller (66 `@Controller` classes today — the spec asserts exact equality against a filesystem count, since a `>= fileCount` check once hid a whole unimported `AdminAnalyticsController`; `/liveness`/`/readiness` and `/internal/backup-report` are allowlist additions since — see [15-api-reference.md](./15-api-reference.md)). The gaps closed were entirely in *test coverage*, purely additive: cross-tenant mutation tests for coupon/portfolio/photo/story/review/schedule-exception routes, 9 of 16 admin-role controllers previously untested against an authenticated wrong-role caller, and true byte-spoofed uploads tested against 3 of 4 upload endpoints that weren't before. See `test/security.e2e-spec.ts` and the other `*.e2e-spec.ts` files it cross-references for the full case list.
 
 ## Rate limiting & abuse controls
 
-Redis-backed, narrowly scoped to the two genuinely abusable surfaces: OTP request/verify (see [05-authentication.md](./05-authentication.md)) and the public referral-code-validation endpoint (20/hour per IP — a code-enumeration surface). No general-purpose rate limiting exists on any other endpoint.
+Redis-backed, narrowly scoped to the two genuinely abusable surfaces: OTP request/verify (see [05-authentication.md](./05-authentication.md) — per-phone *and* per-IP issue caps, and a wrong-guess budget keyed per `(phone, IP)` so a stranger who knows a victim's number can no longer burn the victim's own code and lock them out) and the public referral-code-validation endpoint (20/hour per IP — a code-enumeration surface). No general-purpose rate limiting exists on any other endpoint.
 
 ## Known security-adjacent gaps
 
@@ -118,5 +130,41 @@ Redis-backed, narrowly scoped to the two genuinely abusable surfaces: OTP reques
   transitions in the same state machine have no actor and cannot live there
   (`audit_log.actor_id` is NOT NULL), which is why `booking_events` carries the full
   lifecycle. The two are not duplicate records of one transition.
-- **A route with no explicit guard is public by default in this codebase.** All four new routes
-  declare guards explicitly and are covered by the `route-guard-audit.spec.ts` invariant test.
+- **Guard coverage is pinned, not assumed.** All four new routes declare their actor-scoping
+  guards explicitly and are covered by the `route-guard-audit.spec.ts` invariants (`admin/*`
+  → `RolesGuard`, `salons/mine*` → `SalonOwnerGuard`; `AuthGuard` itself is global).
+
+## Fixes landed 2026-09-03 (production-hardening sprint)
+
+- **Session revocation** — JWTs now carry a `jti`; logout writes a Redis denylist entry and
+  `AuthGuard` checks it before loading the user. Fail-closed. See
+  [05-authentication.md](./05-authentication.md).
+- **Push-subscription hijack (IDOR)** — `POST /push/subscribe` re-pointed a subscription by
+  endpoint with no ownership check, so anyone who learned another user's push endpoint could
+  claim it: the victim silently stopped receiving notifications and the attacker's landed on
+  the victim's device. Re-pointing to a different user is now 403; the legitimate case (the
+  same person re-subscribing the same device, e.g. key rotation) is unaffected.
+- **`POST /salons/:id/favorite`** 500'd on a nonexistent salon (an error-tracking false
+  alarm and a weak existence oracle). Now a clean 404 via the existing
+  `isForeignKeyViolation` helper.
+- **Unmetered SMS channels** — two salon-triggerable endpoints (worker invite, manual
+  booking) sent SMS with no quota accounting, so an approved salon could loop either for
+  unlimited platform-paid messages to arbitrary phones. All salon-triggered SMS now goes
+  through one meter; see [33-salon-sms-quota.md](./33-salon-sms-quota.md).
+- **`ConsoleSmsProvider` was the silent production fallback** for a missing or misspelled
+  `SMS_PROVIDER`, and logs OTP codes ungated — a typo'd env var printed every login code to
+  stdout while login still appeared to work. The factory now throws in production, matching
+  `assertProductionJwtSecret`'s fail-fast posture.
+- **`/api/metrics` was publicly reachable** through the catch-all API proxy, leaking
+  booking/payment/revenue volume. Blocked at the Caddy edge; Prometheus scrapes `api:3002`
+  directly on the internal network, so scraping is unaffected.
+- **`route-guard-audit.spec.ts` hardened** — it now counts `@Controller` decorators with
+  exact equality (a `>=` file-count check had hidden a whole missing controller) and pins
+  `RolesGuard` + `@Roles('admin')` on every `admin/*` route and `SalonOwnerGuard` on every
+  `salons/mine*` route, with `GET /salons/mine` as the single documented exception (the
+  onboarding probe, which must answer 404 for an owner-less user).
+
+Still open, and tracked in [24-technical-debt.md](./24-technical-debt.md): Redis has no
+`requirepass` (not publicly exposed, but a compromised sibling container can read live OTP
+codes), and every container receives the full shared `.env`.
+

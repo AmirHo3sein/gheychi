@@ -5,15 +5,15 @@ Core files: `apps/api/src/booking/availability.service.ts`, `availability.util.t
 ## Inputs to availability
 
 1. **`working_hours`** — weekly recurring open/close ranges per weekday (0–6), managed wholesale via `PUT /salons/mine/hours` (delete-all-then-reinsert on every save — no per-weekday PATCH). No overlap validation between two ranges submitted for the same weekday in one request — a real gap, left to client-side discipline.
-2. **`schedule_exceptions`** — one-off closed dates (`isClosed`, default `true`). Consumed directly by the availability algorithm as a per-date blackout.
-3. **Existing `bookings`** — every `pending_payment`/`confirmed` booking overlapping the query window, used for both salon-capacity and (if a worker is specified) worker-specific exclusion.
+2. **`schedule_exceptions`** — one-off closures (`isClosed`, default `true`) in three shapes: a **whole-salon, whole-day** closure (`worker_id` NULL, no times — the original and still most common case), a **whole-salon partial-day** closure (`start_time`/`end_time` set — the salon's normal hours still apply outside that interval), or a **per-worker whole-day** day off (`worker_id` set; partial-hour ranges for a specific worker are rejected with 400 — v1 cut). Consumed directly by the availability algorithm.
+3. **Existing `bookings`** — every `SLOT_BLOCKING_STATUSES` (`pending_approval`/`pending_payment`/`confirmed`) booking overlapping the query window, used for both salon-capacity and (if a worker is specified) worker-specific exclusion.
 
 ## `AvailabilityService.computeFor(salonId, serviceId, now, workerId?)`
 
 1. Salon must be `approved`; service must exist/be active.
-2. If `workerId` given: short-circuits to `[]` immediately if that worker is ineligible for the service (same opt-out `worker_services` check as `createHold` — see [09-booking-engine.md](./09-booking-engine.md)) rather than showing slots that would fail at booking time.
+2. If `workerId` given: short-circuits to `[]` immediately if that worker is ineligible for the service (the shared `WorkerEligibilityService`, same opt-out `worker_services` check as `createHold` — see [09-booking-engine.md](./09-booking-engine.md)) rather than showing slots that would fail at booking time.
 3. `windowEnd = now + 14 days` (`AVAILABILITY_WINDOW_DAYS`).
-4. Fetches, in parallel: all `working_hours`, all `schedule_exceptions` where `isClosed`, and all overlapping bookings in the window.
+4. Fetches, in parallel: all `working_hours`, whole-salon `schedule_exceptions` (`isClosed`, `workerId IS NULL` — folded into `exceptionsByDate: Map<date, 'whole-day' | {startTime,endTime}>`), per-worker exceptions (`workerId IS NOT NULL` — folded into `workerOffDates: Map<workerId, Set<date>>`), and all overlapping bookings in the window. The two exception sets are deliberately fetched separately: a per-worker row must never close the whole salon.
 5. Delegates to the pure function `computeAvailableSlots()`.
 
 ## The Iran-timezone algorithm — why it's non-trivial
@@ -46,15 +46,21 @@ flowchart TD
 
 ## `schedule_exceptions` enforcement
 
-A date present in `schedule_exceptions` with `isClosed=true` causes that entire day to be skipped in the slot loop (`closedDates.has(dateStr)` check) — **this is enforced**, contrary to what might appear true from reading the schedule controller alone (see [07-salon-panel.md](./07-salon-panel.md)'s source module, which only manages the CRUD side and never itself reads exceptions against bookings — the actual read-side enforcement lives entirely in `availability.util.ts`). There is currently no support for a one-off *extended or shortened* hours override — only a binary closed/not-closed per date.
+All read-side enforcement lives in `availability.util.ts` (the schedule controller only manages the CRUD side):
+
+- A whole-salon exception mapped to `'whole-day'` skips that entire date in the slot loop.
+- A whole-salon exception with a time range is **subtracted** from each of that day's working-hour ranges (`subtractInterval()`, yielding 0–2 remaining sub-ranges) before the slot grid is walked — so a salon can shorten one day without touching its weekly schedule. Extending hours on a one-off basis is still not supported.
+- A per-worker day off is only consulted in the `requestedWorkerId` branch (`workerOffDates.get(requestedWorkerId).has(dateStr)` skips the day); "any available worker" mode never narrows by an individual worker's days off, and salon capacity is unaffected.
+
+Write-side rules (`schedule.controller.ts`): `startTime`/`endTime` must be given together and `startTime < endTime` (mirrored by the DB CHECK); a `workerId` must belong to the salon; `workerId` + a time range is rejected (per-worker time off is whole-day only in v1); a duplicate date hits one of the two partial unique indexes and returns 409.
 
 ## API surface
 
 ```
 GET /salons/mine/hours          (owner)  — list working hours
 PUT /salons/mine/hours          (owner)  — replace the whole weekly schedule
-GET /salons/mine/exceptions     (owner)  — list one-off closures
-POST /salons/mine/exceptions    (owner)  — add a closure
+GET /salons/mine/exceptions?workerId=     (owner)  — list closures (all, or one worker's)
+POST /salons/mine/exceptions    (owner)  — add a closure {date, startTime?, endTime?, reason?, workerId?}
 DELETE /salons/mine/exceptions/:id (owner)
 
 GET /salons/:salonId/availability?serviceId=&workerId=   (public) — computed open slots, 14-day window

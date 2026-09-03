@@ -8,18 +8,20 @@ File-based routing under `app/pages/`. `components: [{ path: '~/components', pat
 
 | Route | Access | SSR/SEO | Purpose |
 |---|---|---|---|
-| `/` (`index.vue`) | Auth required | Client-fetched | Home/search: category pills, city picker, geolocation "near me", list/map toggle |
-| `/login` | Public | `bare` layout | 3-step OTP flow (phone → code → profile completion), referral code entry |
-| `/profile` | Auth required | — | Name/gender edit, push toggle, favorites, links to wallet/referral, logout |
+| `/` (`index.vue`) | **Public** | Client-fetched | Home/search: category pills, city picker, geolocation "near me", list/map toggle (loading/error states shown in map view too; `SalonMap.client.vue` re-renders markers/center on prop change). An anonymous visitor gets a login prompt, not a "complete your profile" nudge — there is no profile to complete yet |
+| `/login` | Public | `bare` layout | 3-step OTP flow (phone → code → profile completion), referral code entry; resend has a re-entry guard so a double-tap can't burn two of the 3/hour issue quota |
+| `/profile` | Auth required | — | Name/gender edit, push toggle, links to favorites/wallet/referral/activity, logout |
+| `/account/favorites` | Auth required | — | Favorited salons (`GET /favorites`) |
+| `/account/activity` | Auth required | — | Unified personal timeline (`GET /activity/mine`): bookings, wallet transactions, reviews, referral rewards |
 | `/salons/[slug]` | **Public** | **Yes — `useAsyncData` + `useSeoMeta` + JSON-LD `BeautySalon`** | Salon profile — services, hours, photos, stories, portfolio, reviews, workers, favorite/report actions. **The primary SEO surface.** |
 | `/blog`, `/blog/[slug]` | **Public** | **Yes — SSR + `useSeoMeta` + JSON-LD `Article` (article page)** | Content-marketing blog. Second SEO surface. |
 | `/booking/[slug]/[serviceId]` | Auth required | `useAsyncData` | Service booking: worker picker, slot picker, coupon validation, wallet-balance apply, deposit math, Zarinpal redirect |
 | `/booking/callback` | Auth required, `bare` layout | — | Zarinpal return page — 3 outcomes: success / refunding / failed |
-| `/bookings`, `/bookings/[id]` | Auth required | list: no; detail: `useAsyncData` | Booking list/detail, cancel with refund-outcome preview, retry-payment, review prompt |
-| `/account/referral` | Auth required | — | Referral code/share link, referral + reward history |
-| `/account/wallet` | Auth required | — | Wallet balances + paginated transaction history |
+| `/bookings`, `/bookings/[id]` | Auth required | list: no; detail: `useAsyncData` | Booking list/detail, cancel with refund-outcome preview, retry-payment, review prompt. Deposit/refund copy branches on the API's `depositPaid` (plus `refundStatus`/`walletAmountUsed`), never on `paymentExpiresAt` — with the global online-payment flag off a booking has a `depositAmount` but nothing was collected, so "your deposit" must not be stated as fact (see [29-global-payment-toggle.md](./29-global-payment-toggle.md)); the salon page's deposit callout branches on `onlinePaymentEnabled` for the same reason. A failed list fetch shows an error + retry state, not an empty "you have no bookings" |
+| `/account/referral` | Auth required | — | Referral code/share link, referral + reward history (error + retry on fetch failure) |
+| `/account/wallet` | Auth required | — | Wallet balances + paginated transaction history (error + retry on fetch failure) |
 
-Only `/salons/*` and `/blog*` (plus `/login`) are in `isPublicRoute()` (`app/utils/route-guard.ts`); every other route requires a session.
+`isPublicRoute()` (`app/utils/route-guard.ts`) allows exactly `/`, `/login`, `/salons*`, and `/blog*`; every other route requires a session. Story/portfolio booking links on the salon page carry the resolved `attributionSource` via `utils/attribution.ts` `buildBookingLink()` (`?source=qr|direct|search`), so a booking started from showcase content is attributed the same way as one started from the services list.
 
 The admin-only tool that toggles a salon's featured flag/expiry used to live here as `/admin/featured` — an architectural oddity (admin functionality inside the customer-facing app). It has since moved to `admin-panel` as `/featured`; see [08-admin-panel.md](./08-admin-panel.md).
 
@@ -28,7 +30,7 @@ The admin-only tool that toggles a salon's featured flag/expiry used to live her
 Runs on every navigation:
 1. If `!session.checked`, probes `GET /auth/me` (`silent:true, redirectOn401:false`) — probed even on public routes so the UI reflects a logged-in visitor's state everywhere. Guards against a stale-probe race with a `!session.checked` re-check.
 2. `!isLoggedIn && !isPublicRoute` → `navigateTo('/login')`.
-3. `needsProfileCompletion && path !== '/profile' && !isPublicRoute` → `navigateTo('/profile')`.
+3. `needsProfileCompletion && path !== '/profile' && (path === '/' || !isPublicRoute)` → `navigateTo('/profile')`. `/` is public (an anonymous visitor must be able to land on it — the page renders a login prompt in that case), but a *logged-in* incomplete profile is still redirected from it, since `gender` is a required `/search` param and the home page cannot render a single salon without it; other public routes (`/salons*`, `/blog*`) stay browsable for an incomplete account.
 
 ## Composables (`app/composables/`)
 
@@ -54,7 +56,7 @@ Single Pinia store: `{ user: SessionUser|null, checked: boolean }`. `SessionUser
 
 ## PWA & push
 
-`@vite-pwa/nuxt` with the `injectManifest` strategy — a custom service worker at `app/sw.ts` (Workbox precaching + hand-written `push`/`notificationclick` handlers). Manifest: Persian name `قیچی`, `lang:'fa' dir:'rtl'`, standalone display. End-to-end push flow documented in [16-notifications.md](./16-notifications.md). One known limitation: every push notification always opens `/bookings` on tap — no deep-linking to the specific booking it's about.
+`@vite-pwa/nuxt` with the `injectManifest` strategy — a custom service worker at `app/sw.ts` (Workbox precaching + hand-written `push`/`notificationclick` handlers). Manifest: Persian name `قیچی`, `lang:'fa' dir:'rtl'`, standalone display. End-to-end push flow documented in [16-notifications.md](./16-notifications.md). A tap on a booking notification (`data: {type:'booking', bookingId}`) deep-links to `/bookings/{id}` (`sw.ts` `resolveTargetUrl`, UUID-checked); anything else falls back to the `/bookings` list.
 
 ## Maps & images
 
@@ -63,14 +65,14 @@ Single Pinia store: `{ user: SessionUser|null, checked: boolean }`. `SessionUser
 
 ## SEO plumbing
 
-`server/api/__sitemap__/urls.ts` and `.../blog.ts` are Nitro handlers feeding `@nuxtjs/sitemap`, each fetching the API's own `GET /sitemap/salon-slugs` / `GET /sitemap/blog-posts` (capped at 50,000 rows each) and mapping to sitemap entries. `robots.txt` explicitly allows `/salons/` and `/blog/`, disallows `/admin/`, `/bookings`, `/profile`, `/booking/`.
+A hand-rolled multi-file sitemap, no `@nuxtjs/sitemap`: `server/routes/sitemap.xml.ts` and `sitemap-index.xml.ts` both serve an index listing `sitemap-salons-N.xml`/`sitemap-posts-N.xml` (`server/utils/sitemap-index.ts` computes N from each API source's paginated `total`/`pageSize`), and `nuxt.config.ts`'s `nitro:config` hook pre-registers a bounded range of those static routes onto one shared handler per source (`server/handlers/sitemap-salons-page.ts`, `sitemap-posts-page.ts`) that parses the page number from the request path and fetches only that slice (`GET /sitemap/salon-slugs?page=`, `/sitemap/blog-posts?page=`, 5,000 URLs/page). `robots.txt` allows `/` and `/salons/`, disallows `/admin/`, `/bookings`, `/profile`, `/booking/`.
 
 ## Testing
 
 Three tiers, all under `apps/user-app`:
-1. **Unit** (`test/unit/*.spec.ts`, `environment:'node'`) — pure functions (`auth-errors`, `discount`, `gender-map`, `geo`, `markdown-excerpt`, `markdown`, `route-guard`, `salon-seo`, `slot-format`, `story-seen`).
+1. **Unit** (`test/unit/*.spec.ts`, `environment:'node'`) — pure functions (`attribution`, `auth-errors`, `discount`, `gender-map`, `geo`, `markdown-excerpt`, `markdown`, `relative-date`, `remaining-time`, `route-guard`, `salon-seo`, `sitemap`, `slot-format`, `story-seen`).
 2. **Component/composable** (`test/nuxt/*.spec.ts`, `environment:'nuxt'` via `@nuxt/test-utils`) — page and component tests.
-3. **E2E** (`e2e/*.spec.ts`, Playwright, `workers:1` forced serial since both spec files share a live Redis-backed OTP rate limiter on a fixed phone number). `global-setup.ts` does a hard `DROP SCHEMA public CASCADE` + `redis.flushdb()` before every run — a real operational hazard if ever pointed at a non-throwaway database.
+3. **E2E** (`e2e/*.spec.ts` — happy path, admin featured badge, review flow; Playwright, `workers:1` forced serial since the specs share a live Redis-backed OTP rate limiter on a fixed phone number). DB prep is a `pretest` step (`node e2e/prepare-db.cjs && playwright test`), **not** Playwright's `globalSetup` (no ordering guarantee against `webServer` startup); it `DROP SCHEMA`s and re-seeds its own `gheychi_e2e` database on every run, never the shared `gheychi` dev database — but a long-running `pnpm dev:api` already on :3002 gets silently reused, pointing the suite at whatever DB that process is connected to.
 
 ## Related documents
 

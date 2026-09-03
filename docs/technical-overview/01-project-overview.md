@@ -14,13 +14,13 @@ Built as a **pnpm + Turborepo monorepo** (`pnpm-workspace.yaml`: `packages: [app
 NestJS 11 modular monolith. Every other app is a pure HTTP client of this one backend; there is no other server-side code anywhere in the monorepo. PostgreSQL 16 with the PostGIS extension (geography columns for location/radius search) and Redis (OTP codes, distributed locks, rate limiting, alert dedup). See [02-system-architecture.md](./02-system-architecture.md).
 
 ### `apps/user-app` — customer app
-Nuxt 4 SSR PWA, Persian/RTL only (no i18n library — this is a single-locale product by design). The only two SSR/SEO-hardened public surfaces are salon profile pages (`/salons/:slug`) and the blog (`/blog`, `/blog/:slug`); everything else requires a session. Installable PWA with Web Push notifications. See [06-user-panel.md](./06-user-panel.md).
+Nuxt 4 SSR PWA, Persian/RTL only (no i18n library — this is a single-locale product by design). The public (no-session) routes are discovery (`/`), salon profile pages (`/salons/:slug`) and the blog (`/blog`, `/blog/:slug`) — `app/utils/route-guard.ts`'s `isPublicRoute()`; everything else requires a session. Installable PWA with Web Push notifications. See [06-user-panel.md](./06-user-panel.md).
 
 ### `apps/provider-panel` — salon-owner back office
-Vue 3 + Vite SPA, authenticated-only (no SSR need). Covers onboarding, dashboard, bookings, services, coupons, team/workers, hours, photos, stories, portfolio, salon settings, reviews, and earnings. See [07-salon-panel.md](./07-salon-panel.md).
+Vue 3 + Vite SPA, authenticated-only (no SSR need). Covers onboarding, dashboard, bookings (including owner-entered manual bookings and approve/reject for manual-approval salons), services, coupons, team/workers, hours, photos, stories, portfolio, salon settings, reviews, earnings, a CRM (customers, notes, per-customer SMS), and a read-only plan/billing view. See [07-salon-panel.md](./07-salon-panel.md).
 
 ### `apps/admin-panel` — platform staff back office
-Vue 3 + Vite SPA, same minimal stack as provider-panel but **no code is shared between the two** — every "shared-looking" file (UI components, composables, utilities) is a deliberately duplicated copy per app, per an explicit "cross-app isolation convention" repeated in code comments throughout the codebase. Covers salon approvals, review/report moderation, categories, users, wallet, invoices, referrals, blog CMS, audit log, and platform config. See [08-admin-panel.md](./08-admin-panel.md).
+Vue 3 + Vite SPA, same minimal stack as provider-panel but **no code is shared between the two** — every "shared-looking" file (UI components, composables, utilities) is a deliberately duplicated copy per app, per an explicit "cross-app isolation convention" repeated in code comments throughout the codebase. Covers salon approvals, review/report moderation, categories and category requests, users, wallet, invoices, referrals, blog CMS, audit log, analytics, feature flags, platform config, plans/subscriptions, subscription coupons, and per-booking event timelines. See [08-admin-panel.md](./08-admin-panel.md).
 
 ## Tech stack summary
 
@@ -29,7 +29,7 @@ Vue 3 + Vite SPA, same minimal stack as provider-panel but **no code is shared b
 - `class-validator` + `class-transformer`, global `ValidationPipe({ whitelist: true, transform: true })`
 - `@nestjs/schedule` for cron jobs, `@nestjs/jwt` for session tokens (HttpOnly cookie, never localStorage)
 - Jest (unit + e2e via `supertest`)
-- Swappable provider abstractions selected by env var: SMS (Kavenegar), Payments (Zarinpal), Push (Web Push/VAPID), Storage (local disk/S3) — see [19-third-party-services.md](./19-third-party-services.md)
+- Swappable provider abstractions selected by env var: SMS (console / Kavenegar / PayamakYab / a temporary Faragostaresh relay), Payments (mock / Zarinpal), Push (console / Web Push-VAPID), Storage (local disk / S3), error tracking (logger / Sentry), analytics (Postgres / console) — see [19-third-party-services.md](./19-third-party-services.md)
 
 **`apps/user-app`**
 - Nuxt 4 (SSR), Vue 3 Composition API, Pinia
@@ -86,7 +86,10 @@ The product was built in numbered, sequentially-shipped plans, each with a desig
 12. Salon showcase — stories, profile, portfolio (2026-07-17)
 13. Coupons & per-service discounts (2026-07-19)
 14. Referral & rating system — six sequentially-verified slices (2026-07-22)
-15. Salon multi-category tagging + worker-level service restrictions (most recent)
+15. Salon multi-category tagging + worker-level service restrictions
+16. Optional manual booking approval (`pending_approval` / `rejected_by_salon`, `booking_events` timeline) — 2026-08-28, [28](./28-booking-approval-workflow.md)
+17. Monetization/subscription platform, seven phases shipped 2026-08-30 — global payment toggle, plans/subscriptions/entitlements, public handle + QR + attribution, salon CRM, salon SMS quota, subscription coupons + billing scaffolding ([29](./29-global-payment-toggle.md)–[34](./34-subscription-coupons-and-billing.md))
+18. 2026-09-03 audit-and-fix pass — commission accrues only on captured money, `depositPaid` on customer booking responses, per-(phone, IP) OTP attempt scoping, production JWT-secret boot guard, `FARAGOSTARESH_RELAY_TOKEN` moved to env, persistent `api_uploads` volume in production (most recent)
 
 Each of these is described in depth in the relevant numbered document in this set; see [26-system-map.md](./26-system-map.md) for a consolidated timeline cross-referenced to the files each plan touched.
 

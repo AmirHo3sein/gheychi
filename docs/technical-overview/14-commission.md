@@ -11,7 +11,9 @@ The platform holds customer-paid **deposits** on the salon's behalf. This subsys
 ```mermaid
 flowchart TD
     A["Booking marked completed or no_show\n(BookingsService.updateStatus)"] --> B["InvoicingService.recordCommission()\n(same transaction as the status write)"]
-    B --> C["INSERT financial_transactions\n(gross = booking.depositAmount, commission = gross*rate, net = gross-commission)"]
+    B --> B2{"booking has a\n`paid` Payment row?"}
+    B2 -->|no: flag-off, wallet-covered, fully discounted| B3[no-op — nothing was captured]
+    B2 -->|yes| C["INSERT financial_transactions\n(gross = payment.amount, commission = gross*rate, net = gross-commission)"]
     C --> D["financial_transactions accumulate,\nunlinked to any invoice yet"]
     D --> E["MonthlyInvoiceGenerationJob\n(daily, 03:00)"]
     E --> F{"Jalali month\nfully closed?"}
@@ -25,7 +27,7 @@ flowchart TD
 
 ## `InvoicingService.recordCommission()`
 
-Called from `BookingsService.updateStatus`'s `'completed'`/`'no_show'` branch, **inside the same transaction as the booking-status write** — commission applies **identically** to a no-show and a genuine completion (both forfeit/deduct the deposit the same way from the platform's accounting perspective). `grossAmount = booking.depositAmount` — **the deposit, never the full service price**, since the deposit is the only money that ever actually flows through Zarinpal (the rest, commonly the majority, is cash paid customer-to-salon in person and is invisible to this ledger). If the deposit is `<= 0` (fully wallet-covered or fully discounted), this is a deliberate no-op, not a zero-amount row.
+Called from `BookingsService.updateStatus`'s `'completed'`/`'no_show'` branch **and from `cancel()`'s forfeited (non-refunded) branch**, in every case **inside the same transaction as the booking-status write** (signature `recordCommission(em, {id, salonId})`) — commission applies **identically** to a no-show, a genuine completion, and a late customer cancellation whose deposit was forfeited (all three leave the deposit with the salon, so all three owe the platform its cut — the design spec always said so, but only the first two were implemented until 2026-09-03). It first looks up the booking's `Payment` row with `status = 'paid'` and uses **`grossAmount = payment.amount`** — the deposit the platform *actually captured online*, never the full service price (the rest, commonly the majority, is cash paid customer-to-salon in person and is invisible to this ledger) and never `booking.depositAmount`. **No paid Payment → no row at all**, a deliberate no-op rather than a zero-amount row: that covers a fully wallet-covered or fully discounted deposit, and — the case that motivated the change — every booking confirmed while `feature_online_payment_enabled` is off (the seeded production default), where `depositAmount` is still recorded on the row for reporting but nothing was ever collected. Accruing on `depositAmount` there invoiced salons a "net payout" of money the platform never held, and inflated `GET /salons/mine/earnings` the same way. Pinned by `test/booking-payment-toggle.e2e-spec.ts`.
 
 `commissionAmount = round(gross * commissionPercent / 100)` (config `commission_percent`, seeded 10%), `netAmount = gross - commission`. Both `commissionRate` and the computed amounts are **frozen at write time** — read once from `PlatformConfigService` inside this transaction, never recomputed if the platform's commission config later changes. A correction is a new offsetting row via `correction_of_id` (self-referencing), never an in-place UPDATE — `financial_transactions` is strictly append-only.
 
@@ -47,7 +49,7 @@ Called from `BookingsService.updateStatus`'s `'completed'`/`'no_show'` branch, *
 
 ## Manual settlement recording
 
-`PATCH /admin/invoices/:id/payment` — an admin "records" a payment they already made outside the system (a real bank transfer); **never touches `financial_transactions`/`invoice_items`**, only inserts an `invoice_payments` row and re-derives `invoice.status` from the running `paid_total` (supports partial payments across multiple calls). `invoice_payments.method` allows `'bank_transfer'|'cash'|'other'|'automatic_payout'|'wallet_credit'`, but **only the first three are ever actually recordable** from the current DTO — `automatic_payout`/`wallet_credit` are reserved values with zero writers.
+`PATCH /admin/invoices/:id/payment` — an admin "records" a payment they already made outside the system (a real bank transfer); **never touches `financial_transactions`/`invoice_items`**, only inserts an `invoice_payments` row and re-derives `invoice.status` from the running `paid_total` (supports partial payments across multiple calls). `InvoicingService.recordPayment` row-locks the invoice (`setLock('pessimistic_write')`) before the read-then-add on `paidTotal` — two concurrent admin records used to lose one — and throws `409` on a `void` invoice. `invoice_payments.method` allows `'bank_transfer'|'cash'|'other'|'automatic_payout'|'wallet_credit'`, but **only the first three are ever actually recordable** from the current DTO — `automatic_payout`/`wallet_credit` are reserved values with zero writers.
 
 ## `settlement_id` — a reserved, unused seam
 
@@ -65,7 +67,7 @@ PATCH /admin/invoices/:id/payment            (admin, record a manual payment)
 
 ## Known limitations
 
-- **Commission only ever reflects the online deposit**, never the full service price — the platform's real revenue-capture rate depends entirely on the configured deposit percentage, and the cash-at-salon portion is completely outside this ledger's visibility.
+- **Commission only ever reflects money captured online**, never the full service price — the platform's real revenue-capture rate depends entirely on the configured deposit percentage *and* on `feature_online_payment_enabled` being on; with it off (today's production default) this ledger accrues nothing at all, and the cash-at-salon portion is completely outside its visibility either way.
 - **Grouping happens in application memory, not SQL** — fine at current scale, a latent performance risk if the unlinked-transaction backlog ever grows large. See [22-performance.md](./22-performance.md).
 - **No automated payout integration** — see [25-future-improvements.md](./25-future-improvements.md) for the `settlement_id` seam this would eventually plug into.
 

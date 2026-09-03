@@ -12,9 +12,15 @@ Every external integration follows the same pattern: an interface, a DI token, t
 
 Sandbox exists for request/verify/StartPay but **not for refunds at all**.
 
-## Kavenegar — SMS
+## SMS — four providers behind one `SmsProvider`
 
-`SMS_PROVIDER=kavenegar` (default `console`, which just logs). `KAVENEGAR_API_KEY`, `KAVENEGAR_OTP_TEMPLATE` (default `gheychi-otp`). Two REST endpoints used: template-based OTP lookup, and plain message send. See [16-notifications.md](./16-notifications.md) for every message actually sent.
+`SMS_PROVIDER=console|kavenegar|payamakyab|faragostaresh-relay` (default `console`, which just logs). `sms/sms.module.ts` constructs exactly one at boot; every credential is `getOrThrow`, so a missing one fails at boot, not at first send.
+
+- **`kavenegar`** — `KAVENEGAR_API_KEY`, `KAVENEGAR_OTP_TEMPLATE` (default `gheychi-otp`). Two REST endpoints used: template-based OTP lookup, and plain message send.
+- **`payamakyab`** — a plain SOAP/`.asmx` panel; hand-rolled envelope via `fetch`, no SOAP client dependency. `PAYAMAKYAB_USERNAME`/`PAYAMAKYAB_PASSWORD`/`PAYAMAKYAB_SENDER`.
+- **`faragostaresh-relay`** — **temporary stopgap, the live production setting as of 2026-08-24**: PayamakYab's `SendSms` method refuses our server's IP ("not authorized") even with working credentials, so sends relay through a small PHP endpoint the panel owner already runs (presumably IP-allowlisted). `FARAGOSTARESH_RELAY_TOKEN` is the bearer token for that endpoint. It was hardcoded in `faragostaresh-relay-sms.provider.ts` (with the panel password in a comment) until 2026-09-03 — this repo is public, so treat that value as burned and never put a credential back in source. Switch back to `payamakyab` once our IP is authorized.
+
+See [16-notifications.md](./16-notifications.md) for every message actually sent.
 
 ## Web Push — VAPID
 
@@ -29,9 +35,9 @@ Sandbox exists for request/verify/StartPay but **not for refunds at all**.
 
 Every consumer (salon photos, stories, portfolio, blog covers) shares the same upload pattern: 5MB hard cap (Multer), real magic-number MIME sniffing (`file-type` package, not the client's `Content-Type` header), server-generated storage keys (never the client's filename — path-traversal defense).
 
-## Error tracking — Sentry-shaped seam, no real backend yet
+## Error tracking — logger by default, real Sentry opt-in
 
-`ErrorTrackingService` (`error-tracking/error-tracking.service.ts`), token `ERROR_TRACKING_PROVIDER`. No env-var selector today because there is exactly one implementation: `LoggerErrorTrackingService`, which logs one structured JSON line (`message`, `name`, `stack`, `requestId`, `userId`, `route`, redacted `extra`) through the existing Nest `Logger` under the `'ErrorTracking'` tag — **not** a real Sentry/APM SDK call, since no DSN/API key exists in this environment.
+`ErrorTrackingService` (`error-tracking/error-tracking.service.ts`), token `ERROR_TRACKING_PROVIDER`, selected by `ERROR_TRACKING_PROVIDER=logger|sentry` (default `logger`). `LoggerErrorTrackingService` logs one structured JSON line (`message`, `name`, `stack`, `requestId`, `userId`, `route`, redacted `extra`) through the existing Nest `Logger` under the `'ErrorTracking'` tag. `SentryErrorTrackingService` wraps real `@sentry/node` (`SENTRY_DSN` via `getOrThrow` — boot fails without it in `sentry` mode), with `skipOpenTelemetrySetup: true` and `tracesSampleRate: 0` because this app's own OTel SDK (`tracing.ts`) already owns tracing — Sentry here is error capture only.
 
 Two capture points feed it:
 - `GlobalExceptionFilter` (`error-tracking/global-exception.filter.ts`, `APP_FILTER`) — every uncaught 5xx/unknown HTTP exception, with `requestId`/`userId`/`route` context. Subclasses `@nestjs/core`'s `BaseExceptionFilter` and calls `super.catch()`, so the actual HTTP response is byte-for-byte what NestJS's default handling would have produced with no filter at all — capture is a pure side-effect. Ordinary sub-500 business-rule throws (`NotFoundException`, `BadRequestException`, ...) are deliberately NOT captured, to avoid flooding a real tracker with routine control flow.
@@ -43,16 +49,19 @@ Swapping in real Sentry (or another APM) later means writing one new class imple
 
 ## Product analytics — seam only, seeded on the booking funnel
 
-`AnalyticsService` (`analytics/analytics.service.ts`), token `ANALYTICS_PROVIDER`. Same interface → token → env-selected-implementation shape as every other row in this table. No real vendor account exists here, so the only implementation is `ConsoleAnalyticsProvider`, which logs each event as one structured JSON line via Nest's `Logger`.
+`AnalyticsService` (`analytics/analytics.service.ts`), token `ANALYTICS_PROVIDER`, selected by `ANALYTICS_PROVIDER=postgres|console` (default `postgres`). No real vendor account exists; `PostgresAnalyticsProvider` persists each event to `analytics_events` (with an indexed `salon_id` lifted from the event properties), read back by `GET /admin/analytics/summary`; `ConsoleAnalyticsProvider` logs each event as one structured JSON line via Nest's `Logger`.
 
-`AnalyticsService.track()` is genuinely fire-and-forget everywhere it's called (`void ...track().catch(() => {})`, never awaited) so an analytics outage can never add latency to, or fail, a real booking or payment. Four seed events, not a full catalog:
+`AnalyticsService.track()` is genuinely fire-and-forget everywhere it's called (`void ...track().catch(() => {})`, never awaited) so an analytics outage can never add latency to, or fail, a real booking or payment. Seven seed events, not a full catalog:
 
 | Event | Fired from | Fires |
 |---|---|---|
-| `booking_started` | `BookingsService.createHold`/`createManual` | Before any validation — the funnel's true entry point |
+| `booking_started` | `BookingsService.createHold`/`createManual` | Before any validation — the funnel's true entry point; carries the booking's `attributionSource` (`qr`/`direct`/`search`/null) as `source` |
 | `booking_confirmed` | `PaymentsService.notifyConfirmed` | The one choke point every confirmation path (zero-deposit hold, manual walk-in, paid callback) already funnels through |
 | `booking_cancelled` | `BookingsService.cancel()` | After the transaction commits |
 | `payment_succeeded` | `PaymentsService.handleCallback` | Only the first-time `'captured'` branch — the `'duplicate'` (replayed callback) branch is skipped to avoid double-counting one real payment |
+| `user_registered` | `auth.controller.ts` `verify-otp` | New-user branch only |
+| `salon_submitted` | `SalonsService.createForOwner` | On salon creation |
+| `search_performed` | `SearchService` | Per search request |
 
 Properties are bare id references (`salonId`/`bookingId`/`workerId`/…) and booleans/enums describing the outcome — never a phone number, payment authority, or other credential, by the same call-site discipline as `ErrorTrackingService`'s context (see below). Swapping in a real vendor (Mixpanel/Amplitude/PostHog/etc.) later means writing one new class implementing `AnalyticsProvider` and pointing `analytics.module.ts`'s provider registration at it — no call site changes.
 

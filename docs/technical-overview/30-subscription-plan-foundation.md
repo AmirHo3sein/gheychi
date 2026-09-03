@@ -40,7 +40,12 @@ Moving the flag to a different plan (`PlansService.update`) unsets every other p
 first, in the same transaction — the same "setting a new cover photo unsets every other
 cover row" precedent salon-photos.service.ts already established. Deleting the default plan,
 or unsetting `isDefault` without moving it elsewhere first, is refused (`ConflictException`)
-— the platform must never be left with zero resolvable default.
+— the platform must never be left with zero resolvable default. **The default plan can never
+be inactive**, either: `update` refuses `isActive: false` on the default plan and
+`isDefault: true` on an inactive plan (evaluated against the post-update values, so a single
+PATCH can't sneak both through). `createDefaultSubscription` reads `isDefault` only, while
+`assignPlan` refuses inactive plans — without this guard a new salon could be born on a plan
+no admin was allowed to assign.
 
 `salon_subscriptions` (`salon-subscription.entity.ts`) — one row per salon (`salon_id` is
 `UNIQUE`, mirroring `salon.ownerId`'s own one-salon-per-owner simplicity), not an
@@ -57,9 +62,13 @@ to read from. Three-way precedence, matching the owner's GLOBAL / PLAN / SALON-S
 split: an `active` subscription's plan entitlements, with any admin-set per-salon override
 (`salon_subscriptions.entitlement_overrides`, jsonb, nullable) merged on top key-by-key;
 falls back to the current default plan's entitlements (no override applied — it belonged to
-the now-ended arrangement) when the subscription is canceled or missing. **Still not wired
-into any enforcement** — that's each later phase's own job as it introduces the specific
-keys it needs, so this backbone stays verifiable in isolation.
+the now-ended arrangement) when the subscription is canceled or missing. `cancel()` also
+**clears `entitlement_overrides` outright** (the same UPDATE that sets `canceled`), so a later
+`assignPlan` starts from the new plan verbatim instead of silently resurrecting a previous
+arrangement's per-salon exceptions. There is no generic enforcement gate — each later phase
+wires the specific key it needs, so this backbone stays verifiable in isolation; today the
+one consumer is `CustomerSmsService` reading `smsMonthlyQuota`
+([33-salon-sms-quota.md](./33-salon-sms-quota.md)).
 
 `GET /admin/salons/:salonId/subscription` (and the provider read-only equivalent below)
 return both `plan` (whatever the subscription row nominally references, even while canceled)

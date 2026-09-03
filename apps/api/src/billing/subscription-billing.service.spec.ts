@@ -13,14 +13,14 @@ describe('SubscriptionBillingService', () => {
   let periodsRepo: { find: jest.Mock };
   let subscriptions: { getForSalon: jest.Mock };
   let couponRepoInTx: { findOneBy: jest.Mock; createQueryBuilder: jest.Mock };
-  let redemptionRepoInTx: { findOneBy: jest.Mock; count: jest.Mock; save: jest.Mock; create: jest.Mock };
-  let periodsRepoInTx: { save: jest.Mock; create: jest.Mock };
+  let redemptionRepoInTx: { findOneBy: jest.Mock; count: jest.Mock; save: jest.Mock; create: jest.Mock; delete: jest.Mock };
+  let periodsRepoInTx: { save: jest.Mock; create: jest.Mock; findOneBy: jest.Mock; update: jest.Mock };
   let transactionMock: jest.Mock;
 
   beforeEach(async () => {
     periodsRepo = { find: jest.fn().mockResolvedValue([]) };
     subscriptions = {
-      getForSalon: jest.fn().mockResolvedValue({ plan: { id: 'plan-1', monthlyPriceToman: 500_000 } }),
+      getForSalon: jest.fn().mockResolvedValue({ subscription: { status: 'active' }, plan: { id: 'plan-1', monthlyPriceToman: 500_000 } }),
     };
     couponRepoInTx = {
       findOneBy: jest.fn().mockResolvedValue(null),
@@ -35,10 +35,13 @@ describe('SubscriptionBillingService', () => {
       count: jest.fn().mockResolvedValue(0),
       create: jest.fn((v) => v),
       save: jest.fn((v) => Promise.resolve({ id: 'redemption-1', ...v })),
+      delete: jest.fn().mockResolvedValue({ affected: 1 }),
     };
     periodsRepoInTx = {
       create: jest.fn((v) => v),
       save: jest.fn((v) => Promise.resolve({ id: 'period-1', ...v })),
+      findOneBy: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
 
     const emRepos = new Map<unknown, unknown>([
@@ -66,6 +69,12 @@ describe('SubscriptionBillingService', () => {
       await expect(
         service.createPeriod('salon-1', { periodStart: '2026-09-01T00:00:00.000Z', periodEnd: '2026-08-01T00:00:00.000Z' }),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('refuses to bill a canceled subscription -- the nominal plan is no longer in force', async () => {
+      subscriptions.getForSalon.mockResolvedValue({ subscription: { status: 'canceled' }, plan: { id: 'plan-1', monthlyPriceToman: 500_000 } });
+      await expect(service.createPeriod('salon-1', dto)).rejects.toBeInstanceOf(ConflictException);
+      expect(transactionMock).not.toHaveBeenCalled();
     });
 
     it('bills the plan price verbatim with no coupon', async () => {
@@ -116,29 +125,49 @@ describe('SubscriptionBillingService', () => {
   });
 
   describe('setStatus', () => {
-    it('404s when the period does not exist', async () => {
-      const findOneBy = jest.fn().mockResolvedValue(null);
-      Object.assign(periodsRepo, { findOneBy });
-      await expect(service.setStatus('missing', 'paid')).rejects.toBeInstanceOf(NotFoundException);
+    it('404s when the period does not exist under this salon', async () => {
+      periodsRepoInTx.findOneBy.mockResolvedValue(null);
+      await expect(service.setStatus('salon-1', 'missing', 'paid')).rejects.toBeInstanceOf(NotFoundException);
+      expect(periodsRepoInTx.findOneBy).toHaveBeenCalledWith({ id: 'missing', salonId: 'salon-1' });
+      expect(periodsRepoInTx.update).not.toHaveBeenCalled();
     });
 
-    it('409s when the period is already resolved', async () => {
-      const findOneBy = jest.fn().mockResolvedValue({ id: 'period-1', status: 'paid' });
-      Object.assign(periodsRepo, { findOneBy });
-      await expect(service.setStatus('period-1', 'comped')).rejects.toBeInstanceOf(ConflictException);
+    it('409s when the compare-and-swap loses (period already resolved, possibly by a concurrent admin)', async () => {
+      periodsRepoInTx.findOneBy.mockResolvedValue({ id: 'period-1', salonId: 'salon-1', status: 'pending', couponId: null });
+      periodsRepoInTx.update.mockResolvedValue({ affected: 0 });
+      await expect(service.setStatus('salon-1', 'period-1', 'comped')).rejects.toBeInstanceOf(ConflictException);
     });
 
-    it('marks a pending period paid and stamps resolvedAt', async () => {
-      const update = jest.fn().mockResolvedValue({ affected: 1 });
-      const findOneBy = jest
-        .fn()
-        .mockResolvedValueOnce({ id: 'period-1', status: 'pending' })
-        .mockResolvedValueOnce({ id: 'period-1', status: 'paid', resolvedAt: new Date() });
-      Object.assign(periodsRepo, { findOneBy, update });
+    it('marks a pending period paid via a status-conditioned UPDATE and stamps resolvedAt', async () => {
+      periodsRepoInTx.findOneBy
+        .mockResolvedValueOnce({ id: 'period-1', salonId: 'salon-1', status: 'pending', couponId: null })
+        .mockResolvedValueOnce({ id: 'period-1', salonId: 'salon-1', status: 'paid', resolvedAt: new Date() });
 
-      const result = await service.setStatus('period-1', 'paid');
-      expect(update).toHaveBeenCalledWith({ id: 'period-1' }, { status: 'paid', resolvedAt: expect.any(Date) });
+      const result = await service.setStatus('salon-1', 'period-1', 'paid');
+      expect(periodsRepoInTx.update).toHaveBeenCalledWith(
+        { id: 'period-1', salonId: 'salon-1', status: 'pending' },
+        { status: 'paid', resolvedAt: expect.any(Date) },
+      );
+      expect(redemptionRepoInTx.delete).not.toHaveBeenCalled();
       expect(result.status).toBe('paid');
+    });
+
+    it('voiding a coupon-discounted period releases the redemption so the salon can use the code again', async () => {
+      periodsRepoInTx.findOneBy
+        .mockResolvedValueOnce({ id: 'period-1', salonId: 'salon-1', status: 'pending', couponId: 'coupon-1' })
+        .mockResolvedValueOnce({ id: 'period-1', salonId: 'salon-1', status: 'void', resolvedAt: new Date() });
+
+      await service.setStatus('salon-1', 'period-1', 'void');
+      expect(redemptionRepoInTx.delete).toHaveBeenCalledWith({ billingPeriodId: 'period-1' });
+    });
+
+    it('paying a coupon-discounted period keeps the redemption', async () => {
+      periodsRepoInTx.findOneBy
+        .mockResolvedValueOnce({ id: 'period-1', salonId: 'salon-1', status: 'pending', couponId: 'coupon-1' })
+        .mockResolvedValueOnce({ id: 'period-1', salonId: 'salon-1', status: 'paid', resolvedAt: new Date() });
+
+      await service.setStatus('salon-1', 'period-1', 'paid');
+      expect(redemptionRepoInTx.delete).not.toHaveBeenCalled();
     });
   });
 });

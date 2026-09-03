@@ -2,7 +2,7 @@
 
 PostgreSQL 16 + PostGIS. TypeORM 0.3 with `synchronize: false` — the migration files under `apps/api/src/migrations/` are the sole source of truth for schema. Migrations run via `pnpm --filter @gheychi/api migration:run` and are **never** run automatically on deploy/boot (a deliberate manual step — see [25-future-improvements.md](./25-future-improvements.md) / deployment docs).
 
-**Codebase-wide convention: no ORM relations.** Every entity file declares foreign keys as bare `@Column({ name: 'xxx_id' }) xxxId: string`, never a TypeORM `@ManyToOne`/`@OneToMany`/`@JoinColumn`. All joins are done by hand in service code — either a manual batched `In(...)` lookup (e.g. `SalonsService.attachCategories`, `BookingsService.attachNames`, `SalonWorkersController.attachServiceIds`) or a raw `QueryBuilder`. This is confirmed with zero exceptions across all 37 entity files.
+**Codebase-wide convention: no ORM relations.** Every entity file declares foreign keys as bare `@Column({ name: 'xxx_id' }) xxxId: string`, never a TypeORM `@ManyToOne`/`@OneToMany`/`@JoinColumn`. All joins are done by hand in service code — either a manual batched `In(...)` lookup (e.g. `SalonsService.attachCategories`, `BookingsService.attachNames`, `SalonWorkersController.attachServiceIds`) or a raw `QueryBuilder`. This is confirmed with zero exceptions across all 47 entity files.
 
 ## Full ER diagram
 
@@ -34,6 +34,16 @@ erDiagram
     salons ||--o{ coupons : "salon_id (nullable)"
     salons ||--o{ financial_transactions : "salon_id"
     salons ||--o{ invoices : "salon_id"
+    salons ||--|| salon_subscriptions : "salon_id (unique)"
+    plans ||--o{ salon_subscriptions : "plan_id"
+    salons ||--o{ subscription_billing_periods : "salon_id"
+    subscription_coupons ||--o{ subscription_coupon_redemptions : "coupon_id"
+    subscription_billing_periods ||--o| subscription_coupon_redemptions : "billing_period_id"
+    salons ||--o{ customer_notes : "salon_id"
+    salons ||--o{ salon_sms_messages : "salon_id"
+    salons ||--o{ category_requests : "salon_id"
+    salons ||--o{ analytics_events : "salon_id (nullable)"
+    workers ||--o{ schedule_exceptions : "worker_id (nullable)"
 
     salon_services ||--o{ bookings : "service_id"
     salon_services }o--o{ workers : "worker_services"
@@ -47,6 +57,7 @@ erDiagram
     bookings ||--o{ financial_transactions : "booking_id"
     bookings ||--o| referrals : "qualifying_booking_id"
     bookings }o--o| coupons : "coupon_id (nullable)"
+    bookings ||--o{ booking_events : "booking_id"
 
     payments ||--o{ payment_authorities : "payment_id"
 
@@ -105,6 +116,27 @@ All under `apps/api/src/migrations/`, filename-timestamp-ordered. This list doub
 | `1754300000000-cities-table` | Creates `cities` (retires the static `iran-cities.ts` array). Adds `salons.city_id`, a nullable FK to `cities(id)` best-effort-backfilled by exact name match; `salons.city` itself stays free text and remains the actual source of truth (see [24-technical-debt.md](./24-technical-debt.md)). |
 | `1754400000000-admin-notification-reads` | Creates `admin_notification_reads` (composite PK `(notification_id, admin_id)`) for per-admin read state. |
 | `1754500000000-audit-log-filter-indexes` | Adds `audit_log (action, created_at DESC)` and `audit_log (target_type, created_at DESC)` composite indexes. |
+| `1754600000000-schedule-exception-time-range` | Adds `schedule_exceptions.start_time`/`end_time` (`time`, nullable) + `reason`; CHECK `schedule_exceptions_time_range_chk` (both null, or both set with `start < end`) — partial-day closures. |
+| `1754700000000-booking-source-and-notes` | Adds `bookings.source` (`'online'` default, CHECK `online|manual`) and `bookings.notes? (≤500)` for owner-entered manual bookings. |
+| `1754800000000-worker-schedule-exceptions` | Adds `schedule_exceptions.worker_id? (cascade)`. Replaces the `(salon_id, date)` unique with two partial unique indexes: whole-salon rows (`worker_id IS NULL`) and per-worker rows (`salon_id, date, worker_id`). |
+| `1754900000000-analytics-events` | Creates `analytics_events` (`event_name`, `properties jsonb`, `user_id? (SET NULL)`), indexed `(event_name, created_at)`. |
+| `1755000000000-feature-flags` | Seeds boolean `platform_config` rows `feature_reviews_enabled`, `feature_stories_enabled`, `feature_portfolio_enabled`, `feature_referrals_enabled`, `feature_coupons_enabled` (all `true`). |
+| `1755100000000-category-requests` | Creates `category_requests` (`pending|approved|rejected` CHECK, `category_id? (SET NULL)`), partial unique `(salon_id, lower(name)) WHERE status='pending'`. |
+| `1755200000000-booking-approval-workflow` | Adds `salons.booking_confirmation_mode` (`automatic|manual_approval`), `approval_timeout_minutes?`/`payment_timeout_minutes?` (CHECK 1–1440); `bookings.confirmation_mode`, `approval_expires_at?`, `payment_expires_at?` with partial expiry indexes; creates `booking_events`; seeds `booking_approval_timeout_minutes=30`. |
+| `1755300000000-booking-approval-timeout-default-10` | Data fix: `booking_approval_timeout_minutes` 30 → 10 (only if still at the seeded value). |
+| `1755400000000-booking-events-sequence` | Adds `booking_events.seq bigserial`; re-points the `(booking_id, …)` index at `seq` instead of `created_at`. |
+| `1755500000000-online-payment-feature-flag` | Seeds `feature_online_payment_enabled='false'` — online deposit collection is off until an admin flips it. |
+| `1755600000000-subscriptions-and-plans` | Creates `plans` (partial unique index enforcing exactly one `is_default`), `salon_subscriptions` (unique `salon_id`, `active|canceled` CHECK). Seeds the `free` default plan and backfills every existing salon onto it. |
+| `1755700000000-subscription-entitlement-overrides` | Adds `salon_subscriptions.entitlement_overrides jsonb?`. |
+| `1755800000000-booking-attribution-source` | Adds `bookings.attribution_source?` (CHECK `qr|direct|search`). |
+| `1755900000000-customer-notes` | Creates `customer_notes`, indexed `(salon_id, customer_id, created_at DESC)`. |
+| `1756000000000-analytics-events-salon-id` | Adds `analytics_events.salon_id? (SET NULL)`, indexed `(salon_id, created_at DESC)`, lifted from existing event properties. |
+| `1756100000000-salon-sms-messages` | Creates `salon_sms_messages`, indexed `(salon_id, created_at)`. Backfills `entitlements.smsMonthlyQuota=20` onto every plan lacking the key. |
+| `1756200000000-subscription-billing` | Creates `subscription_coupons` (unique `code`, percent 1–100 CHECK), `subscription_billing_periods` (`pending|paid|comped|void` CHECK, `period_end > period_start`), `subscription_coupon_redemptions` (unique `(coupon_id, salon_id)`). |
+| `1756300000000-no-show-grace-minutes` | Seeds `platform_config.no_show_grace_minutes = 30` — how long after a booking's start a salon must wait before recording a no-show. Admin-editable, `0..1440`, never per-salon (it protects the customer *against* the salon). |
+| `1756400000000-salon-slug-history` | Creates `salon_slug_history(slug PK, salon_id FK ON DELETE CASCADE, released_at)` + `(salon_id)` index. The slug being the PRIMARY KEY is the point: "this handle is spoken for, permanently" becomes a database invariant, not an application check. Source of both the 301 redirect for already-printed QR codes and the reservation that stops another salon claiming a freed handle. No backfill. |
+| `1756500000000-payment-refund-claim` | Adds `payments.refund_claimed_at` — CAS'd from NULL *before* the gateway refund call so only one caller ever reaches Zarinpal, with a TTL so a process dying mid-call cannot strand the refund. |
+| `1756600000000-bookings-salon-created-idx` | Adds `bookings(salon_id, created_at)` for the provider dashboard's period metrics. |
 
 ## Table-by-table reference
 
@@ -112,7 +144,7 @@ All under `apps/api/src/migrations/`, filename-timestamp-ordered. This list doub
 `id (uuid PK)`, `phone (unique)`, `name?`, `gender? ('female'|'male')`, `role ('customer'|'provider'|'admin', default customer)`, `status ('active'|'suspended', default active)`, `created_at`. Referenced by nearly every other table.
 
 ### `salons`
-`id`, `owner_id (unique — 1 salon/owner)`, `name`, `slug (unique)`, `description?`, `tagline? (≤120)`, `about? (≤2000)`, `instagram_handle? (≤30, strict charset)`, `gender_target ('women'|'men')`, `status ('pending'→'approved'|'rejected'|'suspended')`, `rejection_reason?`, `suspended_cause? ('admin'|'owner_suspended')`, `address`, `city` (**free text — still the actual source of truth, no validation against `cities`**), `city_id? (nullable FK to `cities(id)`, best-effort exact-name match on create/update — see [24-technical-debt.md](./24-technical-debt.md))`, `location geography(Point,4326)` (GIST-indexed), `capacity (default 1)`, `rating_avg numeric(3,2)` / `rating_count`, `is_featured` / `featured_until?`, `created_at`.
+`id`, `owner_id (unique — 1 salon/owner)`, `name`, `slug (unique)`, `description?`, `tagline? (≤120)`, `about? (≤2000)`, `instagram_handle? (≤30, strict charset)`, `gender_target ('women'|'men')`, `status ('pending'→'approved'|'rejected'|'suspended')`, `rejection_reason?`, `suspended_cause? ('admin'|'owner_suspended')`, `address`, `city` (**free text — still the actual source of truth, no validation against `cities`**), `city_id? (nullable FK to `cities(id)`, best-effort exact-name match on create/update — see [24-technical-debt.md](./24-technical-debt.md))`, `location geography(Point,4326)` (GIST-indexed), `capacity (default 1)`, `rating_avg numeric(3,2)` / `rating_count`, `is_featured` / `featured_until?`, `booking_confirmation_mode ('automatic'|'manual_approval', default automatic — owner-set)`, `approval_timeout_minutes?` / `payment_timeout_minutes?` (CHECK 1–1440, `NULL` = inherit the global config; **admin-only**, deliberately absent from `UpdateSalonDto` — see [28](./28-booking-approval-workflow.md)), `created_at`. `slug` is provider-editable (reserved-word-checked) and doubles as the public handle — [31](./31-public-handle-and-attribution.md).
 
 ### `salon_services`
 `id`, `salon_id (cascade)`, `category_id (restrict)`, `name`, `description?`, `price bigint`, `duration_min`, `is_active (default true)`, `discount_percent? (1–100)`, `created_at`.
@@ -130,7 +162,7 @@ Composite PK `(worker_id, service_id)`, both cascade. **Zero rows for a worker =
 `id`, `salon_id (cascade)`, `weekday (smallint 0–6)`, `open_time`/`close_time (Postgres time)`. Unique `(salon_id, weekday, open_time)`.
 
 ### `schedule_exceptions`
-`id`, `salon_id (cascade)`, `date`, `is_closed (default true)`. One-off closures; consumed by the availability algorithm — see [10-scheduling.md](./10-scheduling.md).
+`id`, `salon_id (cascade)`, `date`, `is_closed (default true)`, `worker_id? (cascade)`, `start_time?`/`end_time? (time)`, `reason? (≤200)`. Three shapes: `worker_id` NULL + times NULL = whole salon closed all day (the original meaning); `worker_id` NULL + both times set = salon closed only during `[start_time, end_time)` (CHECK forbids setting one time without the other); `worker_id` set = that one worker is off for the whole day. Uniqueness is two partial indexes — `(salon_id, date) WHERE worker_id IS NULL` and `(salon_id, date, worker_id) WHERE worker_id IS NOT NULL`. Consumed by the availability algorithm — see [10-scheduling.md](./10-scheduling.md).
 
 ### `salon_photos`
 `id`, `salon_id (cascade)`, `url`, `sort_order`, `is_cover`, `storage_key`.
@@ -142,7 +174,10 @@ Composite PK `(worker_id, service_id)`, both cascade. **Zero rows for a worker =
 `id`, `salon_id (cascade)`, `url`, `storage_key`, `caption? (≤300)`, `service_id? (SET NULL)`, `status`, `sort_order`, `created_at`.
 
 ### `bookings`
-`id`, `user_id`, `salon_id`, `service_id`, `starts_at`/`ends_at (timestamptz)`, `price_snapshot bigint`, `deposit_amount bigint`, `status` (see [09-booking-engine.md](./09-booking-engine.md)), `reminded_at?`, `coupon_id? (SET NULL)`, `discount_percent?`, `discount_fixed_amount?` (mutually exclusive, DB CHECK), `original_price_snapshot?`, `worker_id? (SET NULL)`, `wallet_amount_used?`, `created_at`.
+`id`, `user_id`, `salon_id`, `service_id`, `starts_at`/`ends_at (timestamptz)`, `price_snapshot bigint`, `deposit_amount bigint` (the deposit *owed* under the config at creation — non-zero even when nothing was collected because online payment is off; `payments` is the record of money actually held), `status` (see [09-booking-engine.md](./09-booking-engine.md)), `reminded_at?`, `coupon_id? (SET NULL)`, `discount_percent?`, `discount_fixed_amount?` (mutually exclusive, DB CHECK), `original_price_snapshot?`, `worker_id? (SET NULL)`, `wallet_amount_used?`, `source ('online'|'manual', CHECK)`, `notes? (≤500, manual bookings only)`, `attribution_source? ('qr'|'direct'|'search', CHECK)`, `confirmation_mode ('automatic'|'manual_approval', snapshotted at creation)`, `approval_expires_at?` / `payment_expires_at?` (immutable deadline snapshots, partial-indexed on `status='pending_approval'` / `'pending_payment'`), `created_at`.
+
+### `booking_events`
+`id`, `seq bigserial` (**the only sort key** — `created_at` is transaction-start time and collides within one transaction), `booking_id (cascade)`, `event_type (≤40, string union in code, no DB enum)`, `actor_type ('customer'|'salon_owner'|'admin'|'system', CHECK)`, `actor_id? (→ users)`, `metadata jsonb?`, `created_at`. Append-only lifecycle log, indexed `(booking_id, seq)`. Not the admin `audit_log` — see [28](./28-booking-approval-workflow.md).
 
 ### `payments`
 `id`, `booking_id (unique — 1:1)`, `amount bigint`, `gateway (default 'zarinpal')`, `authority?`, `ref_id?`, `refund_requested_at?`, `refund_ref_id?`, `refunded_at?`, `status` (see [11-payment-system.md](./11-payment-system.md)), `paid_at?`, `created_at`.
@@ -184,7 +219,31 @@ Composite PK `(notification_id, admin_id)`, both cascade. `read_at`. The real pe
 `id (serial PK)`, `name (unique)`, `slug (unique)`, `province`, `lat`/`lng (double precision)`, `sort_order`, `created_at`. DB-backed replacement for the old static `iran-cities.ts` array, seeded once by `1754300000000-cities-table` and read through an in-process cache (`CitiesService`, no admin mutation endpoint exists). See `salons.city_id` below and [24-technical-debt.md](./24-technical-debt.md) for why `salons.city` itself still isn't validated against it.
 
 ### `platform_config`
-`key (varchar PK)` → `value (jsonb)`. Generic key/value store for tunable business constants — see [20-business-rules.md](./20-business-rules.md).
+`key (varchar PK)` → `value (jsonb)`. Key/value store for tunable business constants — see [20-business-rules.md](./20-business-rules.md). Two families share the table: numeric keys (`deposit_percent`, `commission_percent`, `booking_hold_ttl_minutes`, `booking_approval_timeout_minutes`, `reminder_lead_hours`, …; bounds-checked at boot and on read by `PlatformConfigService.boundsFor()`, edited via `admin/config`) and boolean `feature_*_enabled` flags (`reviews`, `stories`, `portfolio`, `referrals`, `coupons` seeded `true`; `online_payment` seeded `false`; edited via `admin/feature-flags`, read publicly at `platform-config/feature-flags`).
+
+### `analytics_events`
+`id`, `event_name (≤100)`, `properties jsonb?`, `user_id? (SET NULL)`, `salon_id? (SET NULL)`, `created_at`. Written by `PostgresAnalyticsProvider`; indexed `(event_name, created_at)` and `(salon_id, created_at DESC)`. Must never carry PII/credentials — bare ids only.
+
+### `category_requests`
+`id`, `requester_id`, `salon_id`, `name (≤60)`, `note?`, `status ('pending'|'approved'|'rejected', CHECK)`, `resolution_note?`, `resolved_by?`, `resolved_at?`, `category_id? (SET NULL — the category created on approval)`, `created_at`. Partial unique `(salon_id, lower(name)) WHERE status='pending'`.
+
+### `plans`
+`id`, `key (unique, ≤40 — stable identifier, not editable after creation)`, `name (≤80)`, `description?`, `monthly_price_toman int (CHECK ≥ 0)`, `is_active`, `is_default` (partial unique index — exactly one default; `PlansService.update` refuses to deactivate the default plan or default an inactive one), `sort_order`, `entitlements jsonb (default {})`, `created_at`/`updated_at`. Seeded with one `free` default.
+
+### `salon_subscriptions`
+`id`, `salon_id (unique — one per salon)`, `plan_id`, `status ('active'|'canceled', CHECK)`, `started_at`, `canceled_at?`, `entitlement_overrides jsonb?` (admin-only, merged key-by-key over the plan's `entitlements`; cleared on cancel), `updated_at`. Every salon gets a row on creation.
+
+### `subscription_coupons` / `subscription_coupon_redemptions`
+Coupons: `id`, `code (unique, ≤30, stored uppercase)`, `discount_percent (CHECK 1–100)`, `expires_at?`, `max_redemptions?`, `is_active`, `created_at`. Redemptions: `id`, `coupon_id`, `salon_id`, `billing_period_id`, `redeemed_at`; `UNIQUE (coupon_id, salon_id)` — redeemed **by salon**, not by user. A separate entity from the booking `coupons`/`coupon_redemptions` pair (whose `booking_id` is `NOT NULL UNIQUE`). Voiding a discounted billing period deletes its redemption row.
+
+### `subscription_billing_periods`
+`id`, `salon_id`, `plan_id` (snapshot), `period_start`/`period_end` (CHECK `end > start`), `base_amount_toman bigint` (plan price frozen at creation), `discount_percent?`, `amount_toman bigint`, `coupon_id?`, `status ('pending'|'paid'|'comped'|'void', CHECK)`, `resolved_at?`, `created_at`. Admin-created only (never a cron), settled once via a `WHERE status='pending'` compare-and-swap.
+
+### `customer_notes`
+`id`, `salon_id`, `customer_id`, `note (≤1000)`, `created_by`, `created_at`. Salon-private; indexed `(salon_id, customer_id, created_at DESC)`.
+
+### `salon_sms_messages`
+`id`, `salon_id`, `customer_id`, `phone (≤20)`, `message (≤500 — the owner's own text; the wire text is prefixed with the salon name)`, `sent_by`, `created_at`. Append-only; `COUNT(*)` within the current Jalali month is the quota usage — no separate counter.
 
 ### `blog_categories` / `blog_posts`
 Categories: `id (identity)`, `name (unique)`, `slug (unique)`. Posts: `id`, `title`, `slug (unique)`, `excerpt?`, `body_markdown`, `cover_image_key?`, `category_id? (restrict, no ON DELETE clause)`, `author_name?`, `meta_description?`, `og_title?`, `status ('draft'|'published')`, `published_at?`, `created_at`/`updated_at`.
@@ -208,7 +267,7 @@ PK `referral_type ('user'|'salon_owner'|'worker')` — exactly 3 fixed rows. `en
 `id`, `referral_id`, `beneficiary_user_id`, `beneficiary_role ('referrer'|'referred')`, `reward_kind`, `reward_value numeric(12,2)`, `wallet_transaction_id?`, `coupon_id?`, `status ('granted'|'reversed')`, `granted_at`, `reversed_at?`, `reversal_reason?`, `reversal_shortfall_amount?`. Unique `(referral_id, beneficiary_role)` caps at exactly 2 rows/referral.
 
 ### `financial_transactions`
-`id`, `booking_id`, `salon_id` (denormalized), `type ('commission_accrued'|'commission_reversed')`, `gross_amount bigint` (**the deposit, not the full price**), `commission_rate numeric(5,2)` (no transformer — returned as string), `commission_amount bigint`, `net_amount bigint`, `correction_of_id?` (self-referencing), `created_at`. Append-only; a correction is a new offsetting row, never an UPDATE.
+`id`, `booking_id`, `salon_id` (denormalized), `type ('commission_accrued'|'commission_reversed')`, `gross_amount bigint` (**the `paid` Payment's `amount` — the deposit actually captured, not the full price; no row is written at all when no `paid` Payment exists**), `commission_rate numeric(5,2)` (no transformer — returned as string), `commission_amount bigint`, `net_amount bigint`, `correction_of_id?` (self-referencing), `created_at`. Append-only; a correction is a new offsetting row, never an UPDATE.
 
 ### `invoices`
 `id`, `salon_id`, `jalali_year`/`jalali_month`, `period_start`/`period_end`, cached totals (`total_gross_amount`, `total_commission_amount`, `total_net_payable`, `paid_total`), `status ('issued'|'partially_paid'|'paid')`, `issued_at`, `paid_at?`, `settlement_id?` (reserved, unused, un-FK'd — see [25-future-improvements.md](./25-future-improvements.md)), `created_at`. Unique `(salon_id, jalali_year, jalali_month)`.
@@ -221,11 +280,11 @@ PK `referral_type ('user'|'salon_owner'|'worker')` — exactly 3 fixed rows. `en
 
 ## Composite-PK join tables (no surrogate `id`)
 
-`salon_favorites (user_id, salon_id)`, `salon_categories (salon_id, category_id)`, `worker_services (worker_id, service_id)`, `wallet_balances (user_id, currency)`, `admin_notification_reads (notification_id, admin_id)`. Two other "one-per-pair" tables use a uuid surrogate PK plus a DB-level `UNIQUE` constraint instead of a composite PK: `coupon_redemptions` (`UNIQUE(coupon_id,user_id)`) and `worker_ratings` (`UNIQUE(review_id)`) — an inconsistent pattern worth knowing about, not a bug.
+`salon_favorites (user_id, salon_id)`, `salon_categories (salon_id, category_id)`, `worker_services (worker_id, service_id)`, `wallet_balances (user_id, currency)`, `admin_notification_reads (notification_id, admin_id)`. Other "one-per-pair" tables use a uuid surrogate PK plus a DB-level `UNIQUE` constraint instead of a composite PK: `coupon_redemptions` (`UNIQUE(coupon_id,user_id)`), `worker_ratings` (`UNIQUE(review_id)`), `salon_subscriptions` (`UNIQUE(salon_id)`), `subscription_coupon_redemptions` (`UNIQUE(coupon_id,salon_id)`) — an inconsistent pattern worth knowing about, not a bug.
 
 ## `bigint` transformers
 
-Postgres returns `bigint` columns as JS strings by default; every money/amount column gets a `bigintToNumber` (or `nullableBigintToNumber`) TypeORM transformer, imported from the single shared `common/numeric-transformers.ts` (previously copy-pasted independently into 10 separate entity files — see [24-technical-debt.md](./24-technical-debt.md), now resolved): `SalonService.price`, `Booking.priceSnapshot/depositAmount/discountFixedAmount/originalPriceSnapshot/walletAmountUsed`, `Payment.amount`, `Coupon.discountFixedAmount`, `CouponRedemption.discountAmount`, `WalletBalance.balance`, `WalletTransaction.amount/balanceAfter`, `FinancialTransaction.grossAmount/commissionAmount/netAmount`, `Invoice.*`, `InvoiceItem.*`, `InvoicePayment.amount`. Referral `numeric(12,2)` columns get a parallel `numericToNumber`/`nullableNumericToNumber` transformer from the same file. **Three rating/rate `numeric` columns deliberately have no transformer** (`Salon.ratingAvg`, `Worker.ratingAvg`, `FinancialTransaction.commissionRate`) — callers coerce with `Number()` manually.
+Postgres returns `bigint` columns as JS strings by default; every money/amount column gets a `bigintToNumber` (or `nullableBigintToNumber`) TypeORM transformer, imported from the single shared `common/numeric-transformers.ts` (previously copy-pasted independently into 10 separate entity files — see [24-technical-debt.md](./24-technical-debt.md), now resolved): `SalonService.price`, `Booking.priceSnapshot/depositAmount/discountFixedAmount/originalPriceSnapshot/walletAmountUsed`, `Payment.amount`, `Coupon.discountFixedAmount`, `CouponRedemption.discountAmount`, `WalletBalance.balance`, `WalletTransaction.amount/balanceAfter`, `FinancialTransaction.grossAmount/commissionAmount/netAmount`, `Invoice.*`, `InvoiceItem.*`, `InvoicePayment.amount`, `SubscriptionBillingPeriod.baseAmountToman/amountToman`, `BookingEvent.seq`. Referral `numeric(12,2)` columns get a parallel `numericToNumber`/`nullableNumericToNumber` transformer from the same file. **Three rating/rate `numeric` columns deliberately have no transformer** (`Salon.ratingAvg`, `Worker.ratingAvg`, `FinancialTransaction.commissionRate`) — callers coerce with `Number()` manually.
 
 ## Known schema oddities
 

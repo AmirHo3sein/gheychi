@@ -104,7 +104,7 @@ sequenceDiagram
 
 ### `tryGrantReward` — the money-moving transaction
 
-Locks the specific `referrals` row (`FOR UPDATE`) first — this is what makes a webhook retry racing the hourly sweep for the same referred user structurally impossible to double-process. For `first_paid_booking` events specifically, enforces the **72-hour holdback** (`grant_holdback_hours`, config on `referral_reward_types`, measured from `payments.paid_at`) before granting — this closes the "pay, get rewarded, immediately refund" fraud loop. Locks **both** the toman and points wallet balances for the referrer up front (even before knowing which currency this grant needs), serializing the entire two-sided grant against any other concurrent referral crediting the same referrer. Never throws — any failure is caught, logged, and pages a `critical` alert, since this runs inline inside booking-completion/payment flows that must not fail because of a reward bug.
+Locks the specific `referrals` row (`FOR UPDATE`) first — this is what makes a webhook retry racing the hourly sweep for the same referred user structurally impossible to double-process. Then enforces **R6** itself: for a salon-scoped referral (`referrals.salon_id` non-null — every salon_owner/worker-type referral) the triggering booking's `salon_id` must equal `referral.salon_id`, else the call is a no-op. This check has to live here and not only in the hourly sweep's SQL, because the `'completed'` trigger calls in directly from `BookingsService.updateStatus` with whatever booking just completed — without it, a booking at an unrelated salon paid the referring salon's reward and froze the referral as `reward_granted`, so the customer's later genuinely-qualifying booking at the referrer could never count. For `first_paid_booking` events specifically, enforces the **72-hour holdback** (`grant_holdback_hours`, config on `referral_reward_types`, measured from `payments.paid_at`) before granting — this closes the "pay, get rewarded, immediately refund" fraud loop. Locks **both** the toman and points wallet balances for the referrer up front (even before knowing which currency this grant needs), serializing the entire two-sided grant against any other concurrent referral crediting the same referrer. Never throws — any failure is caught, logged, and pages a `critical` alert, since this runs inline inside booking-completion/payment flows that must not fail because of a reward bug.
 
 ### `partially_granted` — a transient state, not a dead end
 
@@ -122,7 +122,7 @@ Called only from `PaymentsService.attemptRefund` when a payment's status actuall
 
 Lives at `apps/api/src/booking/referral-grant.job.ts` (**not** under `referrals/` — easy to miss when searching). `@Cron('0 * * * *')`. Two sub-sweeps: (1) a conservative SQL pre-filter for referrals plausibly past their `first_paid_booking` holdback window (the authoritative age check re-runs inside `tryGrantReward` itself); (2) unconditional retry of every `partially_granted` row.
 
-**Known gap**: `referrals.status` includes `'expired'` and `referral_reward_types.expiration_days` exists as a config field, but **no expiry sweep exists in the code** — a referral with an expiration configured and no qualifying event will sit `awaiting_qualifying_event` forever rather than ever transitioning to `expired`. See [24-technical-debt.md](./24-technical-debt.md).
+A sibling `ReferralExpiryJob` (`booking/referral-expiry.job.ts`, also hourly) flips `awaiting_qualifying_event` referrals past their `expires_at` to `expired` in a single conditional `UPDATE` (status re-checked in the same statement, so a grant committing concurrently is never expired out from under it), batched 500/run.
 
 ### API surface
 
@@ -141,4 +141,5 @@ PATCH /admin/referrals/:id/cancel    (only from awaiting_qualifying_event)
 - [12-wallet.md](./12-wallet.md) — the credit/debit primitive referrals write through
 - [09-booking-engine.md](./09-booking-engine.md) — where a coupon/discount is actually applied at checkout
 - [05-authentication.md](./05-authentication.md) — referral redemption at registration, including the SAVEPOINT isolation
-- [24-technical-debt.md](./24-technical-debt.md) — the missing expiry sweep, and other gaps
+- [18-background-jobs.md](./18-background-jobs.md) — the grant and expiry sweeps' schedules
+- [14-commission.md](./14-commission.md) — the *other* ledger (`financial_transactions`), which accrues only on captured money and is unaffected by coupons/wallet except through the resulting `Payment.amount`

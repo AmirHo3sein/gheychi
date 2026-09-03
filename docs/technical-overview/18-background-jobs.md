@@ -11,15 +11,16 @@ Every scheduled job is a `@Injectable()` class registered as a provider in its o
 | Booking expiry | `booking/booking-expiry.job.ts` | `*/1 * * * *` (every minute) | Expires `pending_payment` bookings past their deadline — the row's own snapshotted `payment_expires_at`, falling back to the legacy `created_at + booking_hold_ttl_minutes` derivation only for rows predating that column; releases any consumed coupon/wallet balance atomically, then notifies the customer post-commit — but **only for manual-approval bookings**; an abandoned automatic checkout is deliberately never texted (SMS budget) |
 | Booking approval expiry | `booking/booking-approval-expiry.job.ts` | `*/1 * * * *` (every minute) | Expires `pending_approval` manual-approval requests the salon never answered, on the row's own snapshotted `approval_expires_at`. Releases the coupon/wallet hold; **no refund is ever owed** — a request has no `Payment` row by construction. See [28](./28-booking-approval-workflow.md) |
 | Payment reconciliation | `booking/payment-reconciliation.job.ts` | `*/5 * * * *` | Re-verifies `initiated` payments older than 20 minutes against every authority ever issued; confirms, fails, or queues a late-capture refund + alert |
-| Booking reminder | `booking/booking-reminder.job.ts` | `*/5 * * * *` | SMS + push appointment reminders for `confirmed` bookings inside the configured lead window (`reminder_lead_hours`, seeded 3); claims each row via a guarded conditional UPDATE to avoid double-sending |
+| Booking reminder | `booking/booking-reminder.job.ts` | `*/5 * * * *` | SMS + push appointment reminders for `confirmed` bookings inside the configured lead window (`reminder_lead_hours`, seeded 3); claims each row via a guarded conditional UPDATE to avoid double-sending. The query is bounded `startsAt > now AND startsAt <= cutoff`, `ORDER BY startsAt ASC`, `take 500` — a confirmed booking whose appointment passed while the salon never closed it out stays `confirmed` with `remindedAt NULL` forever, and without the lower bound those dead rows were re-selected every tick and, past 500 of them, filled the whole unordered batch and silently starved every real reminder. An SMS failure releases the claim (CAS on the exact timestamp) and raises a `reminder-failed:{bookingId}` warning alert, so the next tick retries |
 | Refund retry | `booking/refund-retry.job.ts` | `*/5 * * * *` | Retries `refund_pending` payments (2-min grace period first); pages a critical/daily-dedup alert once stuck past 24h |
 | Referral grant sweep | `booking/referral-grant.job.ts` | `0 * * * *` (hourly) | Sweeps referrals awaiting a `first_paid_booking` qualifying event past their holdback window; retries `partially_granted` referrals |
 | Referral expiry | `booking/referral-expiry.job.ts` | `0 * * * *` (hourly) | Flips `awaiting_qualifying_event`/`partially_granted` referrals past their `expires_at` to `expired`; batched 500/run |
 | Story cleanup (GC) | `salons/story-cleanup.job.ts` | `0 * * * *` (hourly) | Deletes expired salon Stories: storage object first, then DB row (self-healing on partial failure); skips stories pinned by an open report; 1h grace past `expires_at`; batched 200/run |
 | Storage reconciliation | `storage/storage-reconciliation.job.ts` | `0 * * * *` (hourly) | Two independent passes: logs (never auto-deletes) a DB row whose storage object 404s; deletes an orphaned storage object under a known prefix with no DB row, past a 24h grace period. Existence checks batched 2000/run, 20-way concurrent (not fully serial); deletes batched 500/run |
 | Monthly invoice generation | `invoicing/monthly-invoice-generation.job.ts` | `0 3 * * *` (daily, 03:00) | Rolls up unlinked `financial_transactions` into per-(salon, closed Jalali month) `Invoice` rows; idempotent via unique constraints + `ON CONFLICT`; a per-salon failure now also pages `AlertsService` (warning), not just a log line |
+| Backup staleness check | `backup-monitoring/backup-staleness-check.job.ts` | `0 */4 * * *` (every 4h) | Reads the durable `backup:last-success` Redis timestamp written by `POST /internal/backup-report` and raises a `critical` `backup-stale` alert when it is missing or older than 27h (one daily cycle + 3h jitter) — the only detector for a backup container that never even attempts `pg_dump` |
 
-All nine follow the same reliability idiom: **per-item `try/catch` isolation** (one bad row never blocks the rest of a batch), `CronJobRunner`'s lock/warn/page wrapper described above, and, for the money-adjacent ones, additional `AlertsService` integration on genuine failure/escalation conditions beyond a bare job crash.
+All eleven follow the same reliability idiom: **per-item `try/catch` isolation** (one bad row never blocks the rest of a batch), `CronJobRunner`'s lock/warn/page wrapper described above, and, for the money-adjacent ones, additional `AlertsService` integration on genuine failure/escalation conditions beyond a bare job crash.
 
 ## Notable design decisions
 
@@ -35,8 +36,11 @@ Redis is used for short-lived coordination primitives, never as a queue of recor
 | Key pattern | Purpose | TTL |
 |---|---|---|
 | `otp:{phone}` | current OTP code | 120s |
-| `otp:rl:{phone}` | OTP request rate limit (max 3) | 3600s |
-| `otp:att:{phone}` | OTP verify-attempt counter (max 5) | 120s |
+| `otp:rl:ip:{ip}` | OTP request rate limit per client IP (max 10), checked before the per-phone counter | 3600s |
+| `otp:rl:{phone}` | OTP request rate limit per phone (max 3) | 3600s |
+| `otp:att:{phone}:{ip}` | wrong-guess counter per (phone, IP) (max 5 — that IP is refused, the code survives for its owner) | 120s |
+| `otp:att:{phone}` | wrong-guess counter across all IPs (max 30 — the code is deleted) | 120s |
+| `backup:last-success` | ISO timestamp of the last successful backup report, read by the staleness job | none (durable) |
 | `lock:booking:{salonId}` | distributed mutex around the booking-hold critical section | 5000ms (`SET NX PX` with a per-call token), released by an atomic owner-checked Lua compare-and-delete so an expired holder can never delete a successor's lock |
 | `cron-lock:{jobName}` | `CronJobRunner`/`CronLockService`'s per-job mutex (see above) — a second instance's overlapping tick 409s out (no-ops) rather than double-running | 60s default (`SET NX PX`), per-job override (e.g. storage reconciliation: 10min), explicit `DEL` on release |
 | `referral:validate:rl:{ip}` | rate-limits the public `GET /referrals/validate` code-enumeration surface (max 20) | 3600s |
@@ -49,3 +53,28 @@ Full detail on the alert keys: [16-notifications.md](./16-notifications.md). In 
 
 - [09-booking-engine.md](./09-booking-engine.md), [11-payment-system.md](./11-payment-system.md), [13-financial-system.md](./13-financial-system.md), [14-commission.md](./14-commission.md) — each job's owning subsystem, with full business-rule context
 - [22-performance.md](./22-performance.md) — batch sizing and scaling notes for the heavier jobs
+
+## Distributed-lock correctness (fixed 2026-09-03)
+
+`CronLockService` acquired with `SET NX PX` and then did a **blind `DEL`** in its `finally`.
+A replica whose lock expired mid-run therefore deleted its *successor's* lock, permitting a
+third concurrent run of a financial job — precisely the failure the booking lock had already
+solved with a compare-and-delete Lua script. Both now share
+`common/redis-lock.util.ts` (`acquireLock` / `releaseLockIfOwner`): the lock value is a
+random token and the release only deletes when the token still matches.
+
+`RefundRetryJob` had the one duplicate-execution path that reached an **external money API**:
+`attemptRefund` read the payment without a lock, called Zarinpal, and only then CAS'd the
+status, so two replicas (or the cron racing `cancel()`'s inline attempt) could both call the
+gateway. The DB stayed consistent, but Zarinpal permits one refund request per transaction
+and the contract is production-unverified, so "it's idempotent" was an untested external
+assumption. The payment is now **claimed before** the gateway call (`refund_claimed_at`,
+CAS'd from NULL, with a TTL so a process that dies mid-call cannot strand the refund), and
+the claim is released on gateway failure so the retry job and its 24-hour escalation still
+work.
+
+`ReferralExpiryJob`'s `UPDATE` carried its status predicate only inside the subquery. Under
+READ COMMITTED, a referral that `tryGrantReward` had just marked `reward_granted` could be
+re-stamped `expired` — not a double-pay, but a durable status lie. The guard is now in the
+outer `WHERE` too.
+

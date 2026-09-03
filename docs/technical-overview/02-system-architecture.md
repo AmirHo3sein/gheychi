@@ -48,9 +48,12 @@ src/booking/
 ├── salon-bookings.controller.ts  # provider-scoped, separate controller from the customer-facing one
 ├── payments.controller.ts        payments.service.ts
 ├── booking.entity.ts             payment.entity.ts
-├── booking-expiry.job.ts  booking-reminder.job.ts  payment-reconciliation.job.ts  refund-retry.job.ts  referral-grant.job.ts
+├── salon-earnings.controller.ts  admin-booking-settings.controller.ts   # provider earnings; admin per-salon timeouts + booking_events timeline
+├── booking-expiry.job.ts  booking-approval-expiry.job.ts  booking-reminder.job.ts  payment-reconciliation.job.ts
+├── refund-retry.job.ts  referral-grant.job.ts  referral-expiry.job.ts
+├── booking-event.entity.ts  booking-events.service.ts          # append-only lifecycle log (not the admin audit_log)
 ├── payment-gateway.ts (interface)  mock-payment.gateway.ts  zarinpal-payment.gateway.ts
-├── deposit.util.ts  availability.util.ts  (+ colocated .spec.ts)
+├── deposit.util.ts  discount.util.ts  availability.util.ts  booking-hold-release.util.ts  (+ colocated .spec.ts)
 └── dto/booking.dto.ts
 ```
 
@@ -74,8 +77,8 @@ sequenceDiagram
     participant DB as Postgres
 
     C->>N: HTTP request + `session` cookie
-    N->>G: run declared @UseGuards() in order
-    G->>G: AuthGuard verifies JWT, loads req.user
+    N->>G: global AuthGuard (APP_GUARD), then declared @UseGuards() in order
+    G->>G: AuthGuard: @Public()? pass; else verify JWT, load req.user
     G->>G: RolesGuard / SalonOwnerGuard (if declared)
     N->>P: ValidationPipe validates & transforms body/query into the DTO class
     N->>I: AuditInterceptor (only on @AuditAction-tagged routes)
@@ -88,7 +91,7 @@ sequenceDiagram
 
 Key facts:
 - **Global route prefix**: every route is under `/api/...` (`app.setGlobalPrefix('api')` in `main.ts`).
-- **No global auth guard.** Every protected route explicitly declares `@UseGuards(...)`. A new route added without guards is public by default — this is a real review-checklist risk for anyone adding endpoints. See [17-permissions.md](./17-permissions.md).
+- **`AuthGuard` is global.** It is registered as an `APP_GUARD` in `app.module.ts`, so every route requires a session by default; a route opts out with `@Public()` (`auth/public.decorator.ts`, checked via `Reflector` before the cookie is touched). Controllers only add `@UseGuards(RolesGuard)` + `@Roles('admin')` or `@UseGuards(SalonOwnerGuard)` on top. `route-guard-audit.spec.ts` pins every `@Public()` route against an allowlist, asserts the exact `@Controller(` count, and asserts `RolesGuard`+`@Roles('admin')` on every `admin/*` route and `SalonOwnerGuard` on every `salons/mine*` route (one documented exception: `GET /salons/mine`). The review-checklist question for a new endpoint is therefore "does it carry `@Public()`, and should it?" — grep for `@Public()`, not for the guard. See [17-permissions.md](./17-permissions.md).
 - **No Swagger/OpenAPI is generated.** [15-api-reference.md](./15-api-reference.md) is effectively the only API contract document.
 - **CORS**: exactly three allowed, credentialed origins — `FRONTEND_BASE_URL`, `PROVIDER_APP_BASE_URL`, `ADMIN_APP_BASE_URL` (`src/cors-origins.util.ts`). `credentials: true` is required because auth is a cookie, not a bearer token; this only works because the cookie is `sameSite: 'lax'`, which assumes the frontends stay same-site with the API — see [21-security.md](./21-security.md).
 - **Static file serving**: `apps/api/uploads/` is served at `/uploads/*` directly on the API's own origin when `STORAGE_PROVIDER=local`.
@@ -96,7 +99,7 @@ Key facts:
 
 ### `AppModule` — every module wired in
 
-`src/app.module.ts` imports (in order): `RedisModule`, `PlatformConfigModule`, `AlertsModule`, `AuthModule`, `CatalogModule`, `CitiesModule`, `SalonsModule`, `BookingModule`, `CouponsModule`, `SearchModule`, `ReviewsModule`, `ReportsModule`, `FavoritesModule`, `PushModule`, `AdminNotificationsModule`, `ContentModule`, `WalletModule`, `ReferralsModule`, `InvoicingModule`. Plus `ConfigModule.forRoot({isGlobal:true})`, `TypeOrmModule.forRootAsync()` (`synchronize:false`, `autoLoadEntities:true`), `ScheduleModule.forRoot()`. `HealthController` is the only controller registered directly on `AppModule`; every other controller belongs to its own feature module.
+`src/app.module.ts` imports (in order): `RedisModule`, `CommonModule`, `MetricsModule`, `ErrorTrackingModule`, `VersionModule`, `PlatformConfigModule`, `AlertsModule`, `AuthModule`, `BackupMonitoringModule`, `CspReportModule`, `CatalogModule`, `CategoryRequestsModule`, `CitiesModule`, `SubscriptionsModule`, `SalonsModule`, `BookingModule`, `CouponsModule`, `SearchModule`, `ReviewsModule`, `ReportsModule`, `FavoritesModule`, `PushModule`, `AdminNotificationsModule`, `ContentModule`, `WalletModule`, `ReferralsModule`, `InvoicingModule`, `StorageModule`, `ActivityModule`, `CrmModule`, `BillingModule`. Plus `ConfigModule.forRoot({isGlobal:true})`, `TypeOrmModule.forRootAsync()` (`synchronize:false`, `autoLoadEntities:true`), `ScheduleModule.forRoot()`. Providers: `GlobalExceptionFilter` as `APP_FILTER` and `AuthGuard` as `APP_GUARD`. `HealthController` is the only controller registered directly on `AppModule`; every other controller belongs to its own feature module (`AiModule` exists but is deliberately not imported — [27](./27-ai-foundation.md)).
 
 ### External-service abstraction pattern
 
@@ -104,12 +107,13 @@ Every third-party integration follows the same interface → injection-token →
 
 | Concern | Interface | Token | Implementations | Selector |
 |---|---|---|---|---|
-| SMS | `SmsProvider` | `SMS_PROVIDER` | `ConsoleSmsProvider`, `KavenegarSmsProvider` | `SMS_PROVIDER=console\|kavenegar` |
+| SMS | `SmsProvider` | `SMS_PROVIDER` | `ConsoleSmsProvider`, `KavenegarSmsProvider`, `PayamakYabSmsProvider` (hand-rolled SOAP envelope over `fetch`), `FaragostareshRelaySmsProvider` (temporary relay through a PHP endpoint; needs `FARAGOSTARESH_RELAY_TOKEN`, `getOrThrow`) | `SMS_PROVIDER=console\|kavenegar\|payamakyab\|faragostaresh-relay` |
 | Payments | `PaymentGateway` | `PAYMENT_GATEWAY` | `MockPaymentGateway`, `ZarinpalGateway` | `PAYMENT_GATEWAY=mock\|zarinpal` |
 | Push | `PushProvider` | `PUSH_PROVIDER` | `ConsolePushProvider`, `WebPushProvider` | `PUSH_PROVIDER=console\|webpush` |
 | Storage | `StorageProvider` | `STORAGE_PROVIDER` | `LocalDiskStorageProvider`, `S3StorageProvider` | `STORAGE_PROVIDER=local\|s3` |
-| Error tracking | `ErrorTrackingService` | `ERROR_TRACKING_PROVIDER` | `LoggerErrorTrackingService` (only implementation; no real Sentry/APM account exists) | none yet |
-| Analytics | `AnalyticsService` | `ANALYTICS_PROVIDER` | `ConsoleAnalyticsProvider` (only implementation; no real analytics vendor account exists) | none yet |
+| Error tracking | `ErrorTrackingService` | `ERROR_TRACKING_PROVIDER` | `LoggerErrorTrackingService`, `SentryErrorTrackingService` (`@sentry/node`, error capture only — tracing stays with `tracing.ts`'s own OTel SDK; needs `SENTRY_DSN`) | `ERROR_TRACKING_PROVIDER=logger\|sentry` (default `logger`) |
+| Analytics | `AnalyticsProvider`, wrapped by `AnalyticsService` | `ANALYTICS_PROVIDER` | `PostgresAnalyticsProvider` (persists to `analytics_events`, read back by `GET /admin/analytics/summary`), `ConsoleAnalyticsProvider` | `ANALYTICS_PROVIDER=postgres\|console` (default `postgres`) |
+| AI / LLM | `AiProvider`, wrapped by `AiService` | `AI_PROVIDER` | `UnconfiguredAiProvider` (throws `NotImplementedException`); `AiModule` is not imported anywhere | none yet — [27](./27-ai-foundation.md) |
 
 Full detail per integration in [19-third-party-services.md](./19-third-party-services.md). Any new external integration should follow this exact pattern.
 
@@ -133,11 +137,11 @@ sequenceDiagram
     participant DB as Postgres
     participant ZP as Zarinpal
 
-    U->>API: POST /bookings {salonId, serviceId, startsAt, workerId?}
+    U->>API: POST /bookings {salonId, serviceId, startsAt, workerId?, couponCode?, attributionSource?}
     API->>R: SET lock:booking:{salonId} NX PX 5000
     API->>DB: BEGIN transaction
     API->>DB: check salon capacity, worker eligibility/overlap, coupon, discount, wallet
-    API->>DB: INSERT booking (pending_payment or confirmed), INSERT payment if deposit > 0
+    API->>DB: INSERT booking (pending_approval | pending_payment | confirmed), INSERT payment only if online payment is enabled and deposit > 0
     API->>DB: COMMIT
     API->>R: DEL lock:booking:{salonId}
     API->>ZP: request.json (mint payment session)
@@ -150,7 +154,7 @@ sequenceDiagram
     API-->>U: 302 redirect to /booking/callback?status=success
 ```
 
-Full detail: [09-booking-engine.md](./09-booking-engine.md), [11-payment-system.md](./11-payment-system.md).
+This is the online-payment-enabled, automatic-confirmation path. With `feature_online_payment_enabled` off (the seeded production default) the booking is `confirmed` immediately with no `Payment` row and no gateway call ([29](./29-global-payment-toggle.md)); a `manual_approval` salon first parks it in `pending_approval`, and the `Payment` row is only inserted by `approve()` ([28](./28-booking-approval-workflow.md)). Full detail: [09-booking-engine.md](./09-booking-engine.md), [11-payment-system.md](./11-payment-system.md).
 
 ## Related documents
 

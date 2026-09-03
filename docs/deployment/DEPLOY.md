@@ -19,6 +19,22 @@ docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 ```
 
+> **One-time, before the first deploy that introduces the `api_uploads` volume (2026-09-03):**
+> with `STORAGE_PROVIDER=local`, every uploaded image lived inside the `api` container's
+> own writable layer and was destroyed each time `up -d` recreated the container after a
+> pull (DB rows kept pointing at now-404 URLs). `api` now mounts a named volume at
+> `/app/uploads`. Anything currently sitting in the *running* container is NOT migrated
+> automatically -- copy it out first, then pull/up, then copy it in:
+>
+> ```bash
+> docker compose -f docker-compose.prod.yml cp api:/app/uploads ./uploads-migrate
+> docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
+> docker compose -f docker-compose.prod.yml cp ./uploads-migrate/. api:/app/uploads
+> docker compose -f docker-compose.prod.yml exec -u root api chown -R apiuser:nodejs /app/uploads
+> ```
+>
+> Also required in the same deploy: `FARAGOSTARESH_RELAY_TOKEN` in `.env` if `SMS_PROVIDER=faragostaresh-relay` (the api refuses to boot without it -- see the env table below).
+
 **Then run the smoke test** (`apps/api/scripts/smoke-test.ts`) against the live site, from any machine with the repo and `pnpm install`ed (it doesn't need to run on the VPS itself):
 
 ```bash
@@ -102,15 +118,52 @@ docker compose -f docker-compose.prod.yml start api
 
 Stopping `api` first avoids live writes racing the restore; `--clean --if-exists` drops existing objects before recreating them from the dump.
 
+### Restoring uploaded files
+
+Separate artifact, separate procedure — a database restore alone leaves every `salon_photos`/`stories`/`portfolio_items`/blog-cover row pointing at a file that isn't on disk.
+
+The `backup` container mounts `api_uploads` **read-only**, so it deliberately cannot be used to write files back. Restore through a throwaway container that mounts the same volume read-write:
+
+```bash
+docker run --rm \
+  -v gheychi_api_uploads:/uploads \
+  --env-file .env \
+  $(docker compose -f docker-compose.prod.yml images -q backup) \
+  sh -c 'mc alias set s3backup "$S3_ENDPOINT" "$S3_ACCESS_KEY_ID" "$S3_SECRET_ACCESS_KEY" \
+      && mc mirror --overwrite "s3backup/$S3_BUCKET/uploads/" /uploads/'
+docker compose -f docker-compose.prod.yml exec -u root api chown -R apiuser:nodejs /app/uploads
+```
+
+The `chown` matters: the API runs as the non-root `apiuser` (see `apps/api/Dockerfile`), and files written by a root-running restore container would leave it unable to manage them afterwards.
+
+Two honest caveats:
+
+- **You get the last mirrored state, not a chosen date.** Whatever `uploads/` held at the last successful run is all there is (see the mirror-vs-backup note under "## Operational notes"). If the database is restored to an older dump, images uploaded between that dump and the last mirror will exist on disk with no row referencing them — harmless orphans, cleaned up by the existing storage-reconciliation job.
+- **A file deleted locally still exists in S3**, so this restore can resurrect images that were deliberately removed. Nothing in the app breaks (no row points at them) and the reconciliation job sweeps them, but don't read a non-empty `uploads/` prefix as proof that every object in it is live.
+
+To check what's there without restoring anything:
+
+```bash
+docker compose -f docker-compose.prod.yml exec backup mc ls --recursive --summarize s3backup/$S3_BUCKET/uploads/
+```
+
 ## Operational notes
 
 - **Never share raw `docker compose -f docker-compose.prod.yml config` output for troubleshooting.** Compose fully resolves and inlines every `env_file`-sourced variable for `api`, `user-app`, and `caddy` into that output — including secrets never referenced anywhere in the compose file itself (`JWT_SECRET`, `KAVENEGAR_API_KEY`, `ZARINPAL_MERCHANT_ID`, S3 credentials, `VAPID_PRIVATE_KEY`). This is standard, unavoidable Docker Compose behavior (not specific to this file) — if you need to share `config` output for debugging, redact it first.
-- **Database backups run automatically.** The `backup` service dumps Postgres daily (03:00 UTC, plus once immediately whenever the stack starts) to `s3://$S3_BUCKET/backups/`, keeping 14 days. A failed backup logs loudly to `docker compose logs backup` rather than paging anyone — check it periodically. See "## Restoring a backup" below.
+- **Backups run automatically, and cover two different things with two different guarantees.** The `backup` service runs daily (03:00 UTC, plus once immediately whenever the stack starts) and does both of the following, in this order:
+  1. **Postgres → `s3://$S3_BUCKET/backups/`** — a dated `pg_dump -Fc` snapshot per run, size-sanity-checked and then byte-for-byte verified against what actually landed in S3, keeping **14 days** of history. This is a real point-in-time history: you can restore any of the last 14 days.
+  2. **Uploaded files → `s3://$S3_BUCKET/uploads/`** — an `mc mirror` of the `api_uploads` volume (mounted read-only into the `backup` container). With `STORAGE_PROVIDER=local`, which is what production runs, that volume is the *only* copy of every salon photo, story, portfolio image and blog cover; the database dump preserves the rows pointing at them and nothing else, so without this a lost VPS meant a restored site full of 404 images.
+  **This second one is a mirror, not a backup history — say it plainly: there is no point-in-time recovery for images.** `uploads/` reflects the live directory as of the last run and nothing else; there are no dated copies to roll back to, and the 14-day prune deliberately does not touch this prefix. The mirror is additive (no `--remove`), so a file deleted locally lingers in S3 — a little wasted storage in exchange for a local deletion bug never propagating into the only surviving copy. If a corrupted or wrongly-deleted image is restored over, the previous content is gone.
+  A failure in either half raises the same critical `backup-failed` alert (in-app admin notification + SMS to `ALERT_ADMIN_PHONE`) via `POST /api/internal/backup-report`; an uploads-mirror message is prefixed `uploads mirror:` so you can tell the halves apart. The two are independent by design: an uploads-mirror failure is reported *after* the database dump's own success has already been recorded, so it can never retract or mask a good database backup (the script still exits non-zero, because the run genuinely was partial). Also check `docker compose logs backup` periodically. See "## Restoring a backup" below.
 - **Every service carries a `mem_limit`/`cpus` ceiling** in `docker-compose.prod.yml` — a leak or runaway burst in one container (most plausibly `api`) can't starve the whole VPS and take every other service down with it. These are conservative starting points sized for a generic small VPS, not measured against real production traffic — re-tune them (`docker stats` under real load is the fastest way to see current headroom) if the VPS's actual RAM/vCPU total differs meaningfully from what a modest single-VPS deployment implies, or if `api`/`postgres` are ever OOM-killed under legitimate load.
 
 ## Observability
 
 `docker-compose.prod.yml` runs Prometheus + Grafana alongside the app stack, scraping the API's own `GET /api/metrics` (already existed before this — see `apps/api/src/metrics/`) every 15s. Both are internal-only: Prometheus has no port mapping at all (Grafana reaches it at `http://prometheus:9090` over the compose `internal` network), and Grafana is bound to `127.0.0.1:3000` on the host — neither has a Caddy route or a real domain, so neither is reachable from the public internet.
+
+**`/api/metrics` itself is blocked at the edge** (fixed 2026-09-03). The endpoint is `@Public()` out of necessity — a Prometheus scraper carries no session cookie and cannot be made to — and `{$DOMAIN_API}`'s `reverse_proxy` had no path restriction, so `https://api.<domain>/api/metrics` was serving the full registry (booking, payment and revenue counters included) to anyone on the internet. The `Caddyfile` now returns a bare `404` for `/api/metrics*`. This does not affect scraping at all: `docker/prometheus/prometheus.yml` targets `api:3002` directly over the compose network and never passes through Caddy. Verify after a deploy with `curl -s -o /dev/null -w '%{http_code}' https://api.<domain>/api/metrics` → expect `404`.
+
+`/api/health` is deliberately *not* blocked — it's the standard external "is the deploy up" probe (the smoke test uses it over the public domain) and returns only an ok/error verdict per dependency, with no counts, versions or connection details.
 
 **One-time setup**: set `GRAFANA_ADMIN_PASSWORD` in `.env` before first `up -d` (Grafana refuses to start with a blank one in production).
 
@@ -134,13 +187,20 @@ The API ships with console/mock/local defaults so it runs with zero external cre
 |---|---|
 | SMS (Kavenegar) | `SMS_PROVIDER=kavenegar`, `KAVENEGAR_API_KEY`, `KAVENEGAR_OTP_TEMPLATE` |
 | SMS (PayamakYab) | `SMS_PROVIDER=payamakyab`, `PAYAMAKYAB_USERNAME`, `PAYAMAKYAB_PASSWORD`, `PAYAMAKYAB_SENDER` (the registered line number) |
+| SMS (temporary relay) | `SMS_PROVIDER=faragostaresh-relay`, `FARAGOSTARESH_RELAY_TOKEN` — **the api container fails to boot without it in this mode**; add it to the production `.env` before switching (see `faragostaresh-relay-sms.provider.ts`) |
 | Payments (Zarinpal) | `PAYMENT_GATEWAY=zarinpal`, `ZARINPAL_MERCHANT_ID`, `ZARINPAL_ACCESS_TOKEN` (panel-issued personal access token, used for refund API auth — the API refuses to start in zarinpal mode without it) |
 | Storage (S3-compatible) | `STORAGE_PROVIDER=s3`, `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_PUBLIC_BASE_URL` |
 | Push (Web Push) | `PUSH_PROVIDER=webpush`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` — generate a keypair with `npx web-push generate-vapid-keys` and also set the public half as `NUXT_PUBLIC_VAPID_PUBLIC_KEY` |
 | Alerts (admin SMS) | `ALERT_ADMIN_PHONE` — optional, comma-separated; critical money alerts (stuck refunds, orphaned authorities) SMS these numbers via the configured SMS provider. Empty disables SMS; in-app admin notifications always flow. `ALERT_SMS_HOURLY_CAP` (default 30) bounds alert SMS per hour during mass incidents |
-| Error tracking (Sentry) | `ERROR_TRACKING_PROVIDER=sentry`, `SENTRY_DSN` (create a project at sentry.io, or self-host, and copy its DSN). Empty/unset keeps the existing structured-JSON-to-`Logger` behavior — see `apps/api/src/error-tracking/` |
+| Error tracking (Sentry) — API | `ERROR_TRACKING_PROVIDER=sentry`, `SENTRY_DSN` (create a project at sentry.io, or self-host, and copy its DSN). Empty/unset keeps the existing structured-JSON-to-`Logger` behavior — see `apps/api/src/error-tracking/`. **No compose change is needed**: the `api` service's `env_file: .env` already forwards every key in `.env`, including these two, which is verifiable with `docker compose -f docker-compose.prod.yml config` |
+| Error tracking (Sentry) — user-app | `NUXT_PUBLIC_SENTRY_DSN`, a **separate DSN from the API's**, from its own browser/JavaScript Sentry project. Read at runtime through `runtimeConfig.public` (`user-app` shares this same `.env`), so setting it plus `up -d user-app` is enough — no rebuild. Empty = the reporter is never initialized at all |
+| Error tracking (Sentry) — the two panels | `VITE_SENTRY_DSN`, **build-time only**. Vite inlines `import.meta.env` into the static bundle, so this is a CI build arg, not a VPS `.env` value — see "## Changing the API base URL" below for the same mechanism, and "## CI setup" for the repository variable to add. Setting it in `.env` on the VPS does nothing |
 
-After changing any of these, `docker compose -f docker-compose.prod.yml up -d api` (and `user-app` for the VAPID public key) to apply — no rebuild needed, these are all runtime env vars.
+After changing any of these, `docker compose -f docker-compose.prod.yml up -d api` (and `user-app` for the VAPID public key or `NUXT_PUBLIC_SENTRY_DSN`) to apply — no rebuild needed, these are all runtime env vars. The one exception is the panels' `VITE_SENTRY_DSN`, which needs a CI rebuild like every other `VITE_*` value.
+
+**A browser DSN is not a secret** — it authorizes event ingestion into one project and nothing else, and it ships inside a public JS bundle by design. That is why baking it into an image (panels) or serving it to the browser (user-app) is the intended usage. Use a *different* project/DSN from the API's all the same: the server DSN sits alongside the server's own stack traces and should not be shared with anonymous browsers.
+
+All three frontends scrub before sending: `sendDefaultPii: false`, plus an explicit `beforeSend`/`beforeBreadcrumb` pass that drops cookies, request bodies, request headers, URL query strings and console breadcrumbs, so a phone number or OTP cannot ride out in an event (`apps/user-app/app/utils/error-reporting.ts`, `apps/{provider,admin}-panel/src/utils/error-reporting.ts`). Errors only — `tracesSampleRate: 0`, no browser tracing integration, for the same reason `SentryErrorTrackingService` sets `skipOpenTelemetrySetup`: the API already owns tracing through its own OpenTelemetry SDK.
 
 ### Manual smoke test after cutover
 
@@ -164,3 +224,13 @@ Real third-party credentials can't be exercised in CI — run these by hand once
 - `VITE_CUSTOMER_APP_BASE_PROD`, value `https://<yourdomain>` (matching `DOMAIN_APEX`, no trailing slash) — needed by `provider-panel` only.
 
 This is a manual GitHub UI step — no commit can create it. No other secrets are needed; GHCR auth uses the built-in `secrets.GITHUB_TOKEN`.
+
+**Optional, to turn on panel crash reporting:** both panel Dockerfiles accept `ARG VITE_SENTRY_DSN` (empty default = reporting stays entirely uninitialized, which is the current state). CI does not pass it yet, so this needs one more repository variable plus one line added to each of the two SPA build steps in `.github/workflows/ci.yml`:
+
+```yaml
+          build-args: |
+            VITE_API_BASE=${{ vars.VITE_API_BASE_PROD }}
+            VITE_SENTRY_DSN=${{ vars.VITE_SENTRY_DSN_PROD }}   # add this line
+```
+
+Until that line exists, the panels build with an empty DSN and report nothing — by design, not by accident.

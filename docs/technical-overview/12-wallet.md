@@ -50,9 +50,9 @@ When `actualDebit === 0`, **no ledger row is written**. This matters for `Bookin
 | `referral_reward` | `ReferralsService.tryGrantReward` | toman (wallet_credit/cashback) or points (loyalty_points) |
 | `referral_reversal` | `ReferralsService.reverseIfNeeded` (on confirmed refund) | matches the original reward's currency |
 | `booking_spend` | `BookingsService.createHold` (applyWalletBalance) | toman |
-| `booking_spend_reversal` | `releaseBookingHold` (hold died before capture) | toman |
+| `booking_spend_reversal` | `reverseWalletSpend` (`booking/booking-hold-release.util.ts`) — called by `releaseBookingHold` (hold/request died before capture: expiry, rejection, approval-expiry) and directly by `BookingsService.approve()` when the global online-payment flag is **off** at approval time but the request staked wallet balance while it was on | toman |
 
-`booking_spend`/`booking_spend_reversal` are written **outside** the wallet module entirely, from `apps/api/src/booking/*` — see [09-booking-engine.md](./09-booking-engine.md). Notably, **only the release path reverses a `booking_spend`** — a booking that actually captured payment and was *later refunded* does not get its wallet portion reversed; that's an explicit, documented, not-yet-built gap (see [24-technical-debt.md](./24-technical-debt.md)).
+`booking_spend`/`booking_spend_reversal` are written **outside** the wallet module entirely, from `apps/api/src/booking/*` — see [09-booking-engine.md](./09-booking-engine.md). `reverseWalletSpend` is the wallet half of `releaseBookingHold` on its own (coupon redemption left in place) with the same conditional-UPDATE idempotency guard; `approve()` needs it because its flag-off path confirms the booking outright with no `Payment` row, exactly like `createHold`'s own flag-off path — which never debits the wallet in the first place — so without handing the debit back the customer would pay the full price in cash *and* lose real wallet credit. Notably, **only the never-captured paths reverse a `booking_spend`** — a booking that actually captured payment and was *later refunded* does not get its wallet portion reversed; that's an explicit, documented, not-yet-built gap (see [24-technical-debt.md](./24-technical-debt.md)).
 
 ## Admin surface
 

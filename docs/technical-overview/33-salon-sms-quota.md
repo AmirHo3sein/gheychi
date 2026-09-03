@@ -12,6 +12,19 @@ to actually enforce an entitlement, rather than just resolving one.
 `SmsProvider` interface — the same one `notifyConfirmed`/`notifyOne` already send through
 elsewhere. There is no new gateway, template system, or provider abstraction.
 
+**Approved salons only.** `send()` looks the salon up via `SalonsService.findById` and 409s
+unless `status === 'approved'` — the same standing `approve()` already requires before a
+salon can take on committed work. A suspended/rejected salon keeping a free-text SMS channel
+to every past customer, on the platform's own sender number, is exactly what suspension
+exists to stop; the CRM read side stays available so nothing about their own records is lost.
+
+**Always attributed to the salon on the wire.** The text actually sent is
+`"${salon.name}: ${message}"`. The message is free-form and goes out on the platform's
+shared sender number, so an unprefixed message could pass itself off as the platform ("your
+booking was cancelled, pay here"). The logged `salon_sms_messages.message` stays the owner's
+own unprefixed text — the prefix is delivery framing, not content — so quota accounting and
+the audit trail are unaffected.
+
 **Deliberately not best-effort.** Every other SMS call site in this codebase
 (`notifyConfirmed`, `notifyCancelled`, ...) is a side effect of something else and swallows a
 send failure (`.catch(() => {})`) so it never blocks the primary operation. This send **is**
@@ -44,6 +57,10 @@ timestamp) is both the audit trail and the quota-usage source of truth — usage
 period is `COUNT(*)` within the current **Jalali calendar month** (`jalaliMonthOf`/
 `jalaliMonthBounds`, the same utility `MonthlyInvoiceGenerationJob` already uses), not a
 rolling 30-day window and not a separately-maintained counter that could drift from reality.
+The bounds are applied as a half-open `[periodStart, periodEnd)` range
+(`And(MoreThanOrEqual(periodStart), LessThan(periodEnd))`), matching every invoicing query —
+`periodEnd` *is* the next month's first instant, so an inclusive `Between` would have counted
+a send at exactly midnight against both months.
 
 **Accepted race window.** The check-then-send-then-insert sequence has no lock: two concurrent
 sends near the quota boundary could both pass the count check. This is a deliberate MVP
@@ -62,7 +79,9 @@ Both on the existing `SalonCustomersController` (`salons/mine`, `AuthGuard, Salo
 - `POST customers/:customerId/sms` — `{ message }` (1–500 chars); reuses
   `CrmService.requireCustomerBelongsToSalon`/`getCustomerContact` for the same ownership
   isolation the CRM feature already established (a customer only exists for a salon if they
-  have a real booking there). 409 once the quota is exhausted.
+  have a real booking there). 409 if the salon is not `approved`, and 409 once the quota is
+  exhausted (checked in that order — an unapproved salon never learns its quota standing
+  through this route).
 
 Owner-initiated, self-service — deliberately not audited, same reasoning as every other
 `salons/mine/...` self-service action in this codebase.
@@ -83,3 +102,36 @@ view in the UI (the log exists in the database for support/audit, not surfaced a
 yet), and quota resets are implicit (a new Jalali month simply has no rows yet) rather than a
 cron-driven reset job — there's nothing to reset since usage is derived, not stored as a
 counter.
+
+## Every salon-triggered SMS is metered (2026-09-03)
+
+The quota originally governed exactly one path — the CRM free-text message — while two
+other salon-triggerable paths sent SMS with no accounting at all:
+
+- `POST /salons/mine/workers` — an arbitrary phone gets a salon-worded invite. The roster
+  row is unique per `(salon, user)`, but add/remove/re-add is not, and the number of
+  distinct phones a salon can name is unbounded.
+- `POST /salons/mine/bookings` — a confirmation SMS to any phone the salon types in.
+
+So "per-salon SMS spend is bounded" was simply not true. `SalonSmsQuotaService`
+(`sms/salon-sms-quota.service.ts`) is now the single meter for all three, writing to the
+same `salon_sms_messages` log and reading the same `smsMonthlyQuota` entitlement through
+the [entitlement engine](./35-entitlement-engine.md).
+
+Two entry points, because the callers differ in kind:
+
+- **`consumeOrThrow` semantics** for an action the owner explicitly asked for (the CRM
+  message): being over quota is a real answer they must see, so it surfaces as a 409.
+- **`tryConsume`** for an SMS that is a side effect of some other successful action (a
+  worker was added; a walk-in was booked): running out of budget must **not** fail the real
+  operation. The roster row and the booking still stand; the message is skipped and logged.
+
+A customer-initiated online booking is deliberately **not** metered — the customer, not the
+salon, caused it. Only the salon-entered manual booking is.
+
+The service lives in its own `SalonSmsQuotaModule` rather than inside `SmsModule`: it needs
+the entitlement engine, and `SubscriptionsModule → AuthModule → SmsModule` would close a
+module cycle. Splitting it out is also honest — it never sends anything. It meters and
+records, and the caller passes the send in as a closure, so it has no need of
+`SMS_PROVIDER`.
+
