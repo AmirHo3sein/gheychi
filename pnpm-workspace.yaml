@@ -1,3 +1,31 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# Forces a patched version of a transitively-pinned vulnerable dependency without waiting
+# on the parent package to release a bump. Each entry maps to a specific dependency-audit
+# advisory; remove an entry once the real upstream dependency naturally clears it.
+overrides:
+  # Transitive through vite's bundled postcss in every workspace (build-time only, never
+  # in the request path) -- path traversal in source-map handling.
+  postcss: ^8.5.23
+  # Same transitive chain as postcss above -- indefinite loop with a negative/zero size.
+  nanoid: ^3.3.18
+  # Two vulnerable major lines in the dependency graph (via glob/minimatch); scoped
+  # per-major so neither resolution silently jumps to an incompatible major version.
+  brace-expansion@1: ^1.1.18
+  brace-expansion@2: ^2.1.4
+
+# NOT overridden here despite being in the dependency-audit report, and worth documenting
+# so the next person doesn't re-attempt what already failed: @nestjs/platform-express@11.x
+# hard-pins "multer": "2.1.1" (DoS via deeply nested/malformed multipart field parsing) as
+# an EXACT version with no range at all, and neither a plain `overrides` entry, a scoped
+# "pkg>dep" override, nor a packageExtensions dependency rewrite gets pnpm (9.15.0) to
+# substitute it -- all three were tried against a real install. `apps/api/package.json`
+# already declares its own direct "multer": "^2.2.0" (used for @types/multer resolution,
+# not imported by any application code -- every upload route goes through NestJS's own
+# FileInterceptor, which wires the internal pinned instance regardless). No 11.x
+# @nestjs/platform-express release bumps this; only a NestJS 12 major upgrade does.
+# Real-world exposure is low: every upload endpoint in this codebase is a single
+# fixed-field-name image upload already gated by assertTrustedImageMimeType and a size
+# cap, not the arbitrary deeply-nested multipart body shape the advisory describes.
