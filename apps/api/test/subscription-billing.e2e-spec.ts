@@ -244,5 +244,61 @@ describe('Subscription coupons + billing (e2e)', () => {
       const otherOwnerCookie = await loginAs(app, '09171110003');
       await request(app.getHttpServer()).get('/api/salons/mine/subscription/billing-periods').set('Cookie', otherOwnerCookie).expect(404);
     });
+
+    // createPeriod's own comment: the coupon row is row-locked (pessimistic_write)
+    // specifically because two UNRELATED salons can redeem the same capped
+    // subscription-coupon concurrently, with no per-salon lock anywhere else in this
+    // codebase to serialize them. This is the real-Postgres proof that the lock
+    // actually enforces the cap under genuine contention, not just sequential calls.
+    describe('concurrency: capped subscription coupon (maxRedemptions=1), two different salons at once', () => {
+      it('exactly one salon gets the discount; the loser gets a clean 400, never a 500 or a double redemption', async () => {
+        await request(app.getHttpServer())
+          .post('/api/admin/subscription-coupons')
+          .set('Cookie', adminCookie)
+          .send({ code: 'RACEBILL', discountPercent: 25, maxRedemptions: 1 })
+          .expect(201);
+
+        const raceOwnerACookie = await loginAs(app, '09171110010');
+        const raceOwnerBCookie = await loginAs(app, '09171110011');
+        const { salonId: raceSalonAId } = await createApprovedSalon(app, raceOwnerACookie, { name: 'Billing Race Salon A' });
+        const { salonId: raceSalonBId } = await createApprovedSalon(app, raceOwnerBCookie, { name: 'Billing Race Salon B' });
+
+        // Both need an ACTIVE subscription on a real priced plan (createPeriod requires
+        // status === 'active') before either can be billed at all.
+        await request(app.getHttpServer())
+          .patch(`/api/admin/salons/${raceSalonAId}/subscription`)
+          .set('Cookie', adminCookie)
+          .send({ planId })
+          .expect(200);
+        await request(app.getHttpServer())
+          .patch(`/api/admin/salons/${raceSalonBId}/subscription`)
+          .set('Cookie', adminCookie)
+          .send({ planId })
+          .expect(200);
+
+        const [first, second] = await Promise.all([
+          request(app.getHttpServer())
+            .post(`/api/admin/salons/${raceSalonAId}/subscription/billing-periods`)
+            .set('Cookie', adminCookie)
+            .send({ periodStart: '2028-01-01T00:00:00.000Z', periodEnd: '2028-02-01T00:00:00.000Z', couponCode: 'RACEBILL' }),
+          request(app.getHttpServer())
+            .post(`/api/admin/salons/${raceSalonBId}/subscription/billing-periods`)
+            .set('Cookie', adminCookie)
+            .send({ periodStart: '2028-01-01T00:00:00.000Z', periodEnd: '2028-02-01T00:00:00.000Z', couponCode: 'RACEBILL' }),
+        ]);
+
+        const statuses = [first.status, second.status].sort();
+        expect(statuses).toEqual([201, 400]);
+
+        const winner = [first, second].find((r) => r.status === 201)!;
+        expect(winner.body).toMatchObject({ discountPercent: 25, amountToman: 375_000 });
+
+        // Ground truth against Postgres, not just HTTP status codes.
+        const [{ count }] = await ds.query(
+          `SELECT COUNT(*) FROM subscription_coupon_redemptions WHERE coupon_id = (SELECT id FROM subscription_coupons WHERE code = 'RACEBILL')`,
+        );
+        expect(Number(count)).toBe(1);
+      });
+    });
   });
 });

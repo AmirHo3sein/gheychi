@@ -125,6 +125,74 @@ describe('Salon SMS + quota (e2e)', () => {
       request(app.getHttpServer()).post(`/api/salons/mine/customers/${customerId}/sms`).send({ message: 'سلام' }).expect(401));
   });
 
+  // CustomerSmsService.send's own doc comment calls this out explicitly: the
+  // check-then-send-then-insert sequence has NO row lock and NO transaction wrapping the
+  // three steps -- an ACCEPTED, DOCUMENTED MVP simplification (unlike every other
+  // money-critical race in this codebase), because overrunning an SMS quota by one message
+  // during a human owner's own manual, low-frequency action costs a fraction of a cent.
+  // This test pins the REAL, currently-unlocked behaviour under genuine concurrency -- it is
+  // NOT asserting a stricter guarantee than the code provides, and this is NOT a bug to fix.
+  describe('concurrency: quota=1, two simultaneous sends at the boundary (KNOWN, ACCEPTED unlocked race)', () => {
+    it('both requests can pass the check-then-send race, allowing usage to exceed the quota by one', async () => {
+      const raceOwnerCookie = await loginAs(app, '09161110006');
+      const { salonId: raceSalonId } = await createApprovedSalonWithService(
+        app,
+        raceOwnerCookie,
+        { name: 'SMS Race Salon' },
+        { price: 400_000 },
+      );
+
+      const raceCustomerCookie = await loginAs(app, '09161110007');
+      const raceCustomerMe = await request(app.getHttpServer()).get('/api/auth/me').set('Cookie', raceCustomerCookie).expect(200);
+      const raceCustomerId = raceCustomerMe.body.id;
+      await ds.query(
+        `INSERT INTO bookings (salon_id, user_id, service_id, worker_id, starts_at, ends_at, status, price_snapshot, deposit_amount, source)
+         SELECT $1, $2, s.id, NULL, now() + interval '1 day', now() + interval '1 day 30 minutes', 'confirmed', s.price, 0, 'manual'
+         FROM salon_services s WHERE s.salon_id = $1 LIMIT 1`,
+        [raceSalonId, raceCustomerId],
+      );
+
+      await request(app.getHttpServer())
+        .patch(`/api/admin/salons/${raceSalonId}/subscription/overrides`)
+        .set('Cookie', adminCookie)
+        .send({ overrides: { smsMonthlyQuota: 1 } })
+        .expect(200);
+
+      const [first, second] = await Promise.all([
+        request(app.getHttpServer())
+          .post(`/api/salons/mine/customers/${raceCustomerId}/sms`)
+          .set('Cookie', raceOwnerCookie)
+          .send({ message: 'پیام همزمان یک' }),
+        request(app.getHttpServer())
+          .post(`/api/salons/mine/customers/${raceCustomerId}/sms`)
+          .set('Cookie', raceOwnerCookie)
+          .send({ message: 'پیام همزمان دو' }),
+      ]);
+
+      const statuses = [first.status, second.status].sort();
+      // At least one must succeed; with no lock, both racing past the read-then-write
+      // check before either's INSERT commits is a real, reachable outcome -- ground truth
+      // is the actual row count logged below, not the HTTP statuses alone.
+      expect(statuses[0]).toBe(201);
+      expect([201, 409]).toContain(statuses[1]);
+
+      const [{ count }] = await ds.query(`SELECT COUNT(*) FROM salon_sms_messages WHERE salon_id = $1`, [raceSalonId]);
+      const logged = Number(count);
+      // Pin the actually-observed outcome of the unlocked race: as many rows are logged as
+      // requests that got a 201, which can legitimately be 2 against a quota of 1 -- this is
+      // the documented, accepted over-quota-by-one behaviour, not an assertion that it must
+      // happen every single run (a very unlucky interleaving could still serialize both).
+      const succeededCount = [first, second].filter((r) => r.status === 201).length;
+      expect(logged).toBe(succeededCount);
+
+      const quotaStatus = await request(app.getHttpServer())
+        .get('/api/salons/mine/sms-quota')
+        .set('Cookie', raceOwnerCookie)
+        .expect(200);
+      expect(quotaStatus.body.used).toBe(succeededCount);
+    });
+  });
+
   describe('a salon on the plain default plan (no override applied)', () => {
     it('gets the migration-seeded placeholder quota, not zero', async () => {
       const otherOwnerCookie = await loginAs(app, '09161110005');

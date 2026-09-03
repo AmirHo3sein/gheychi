@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import { loginAs, loginAsAdmin } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
+import { createApprovedSalonWithService } from './factories/salon.factory';
 
 describe('Coupons (e2e)', () => {
   let app: INestApplication;
@@ -325,6 +326,66 @@ describe('Coupons (e2e)', () => {
 
       const redemptions = await ds.query(`SELECT cr.id FROM coupon_redemptions cr JOIN coupons c ON c.id = cr.coupon_id WHERE c.code = 'RACE10'`);
       expect(redemptions).toHaveLength(1);
+    });
+  });
+
+  // resolveAndValidateImpl's maxRedemptions branch row-locks the COUPON itself
+  // (pessimistic_write) specifically so a capped, platform-wide coupon can't be
+  // over-redeemed by concurrent bookings against DIFFERENT salons -- those aren't
+  // serialized by createHold's per-salon Redis lock or by the UNIQUE(coupon_id,
+  // user_id) constraint the test above relies on (four DIFFERENT users here, so that
+  // constraint can't be what's doing the work). This is the real-Postgres proof that
+  // the coupon-row lock is what enforces the cap under genuine contention.
+  describe('concurrency: capped coupon (maxRedemptions=2), four different users at once', () => {
+    it('exactly maxRedemptions bookings get the discount; the rest fail cleanly with COUPON_LIMIT_REACHED', async () => {
+      await request(app.getHttpServer())
+        .post('/api/admin/coupons')
+        .set('Cookie', await loginAsAdmin(app, '09121110001'))
+        .send({ code: 'CAP2', discountPercent: 10, maxRedemptions: 2 })
+        .expect(201);
+
+      const racers = await Promise.all(
+        Array.from({ length: 4 }, (_, i) => loginAs(app, `0912111010${i}`)),
+      );
+      // Four DIFFERENT salons (own owner, own service) -- not just distinct startsAt
+      // on the shared salon -- because createHold's per-salon Redis lock is keyed on
+      // salonId alone and would otherwise serialize (and spuriously 409 the loser of)
+      // requests against the SAME salon regardless of overlapping times. Isolating one
+      // salon per racer means the only thing that can reject a request is the coupon's
+      // own row-locked maxRedemptions cap, which is what this test is actually proving.
+      const targets = await Promise.all(
+        racers.map(async (_, i) => {
+          const owner = await loginAs(app, `0912111011${i}`);
+          return createApprovedSalonWithService(app, owner, { name: `Coupon Cap Salon ${i}` }, { price: 1000000 });
+        }),
+      );
+      const results = await Promise.all(
+        racers.map((cookie, i) =>
+          request(app.getHttpServer())
+            .post('/api/bookings')
+            .set('Cookie', cookie)
+            .send({ salonId: targets[i].salonId, serviceId: targets[i].serviceId, startsAt: futureIso(200), couponCode: 'CAP2' }),
+        ),
+      );
+
+      const succeeded = results.filter((r) => r.status === 201);
+      const failed = results.filter((r) => r.status !== 201);
+      expect(succeeded).toHaveLength(2);
+      expect(failed).toHaveLength(2);
+      for (const r of succeeded) {
+        expect(r.body.couponApplied).toBe(true);
+      }
+      for (const r of failed) {
+        expect(r.status).toBe(400);
+        expect(r.body.code).toBe('COUPON_LIMIT_REACHED');
+      }
+
+      // Ground truth against Postgres, not just HTTP status codes.
+      const ds = app.get(DataSource);
+      const redemptions = await ds.query(
+        `SELECT cr.id FROM coupon_redemptions cr JOIN coupons c ON c.id = cr.coupon_id WHERE c.code = 'CAP2'`,
+      );
+      expect(redemptions).toHaveLength(2);
     });
   });
 });

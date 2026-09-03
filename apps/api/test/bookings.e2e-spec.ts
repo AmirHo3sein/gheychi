@@ -132,6 +132,54 @@ describe('Bookings — create hold (e2e)', () => {
     expect(statuses).toEqual([201, 409]);
   });
 
+  it('concurrency: N=6 simultaneous bookings against capacity K=3 -- exactly K succeed and the DB never rows more than K slot-blocking bookings for the interval', async () => {
+    const capacitySalon = await createApprovedSalonWithService(
+      app,
+      await loginAs(app, '09121110040'),
+      { name: 'Capacity-3 Race Salon', capacity: 3 },
+      { price: 1000000 },
+    );
+    const startsAt = futureIso(600);
+
+    const racers = await Promise.all(
+      Array.from({ length: 6 }, (_, i) => loginAs(app, `0912111005${i}`)),
+    );
+
+    // 6 genuinely concurrent requests against a salon whose capacity is 3. The
+    // per-salon Redis lock (acquireSalonLock) fully serializes the check-then-insert
+    // critical section, so exactly 3 should observe overlapping < capacity and insert;
+    // the other 3 must see BOOKING_UNAVAILABLE (409), never a 500 and never a silent
+    // over-commit.
+    const results = await Promise.all(
+      racers.map((cookie) =>
+        request(app.getHttpServer())
+          .post('/api/bookings')
+          .set('Cookie', cookie)
+          .send({ salonId: capacitySalon.salonId, serviceId: capacitySalon.serviceId, startsAt }),
+      ),
+    );
+
+    const succeeded = results.filter((r) => r.status === 201);
+    const failed = results.filter((r) => r.status !== 201);
+    expect(succeeded).toHaveLength(3);
+    expect(failed).toHaveLength(3);
+    for (const r of failed) {
+      expect(r.status).toBe(409);
+      expect(r.body.code).toBe(BOOKING_UNAVAILABLE);
+    }
+
+    // Ground truth: count SLOT_BLOCKING_STATUSES rows for this exact interval directly
+    // against Postgres -- HTTP status codes alone can't prove what actually committed.
+    const ds = app.get(DataSource);
+    const [{ count }] = await ds.query(
+      `SELECT COUNT(*)::int AS count FROM bookings
+       WHERE salon_id = $1 AND status IN ('pending_approval', 'pending_payment', 'confirmed')
+         AND starts_at < $2 AND ends_at > $3`,
+      [capacitySalon.salonId, new Date(new Date(startsAt).getTime() + 60 * 60_000), startsAt],
+    );
+    expect(count).toBe(3);
+  });
+
   it('lists the caller\'s own bookings via GET /bookings/mine', async () => {
     const res = await request(app.getHttpServer())
       .get('/api/bookings/mine')
