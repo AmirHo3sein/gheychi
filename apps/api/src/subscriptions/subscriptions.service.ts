@@ -94,7 +94,10 @@ export class SubscriptionsService {
     if (!existing) throw new NotFoundException('No subscription for this salon');
     if (existing.status === 'canceled') throw new ConflictException('این اشتراک از قبل لغو شده است');
 
-    await this.repo.update({ salonId }, { status: 'canceled', canceledAt: new Date() });
+    // Overrides belonged to the arrangement being ended (getEntitlements already ignores
+    // them while canceled); clearing them here means a later assignPlan() starts from the
+    // new plan verbatim instead of silently resurrecting last year's per-salon exceptions.
+    await this.repo.update({ salonId }, { status: 'canceled', canceledAt: new Date(), entitlementOverrides: null });
     return this.getForSalon(salonId);
   }
 

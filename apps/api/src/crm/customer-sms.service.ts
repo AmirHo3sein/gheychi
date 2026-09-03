@@ -1,9 +1,10 @@
-import { ConflictException, Inject, Injectable } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Repository } from 'typeorm';
+import { And, LessThan, MoreThanOrEqual, Repository } from 'typeorm';
 import { jalaliMonthBounds, jalaliMonthOf } from '../invoicing/jalali-period.util';
+import { SalonsService } from '../salons/salons.service';
 import { SMS_PROVIDER, SmsProvider } from '../sms/sms.provider';
-import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { EntitlementsService } from '../subscriptions/entitlements.service';
 import { CrmService } from './crm.service';
 import { SalonSmsMessage } from './salon-sms-message.entity';
 
@@ -28,24 +29,28 @@ export interface SmsQuotaStatus {
 export class CustomerSmsService {
   constructor(
     private readonly crm: CrmService,
-    private readonly subscriptions: SubscriptionsService,
+    private readonly entitlements: EntitlementsService,
+    private readonly salons: SalonsService,
     @Inject(SMS_PROVIDER) private readonly sms: SmsProvider,
     @InjectRepository(SalonSmsMessage) private readonly messages: Repository<SalonSmsMessage>,
   ) {}
 
-  // A missing/non-numeric entitlement resolves to 0 (blocked), not unlimited -- a
-  // plan an admin hasn't configured yet must never grant free-form SMS for nothing,
-  // matching this codebase's "off/zero until an admin explicitly opts in" posture
-  // (the global payment toggle's own seeded-off default).
-  private async resolveQuota(salonId: string): Promise<number> {
-    const entitlements = await this.subscriptions.getEntitlements(salonId);
-    const raw = entitlements.smsMonthlyQuota;
-    return typeof raw === 'number' && raw >= 0 ? raw : 0;
+  // Resolution (including the "absent means 0, never unlimited" rule) lives in the
+  // entitlement registry now, not here -- this was the only feature that enforced an
+  // entitlement, and its inline coercion was the shape every later feature would have
+  // copy-pasted. See subscriptions/entitlement-keys.ts.
+  private resolveQuota(salonId: string): Promise<number> {
+    return this.entitlements.getQuota(salonId, 'smsMonthlyQuota');
   }
 
   private async countUsedThisMonth(salonId: string): Promise<number> {
+    // Half-open [periodStart, periodEnd) -- periodEnd IS the next month's first instant
+    // (see jalaliMonthBounds), so an inclusive Between would count a message sent at
+    // exactly that instant in both months; same range shape every invoicing query uses.
     const { periodStart, periodEnd } = jalaliMonthBounds(jalaliMonthOf(new Date()));
-    return this.messages.count({ where: { salonId, createdAt: Between(periodStart, periodEnd) } });
+    return this.messages.count({
+      where: { salonId, createdAt: And(MoreThanOrEqual(periodStart), LessThan(periodEnd)) },
+    });
   }
 
   async getQuotaStatus(salonId: string): Promise<SmsQuotaStatus> {
@@ -63,6 +68,16 @@ export class CustomerSmsService {
    * fraction of a cent and nothing more. Revisit only if usage patterns ever show otherwise.
    */
   async send(salonId: string, customerId: string, actorId: string, message: string): Promise<SmsQuotaStatus> {
+    const salon = await this.salons.findById(salonId);
+    if (!salon) throw new NotFoundException('Salon not found');
+    // Approved salons only -- the same standing approve() requires before a salon can take
+    // on committed work. A suspended/rejected salon keeping a free-text SMS channel to every
+    // past customer (on the platform's own sender number) is exactly what suspension exists
+    // to stop; the CRM read side stays available so nothing about their own records is lost.
+    if (salon.status !== 'approved') {
+      throw new ConflictException('تا زمانی که وضعیت سالن تایید‌شده نباشد، امکان ارسال پیامک وجود ندارد');
+    }
+
     const customer = await this.crm.getCustomerContact(salonId, customerId);
     const quota = await this.resolveQuota(salonId);
     const used = await this.countUsedThisMonth(salonId);
@@ -70,7 +85,11 @@ export class CustomerSmsService {
       throw new ConflictException('سقف ارسال پیامک این ماه برای این سالن تمام شده است');
     }
 
-    await this.sms.send(customer.phone, message);
+    // Always attributed to the salon, server-side, on the wire: the text is free-form and
+    // goes out on the platform's own sender number, so an unprefixed message could pass
+    // itself off as the platform ("your booking was cancelled, pay here"). The logged
+    // `message` stays the owner's own text -- the prefix is delivery framing, not content.
+    await this.sms.send(customer.phone, `${salon.name}: ${message}`);
 
     await this.messages.save(this.messages.create({ salonId, customerId, phone: customer.phone, message, sentBy: actorId }));
 

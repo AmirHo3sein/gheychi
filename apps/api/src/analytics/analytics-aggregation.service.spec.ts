@@ -102,3 +102,73 @@ describe('AnalyticsAggregationService.summary', () => {
     expect(result.funnelByDay).toEqual([]);
   });
 });
+
+describe('AnalyticsAggregationService.salonFunnel', () => {
+  function makeFunnelService(rows: unknown[]) {
+    const qb = makeQb(jest.fn().mockResolvedValue(rows));
+    const events = { createQueryBuilder: jest.fn().mockReturnValue(qb) };
+    const service = new AnalyticsAggregationService(events as unknown as Repository<AnalyticsEventRecord>);
+    return { service, qb };
+  }
+
+  const FROM = new Date('2026-08-01T00:00:00.000Z');
+  const TO = new Date('2026-08-31T00:00:00.000Z');
+
+  it('scopes the query to the given salon -- the query shape IS the access check', async () => {
+    const { service, qb } = makeFunnelService([]);
+
+    await service.salonFunnel('salon-1', FROM, TO);
+
+    expect(qb.where).toHaveBeenCalledWith('e.salonId = :salonId', { salonId: 'salon-1' });
+  });
+
+  it('queries exactly the salon-attributable funnel stages, in order', async () => {
+    const { service, qb } = makeFunnelService([]);
+
+    await service.salonFunnel('salon-1', FROM, TO);
+
+    // payment_succeeded joined the list once its emit site started carrying salonId
+    // (2026-09-03); rows written before then have salon_id NULL and stay invisible here.
+    expect(qb.andWhere).toHaveBeenCalledWith('e.eventName IN (:...names)', {
+      names: ['salon_profile_viewed', 'booking_started', 'payment_succeeded', 'booking_confirmed'],
+    });
+  });
+
+  it('computes each stage conversion against the stage before it', async () => {
+    const { service } = makeFunnelService([
+      { eventName: 'salon_profile_viewed', count: '200' },
+      { eventName: 'booking_started', count: '50' },
+      { eventName: 'payment_succeeded', count: '30' },
+      { eventName: 'booking_confirmed', count: '25' },
+    ]);
+
+    const result = await service.salonFunnel('salon-1', FROM, TO);
+
+    expect(result.stages).toEqual([
+      { stage: 'salon_profile_viewed', count: 200, conversionFromPreviousPercent: null },
+      { stage: 'booking_started', count: 50, conversionFromPreviousPercent: 25 },
+      { stage: 'payment_succeeded', count: 30, conversionFromPreviousPercent: 60 },
+      { stage: 'booking_confirmed', count: 25, conversionFromPreviousPercent: 83 },
+    ]);
+  });
+
+  it('reports a null conversion (not 0%) when the previous stage has no data at all', async () => {
+    // A salon whose bookings all come in by phone/QR without the profile page being hit:
+    // "no denominator" must never be rendered as "0% of viewers booked".
+    const { service } = makeFunnelService([{ eventName: 'booking_started', count: '4' }]);
+
+    const result = await service.salonFunnel('salon-1', FROM, TO);
+
+    expect(result.stages[1]).toEqual({ stage: 'booking_started', count: 4, conversionFromPreviousPercent: null });
+  });
+
+  it('returns every stage at zero when the salon has no events yet, rather than an empty list', async () => {
+    const { service } = makeFunnelService([]);
+
+    const result = await service.salonFunnel('salon-1', FROM, TO);
+
+    expect(result.stages.map((s) => s.count)).toEqual([0, 0, 0, 0]);
+    expect(result.stages.every((s) => s.conversionFromPreviousPercent === null)).toBe(true);
+    expect(result).toMatchObject({ from: FROM.toISOString(), to: TO.toISOString() });
+  });
+});

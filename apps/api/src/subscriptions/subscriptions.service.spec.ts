@@ -197,7 +197,7 @@ describe('SubscriptionsService', () => {
 
       expect(subRepo.update).toHaveBeenCalledWith(
         { salonId: 's1' },
-        { status: 'canceled', canceledAt: expect.any(Date) },
+        { status: 'canceled', canceledAt: expect.any(Date), entitlementOverrides: null },
       );
     });
   });

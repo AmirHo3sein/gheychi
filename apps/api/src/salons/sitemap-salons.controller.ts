@@ -13,6 +13,10 @@ export class SitemapSalonsController {
   // Paginated -- the user-app's sitemap-salons-N.xml route requests exactly the page it
   // needs (never the whole table), and its sitemap-index route reads `total`/`pageSize`
   // from a single page-1 call to know how many sub-sitemap files to list.
+  //
+  // Reads `salons` only, never `salon_slug_history`: a former handle is a 301 source, not a
+  // canonical URL, and listing one here would ask Google to index a redirect and would
+  // contradict the salon page's own rel=canonical.
   @Get('salon-slugs')
   async list(@Query() query: SitemapPageQueryDto): Promise<SitemapPage<string>> {
     const page = query.page ?? 1;

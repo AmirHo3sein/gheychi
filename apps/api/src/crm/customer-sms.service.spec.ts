@@ -4,13 +4,15 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { CrmService } from './crm.service';
 import { CustomerSmsService } from './customer-sms.service';
 import { SalonSmsMessage } from './salon-sms-message.entity';
+import { SalonsService } from '../salons/salons.service';
 import { SMS_PROVIDER } from '../sms/sms.provider';
-import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { EntitlementsService } from '../subscriptions/entitlements.service';
 
 describe('CustomerSmsService', () => {
   let service: CustomerSmsService;
   let crm: { getCustomerContact: jest.Mock; requireCustomerBelongsToSalon: jest.Mock };
-  let subscriptions: { getEntitlements: jest.Mock };
+  let entitlements: { getQuota: jest.Mock };
+  let salons: { findById: jest.Mock };
   let sms: { send: jest.Mock; sendOtp: jest.Mock };
   let messagesRepo: { count: jest.Mock; create: jest.Mock; save: jest.Mock };
 
@@ -19,7 +21,8 @@ describe('CustomerSmsService', () => {
       getCustomerContact: jest.fn().mockResolvedValue({ id: 'u1', name: 'Ali', phone: '09120000000' }),
       requireCustomerBelongsToSalon: jest.fn(),
     };
-    subscriptions = { getEntitlements: jest.fn().mockResolvedValue({ smsMonthlyQuota: 20 }) };
+    entitlements = { getQuota: jest.fn().mockResolvedValue(20) };
+    salons = { findById: jest.fn().mockResolvedValue({ id: 'salon-1', name: 'سالن رز', status: 'approved' }) };
     sms = { send: jest.fn().mockResolvedValue(undefined), sendOtp: jest.fn() };
     messagesRepo = {
       count: jest.fn().mockResolvedValue(0),
@@ -31,7 +34,8 @@ describe('CustomerSmsService', () => {
       providers: [
         CustomerSmsService,
         { provide: CrmService, useValue: crm },
-        { provide: SubscriptionsService, useValue: subscriptions },
+        { provide: EntitlementsService, useValue: entitlements },
+        { provide: SalonsService, useValue: salons },
         { provide: SMS_PROVIDER, useValue: sms },
         { provide: getRepositoryToken(SalonSmsMessage), useValue: messagesRepo },
       ],
@@ -46,12 +50,12 @@ describe('CustomerSmsService', () => {
     });
 
     it('treats a missing entitlement key as zero quota, not unlimited', async () => {
-      subscriptions.getEntitlements.mockResolvedValueOnce({});
+      entitlements.getQuota.mockResolvedValueOnce(0);
       await expect(service.getQuotaStatus('salon-1')).resolves.toEqual({ quota: 0, used: 0, remaining: 0 });
     });
 
     it('treats a non-numeric entitlement value as zero quota', async () => {
-      subscriptions.getEntitlements.mockResolvedValueOnce({ smsMonthlyQuota: 'unlimited' });
+      entitlements.getQuota.mockResolvedValueOnce(0);
       await expect(service.getQuotaStatus('salon-1')).resolves.toEqual({ quota: 0, used: 0, remaining: 0 });
     });
 
@@ -68,6 +72,13 @@ describe('CustomerSmsService', () => {
       expect(sms.send).not.toHaveBeenCalled();
     });
 
+    it.each(['pending', 'rejected', 'suspended'])('409s for a %s salon, without sending or counting quota', async (status) => {
+      salons.findById.mockResolvedValueOnce({ id: 'salon-1', name: 'سالن رز', status });
+      await expect(service.send('salon-1', 'u1', 'owner-1', 'سلام')).rejects.toBeInstanceOf(ConflictException);
+      expect(sms.send).not.toHaveBeenCalled();
+      expect(messagesRepo.save).not.toHaveBeenCalled();
+    });
+
     it('409s once usage reaches quota, without sending', async () => {
       messagesRepo.count.mockResolvedValueOnce(20);
       await expect(service.send('salon-1', 'u1', 'owner-1', 'سلام')).rejects.toBeInstanceOf(ConflictException);
@@ -79,7 +90,8 @@ describe('CustomerSmsService', () => {
       messagesRepo.count.mockResolvedValueOnce(3);
       const result = await service.send('salon-1', 'u1', 'owner-1', 'سلام مشتری عزیز');
 
-      expect(sms.send).toHaveBeenCalledWith('09120000000', 'سلام مشتری عزیز');
+      // Prefixed with the salon name on the wire (anti-impersonation); logged as typed.
+      expect(sms.send).toHaveBeenCalledWith('09120000000', 'سالن رز: سلام مشتری عزیز');
       expect(messagesRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({ salonId: 'salon-1', customerId: 'u1', phone: '09120000000', message: 'سلام مشتری عزیز', sentBy: 'owner-1' }),
       );

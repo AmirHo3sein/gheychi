@@ -69,13 +69,25 @@ describe('PlansService', () => {
     });
 
     it('rejects unsetting isDefault on the currently-default plan', async () => {
-      repo.findOneBy.mockResolvedValue({ id: 'p1', isDefault: true });
+      repo.findOneBy.mockResolvedValue({ id: 'p1', isDefault: true, isActive: true });
       await expect(service.update('p1', { isDefault: false })).rejects.toBeInstanceOf(ConflictException);
       expect(dataSourceTransaction).not.toHaveBeenCalled();
     });
 
+    it('refuses to deactivate the default plan (every new salon lands on it, and assignPlan refuses inactive plans)', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'p1', isDefault: true, isActive: true });
+      await expect(service.update('p1', { isActive: false })).rejects.toBeInstanceOf(ConflictException);
+      expect(dataSourceTransaction).not.toHaveBeenCalled();
+    });
+
+    it('refuses to make an inactive plan the default', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'p2', isDefault: false, isActive: false });
+      await expect(service.update('p2', { isDefault: true })).rejects.toBeInstanceOf(ConflictException);
+      expect(dataSourceTransaction).not.toHaveBeenCalled();
+    });
+
     it('unsets every other default plan before setting the new one, in one transaction', async () => {
-      repo.findOneBy.mockResolvedValue({ id: 'p2', isDefault: false });
+      repo.findOneBy.mockResolvedValue({ id: 'p2', isDefault: false, isActive: true });
       emFindOneBy.mockResolvedValue({ id: 'p2', isDefault: true });
 
       await service.update('p2', { isDefault: true });
@@ -86,7 +98,7 @@ describe('PlansService', () => {
     });
 
     it('does not touch other plans when isDefault is not part of the update', async () => {
-      repo.findOneBy.mockResolvedValue({ id: 'p1', isDefault: false });
+      repo.findOneBy.mockResolvedValue({ id: 'p1', isDefault: false, isActive: true });
       emFindOneBy.mockResolvedValue({ id: 'p1' });
 
       await service.update('p1', { name: 'new name' });

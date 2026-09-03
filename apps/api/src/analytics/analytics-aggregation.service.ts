@@ -12,6 +12,46 @@ const DEFAULT_RANGE_MS = 30 * 24 * 60 * 60 * 1000;
 const FUNNEL_EVENTS = ['booking_started', 'booking_confirmed', 'payment_succeeded'] as const;
 type FunnelEvent = (typeof FUNNEL_EVENTS)[number];
 
+/**
+ * The per-SALON funnel, in funnel order. Deliberately NOT the same list as FUNNEL_EVENTS
+ * above: a stage only belongs here if its event actually carries a `salonId` in its
+ * properties, because that is what `PostgresAnalyticsProvider` lifts into the indexed
+ * `analytics_events.salon_id` column this query filters on.
+ *
+ * `payment_succeeded` sits between them and carries `salonId` as of 2026-09-03 (its emit
+ * site in `booking/payments.service.ts` looks the booking up to attach it). Rows written
+ * BEFORE that date have `salon_id = NULL` and are invisible here -- deliberately, since no
+ * backfill can invent which salon an old row belonged to; the stage's counts are therefore
+ * honest only for windows starting after that date, and read as zero for earlier ones.
+ *
+ * `salon_profile_viewed` is emitted by `salon-profile-view.interceptor.ts` in this module.
+ */
+export const SALON_FUNNEL_STAGES = [
+  'salon_profile_viewed',
+  'booking_started',
+  'payment_succeeded',
+  'booking_confirmed',
+] as const;
+export type SalonFunnelStage = (typeof SALON_FUNNEL_STAGES)[number];
+
+export interface SalonFunnelStageCount {
+  stage: SalonFunnelStage;
+  count: number;
+  /**
+   * Share of the PREVIOUS stage that reached this one. `null` -- never 0, never an
+   * interpolated figure -- for the first stage and for any stage whose predecessor has no
+   * events at all in the window, because "0% converted" and "we have no data" are
+   * different statements and only one of them is true.
+   */
+  conversionFromPreviousPercent: number | null;
+}
+
+export interface SalonFunnel {
+  from: string;
+  to: string;
+  stages: SalonFunnelStageCount[];
+}
+
 export interface AdminAnalyticsSummaryQuery {
   from?: string;
   to?: string;
@@ -73,6 +113,48 @@ export class AnalyticsAggregationService {
       to: to.toISOString(),
       totalsByEvent: totalsRaw.map((row) => ({ eventName: row.eventName, count: Number(row.count) })),
       funnelByDay: this.pivotFunnel(funnelRaw),
+    };
+  }
+
+  /**
+   * One salon's funnel over a window, backing `GET /api/salons/mine/funnel`.
+   *
+   * Salon isolation is the query shape itself -- `WHERE e.salonId = :salonId` -- exactly
+   * like every other provider-scoped read in this codebase (CrmService's own queries,
+   * BookingsService.getEarnings). There is no separate ownership branch to forget, and the
+   * caller's salonId always comes from SalonOwnerGuard, never from the request body.
+   *
+   * A stage with no rows returns `count: 0`, which is honest: the event IS emitted for this
+   * stage platform-wide, so zero really does mean "this didn't happen here in this window".
+   * That is a different claim from a stage we cannot measure at all, which is handled by
+   * simply not being in SALON_FUNNEL_STAGES.
+   */
+  async salonFunnel(salonId: string, from: Date, to: Date): Promise<SalonFunnel> {
+    const rows = await this.events
+      .createQueryBuilder('e')
+      .select('e.eventName', 'eventName')
+      .addSelect('COUNT(*)', 'count')
+      .where('e.salonId = :salonId', { salonId })
+      .andWhere('e.createdAt BETWEEN :from AND :to', { from, to })
+      .andWhere('e.eventName IN (:...names)', { names: SALON_FUNNEL_STAGES })
+      .groupBy('e.eventName')
+      .getRawMany<{ eventName: SalonFunnelStage; count: string }>();
+
+    const counts = new Map(rows.map((row) => [row.eventName, Number(row.count)]));
+
+    return {
+      from: from.toISOString(),
+      to: to.toISOString(),
+      stages: SALON_FUNNEL_STAGES.map((stage, index) => {
+        const count = counts.get(stage) ?? 0;
+        const previousCount = index === 0 ? null : (counts.get(SALON_FUNNEL_STAGES[index - 1]!) ?? 0);
+        return {
+          stage,
+          count,
+          conversionFromPreviousPercent:
+            previousCount === null || previousCount === 0 ? null : Math.round((count / previousCount) * 100),
+        };
+      }),
     };
   }
 

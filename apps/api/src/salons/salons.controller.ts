@@ -48,6 +48,21 @@ export class SalonsController {
     return this.salons.resubmitMine(req.salonId!);
   }
 
+  // Handle-history resolution: answers "what is this handle's salon called TODAY?" for any
+  // handle the salon has ever had, so an already-printed QR code or a shared link survives a
+  // rename as a real 301 instead of a 404 (see SalonsService.resolveCanonicalSlug for why
+  // this is its own endpoint and not a field on the profile response).
+  //
+  // Registration order is safe both ways: this controller is registered after every
+  // `salons/mine/...` literal route (see salons.module.ts's own note), and `canonical` is a
+  // distinct literal last segment from PublicSalonContentController's `:slug/services`,
+  // `:slug/hours`, ... so neither shadows the other.
+  @Get(':slug/canonical')
+  @Public()
+  canonical(@Param('slug') slug: string) {
+    return this.salons.resolveCanonicalSlug(slug);
+  }
+
   @Get(':slug')
   @Public()
   async publicProfile(@Param('slug') slug: string) {

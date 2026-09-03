@@ -103,6 +103,12 @@ export class AdminSalonsController {
   // Admin override of a salon's own handle -- the same route the owner has
   // (PATCH /salons/mine/handle) reused here for recourse if a salon picks something
   // inappropriate, not a separate feature.
+  //
+  // `asAdmin: true` additionally lets this route take a handle that is RESERVED to another
+  // salon in salon_slug_history (an owner cannot -- that reservation is what stops a
+  // competitor inheriting a salon's printed-QR traffic). This is the documented recourse for
+  // exactly that situation, it still records the losing side's own handle in history, and it
+  // is audited below with a real before/after slug diff.
   @Patch(':id/handle')
   @UseInterceptors(AuditInterceptor)
   @AuditAction('salon.handle.set', 'salon')
@@ -110,7 +116,7 @@ export class AdminSalonsController {
     const before = await this.salons.findOneBy({ id });
     if (before) req.auditBefore = { slug: before.slug };
 
-    const updated = await this.salonsService.updateHandle(id, dto.handle);
+    const updated = await this.salonsService.updateHandle(id, dto.handle, true);
     req.auditAfter = { slug: updated.slug };
     return updated;
   }

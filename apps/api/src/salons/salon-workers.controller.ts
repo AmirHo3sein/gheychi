@@ -8,6 +8,7 @@ import { Request } from 'express';
 import { DataSource, In, Repository } from 'typeorm';
 import { isUniqueViolation } from '../common/postgres-error-codes';
 import { ReferralsService } from '../referrals/referrals.service';
+import { SalonSmsQuotaService } from '../sms/salon-sms-quota.service';
 import { SMS_PROVIDER, SmsProvider } from '../sms/sms.provider';
 import { User } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
@@ -31,6 +32,7 @@ export class SalonWorkersController {
     private readonly referralsService: ReferralsService,
     @Inject(SMS_PROVIDER) private readonly sms: SmsProvider,
     private readonly config: ConfigService,
+    private readonly smsQuota: SalonSmsQuotaService,
   ) {}
 
   @Post()
@@ -61,19 +63,34 @@ export class SalonWorkersController {
     // Best-effort and fire-and-forget, same posture as every other notification send in
     // this codebase (PaymentsService.notifyOne): a down SMS provider must never fail the
     // owner's own request.
-    void this.notifyWorkerAdded(user.phone, req.salonId!).catch(() => {});
+    void this.notifyWorkerAdded(user.phone, user.id, req.salonId!, (req.user as User).id).catch(() => {});
 
     return { ...worker, serviceIds: [] };
   }
 
-  private async notifyWorkerAdded(phone: string, salonId: string): Promise<void> {
+  private async notifyWorkerAdded(phone: string, recipientUserId: string, salonId: string, actorId: string): Promise<void> {
     const salon = await this.salons.findOneBy({ id: salonId });
-    if (!salon) return;
+    // Approved salons only. Any self-registered user can create a (pending) salon with an
+    // arbitrary 150-char name and then add "workers" by phone -- with no approval gate this
+    // endpoint was an unauthenticated-in-practice channel for sending attacker-worded SMS
+    // to any number at the platform's cost, bypassing the per-salon SMS quota entirely.
+    // Once admin-approved the salon is a vetted, attributable actor; the roster row itself
+    // is still created either way, only the invite text waits for approval.
+    if (!salon || salon.status !== 'approved') return;
     const frontendBase = this.config.get('FRONTEND_BASE_URL', 'http://localhost:3003');
-    await this.sms.send(
+    const message = `شما توسط سالن «${salon.name}» به عنوان کارمند اضافه شدید. برای ورود همین شماره را وارد کنید: ${frontendBase}/login`;
+    // Metered against the salon's own monthly SMS quota, like every other salon-triggered
+    // message. Unmetered, this endpoint was an unlimited platform-paid SMS channel to any
+    // phone: the roster row is unique per (salon, user), but add/remove/re-add is not, and
+    // the number of distinct phones a salon can name is not bounded at all.
+    // tryConsume, not consumeOrThrow: the worker IS on the roster either way, so running
+    // out of budget must skip the invite rather than undo a successful add.
+    await this.smsQuota.tryConsume(salonId, () => this.sms.send(phone, message), {
+      customerId: recipientUserId,
       phone,
-      `شما توسط سالن «${salon.name}» به عنوان کارمند اضافه شدید. برای ورود همین شماره را وارد کنید: ${frontendBase}/login`,
-    );
+      message,
+      sentBy: actorId,
+    });
   }
 
   @Get()

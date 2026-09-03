@@ -157,14 +157,81 @@ describe('Subscription coupons + billing (e2e)', () => {
         .expect(409);
     });
 
+    it('voiding a coupon-discounted period hands the redemption back so a fresh period can re-apply the code', async () => {
+      await request(app.getHttpServer())
+        .post('/api/admin/subscription-coupons')
+        .set('Cookie', adminCookie)
+        .send({ code: 'VOIDME30', discountPercent: 30, maxRedemptions: 1 })
+        .expect(201);
+
+      const wrong = await request(app.getHttpServer())
+        .post(`/api/admin/salons/${salonId}/subscription/billing-periods`)
+        .set('Cookie', adminCookie)
+        .send({ periodStart: '2027-02-01T00:00:00.000Z', periodEnd: '2027-03-01T00:00:00.000Z', couponCode: 'VOIDME30' })
+        .expect(201);
+      expect(wrong.body.amountToman).toBe(350_000);
+
+      // The documented correction path is "void, then create a fresh period" -- which used
+      // to be impossible with a coupon, since the voided row kept the salon's one redemption
+      // AND the capped coupon's only slot.
+      await request(app.getHttpServer())
+        .patch(`/api/admin/salons/${salonId}/subscription/billing-periods/${wrong.body.id}/status`)
+        .set('Cookie', adminCookie)
+        .send({ status: 'void' })
+        .expect(200);
+
+      const fresh = await request(app.getHttpServer())
+        .post(`/api/admin/salons/${salonId}/subscription/billing-periods`)
+        .set('Cookie', adminCookie)
+        .send({ periodStart: '2027-03-01T00:00:00.000Z', periodEnd: '2027-04-01T00:00:00.000Z', couponCode: 'VOIDME30' })
+        .expect(201);
+      expect(fresh.body.amountToman).toBe(350_000);
+
+      const [{ count }] = await ds.query(`SELECT COUNT(*) FROM subscription_coupon_redemptions WHERE billing_period_id = $1`, [wrong.body.id]);
+      expect(Number(count)).toBe(0);
+    });
+
+    it('a period id cannot be resolved under a different salon\'s route', async () => {
+      const otherOwnerCookie = await loginAs(app, '09171110004');
+      const { salonId: otherSalonId } = await createApprovedSalon(app, otherOwnerCookie, { name: 'Other Billing Salon' });
+      const pending = await request(app.getHttpServer())
+        .post(`/api/admin/salons/${salonId}/subscription/billing-periods`)
+        .set('Cookie', adminCookie)
+        .send({ periodStart: '2027-04-01T00:00:00.000Z', periodEnd: '2027-05-01T00:00:00.000Z' })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .patch(`/api/admin/salons/${otherSalonId}/subscription/billing-periods/${pending.body.id}/status`)
+        .set('Cookie', adminCookie)
+        .send({ status: 'paid' })
+        .expect(404);
+
+      const [{ status }] = await ds.query(`SELECT status FROM subscription_billing_periods WHERE id = $1`, [pending.body.id]);
+      expect(status).toBe('pending');
+    });
+
+    it('refuses to bill a canceled subscription (the nominal plan is no longer in force)', async () => {
+      await request(app.getHttpServer()).post(`/api/admin/salons/${salonId}/subscription/cancel`).set('Cookie', adminCookie).expect(200);
+
+      await request(app.getHttpServer())
+        .post(`/api/admin/salons/${salonId}/subscription/billing-periods`)
+        .set('Cookie', adminCookie)
+        .send({ periodStart: '2027-05-01T00:00:00.000Z', periodEnd: '2027-06-01T00:00:00.000Z' })
+        .expect(409);
+
+      // Reassign so the remaining tests see an active subscription again.
+      await request(app.getHttpServer()).patch(`/api/admin/salons/${salonId}/subscription`).set('Cookie', adminCookie).send({ planId }).expect(200);
+    });
+
     it('the salon owner can read their own billing history but has no route to create or resolve one', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/salons/mine/subscription/billing-periods')
         .set('Cookie', ownerCookie)
         .expect(200);
-      // Exactly the 3 successfully-created periods from the earlier tests in this file
-      // (the rejected-coupon and duplicate-redemption attempts never inserted a row).
-      expect(res.body.length).toBe(3);
+      // Exactly the 6 successfully-created periods from the earlier tests in this file
+      // (the rejected-coupon, duplicate-redemption and canceled-subscription attempts never
+      // inserted a row; the voided one is still a row).
+      expect(res.body.length).toBe(6);
 
       await request(app.getHttpServer())
         .post('/api/salons/mine/subscription/billing-periods')

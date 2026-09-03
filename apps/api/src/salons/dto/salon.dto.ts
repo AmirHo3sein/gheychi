@@ -57,7 +57,10 @@ export class CreateSalonDto {
 
 export class UpdateSalonDto {
   @IsOptional() @IsString() @Length(2, 150) name?: string;
-  @IsOptional() @IsString() @MaxLength(2000) description?: string;
+  // ''->null like tagline/about below: the provider-panel sends '' to clear the field, and
+  // a literally-empty string stored on the row would read as "has a description" to any
+  // consumer that checks for null rather than truthiness.
+  @IsOptional() @Transform(emptyToNull) @IsString() @MaxLength(2000) description?: string | null;
   @IsOptional() @IsIn(['women', 'men']) genderTarget?: 'women' | 'men';
   @IsOptional() @IsString() @Length(5, 500) address?: string;
   @IsOptional() @IsString() @Length(2, 80) city?: string;

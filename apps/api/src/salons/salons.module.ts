@@ -9,6 +9,7 @@ import { CitiesModule } from '../cities/cities.module';
 import { PlatformConfigModule } from '../platform-config/platform-config.module';
 import { ReferralsModule } from '../referrals/referrals.module';
 import { WorkerRating } from '../reviews/worker-rating.entity';
+import { SalonSmsQuotaModule } from '../sms/salon-sms-quota.module';
 import { SmsModule } from '../sms/sms.module';
 import { StorageModule } from '../storage/storage.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
@@ -24,6 +25,7 @@ import { SalonPhoto } from './salon-photo.entity';
 import { SalonPhotosController } from './salon-photos.controller';
 import { SalonPortfolioController } from './salon-portfolio.controller';
 import { SalonService } from './salon-service.entity';
+import { SalonSlugHistory } from './salon-slug-history.entity';
 import { SalonStoriesController } from './salon-stories.controller';
 import { SalonStory } from './salon-story.entity';
 import { Salon } from './salon.entity';
@@ -44,7 +46,7 @@ import { WorkingHour } from './working-hour.entity';
   imports: [
     TypeOrmModule.forFeature([
       Salon, SalonService, WorkingHour, ScheduleException, SalonPhoto, SalonStory, PortfolioItem, Worker,
-      SalonCategory, WorkerService,
+      SalonCategory, WorkerService, SalonSlugHistory,
       // WorkerRating is "owned" by ReviewsModule (created/recomputed inside
       // ReviewsService.create()) but is registered here too, purely for
       // PublicSalonContentController's read-only ratings sub-resource -- ReviewsModule
@@ -77,6 +79,7 @@ import { WorkingHour } from './working-hour.entity';
     // For SalonWorkersController's new-worker SMS notification -- plain leaf module, no
     // dependency back on SalonsModule.
     SmsModule,
+    SalonSmsQuotaModule,
     // For SalonsService.createForOwner's initial subscription insert -- SubscriptionsModule
     // has no dependency back on SalonsModule (see its own doc comment: salon existence is
     // enforced by salon_subscriptions' own FK, not a Salon repository lookup), so this is a

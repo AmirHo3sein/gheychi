@@ -40,6 +40,14 @@ export class PlansService {
     if (dto.isDefault === false && plan.isDefault) {
       throw new ConflictException('حداقل یک پلن باید پیش‌فرض باشد؛ به‌جای غیرفعال کردن، پلن دیگری را پیش‌فرض کنید');
     }
+    // The default plan is what every new salon lands on (createDefaultSubscription reads
+    // isDefault only) and what assignPlan() refuses to assign when inactive -- the two must
+    // never disagree, so a plan can't be default and inactive at the same time.
+    const willBeDefault = dto.isDefault ?? plan.isDefault;
+    const willBeActive = dto.isActive ?? plan.isActive;
+    if (willBeDefault && !willBeActive) {
+      throw new ConflictException('پلن پیش‌فرض نمی‌تواند غیرفعال باشد؛ ابتدا پلن دیگری را پیش‌فرض کنید');
+    }
 
     return this.dataSource.transaction(async (em) => {
       if (dto.isDefault === true && !plan.isDefault) {

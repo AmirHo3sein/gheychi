@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AnalyticsModule } from '../analytics/analytics.module';
 import { AuthModule } from '../auth/auth.module';
 import { SalonsModule } from '../salons/salons.module';
 import { SmsModule } from '../sms/sms.module';
@@ -15,9 +16,18 @@ import { SalonSmsMessage } from './salon-sms-message.entity';
 // CategoryRequestsModule's own need for the same guard). SmsModule/SubscriptionsModule are
 // both leaf-ish modules with no dependency back here either -- CustomerSmsService (Phase 6)
 // reuses the existing SmsProvider send path and the Phase 2/3 entitlement engine rather than
-// inventing either.
+// inventing either. AnalyticsModule is the same kind of leaf import -- GET
+// /salons/mine/funnel reads the salon's own slice of analytics_events through
+// AnalyticsAggregationService rather than this module growing its own copy of that query.
 @Module({
-  imports: [TypeOrmModule.forFeature([CustomerNote, SalonSmsMessage]), AuthModule, SalonsModule, SmsModule, SubscriptionsModule],
+  imports: [
+    TypeOrmModule.forFeature([CustomerNote, SalonSmsMessage]),
+    AnalyticsModule,
+    AuthModule,
+    SalonsModule,
+    SmsModule,
+    SubscriptionsModule,
+  ],
   controllers: [SalonCustomersController],
   providers: [CrmService, CustomerSmsService],
 })

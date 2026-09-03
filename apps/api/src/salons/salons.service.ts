@@ -13,6 +13,7 @@ import { SetFeaturedDto } from './dto/admin-salon.dto';
 import { CreateSalonDto, UpdateSalonDto } from './dto/salon.dto';
 import { RESERVED_SALON_HANDLES } from './reserved-handles';
 import { SalonCategory } from './salon-category.entity';
+import { SalonSlugHistory } from './salon-slug-history.entity';
 import { Salon } from './salon.entity';
 import { makeSlug } from '../common/slug.util';
 
@@ -39,6 +40,9 @@ export class SalonsService {
     // only needs an arg added at the tail, not threaded through the middle.
     private readonly analytics: AnalyticsService,
     private readonly subscriptions: SubscriptionsService,
+    // Read-only here (the write side happens inside updateHandle's own transaction, through
+    // that transaction's EntityManager) -- this repo backs resolveCanonicalSlug's lookup.
+    @InjectRepository(SalonSlugHistory) private readonly slugHistory: Repository<SalonSlugHistory>,
   ) {}
 
   /** Throws BadRequestException (not a raw FK-violation 500) for an id that doesn't exist. */
@@ -182,23 +186,92 @@ export class SalonsService {
    * Changes a salon's public handle (salon.slug, reused directly as the shareable link --
    * see the monetization spec's owner decision). Called by both the owner's own route and
    * the admin-override route; the admin caller additionally records an audit entry at the
-   * controller layer, this method itself has no notion of who's calling.
+   * controller layer, this method itself has no notion of who's calling beyond the explicit
+   * `asAdmin` flag below.
+   *
+   * The released handle is recorded in `salon_slug_history` IN THE SAME TRANSACTION as the
+   * rename, so a handle can never be released without being recorded -- that table is both
+   * the redirect source for every already-printed QR/shared link and the reservation that
+   * stops a competitor from claiming the freed handle and inheriting its traffic.
+   *
+   * `asAdmin` lets the admin-override route (PATCH /admin/salons/:id/handle) take a handle
+   * that is reserved to a *different* salon. That route is this feature's documented recourse
+   * for an inappropriate/typo'd handle, so it must not be blockable by the reservation it is
+   * being used to unwind; it still writes history for the salon losing the handle, and it is
+   * already audited (`salon.handle.set`, with a real before/after slug diff). The losing
+   * salon's reservation row is dropped rather than kept, because the handle now resolves to a
+   * live salon -- a stale history row for it could never be honoured anyway.
    */
-  async updateHandle(salonId: string, handle: string): Promise<Salon> {
+  async updateHandle(salonId: string, handle: string, asAdmin = false): Promise<Salon> {
     if (RESERVED_SALON_HANDLES.has(handle)) {
       throw new BadRequestException('این آدرس رزرو شده و قابل استفاده نیست');
     }
     const salon = await this.repo.findOneBy({ id: salonId });
     if (!salon) throw new NotFoundException('No salon for this account');
+    // A no-op rename must not write history: recording the current handle as "released"
+    // would reserve a slug the salon is still using and, worse, leave a redirect row
+    // pointing a live handle at itself.
+    if (salon.slug === handle) return salon;
 
+    const previousSlug = salon.slug;
     try {
-      await this.repo.update({ id: salonId }, { slug: handle });
+      await this.dataSource.transaction(async (em) => {
+        // Order matters, and it is the opposite of the obvious one: the salons UPDATE goes
+        // FIRST so that this transaction serializes on the `salons.slug` unique index before
+        // the reservation is read. A concurrent rename that is in the middle of *releasing*
+        // this very handle holds that index entry, so our UPDATE blocks on it and, once that
+        // transaction commits, the SELECT below runs on a fresh READ COMMITTED snapshot that
+        // can actually see the reservation it just wrote. Checking first and updating second
+        // would leave exactly the hijack window this table exists to close: both statements
+        // would observe a handle that is free-and-unreserved and the later writer would win it.
+        await em.update(Salon, { id: salonId }, { slug: handle });
+
+        const reservation = await em.findOneBy(SalonSlugHistory, { slug: handle });
+        if (reservation && reservation.salonId !== salonId && !asAdmin) {
+          // Thrown inside the transaction so the UPDATE above rolls back with it.
+          throw new ConflictException('این آدرس پیش‌تر متعلق به سالن دیگری بوده و قابل استفاده نیست');
+        }
+        // The handle is live again, so it is no longer history -- for a reclaim by its own
+        // former owner (the common case) and for an admin override alike.
+        if (reservation) await em.delete(SalonSlugHistory, { slug: handle });
+
+        await em.insert(SalonSlugHistory, { slug: previousSlug, salonId });
+      });
     } catch (err) {
       if (isUniqueViolation(err)) throw new ConflictException('این آدرس قبلا توسط سالن دیگری استفاده شده است');
       throw err;
     }
     salon.slug = handle;
     return salon;
+  }
+
+  /**
+   * Resolves any handle -- current or long-since-renamed -- to the salon's handle TODAY.
+   *
+   * Deliberately its own lightweight endpoint (GET /salons/:slug/canonical) rather than
+   * teaching findPublicBySlug to silently serve a salon's profile under a stale handle: the
+   * whole point of keeping history is that exactly one URL is canonical, and an endpoint that
+   * answered 200 with the same body under both would defeat that, duplicating every salon
+   * page across as many URLs as it has ever had handles. The caller is told the handle moved
+   * and is expected to redirect (the user-app issues a real 301 -- see
+   * apps/user-app/app/pages/salons/[slug].vue).
+   *
+   * Only consulted by the frontend on the path where the profile fetch already 404'd, so a
+   * live handle costs no extra query in practice; `moved: false` exists so a direct API
+   * caller gets a self-describing answer rather than having to infer it.
+   */
+  async resolveCanonicalSlug(slug: string): Promise<{ slug: string; moved: boolean }> {
+    // Approved-gated exactly like findPublicBySlug: a pending/rejected/suspended salon has no
+    // public profile to redirect to, and saying otherwise would leak its existence.
+    const live = await this.repo.findOne({ where: { slug, status: 'approved' }, select: ['id'] });
+    if (live) return { slug, moved: false };
+
+    const released = await this.slugHistory.findOneBy({ slug });
+    if (released) {
+      const current = await this.repo.findOne({ where: { id: released.salonId, status: 'approved' }, select: ['slug'] });
+      if (current) return { slug: current.slug, moved: true };
+    }
+    throw new NotFoundException();
   }
 
   async resubmitMine(salonId: string): Promise<Salon> {

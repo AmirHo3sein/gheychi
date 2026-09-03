@@ -9,14 +9,16 @@ import { CitiesService } from '../cities/cities.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { UsersService } from '../users/users.service';
 import { SalonCategory } from './salon-category.entity';
+import { SalonSlugHistory } from './salon-slug-history.entity';
 import { Salon } from './salon.entity';
 import { SalonsService } from './salons.service';
 
 describe('SalonsService', () => {
   let service: SalonsService;
-  let repo: { findOneBy: jest.Mock; save: jest.Mock; update: jest.Mock };
+  let repo: { findOneBy: jest.Mock; findOne: jest.Mock; save: jest.Mock; update: jest.Mock };
   let salonCategoriesRepo: { createQueryBuilder: jest.Mock };
   let serviceCategoriesRepo: { count: jest.Mock };
+  let slugHistoryRepo: { findOneBy: jest.Mock };
   let dataSourceTransaction: jest.Mock;
   let notifications: { emit: jest.Mock };
   let usersService: { promoteToProvider: jest.Mock; findById: jest.Mock };
@@ -27,6 +29,8 @@ describe('SalonsService', () => {
   let emCreate: jest.Mock;
   let emInsert: jest.Mock;
   let emDelete: jest.Mock;
+  let emUpdate: jest.Mock;
+  let emFindOneBy: jest.Mock;
   // The rows attachCategories' queryBuilder resolves to for the "just wrote this
   // salon's categories" salon -- tests set this per-case.
   let categoryRows: Array<{ salon_id: string; id: number; name: string; icon: string }>;
@@ -43,7 +47,7 @@ describe('SalonsService', () => {
   }
 
   beforeEach(async () => {
-    repo = { findOneBy: jest.fn(), save: jest.fn((s) => s), update: jest.fn() };
+    repo = { findOneBy: jest.fn(), findOne: jest.fn(), save: jest.fn((s) => s), update: jest.fn() };
     categoryRows = [];
     salonCategoriesRepo = { createQueryBuilder: jest.fn(() => fakeQueryBuilder()) };
     serviceCategoriesRepo = { count: jest.fn().mockResolvedValue(2) }; // matches a 2-id categoryIds input by default
@@ -54,8 +58,12 @@ describe('SalonsService', () => {
     emCreate = jest.fn((_entity, obj) => obj);
     emInsert = jest.fn().mockResolvedValue(undefined);
     emDelete = jest.fn().mockResolvedValue(undefined);
+    emUpdate = jest.fn().mockResolvedValue({ affected: 1 });
+    // Default: the target handle carries no salon_slug_history reservation at all -- the
+    // ordinary "renaming to a never-before-used handle" case. Reclaim/hijack tests override.
+    emFindOneBy = jest.fn().mockResolvedValue(null);
     dataSourceTransaction = jest.fn((cb: (em: unknown) => unknown) =>
-      cb({ save: emSave, create: emCreate, insert: emInsert, delete: emDelete }),
+      cb({ save: emSave, create: emCreate, insert: emInsert, delete: emDelete, update: emUpdate, findOneBy: emFindOneBy }),
     );
     notifications = { emit: jest.fn().mockResolvedValue(undefined) };
     usersService = {
@@ -66,6 +74,7 @@ describe('SalonsService', () => {
     // pre-existing test's em.create()/save() assertions about cityId explicit rather
     // than accidentally depending on this mock's default.
     citiesService = { findIdByName: jest.fn().mockResolvedValue(null) };
+    slugHistoryRepo = { findOneBy: jest.fn().mockResolvedValue(null) };
     analytics = { track: jest.fn().mockResolvedValue(undefined) };
     subscriptions = { createDefaultSubscription: jest.fn().mockResolvedValue(undefined) };
 
@@ -81,6 +90,7 @@ describe('SalonsService', () => {
         { provide: CitiesService, useValue: citiesService },
         { provide: AnalyticsService, useValue: analytics },
         { provide: SubscriptionsService, useValue: subscriptions },
+        { provide: getRepositoryToken(SalonSlugHistory), useValue: slugHistoryRepo },
       ],
     }).compile();
     service = moduleRef.get(SalonsService);
@@ -472,19 +482,124 @@ describe('SalonsService', () => {
     it('translates a duplicate handle into a clean conflict', async () => {
       repo.findOneBy.mockResolvedValue({ id: 's1', slug: 'old-handle' });
       const driverError = Object.assign(new Error('duplicate'), { code: '23505' });
-      repo.update.mockRejectedValue(new QueryFailedError('', [], driverError));
+      emUpdate.mockRejectedValue(new QueryFailedError('', [], driverError));
 
       await expect(service.updateHandle('s1', 'taken-handle')).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('updates the slug and returns the salon with the new handle', async () => {
       repo.findOneBy.mockResolvedValue({ id: 's1', slug: 'old-handle' });
-      repo.update.mockResolvedValue({ affected: 1 });
 
       const result = await service.updateHandle('s1', 'my-new-handle');
 
-      expect(repo.update).toHaveBeenCalledWith({ id: 's1' }, { slug: 'my-new-handle' });
+      expect(emUpdate).toHaveBeenCalledWith(Salon, { id: 's1' }, { slug: 'my-new-handle' });
       expect(result.slug).toBe('my-new-handle');
+    });
+
+    // The whole point of the table: a printed QR code outlives any rename, and the handle it
+    // points at must stay spoken for so nobody else can inherit that traffic.
+    it('records the released handle in salon_slug_history, inside the same transaction as the rename', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 's1', slug: 'old-handle' });
+
+      await service.updateHandle('s1', 'my-new-handle');
+
+      expect(dataSourceTransaction).toHaveBeenCalledTimes(1);
+      expect(emInsert).toHaveBeenCalledWith(SalonSlugHistory, { slug: 'old-handle', salonId: 's1' });
+    });
+
+    // Ordering is load-bearing, not incidental -- see updateHandle's own comment: the UPDATE
+    // must serialize on the salons.slug unique index BEFORE the reservation is read, or a
+    // concurrent release could slip a handle out from under its own reservation.
+    it('writes the salons UPDATE before reading the reservation', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 's1', slug: 'old-handle' });
+
+      await service.updateHandle('s1', 'my-new-handle');
+
+      expect(emUpdate.mock.invocationCallOrder[0]).toBeLessThan(emFindOneBy.mock.invocationCallOrder[0]!);
+    });
+
+    it('lets a salon reclaim one of its own former handles, and drops that history row', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 's1', slug: 'current-handle' });
+      emFindOneBy.mockResolvedValue({ slug: 'old-handle', salonId: 's1' });
+
+      const result = await service.updateHandle('s1', 'old-handle');
+
+      expect(result.slug).toBe('old-handle');
+      // Live again, so it is no longer history -- leaving the row would keep the handle
+      // permanently "released" and make it redirect to itself.
+      expect(emDelete).toHaveBeenCalledWith(SalonSlugHistory, { slug: 'old-handle' });
+      expect(emInsert).toHaveBeenCalledWith(SalonSlugHistory, { slug: 'current-handle', salonId: 's1' });
+    });
+
+    it('refuses a handle reserved to a DIFFERENT salon, with a Persian message and no reservation dropped', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 's1', slug: 'current-handle' });
+      emFindOneBy.mockResolvedValue({ slug: 'rivals-old-handle', salonId: 's2' });
+
+      await expect(service.updateHandle('s1', 'rivals-old-handle')).rejects.toBeInstanceOf(ConflictException);
+      await expect(service.updateHandle('s1', 'rivals-old-handle')).rejects.toThrow(
+        'این آدرس پیش‌تر متعلق به سالن دیگری بوده و قابل استفاده نیست',
+      );
+      // The throw happens inside the transaction callback, so the UPDATE above it rolls back
+      // with it -- nothing here may delete the other salon's reservation.
+      expect(emDelete).not.toHaveBeenCalled();
+    });
+
+    // Admin override is this feature's documented recourse (an inappropriate handle, a typo
+    // an owner can't undo) and must not be blockable by the reservation it exists to unwind.
+    it('lets an admin take a handle reserved to another salon, still recording the caller\'s own released handle', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 's1', slug: 'current-handle' });
+      emFindOneBy.mockResolvedValue({ slug: 'rivals-old-handle', salonId: 's2' });
+
+      const result = await service.updateHandle('s1', 'rivals-old-handle', true);
+
+      expect(result.slug).toBe('rivals-old-handle');
+      expect(emDelete).toHaveBeenCalledWith(SalonSlugHistory, { slug: 'rivals-old-handle' });
+      expect(emInsert).toHaveBeenCalledWith(SalonSlugHistory, { slug: 'current-handle', salonId: 's1' });
+    });
+
+    it('is a no-op when the submitted handle is the one already in use -- no history written', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 's1', slug: 'same-handle' });
+
+      const result = await service.updateHandle('s1', 'same-handle');
+
+      expect(result.slug).toBe('same-handle');
+      expect(dataSourceTransaction).not.toHaveBeenCalled();
+      expect(emInsert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resolveCanonicalSlug', () => {
+    it('reports a live approved handle as canonical, without touching history', async () => {
+      repo.findOne.mockResolvedValue({ id: 's1' });
+
+      await expect(service.resolveCanonicalSlug('live-handle')).resolves.toEqual({
+        slug: 'live-handle',
+        moved: false,
+      });
+      expect(slugHistoryRepo.findOneBy).not.toHaveBeenCalled();
+    });
+
+    it('resolves a former handle to the salon\'s current one', async () => {
+      repo.findOne.mockResolvedValueOnce(null).mockResolvedValueOnce({ slug: 'new-handle' });
+      slugHistoryRepo.findOneBy.mockResolvedValue({ slug: 'old-handle', salonId: 's1' });
+
+      await expect(service.resolveCanonicalSlug('old-handle')).resolves.toEqual({ slug: 'new-handle', moved: true });
+    });
+
+    it('404s for a handle that is neither live nor history', async () => {
+      repo.findOne.mockResolvedValue(null);
+      slugHistoryRepo.findOneBy.mockResolvedValue(null);
+
+      await expect(service.resolveCanonicalSlug('never-existed')).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    // A former handle whose salon is no longer publicly visible must 404 like any other
+    // unapproved salon -- redirecting to a page that itself 404s would leak its existence.
+    it('404s when the history row points at a salon that is no longer approved', async () => {
+      repo.findOne.mockResolvedValue(null);
+      slugHistoryRepo.findOneBy.mockResolvedValue({ slug: 'old-handle', salonId: 's1' });
+
+      await expect(service.resolveCanonicalSlug('old-handle')).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });

@@ -32,6 +32,7 @@ describe('SalonWorkersController', () => {
   let referralsService: { getOrCreateMyCode: jest.Mock };
   let sms: { send: jest.Mock };
   let config: { get: jest.Mock };
+  let smsQuota: { hasRemaining: jest.Mock; record: jest.Mock; tryConsume: jest.Mock };
   const OWNER_REQ = { salonId: 'salon-1', user: { id: 'owner-1' } as User } as unknown as Request;
 
   beforeEach(() => {
@@ -43,12 +44,24 @@ describe('SalonWorkersController', () => {
     };
     workerServices = { find: jest.fn().mockResolvedValue([]) };
     salonServices = { count: jest.fn().mockResolvedValue(0) };
-    salons = { findOneBy: jest.fn().mockResolvedValue({ id: 'salon-1', name: 'سالن تست' }) };
+    salons = { findOneBy: jest.fn().mockResolvedValue({ id: 'salon-1', name: 'سالن تست', status: 'approved' }) };
     dataSource = { transaction: jest.fn().mockImplementation((fn) => fn({ delete: jest.fn(), insert: jest.fn() })) };
     usersService = { findOrCreateByPhone: jest.fn() };
     referralsService = { getOrCreateMyCode: jest.fn() };
     sms = { send: jest.fn().mockResolvedValue(undefined) };
     config = { get: jest.fn().mockReturnValue('http://localhost:3003') };
+    // Default: quota available, so tryConsume performs the send. Tests that care about the
+    // exhausted case override hasRemaining.
+    smsQuota = {
+      hasRemaining: jest.fn().mockResolvedValue(true),
+      record: jest.fn().mockResolvedValue(undefined),
+      tryConsume: jest.fn(async (_salonId: string, send: () => Promise<void>) => {
+        if (!(await smsQuota.hasRemaining())) return false;
+        await send();
+        await smsQuota.record();
+        return true;
+      }),
+    };
     controller = new SalonWorkersController(
       workers as unknown as Repository<Worker>,
       workerServices as unknown as Repository<WorkerService>,
@@ -59,6 +72,7 @@ describe('SalonWorkersController', () => {
       referralsService as unknown as ReferralsService,
       sms as unknown as SmsProvider,
       config as unknown as ConfigService,
+      smsQuota as never,
     );
   });
 
@@ -95,6 +109,46 @@ describe('SalonWorkersController', () => {
 
       expect(sms.send).toHaveBeenCalledWith('09121234567', expect.stringContaining('سالن تست'));
       expect(sms.send).toHaveBeenCalledWith('09121234567', expect.stringContaining('http://localhost:3003/login'));
+    });
+
+    it('records the invite against the salon SMS quota (this endpoint used to be an unmetered SMS channel)', async () => {
+      usersService.findOrCreateByPhone.mockResolvedValue({ user: { id: 'worker-user-1', phone: '09121234567' }, isNew: true });
+
+      await controller.create(OWNER_REQ, { name: 'Sara', phone: '09121234567' });
+      await flush();
+
+      expect(smsQuota.tryConsume).toHaveBeenCalledWith('salon-1', expect.any(Function), expect.objectContaining({
+        customerId: 'worker-user-1',
+        phone: '09121234567',
+        sentBy: 'owner-1',
+      }));
+      expect(sms.send).toHaveBeenCalled();
+    });
+
+    it('still adds the worker, but skips the invite SMS, once the salon has exhausted its monthly quota', async () => {
+      usersService.findOrCreateByPhone.mockResolvedValue({ user: { id: 'worker-user-1', phone: '09121234567' }, isNew: true });
+      smsQuota.hasRemaining.mockResolvedValue(false);
+
+      const result = await controller.create(OWNER_REQ, { name: 'Sara', phone: '09121234567' });
+      await flush();
+
+      expect(result).toMatchObject({ salonId: 'salon-1', userId: 'worker-user-1' });
+      expect(sms.send).not.toHaveBeenCalled();
+      expect(smsQuota.record).not.toHaveBeenCalled();
+    });
+
+    it('does NOT SMS the worker while the salon is still pending/rejected/suspended -- an unapproved salon must not be an SMS channel', async () => {
+      salons.findOneBy.mockResolvedValue({ id: 'salon-1', name: 'سالن تست', status: 'pending' });
+      usersService.findOrCreateByPhone.mockResolvedValue({
+        user: { id: 'worker-user-1', phone: '09121234567' },
+        isNew: true,
+      });
+
+      const result = await controller.create(OWNER_REQ, { name: 'Sara', phone: '09121234567' });
+      await flush();
+
+      expect(result).toMatchObject({ salonId: 'salon-1', userId: 'worker-user-1' });
+      expect(sms.send).not.toHaveBeenCalled();
     });
 
     it('still returns successfully even when the SMS send fails (never blocks/fails worker creation)', async () => {

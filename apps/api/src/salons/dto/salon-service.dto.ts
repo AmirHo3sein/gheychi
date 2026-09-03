@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, Length, Max, MaxLength, Min, ValidateIf } from 'class-validator';
+import { MAX_PRICE_TOMAN } from '../../common/money-limits';
 
 export class CreateServiceDto {
   @Type(() => Number)
@@ -18,6 +19,7 @@ export class CreateServiceDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
+  @Max(MAX_PRICE_TOMAN)
   price: number;
 
   @Type(() => Number)
@@ -38,7 +40,7 @@ export class UpdateServiceDto {
   @IsOptional() @Type(() => Number) @IsInt() categoryId?: number;
   @IsOptional() @IsString() @Length(2, 150) name?: string;
   @IsOptional() @IsString() @MaxLength(1000) description?: string;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(0) price?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(MAX_PRICE_TOMAN) price?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(5) @Max(600) durationMin?: number;
 
   // Sending `null` explicitly clears the discount; @ValidateIf skips the range check
