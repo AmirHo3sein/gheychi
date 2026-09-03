@@ -128,11 +128,14 @@ The `backup` container mounts `api_uploads` **read-only**, so it deliberately ca
 docker run --rm \
   -v gheychi_api_uploads:/uploads \
   --env-file .env \
+  --entrypoint sh \
   $(docker compose -f docker-compose.prod.yml images -q backup) \
-  sh -c 'mc alias set s3backup "$S3_ENDPOINT" "$S3_ACCESS_KEY_ID" "$S3_SECRET_ACCESS_KEY" \
+  -c 'mc alias set s3backup "$S3_ENDPOINT" "$S3_ACCESS_KEY_ID" "$S3_SECRET_ACCESS_KEY" \
       && mc mirror --overwrite "s3backup/$S3_BUCKET/uploads/" /uploads/'
 docker compose -f docker-compose.prod.yml exec -u root api chown -R apiuser:nodejs /app/uploads
 ```
+
+**The `--entrypoint sh` is required, not optional.** The `backup` image's own `ENTRYPOINT` is `/entrypoint.sh` (see `docker/backup/Dockerfile`), which runs one immediate `/backup.sh` and then `exec crond -f`, ignoring any `CMD` args entirely — running this `docker run` without `--entrypoint sh` silently ignores the `sh -c '...'` passed after the image name and instead kicks off a second, redundant backup run rather than the restore. `--entrypoint sh` overrides that so the `sh -c '...'` after the image name is what actually executes.
 
 The `chown` matters: the API runs as the non-root `apiuser` (see `apps/api/Dockerfile`), and files written by a root-running restore container would leave it unable to manage them afterwards.
 

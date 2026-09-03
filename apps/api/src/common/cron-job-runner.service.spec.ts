@@ -130,4 +130,30 @@ describe('CronJobRunner', () => {
 
     expect(raise).not.toHaveBeenCalledWith(expect.objectContaining({ key: 'cron-job-slow:referral-grant' }));
   });
+
+  // acquireLock/releaseLockIfOwner (inside CronLockService.runExclusive) sit outside
+  // fn()'s own try/catch -- a Redis failure there used to escape run() entirely,
+  // unhandled and unpaged, for every one of this codebase's cron jobs. Simulated here
+  // by making the mocked runExclusive itself reject, exactly as it would if
+  // acquireLock threw before ever invoking its callback.
+  it('raises a critical lock alert and does not rethrow when the lock layer itself fails', async () => {
+    runExclusive.mockRejectedValueOnce(new Error('redis connection refused'));
+    const errorSpy = jest.spyOn(runner['logger'], 'error').mockImplementation();
+    const fn = jest.fn().mockResolvedValue(undefined);
+
+    await expect(runner.run('invoicing', fn)).resolves.toBeUndefined();
+
+    expect(fn).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('redis connection refused'),
+      expect.any(String),
+    );
+    expect(raise).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'cron-lock-failed:invoicing', severity: 'critical', dedupHours: 1 }),
+    );
+    expect(captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'redis connection refused' }),
+      { extra: { jobName: 'invoicing', phase: 'lock' } },
+    );
+  });
 });

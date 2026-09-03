@@ -57,6 +57,39 @@ export class CronJobRunner {
   async run(jobName: string, fn: () => Promise<void>, options: CronJobRunOptions = {}): Promise<void> {
     const warnAfterMs = options.warnAfterMs ?? DEFAULT_WARN_AFTER_MS;
 
+    // `cronLock.runExclusive` itself (acquireLock before the callback, releaseLockIfOwner
+    // in its own finally after) sits OUTSIDE the try/catch around fn() below -- a Redis
+    // failure during lock acquire/release throws there, not inside fn(), so without this
+    // wrapping try/catch it used to escape run() entirely: unhandled, unlogged, unpaged.
+    // Since every one of this codebase's 11 cron jobs funnels through this one method,
+    // that was a single point where a transient Redis outage could silently stop every
+    // scheduled job (including money-critical ones like refund-retry and invoicing) with
+    // no operator signal at all. This still never rethrows, matching this method's own
+    // "always resolves" contract -- see the fn()-failure path below for why.
+    try {
+      await this.runLocked(jobName, fn, warnAfterMs, options.lockTtlMs);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Cron job "${jobName}" could not acquire/release its lock: ${message}`, err instanceof Error ? err.stack : undefined);
+      this.errorTracking.captureException(err, { extra: { jobName, phase: 'lock' } });
+      await this.alerts
+        .raise({
+          key: `cron-lock-failed:${jobName}`,
+          severity: 'critical',
+          title: `قفل کار زمان‌بندی‌شده «${jobName}» با خطا مواجه شد`,
+          body: `تلاش برای قفل‌گذاری/آزادسازی این کار با خطا مواجه شد و اجرای آن مشخص نیست: ${message}`,
+          dedupHours: 1,
+        })
+        .catch(() => {});
+    }
+  }
+
+  private async runLocked(
+    jobName: string,
+    fn: () => Promise<void>,
+    warnAfterMs: number,
+    lockTtlMs: number | undefined,
+  ): Promise<void> {
     await this.cronLock.runExclusive(
       jobName,
       async () => {
@@ -114,7 +147,7 @@ export class CronJobRunner {
           // Deliberately not rethrown -- see class doc.
         }
       },
-      options.lockTtlMs,
+      lockTtlMs,
     );
   }
 }

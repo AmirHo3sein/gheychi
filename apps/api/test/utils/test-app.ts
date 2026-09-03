@@ -50,5 +50,15 @@ export async function createTestApp(): Promise<NestExpressApplication> {
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.setGlobalPrefix('api');
   await app.init();
+  // Start a single real listener up front rather than letting supertest manage one.
+  // Without this, supertest's own `Test` class (see its `.end()`) opens an ephemeral
+  // `http.Server` per request via `app.listen(0)` and closes it once that request
+  // settles -- fine for a lone sequential request, but under `Promise.all` (e.g. this
+  // suite's own concurrency tests) the first request to finish closes the shared
+  // server out from under any siblings still in flight, surfacing as a spurious
+  // ECONNRESET. Listening here means `app.getHttpServer()` is already an open server
+  // by the time supertest sees it, so it reuses that connection instead of owning the
+  // server's lifecycle -- `app.close()` in each spec's `afterAll` still tears it down.
+  await app.listen(0);
   return app;
 }
