@@ -54,6 +54,12 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+    # Uploaded images (salon photos/stories/portfolio, blog covers) live on disk under
+    # /app/uploads while STORAGE_PROVIDER=local -- without a volume they were inside the
+    # container's writable layer and silently destroyed on every `docker compose up -d`
+    # that recreated the container (each image pull), leaving DB rows pointing at 404s.
+    volumes:
+      - api_uploads:/app/uploads
     mem_limit: 768m
     memswap_limit: 768m
     cpus: 1.5
@@ -122,6 +128,16 @@ services:
     # this stack (see api's own healthcheck above) -- no explicit BACKUP_REPORT_URL override
     # is needed here; it only exists as an env var for local/non-compose testing.
     env_file: .env
+    # READ-ONLY view of the same named volume `api` writes uploads into. With
+    # STORAGE_PROVIDER=local (what production actually runs), every salon photo, story,
+    # portfolio image and blog cover exists ONLY in this volume -- losing the VPS used to
+    # mean losing all of them permanently while the restored database kept pointing at
+    # dead URLs. backup.sh mirrors this directory to s3://$S3_BUCKET/uploads/ after the
+    # Postgres dump. `:ro` is load-bearing, not decoration: a backup container has no
+    # business being able to modify (or `mc mirror --remove` its way through) the live
+    # uploads it exists to protect.
+    volumes:
+      - api_uploads:/uploads:ro
     # Deliberately NOT `depends_on: api`: this container's job (dump + verify + upload) must
     # not be gated on api being up, and backup.sh's own POST to api is best-effort by design
     # (see that script's report_backup() comment) -- a slow/down api container delays or
@@ -183,6 +199,7 @@ networks:
 
 volumes:
   pgdata:
+  api_uploads:
   caddy_data:
   caddy_config:
   prometheus_data:

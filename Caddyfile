@@ -70,6 +70,32 @@ www.{$DOMAIN_APEX} {
 	import security_headers
 	import permissions_policy_restrictive
 	import csp_api
+
+	# GET /api/metrics is @Public() by necessity -- a Prometheus scraper carries no session
+	# cookie and cannot be made to (see apps/api/src/metrics/metrics.controller.ts and the
+	# PUBLIC_ROUTES allowlist in route-guard-audit.spec.ts). That is fine on a private
+	# network and NOT fine on the open internet: the exposed series include booking,
+	# payment and revenue counters, so anyone who guessed this URL could scrape real
+	# business volume, continuously, anonymously. `reverse_proxy api:3002` below has no path
+	# restriction, so before this block that is exactly what was reachable.
+	#
+	# Blocking it at the edge costs nothing operationally: Prometheus does not come through
+	# Caddy at all -- docker/prometheus/prometheus.yml scrapes `api:3002` directly over the
+	# compose `internal` network -- so the real scrape path is untouched by this.
+	#
+	# 404 rather than 403: a 403 confirms the endpoint exists and is merely blocked here,
+	# which is a free hint for anyone probing. Matching /api/metrics* (not an exact path)
+	# so a trailing slash or a query string can't slip past.
+	handle /api/metrics* {
+		respond "Not Found" 404
+	}
+
+	# /api/health is deliberately NOT blocked. It is the standard way to check from outside
+	# whether the deploy is actually up (DEPLOY.md's smoke test calls it over the public
+	# domain), and it leaks nothing beyond an ok/error verdict plus a per-dependency
+	# ok/error string -- no counts, no versions, no connection strings (see
+	# apps/api/src/health/health.controller.ts).
+
 	reverse_proxy api:3002
 }
 

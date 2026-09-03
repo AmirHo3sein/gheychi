@@ -1,8 +1,18 @@
 # Scrapes the api container directly over the compose `internal` network -- GET /api/metrics
-# is a real, public (unauthenticated by design) Prometheus endpoint (see
-# apps/api/src/metrics/metrics.controller.ts), but this scrape never leaves the Docker
-# network: Caddy has no route for it, so it's not reachable from the public internet either
-# way. See docs/deployment/DEPLOY.md's "Observability" section for how to actually view this
+# is unauthenticated by design (a scraper carries no session cookie and cannot be made to;
+# see apps/api/src/metrics/metrics.controller.ts), so keeping it off the public internet is
+# the edge's job, not the app's.
+#
+# CORRECTION (2026-09-03): this comment used to claim "Caddy has no route for it, so it's
+# not reachable from the public internet either way". That was simply false --
+# {$DOMAIN_API}'s `reverse_proxy api:3002` had no path restriction, so
+# https://api.<domain>/api/metrics served the full registry (booking/payment/revenue
+# counters included) to anyone who asked. The Caddyfile now returns 404 for /api/metrics*
+# at the edge. This scrape is unaffected by that block precisely because it goes to
+# `api:3002` directly and never passes through Caddy -- which is also why the block was
+# safe to add.
+#
+# See docs/deployment/DEPLOY.md's "Observability" section for how to actually view this
 # data (an SSH tunnel to Grafana, not a public dashboard URL).
 global:
   scrape_interval: 15s

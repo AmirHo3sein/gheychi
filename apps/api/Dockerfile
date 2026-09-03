@@ -18,6 +18,11 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 --ingroup nodejs apiuser
 COPY --from=installer --chown=apiuser:nodejs /app .
+# STORAGE_PROVIDER=local writes to <cwd>/uploads. Pre-created and owned by apiuser so the
+# named volume docker-compose.prod.yml mounts here (api_uploads) inherits that ownership
+# on first creation -- a mount point Docker has to invent itself is root-owned, and the
+# non-root process would EACCES on the very first upload.
+RUN mkdir -p /app/uploads && chown apiuser:nodejs /app/uploads
 # Build-time facts baked into this specific image, surfaced at runtime via GET /version
 # (src/version/version.service.ts) -- these never change without a rebuild, so ARG->ENV is
 # the right mechanism (not a deploy-time .env value, which is why docker-compose.prod.yml's

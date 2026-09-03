@@ -32,6 +32,14 @@ BACKUP_REPORT_SECRET="${BACKUP_REPORT_SECRET:-}"
 # its header), which is the actual failure mode this check exists to catch.
 MIN_DUMP_SIZE_BYTES=10240
 
+# Read-only mount of the `api_uploads` named volume (see docker-compose.prod.yml's backup
+# service). With STORAGE_PROVIDER=local -- what production actually runs -- this directory
+# is the ONLY copy of every salon photo, story, portfolio image and blog cover; the dump
+# above preserves the rows that point at them and nothing else. Overridable so this script
+# stays runnable outside the compose stack; a missing directory is a skip, not a failure
+# (an S3-backed deployment legitimately has nothing here).
+UPLOADS_DIR="${UPLOADS_DIR:-/uploads}"
+
 TIMESTAMP=$(date -u +%Y-%m-%dT%H%M%SZ)
 FILENAME="gheychi-${TIMESTAMP}.dump"
 DUMP_PATH="/tmp/${FILENAME}"
@@ -163,3 +171,69 @@ DURATION_MS=$(( ($(date +%s) - STARTED_AT_S) * 1000 ))
 report_backup "success" "$DUMP_SIZE_BYTES" "$DURATION_MS" ""
 
 echo "[backup] done: ${FILENAME}"
+
+# ---------------------------------------------------------------------------
+# Uploaded files (STORAGE_PROVIDER=local)
+# ---------------------------------------------------------------------------
+# Deliberately runs AFTER the database success report above, and never through fail():
+# the Postgres dump is already taken, verified byte-for-byte in S3, and recorded as a
+# success (which is what refreshes `backup:last-success` and keeps BackupStalenessCheckJob
+# quiet). Whatever happens below must not be able to retract that verdict -- a failure here
+# is a SECOND, separately-reported problem, not a reclassification of the first one.
+#
+# This is a MIRROR, not a dated snapshot: `s3://$S3_BUCKET/uploads/` always reflects the
+# live directory as of the last run, so there is no point-in-time recovery for images the
+# way `backups/` gives it for the database, and the 14-day prune above deliberately does
+# not touch this prefix. It is also additive -- no `--remove` -- so a file deleted locally
+# lingers remotely (costing a little storage) instead of a local deletion bug propagating
+# straight into the only surviving copy. See DEPLOY.md's "Restoring uploaded files".
+mirror_uploads() {
+  if [ ! -d "$UPLOADS_DIR" ]; then
+    echo "[backup] ${UPLOADS_DIR} does not exist -- skipping uploads mirror (expected when STORAGE_PROVIDER=s3, or outside the compose stack)"
+    return 0
+  fi
+
+  local_file_count=$(find "$UPLOADS_DIR" -type f | wc -l | tr -d ' ')
+  echo "[backup] mirroring ${local_file_count} uploaded file(s) from ${UPLOADS_DIR} to s3backup/${S3_BUCKET}/uploads/"
+
+  # --overwrite so a previously truncated/partial object is replaced rather than skipped as
+  # "already there"; mc still only transfers objects that actually differ, and upload keys
+  # are immutable randomUUID names, so a steady state re-transfers nothing.
+  if ! mc mirror --overwrite "$UPLOADS_DIR" "s3backup/${S3_BUCKET}/uploads/"; then
+    uploads_error="mc mirror of ${UPLOADS_DIR} failed"
+    return 1
+  fi
+
+  # Cheap sanity check with no false-alarm surface: a non-empty source must leave a
+  # non-empty destination. It catches the failure mc's exit code can't -- a mirror that
+  # "succeeded" against the wrong bucket/prefix or an empty mount -- without pretending to
+  # be the byte-for-byte comparison the single-file dump gets above (a per-object diff of
+  # thousands of images on every daily run is not worth its cost here).
+  if [ "$local_file_count" -gt 0 ]; then
+    remote_file_count=$(mc ls --recursive "s3backup/${S3_BUCKET}/uploads/" | wc -l | tr -d ' ')
+    if [ "$remote_file_count" -eq 0 ]; then
+      uploads_error="uploads mirror reported success but s3backup/${S3_BUCKET}/uploads/ is empty while ${UPLOADS_DIR} holds ${local_file_count} file(s)"
+      return 1
+    fi
+    echo "[backup] uploads mirror verified: ${remote_file_count} object(s) under s3backup/${S3_BUCKET}/uploads/ (local: ${local_file_count})"
+  fi
+
+  return 0
+}
+
+uploads_error=""
+if mirror_uploads; then
+  exit 0
+fi
+
+echo "[backup] FAILED (uploads only): ${uploads_error}" >&2
+echo "[backup] NOTE: the database dump ${FILENAME} succeeded and is already verified in S3 -- only the uploaded-files mirror failed" >&2
+# Reported through the existing endpoint's unchanged contract (status/error only, no new
+# fields) so no API change is needed: this raises the same critical `backup-failed` alert,
+# and the `uploads mirror` prefix in the message is what tells the operator which half
+# broke. A failure report does not clear `backup:last-success`, so the DB backup's own good
+# standing survives this (see apps/api/src/backup-monitoring/backup-report.controller.ts).
+report_backup "failure" "" "$(( ($(date +%s) - STARTED_AT_S) * 1000 ))" "uploads mirror: ${uploads_error}"
+# Non-zero so `docker compose exec backup /backup.sh` and the entrypoint's initial run both
+# surface this rather than reading as a clean success -- the run really was partial.
+exit 1
