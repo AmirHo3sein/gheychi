@@ -133,6 +133,21 @@ describe('Plans & salon subscriptions (e2e)', () => {
       await request(app.getHttpServer()).delete(`/api/admin/plans/${free.id}`).set('Cookie', adminCookie).expect(409);
     });
 
+    // The default plan can never be inactive (createDefaultSubscription reads isDefault
+    // only, and assignPlan refuses an inactive plan) -- previously proven only by a mocked
+    // unit test, not against a real Postgres row.
+    it('refuses to deactivate the default plan directly', async () => {
+      const [free] = await ds.query(`SELECT id FROM plans WHERE key = 'free'`);
+      await request(app.getHttpServer())
+        .patch(`/api/admin/plans/${free.id}`)
+        .set('Cookie', adminCookie)
+        .send({ isActive: false })
+        .expect(409);
+
+      const [row] = await ds.query(`SELECT is_active FROM plans WHERE id = $1`, [free.id]);
+      expect(row.is_active).toBe(true);
+    });
+
     it('refuses to delete a plan a salon is subscribed to', async () => {
       const [plus] = await ds.query(`SELECT id FROM plans WHERE key = 'plus'`);
       await request(app.getHttpServer())

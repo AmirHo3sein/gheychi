@@ -18,7 +18,12 @@ const phone = computed({
   get: () => phoneRaw.value,
   set: (v: string) => { phoneRaw.value = toEnglishDigits(v) },
 })
-const code = ref('')
+// Same Persian-numeral-IME concern as phone above -- the API's OTP check is ASCII-only too.
+const codeRaw = ref('')
+const code = computed({
+  get: () => codeRaw.value,
+  set: (v: string) => { codeRaw.value = toEnglishDigits(v) },
+})
 const name = ref('')
 const gender = ref<'female' | 'male' | ''>('')
 const submitting = ref(false)
@@ -273,6 +278,7 @@ const STEP_HINT: Record<typeof step.value, string> = {
                 v-model="phone"
                 type="tel"
                 inputmode="tel"
+                dir="ltr"
                 icon="phone"
                 label="شماره موبایل"
                 placeholder="09xxxxxxxxx"
@@ -287,6 +293,7 @@ const STEP_HINT: Record<typeof step.value, string> = {
                 v-model="code"
                 inputmode="numeric"
                 :maxlength="6"
+                dir="ltr"
                 icon="shield"
                 label="کد تایید"
                 placeholder="کد ۶ رقمی"

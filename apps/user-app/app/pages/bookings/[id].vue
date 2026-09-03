@@ -69,13 +69,33 @@ const route = useRoute()
 const { apiFetch } = useApi()
 const { flags: featureFlags } = useFeatureFlags()
 
+// The HTTP status behind a failed fetch, captured alongside `booking` rather than relied
+// on from Nuxt's own useAsyncData `error` ref -- apiFetch (silent: true) never throws, it
+// always resolves to { data: null, error }, so useAsyncData's own error tracking (which
+// only fires when the callback itself rejects) would never see it.
+const fetchStatus = ref<number | null>(null)
+
 const { data: booking, refresh } = await useAsyncData(`booking-detail-${route.params.id}`, async () => {
-  const { data } = await apiFetch<BookingDetail>(`/bookings/${route.params.id}`, { silent: true })
+  const { data, error } = await apiFetch<BookingDetail>(`/bookings/${route.params.id}`, { silent: true })
+  fetchStatus.value = error?.status ?? null
   return data
 })
 
-if (!booking.value) {
+// Only a REAL 404 (the booking doesn't exist, or isn't this caller's) is worth Nuxt's own
+// 404 page. Any other failure -- status 0 (network/DNS/timeout) or a 5xx -- previously hit
+// this same branch and rendered a false "not found" for what was actually a transient
+// failure; that case now falls through to the page's own retryable error state below
+// instead of throwing at all.
+if (!booking.value && fetchStatus.value === 404) {
   throw createError({ statusCode: 404, statusMessage: 'Booking not found' })
+}
+
+const retryingLoad = ref(false)
+
+async function retryLoad() {
+  retryingLoad.value = true
+  await refresh()
+  retryingLoad.value = false
 }
 
 // The caller's own review for THIS booking (a review only ever exists for a completed
@@ -97,7 +117,7 @@ const { data: myReview, refresh: refreshReview } = await useAsyncData(
 const retrying = ref(false)
 
 async function retryPayment() {
-  if (!booking.value) return
+  if (!booking.value || retrying.value) return
   retrying.value = true
   const { data } = await apiFetch<{ paymentUrl: string }>(`/bookings/${booking.value.id}/retry-payment`, { method: 'POST' })
   retrying.value = false
@@ -112,7 +132,7 @@ const cancelling = ref(false)
 // the exact same UI. Matches the native-confirm pattern already used for
 // deleteReview in ReviewPromptModal.vue.
 async function cancelBooking() {
-  if (!booking.value) return
+  if (!booking.value || cancelling.value) return
   // A pending_approval booking isn't an appointment yet -- the customer is withdrawing a
   // request the salon hasn't answered, so the prompt (and the button) say exactly that.
   const prompt = booking.value.status === 'pending_approval' ? 'این درخواست لغو شود؟' : 'این نوبت لغو شود؟'
@@ -314,5 +334,17 @@ const reviewButtonLabel = computed(() => {
       @changed="refreshReview"
       @close="reviewOpen = false"
     />
+  </div>
+
+  <!-- Reached only for a non-404 failure (network/DNS/timeout, or a 5xx) -- a real 404
+       throws createError above instead and never renders this component at all. Same
+       retryable-error convention as bookings/index.vue's own loadError state. -->
+  <div v-else class="mx-auto max-w-2xl p-4">
+    <BaseCard data-testid="booking-detail-load-error" role="alert" class="space-y-3 text-center text-sm">
+      <p class="text-(--color-text-muted)">بارگذاری اطلاعات نوبت با خطا مواجه شد.</p>
+      <BaseButton variant="secondary" data-testid="booking-detail-retry-button" :loading="retryingLoad" @click="retryLoad">
+        تلاش مجدد
+      </BaseButton>
+    </BaseCard>
   </div>
 </template>

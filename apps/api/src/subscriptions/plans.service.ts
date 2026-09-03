@@ -90,29 +90,40 @@ export class PlansService {
       throw new ConflictException('پلن پیش‌فرض نمی‌تواند غیرفعال باشد؛ ابتدا پلن دیگری را پیش‌فرض کنید');
     }
 
-    return this.dataSource.transaction(async (em) => {
-      if (dto.isDefault === true && !plan.isDefault) {
-        // Exactly one plan may be default at a time (DB-backstopped, see the migration's
-        // partial unique index) -- unset every other row first, in the same transaction,
-        // mirroring the "setting a new cover photo unsets every other cover row" precedent
-        // (salon-photos.service.ts).
-        await em.createQueryBuilder().update(Plan).set({ isDefault: false }).where('is_default = true').execute();
-      }
-      await em.update(Plan, { id }, {
-        ...(dto.name !== undefined ? { name: dto.name } : {}),
-        ...(dto.description !== undefined ? { description: dto.description } : {}),
-        ...(dto.monthlyPriceToman !== undefined ? { monthlyPriceToman: dto.monthlyPriceToman } : {}),
-        // TypeORM's QueryDeepPartialEntity recurses into a plain Record<string, unknown>
-        // jsonb column and rejects it -- same `as any` escape hatch already used for
-        // AnalyticsEvent.properties (postgres-analytics.provider.ts), the codebase's other
-        // open jsonb bag.
-        ...(dto.entitlements !== undefined ? { entitlements: dto.entitlements as any } : {}),
-        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
-        ...(dto.isDefault !== undefined ? { isDefault: dto.isDefault } : {}),
-        ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
+    try {
+      return await this.dataSource.transaction(async (em) => {
+        if (dto.isDefault === true && !plan.isDefault) {
+          // Exactly one plan may be default at a time (DB-backstopped, see the migration's
+          // partial unique index) -- unset every other row first, in the same transaction,
+          // mirroring the "setting a new cover photo unsets every other cover row" precedent
+          // (salon-photos.service.ts).
+          await em.createQueryBuilder().update(Plan).set({ isDefault: false }).where('is_default = true').execute();
+        }
+        await em.update(Plan, { id }, {
+          ...(dto.name !== undefined ? { name: dto.name } : {}),
+          ...(dto.description !== undefined ? { description: dto.description } : {}),
+          ...(dto.monthlyPriceToman !== undefined ? { monthlyPriceToman: dto.monthlyPriceToman } : {}),
+          // TypeORM's QueryDeepPartialEntity recurses into a plain Record<string, unknown>
+          // jsonb column and rejects it -- same `as any` escape hatch already used for
+          // AnalyticsEvent.properties (postgres-analytics.provider.ts), the codebase's other
+          // open jsonb bag.
+          ...(dto.entitlements !== undefined ? { entitlements: dto.entitlements as any } : {}),
+          ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+          ...(dto.isDefault !== undefined ? { isDefault: dto.isDefault } : {}),
+          ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
+        });
+        return (await em.findOneBy(Plan, { id }))!;
       });
-      return (await em.findOneBy(Plan, { id }))!;
-    });
+    } catch (err) {
+      // Two admins racing to set DIFFERENT plans as default at the same time: both pass
+      // the pre-transaction checks above (each reads the OTHER plan as still non-default),
+      // and the loser's own "unset every other plan" + "set this one" pair can still land
+      // after the winner's, tripping the DB's own partial unique index on is_default. The
+      // invariant itself was never actually violated (only one row ever ends up true) --
+      // only the error surface was wrong, a bare 500 instead of a clean, retryable 409.
+      if (isUniqueViolation(err)) throw new ConflictException('این پلن هم‌زمان توسط عملیات دیگری پیش‌فرض شد؛ دوباره تلاش کنید');
+      throw err;
+    }
   }
 
   async remove(id: string): Promise<void> {

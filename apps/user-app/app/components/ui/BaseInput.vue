@@ -18,6 +18,14 @@ const props = withDefaults(
   { type: 'text', align: 'start' },
 )
 
+// Without this, Vue's default fallthrough puts any non-prop attribute (dir, autocomplete,
+// pattern, a data-testid meant for the field itself, ...) on this component's outer
+// wrapper <div> instead of the actual <input> -- harmless for some attributes (dir's CSS
+// effect still inherits visually) but not for others, and callers writing `dir="ltr"` on
+// a phone/OTP field expect it ON the input, not a level up. Mirrors the panels' own
+// AppInput.vue, which already does this.
+defineOptions({ inheritAttrs: false })
+
 const model = defineModel<string>({ default: '' })
 const inputId = useId()
 </script>
@@ -44,6 +52,7 @@ const inputId = useId()
         :required="required"
         :disabled="disabled"
         :autofocus="autofocus"
+        v-bind="$attrs"
         class="h-11 w-full rounded-xl border bg-(--color-surface-card) text-(--color-text) transition-colors placeholder:text-(--color-text-muted) focus:outline-none focus:ring-2 focus:ring-(--color-accent)/30 disabled:cursor-not-allowed disabled:opacity-60"
         :class="[
           icon ? 'ps-11 pe-4' : 'px-4',

@@ -59,7 +59,7 @@ describe('login page - referral code entry', () => {
     const wrapper = await mountSuspended(LoginPage)
     await goToCodeStep(wrapper)
 
-    const field = wrapper.find('[data-testid="referral-code-input"] input')
+    const field = wrapper.find('[data-testid="referral-code-input"]')
     expect(field.exists()).toBe(true)
     expect((field.element as HTMLInputElement).value).toBe('AB3D9F2K')
   })
@@ -74,7 +74,7 @@ describe('login page - referral code entry', () => {
     await goToCodeStep(wrapper)
 
     await wrapper.find('[data-testid="show-referral-code"]').trigger('click')
-    await wrapper.find('[data-testid="referral-code-input"] input').setValue('  AB3D9F2K  ')
+    await wrapper.find('[data-testid="referral-code-input"]').setValue('  AB3D9F2K  ')
     await wrapper.find('input[inputmode="numeric"]').setValue('123456')
     await wrapper.find('form').trigger('submit.prevent')
     await flushPromises()
@@ -169,6 +169,55 @@ describe('login page - referral code entry', () => {
     await flushPromises()
 
     expect(toasts.value.length).toBe(before)
+  })
+})
+
+// BaseInput previously had no `inheritAttrs: false` + `v-bind="$attrs"` on its own <input>,
+// so `dir="ltr"` passed to it from here landed on the component's outer wrapper <div>
+// instead -- these fields are ASCII digits on an RTL (dir="rtl") page, and the digits
+// deserve to actually render/edit left-to-right on the element that matters.
+describe('login page - RTL input direction and digit normalization', () => {
+  beforeEach(() => {
+    fetchMock.mockReset()
+    navigateToMock.mockReset()
+    vi.stubGlobal('$fetch', fetchStub)
+    routeQuery = {}
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('sets dir="ltr" directly on the phone and OTP code inputs, not a wrapper', async () => {
+    fetchMock.mockResolvedValueOnce(undefined) // request-otp
+    const wrapper = await mountSuspended(LoginPage)
+
+    expect(wrapper.get('input[type="tel"]').attributes('dir')).toBe('ltr')
+
+    await goToCodeStep(wrapper)
+    expect(wrapper.get('input[inputmode="numeric"]').attributes('dir')).toBe('ltr')
+  })
+
+  // Same Persian-numeral-IME concern the phone field already handles (toEnglishDigits) --
+  // the API's OTP check is ASCII-only too, and an IME defaulting to Persian numerals would
+  // otherwise submit digits the backend can never match.
+  it('normalizes Persian-numeral OTP input to English digits before verifying', async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/auth/request-otp') return undefined
+      if (path === '/auth/verify-otp') return { user: EXISTING_USER, isNewUser: false }
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    const wrapper = await mountSuspended(LoginPage)
+    await goToCodeStep(wrapper)
+
+    await wrapper.get('input[inputmode="numeric"]').setValue('۱۲۳۴۵۶')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/auth/verify-otp',
+      expect.objectContaining({ method: 'POST', body: expect.objectContaining({ code: '123456' }) }),
+    )
   })
 })
 

@@ -108,6 +108,25 @@ describe('PlansService', () => {
       expect(qbSet).not.toHaveBeenCalled();
       expect(emUpdate).toHaveBeenCalledWith(Plan, { id: 'p1' }, { name: 'new name' });
     });
+
+    // Two admins racing to set DIFFERENT plans as default: both pass the pre-transaction
+    // checks (each reads the OTHER as still non-default), so only the DB's own partial
+    // unique index on is_default catches the loser -- which must surface as a clean,
+    // retryable 409, not the unmapped 500 a raw QueryFailedError would otherwise become.
+    it('translates a concurrent default-plan race (unique violation) into a clean, retryable conflict', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'p2', isDefault: false, isActive: true });
+      dataSourceTransaction.mockRejectedValueOnce(pgError('23505'));
+
+      await expect(service.update('p2', { isDefault: true })).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('re-throws an unrelated transaction failure unchanged', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'p2', isDefault: false, isActive: true });
+      const boom = new Error('db connection lost');
+      dataSourceTransaction.mockRejectedValueOnce(boom);
+
+      await expect(service.update('p2', { isDefault: true })).rejects.toBe(boom);
+    });
   });
 
   describe('remove', () => {

@@ -89,8 +89,46 @@ describe('booking detail page', () => {
   // between the two: a real createError(404) rejection has `statusCode: 404`; an unguarded
   // render crash would reject with a bare TypeError that has no `statusCode` at all.
   it('rejects cleanly with a 404 for a missing/expired booking id, with no unhandled render error', async () => {
-    fetchMock.mockResolvedValue(null)
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/bookings/b1') throw { response: { status: 404 } }
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
     await expect(mountSuspended(BookingDetailPage)).rejects.toMatchObject({ statusCode: 404 })
+  })
+
+  // Regression: a network/DNS/timeout failure or a 5xx used to hit the exact same
+  // createError(404) branch as a genuine 404 above, rendering a false "not found" for
+  // what was actually a transient failure. Only a real 404 may throw; anything else must
+  // fall through to the page's own retryable error state instead.
+  it('shows a retryable error state (not a false 404) when the booking fetch fails for a non-404 reason', async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/bookings/b1') throw { response: { status: 500 }, statusMessage: 'Server error' }
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    wrapper = await mountSuspended(BookingDetailPage)
+
+    expect(wrapper.find('[data-testid="booking-detail-load-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="booking-status-badge"]').exists()).toBe(false)
+
+    // A successful retry replaces the error state with the real booking.
+    stub({ ...BASE_BOOKING, status: 'confirmed' })
+    await wrapper.get('[data-testid="booking-detail-retry-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="booking-detail-load-error"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="booking-status-badge"]').text()).toContain('تایید شده')
+  })
+
+  // Same false-404 hazard, the network-failure half specifically (status 0, no HTTP
+  // response at all -- see useApi.ts's own ApiError doc comment).
+  it('also treats a network/DNS/timeout failure (status 0) as retryable, not a 404', async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/bookings/b1') throw new Error('network error, no response')
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    wrapper = await mountSuspended(BookingDetailPage)
+
+    expect(wrapper.find('[data-testid="booking-detail-load-error"]').exists()).toBe(true)
   })
 
   it('shows the in-progress line, muted (not alarming), while the refund is pending', async () => {

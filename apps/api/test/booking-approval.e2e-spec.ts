@@ -702,6 +702,63 @@ describe('Booking approval workflow (e2e)', () => {
       await book(startsAt, other).expect(201);
     });
 
+    // The wallet/coupon giveback on a REAL BookingApprovalExpiryJob run, not just a
+    // same-effect substitute action (cancel/reject) or a mocked unit test -- both of those
+    // already existed elsewhere in this suite, but neither actually exercises the cron
+    // job's own call into releaseBookingHold() on a genuinely expired approval window.
+    it('gives back BOTH the staked wallet balance and the coupon redemption when the approval window really expires', async () => {
+      const stakedUser = await loginAs(app, '09171110033');
+      const stakedUserId = (
+        await request(app.getHttpServer()).get('/api/admin/users?phone=09171110033').set('Cookie', adminCookie).expect(200)
+      ).body.items[0].id;
+      await request(app.getHttpServer())
+        .post('/api/admin/wallet/adjust')
+        .set('Cookie', adminCookie)
+        .send({ userId: stakedUserId, amount: 50_000, reason: 'e2e approval-expiry giveback test' })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post('/api/salons/mine/coupons')
+        .set('Cookie', ownerCookie)
+        .send({ code: 'APPROVEEXPIRE10', discountPercent: 10 })
+        .expect(201);
+
+      // Offset kept well clear of every other offset used in this file (highest elsewhere
+      // is 307) -- see the "deadline snapshotting" describe block's own comment on exactly
+      // this hazard: reusing a nearby offset caused a real, hard-to-diagnose 409 collision
+      // when this test was first added at 230/231.
+      const created = await book(futureIso(350), stakedUser, {
+        applyWalletBalance: true,
+        couponCode: 'APPROVEEXPIRE10',
+      }).expect(201);
+      const bookingId = created.body.booking.id;
+      expect(created.body.booking.walletAmountUsed).toBe(50_000);
+      expect(created.body.couponApplied).toBe(true);
+
+      await ds.query(`UPDATE bookings SET approval_expires_at = now() - interval '1 minute' WHERE id = $1`, [bookingId]);
+      await app.get(BookingApprovalExpiryJob).run();
+
+      expect(await statusOf(bookingId)).toBe('expired');
+
+      const wallet = await request(app.getHttpServer()).get('/api/wallet/mine').set('Cookie', stakedUser).expect(200);
+      expect(wallet.body.balances.find((b: { currency: string }) => b.currency === 'toman').balance).toBe(50_000);
+      const walletTxTypes = (
+        await ds.query(`SELECT type FROM wallet_transactions WHERE user_id = $1 ORDER BY created_at ASC`, [stakedUserId])
+      ).map((t: { type: string }) => t.type);
+      expect(walletTxTypes).toEqual(['admin_adjustment', 'booking_spend', 'booking_spend_reversal']);
+
+      const redemptions = await ds.query(`SELECT id FROM coupon_redemptions WHERE booking_id = $1`, [bookingId]);
+      expect(redemptions).toHaveLength(0);
+
+      // The code is usable again, and the wallet balance is spendable again -- both
+      // givebacks are real, not just an accounting entry with no functional effect.
+      const second = await book(futureIso(351), stakedUser, {
+        applyWalletBalance: true,
+        couponCode: 'APPROVEEXPIRE10',
+      }).expect(201);
+      expect(second.body.couponApplied).toBe(true);
+      expect(second.body.booking.walletAmountUsed).toBe(50_000);
+    });
+
     it('never expires a request whose deadline has not arrived', async () => {
       const created = await book(futureIso(221)).expect(201);
       const bookingId = created.body.booking.id;

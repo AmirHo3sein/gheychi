@@ -1,12 +1,17 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, QueryFailedError } from 'typeorm';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { SubscriptionBillingPeriod } from './subscription-billing-period.entity';
 import { SubscriptionBillingService } from './subscription-billing.service';
 import { SubscriptionCouponRedemption } from './subscription-coupon-redemption.entity';
 import { SubscriptionCoupon } from './subscription-coupon.entity';
+
+function pgError(code: string): QueryFailedError {
+  const driverError = Object.assign(new Error('db error'), { code });
+  return new QueryFailedError('', [], driverError);
+}
 
 describe('SubscriptionBillingService', () => {
   let service: SubscriptionBillingService;
@@ -121,6 +126,26 @@ describe('SubscriptionBillingService', () => {
       couponRepoInTx.findOneBy.mockResolvedValueOnce({ id: 'coupon-1', discountPercent: 20, isActive: true, expiresAt: null, maxRedemptions: 2 });
       redemptionRepoInTx.count.mockResolvedValueOnce(2);
       await expect(service.createPeriod('salon-1', { ...dto, couponCode: 'PLUS20' })).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    // An UNCAPPED coupon's alreadyUsed check sits outside any row lock, so two concurrent
+    // createPeriod calls for the same salon + same coupon can both pass it -- only the DB's
+    // own UNIQUE(coupon_id, salon_id) constraint on the redemption insert actually stops
+    // the double redemption. Without the try/catch, that unique violation escaped as a raw
+    // 500 instead of the same clean 400 the sequential "already used" check returns.
+    it('translates a concurrent redemption race (unique violation) into the same clean 400 the sequential check returns', async () => {
+      couponRepoInTx.findOneBy.mockResolvedValueOnce({ id: 'coupon-1', discountPercent: 20, isActive: true, expiresAt: null, maxRedemptions: null });
+      transactionMock.mockRejectedValueOnce(pgError('23505'));
+
+      await expect(service.createPeriod('salon-1', { ...dto, couponCode: 'PLUS20' })).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('re-throws an unrelated transaction failure unchanged', async () => {
+      couponRepoInTx.findOneBy.mockResolvedValueOnce({ id: 'coupon-1', discountPercent: 20, isActive: true, expiresAt: null, maxRedemptions: null });
+      const boom = new Error('db connection lost');
+      transactionMock.mockRejectedValueOnce(boom);
+
+      await expect(service.createPeriod('salon-1', { ...dto, couponCode: 'PLUS20' })).rejects.toBe(boom);
     });
   });
 

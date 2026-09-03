@@ -300,5 +300,49 @@ describe('Subscription coupons + billing (e2e)', () => {
         expect(Number(count)).toBe(1);
       });
     });
+
+    // The uncapped-coupon path (maxRedemptions: null) never takes the coupon row lock at
+    // all -- its alreadyUsed check races freely for the SAME salon + SAME coupon. Only the
+    // DB's own UNIQUE(coupon_id, salon_id) constraint stops the double redemption; this
+    // proves the loser gets the ordinary clean 400, never an unmapped 500.
+    describe('concurrency: same salon, UNCAPPED coupon, two billing periods at once', () => {
+      it('redeems the coupon exactly once for this salon; the loser gets a clean 400, not a 500', async () => {
+        await request(app.getHttpServer())
+          .post('/api/admin/subscription-coupons')
+          .set('Cookie', adminCookie)
+          .send({ code: 'SAMESALONRACE', discountPercent: 15 }) // maxRedemptions omitted -- uncapped
+          .expect(201);
+
+        const raceOwnerCookie = await loginAs(app, '09171110012');
+        const { salonId: raceSalonId } = await createApprovedSalon(app, raceOwnerCookie, { name: 'Same-Salon Billing Race' });
+        await request(app.getHttpServer())
+          .patch(`/api/admin/salons/${raceSalonId}/subscription`)
+          .set('Cookie', adminCookie)
+          .send({ planId })
+          .expect(200);
+
+        const [first, second] = await Promise.all([
+          request(app.getHttpServer())
+            .post(`/api/admin/salons/${raceSalonId}/subscription/billing-periods`)
+            .set('Cookie', adminCookie)
+            .send({ periodStart: '2028-03-01T00:00:00.000Z', periodEnd: '2028-04-01T00:00:00.000Z', couponCode: 'SAMESALONRACE' }),
+          request(app.getHttpServer())
+            .post(`/api/admin/salons/${raceSalonId}/subscription/billing-periods`)
+            .set('Cookie', adminCookie)
+            .send({ periodStart: '2028-04-01T00:00:00.000Z', periodEnd: '2028-05-01T00:00:00.000Z', couponCode: 'SAMESALONRACE' }),
+        ]);
+
+        const statuses = [first.status, second.status].sort();
+        expect(statuses).toEqual([201, 400]);
+        const loser = [first, second].find((r) => r.status === 400)!;
+        expect(loser.body.message).toContain('قبلا از این کد تخفیف استفاده کرده است');
+
+        const [{ count }] = await ds.query(
+          `SELECT COUNT(*) FROM subscription_coupon_redemptions WHERE coupon_id = (SELECT id FROM subscription_coupons WHERE code = 'SAMESALONRACE') AND salon_id = $1`,
+          [raceSalonId],
+        );
+        expect(Number(count)).toBe(1);
+      });
+    });
   });
 });

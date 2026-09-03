@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
+import { isUniqueViolation } from '../common/postgres-error-codes';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { CreateBillingPeriodDto } from './dto/billing-period.dto';
 import { SubscriptionBillingPeriod, BillingPeriodStatus } from './subscription-billing-period.entity';
@@ -46,66 +47,77 @@ export class SubscriptionBillingService {
     }
     const baseAmountToman = plan.monthlyPriceToman;
 
-    return this.dataSource.transaction(async (em) => {
-      let discountPercent: number | null = null;
-      let couponId: string | null = null;
+    try {
+      return await this.dataSource.transaction(async (em) => {
+        let discountPercent: number | null = null;
+        let couponId: string | null = null;
 
-      if (dto.couponCode) {
-        const couponRepo = em.getRepository(SubscriptionCoupon);
-        const redemptionRepo = em.getRepository(SubscriptionCouponRedemption);
-        const normalized = this.normalizeCode(dto.couponCode);
+        if (dto.couponCode) {
+          const couponRepo = em.getRepository(SubscriptionCoupon);
+          const redemptionRepo = em.getRepository(SubscriptionCouponRedemption);
+          const normalized = this.normalizeCode(dto.couponCode);
 
-        const coupon = await couponRepo.findOneBy({ code: normalized });
-        if (!coupon || !coupon.isActive) {
-          throw new BadRequestException('کد تخفیف اشتراک نامعتبر است');
-        }
-        if (coupon.expiresAt && coupon.expiresAt.getTime() < Date.now()) {
-          throw new BadRequestException('کد تخفیف اشتراک منقضی شده است');
-        }
-        const alreadyUsed = await redemptionRepo.findOneBy({ couponId: coupon.id, salonId });
-        if (alreadyUsed) {
-          throw new BadRequestException('این سالن قبلا از این کد تخفیف استفاده کرده است');
-        }
-        if (coupon.maxRedemptions !== null) {
-          // Row-lock the coupon itself to serialize concurrent redemptions against the cap --
-          // same reasoning as CouponsService.resolveAndValidateImpl's own platform-wide-coupon
-          // lock: this coupon can be redeemed concurrently by entirely unrelated salons, which
-          // no per-salon lock elsewhere in this codebase would serialize.
-          await couponRepo.createQueryBuilder('c').setLock('pessimistic_write').where('c.id = :id', { id: coupon.id }).getOne();
-          const count = await redemptionRepo.count({ where: { couponId: coupon.id } });
-          if (count >= coupon.maxRedemptions) {
-            throw new BadRequestException('ظرفیت استفاده از این کد تخفیف تکمیل شده است');
+          const coupon = await couponRepo.findOneBy({ code: normalized });
+          if (!coupon || !coupon.isActive) {
+            throw new BadRequestException('کد تخفیف اشتراک نامعتبر است');
           }
+          if (coupon.expiresAt && coupon.expiresAt.getTime() < Date.now()) {
+            throw new BadRequestException('کد تخفیف اشتراک منقضی شده است');
+          }
+          const alreadyUsed = await redemptionRepo.findOneBy({ couponId: coupon.id, salonId });
+          if (alreadyUsed) {
+            throw new BadRequestException('این سالن قبلا از این کد تخفیف استفاده کرده است');
+          }
+          if (coupon.maxRedemptions !== null) {
+            // Row-lock the coupon itself to serialize concurrent redemptions against the cap --
+            // same reasoning as CouponsService.resolveAndValidateImpl's own platform-wide-coupon
+            // lock: this coupon can be redeemed concurrently by entirely unrelated salons, which
+            // no per-salon lock elsewhere in this codebase would serialize.
+            await couponRepo.createQueryBuilder('c').setLock('pessimistic_write').where('c.id = :id', { id: coupon.id }).getOne();
+            const count = await redemptionRepo.count({ where: { couponId: coupon.id } });
+            if (count >= coupon.maxRedemptions) {
+              throw new BadRequestException('ظرفیت استفاده از این کد تخفیف تکمیل شده است');
+            }
+          }
+
+          discountPercent = coupon.discountPercent;
+          couponId = coupon.id;
         }
 
-        discountPercent = coupon.discountPercent;
-        couponId = coupon.id;
-      }
+        const amountToman = couponId === null ? baseAmountToman : Math.round(baseAmountToman * (1 - discountPercent! / 100));
 
-      const amountToman = couponId === null ? baseAmountToman : Math.round(baseAmountToman * (1 - discountPercent! / 100));
-
-      const period = await em.getRepository(SubscriptionBillingPeriod).save(
-        em.getRepository(SubscriptionBillingPeriod).create({
-          salonId,
-          planId: plan.id,
-          periodStart,
-          periodEnd,
-          baseAmountToman,
-          discountPercent,
-          amountToman,
-          couponId,
-          status: 'pending',
-        }),
-      );
-
-      if (couponId !== null) {
-        await em.getRepository(SubscriptionCouponRedemption).save(
-          em.getRepository(SubscriptionCouponRedemption).create({ couponId, salonId, billingPeriodId: period.id }),
+        const period = await em.getRepository(SubscriptionBillingPeriod).save(
+          em.getRepository(SubscriptionBillingPeriod).create({
+            salonId,
+            planId: plan.id,
+            periodStart,
+            periodEnd,
+            baseAmountToman,
+            discountPercent,
+            amountToman,
+            couponId,
+            status: 'pending',
+          }),
         );
-      }
 
-      return period;
-    });
+        if (couponId !== null) {
+          await em.getRepository(SubscriptionCouponRedemption).save(
+            em.getRepository(SubscriptionCouponRedemption).create({ couponId, salonId, billingPeriodId: period.id }),
+          );
+        }
+
+        return period;
+      });
+    } catch (err) {
+      // Two concurrent createPeriod calls for the SAME salon and the SAME uncapped coupon
+      // (maxRedemptions === null, so no row lock guards the alreadyUsed check above) can
+      // both pass that check and both attempt the redemption insert -- the DB's own
+      // UNIQUE(coupon_id, salon_id) constraint is what actually prevents the double
+      // redemption, but without this the loser's QueryFailedError escaped uncaught as a
+      // raw 500 instead of the same clean 400 the sequential path already returns.
+      if (isUniqueViolation(err)) throw new BadRequestException('این سالن قبلا از این کد تخفیف استفاده کرده است');
+      throw err;
+    }
   }
 
   listForSalon(salonId: string): Promise<SubscriptionBillingPeriod[]> {
