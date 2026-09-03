@@ -94,6 +94,35 @@ describe('StoryViewer', () => {
     wrapper.unmount()
   })
 
+  // The booking pill used to link straight to /booking/... and silently dropped the
+  // attribution a QR scan had landed the salon page with.
+  it('threads the salon page attribution onto the booking pill', async () => {
+    const wrapper = await mountSuspended(StoryViewer, {
+      props: {
+        ...BASE_PROPS,
+        stories: [{ ...STORIES[0]!, serviceId: 'svc1' }],
+        services: [{ id: 'svc1', name: 'کوتاهی مو' }],
+        attributionSource: 'qr',
+      },
+    })
+
+    expect(wrapper.get('[data-testid="story-booking-pill"]').attributes('href')).toBe('/booking/test-salon/svc1?source=qr')
+    wrapper.unmount()
+  })
+
+  it('leaves the booking pill untagged when the salon page resolved no attribution', async () => {
+    const wrapper = await mountSuspended(StoryViewer, {
+      props: {
+        ...BASE_PROPS,
+        stories: [{ ...STORIES[0]!, serviceId: 'svc1' }],
+        services: [{ id: 'svc1', name: 'کوتاهی مو' }],
+      },
+    })
+
+    expect(wrapper.get('[data-testid="story-booking-pill"]').attributes('href')).toBe('/booking/test-salon/svc1')
+    wrapper.unmount()
+  })
+
   it('pauses auto-advance while the report form is open and resumes when it closes', async () => {
     vi.useFakeTimers()
     const wrapper = await mountSuspended(StoryViewer, {

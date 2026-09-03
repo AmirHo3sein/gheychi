@@ -225,6 +225,41 @@ describe('ServicesView', () => {
     expect(useToast().toasts.value.some((t) => t.message === 'قیمت به‌روزرسانی شد')).toBe(false)
   })
 
+  it('ignores a second click on «افزودن» while the create request is still in flight', async () => {
+    let resolveCreate!: (value: unknown) => void
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+      .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveCreate = resolve })) // POST service -- held open
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services (reload)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories (reload)
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(ServicesView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    await wrapper.find('input[placeholder="نام خدمت"]').setValue('رنگ مو')
+    await wrapper.findComponent(AppSelect).vm.$emit('update:modelValue', 1)
+    await wrapper.get('[data-testid="new-service-price-input"]').setValue('150000')
+
+    const addButton = wrapper.get('[data-testid="add-service"]')
+    await addButton.trigger('click')
+    await addButton.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    // Three initial GETs + exactly ONE POST, and the button is visibly busy meanwhile.
+    expect(fetchMock.mock.calls.length).toBe(4)
+    expect((addButton.element as HTMLButtonElement).disabled).toBe(true)
+    expect(addButton.attributes('aria-busy')).toBe('true')
+
+    resolveCreate({ ok: true, status: 201, json: async () => ({ id: 'svc-2' }) })
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.vm.$nextTick()
+
+    expect((addButton.element as HTMLButtonElement).disabled).toBe(false)
+  })
+
   it('shows an inline error and skips the request when adding a service with an empty price', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services

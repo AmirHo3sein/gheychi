@@ -141,7 +141,10 @@ const { data: myCode } = await useAsyncData('referral-my-code', async () => {
 // page turn is one router.push and useAsyncData refetches exactly once. The referral
 // list and the rewards list below page independently (`page` vs `rewardsPage`), so
 // goToPage/goToRewardsPage merge into the existing query rather than replacing it.
-const { data: referrals, pending: referralsPending } = await useAsyncData(
+// Both lists below are null exactly when their fetch failed (apiFetch never throws, and a
+// successful response always carries `items`) -- rendered as a retry state, never as the
+// "nothing yet" empty state, same as account/wallet.vue.
+const { data: referrals, pending: referralsPending, refresh: refreshReferrals } = await useAsyncData(
   'referrals-mine',
   async () => {
     const { data } = await apiFetch<ReferralsResponse>('/referrals/mine', {
@@ -156,7 +159,7 @@ const { data: referrals, pending: referralsPending } = await useAsyncData(
 // GET /referrals/mine/rewards -- my referral_rewards rows, either beneficiary role
 // (I can appear as 'referrer' on referrals I sent, or 'referred' on the one referral
 // that brought me in). currency/couponCode are denormalized in by the API itself.
-const { data: rewards, pending: rewardsPending } = await useAsyncData(
+const { data: rewards, pending: rewardsPending, refresh: refreshRewards } = await useAsyncData(
   'referral-rewards-mine',
   async () => {
     const { data } = await apiFetch<RewardsResponse>('/referrals/mine/rewards', {
@@ -317,8 +320,13 @@ useSeoMeta({ title: 'دعوت از دوستان — قیچی' })
     <section class="space-y-3">
       <h2 class="font-bold">دعوت‌های من</h2>
 
+      <BaseCard v-if="!referrals" data-testid="referrals-load-error" role="alert" class="space-y-3 text-center">
+        <p class="text-sm text-(--color-text-muted)">بارگذاری دعوت‌ها با خطا مواجه شد.</p>
+        <BaseButton variant="secondary" data-testid="referrals-retry-button" :loading="referralsPending" @click="refreshReferrals()">تلاش مجدد</BaseButton>
+      </BaseCard>
+
       <p
-        v-if="!referrals?.items?.length"
+        v-else-if="!referrals.items.length"
         data-testid="empty-state"
         class="py-6 text-center text-sm text-(--color-text-muted)"
       >
@@ -371,8 +379,13 @@ useSeoMeta({ title: 'دعوت از دوستان — قیچی' })
     <section class="space-y-3">
       <h2 class="font-bold">پاداش‌های من</h2>
 
+      <BaseCard v-if="!rewards" data-testid="rewards-load-error" role="alert" class="space-y-3 text-center">
+        <p class="text-sm text-(--color-text-muted)">بارگذاری پاداش‌ها با خطا مواجه شد.</p>
+        <BaseButton variant="secondary" data-testid="rewards-retry-button" :loading="rewardsPending" @click="refreshRewards()">تلاش مجدد</BaseButton>
+      </BaseCard>
+
       <p
-        v-if="!rewards?.items?.length"
+        v-else-if="!rewards.items.length"
         data-testid="rewards-empty-state"
         class="py-6 text-center text-sm text-(--color-text-muted)"
       >

@@ -78,6 +78,7 @@ describe('salon detail page', () => {
       portfolioEnabled: true,
       referralsEnabled: true,
       couponsEnabled: true,
+      onlinePaymentEnabled: true,
     }
   })
 
@@ -173,6 +174,28 @@ describe('salon detail page', () => {
     expect(wrapper.text()).toContain((50000).toLocaleString('fa-IR'))
   })
 
+  // With the platform's online-payment flag off the API confirms every booking with nothing
+  // collected, so the callout used to state a deposit "is taken" that never would be.
+  it('does not claim a deposit is collected while feature_online_payment_enabled is off', async () => {
+    mockEndpoints()
+    useState('feature-flags').value = {
+      reviewsEnabled: true,
+      storiesEnabled: true,
+      portfolioEnabled: true,
+      referralsEnabled: true,
+      couponsEnabled: true,
+      onlinePaymentEnabled: false,
+    }
+    wrapper = await mountSuspended(SalonDetailPage)
+
+    const callout = wrapper.get('[data-testid="booking-policy-callout"]')
+    expect(callout.text()).toContain('پیش‌پرداختی دریافت نمی‌شود')
+    expect(callout.text()).not.toContain('دریافت می‌شود.')
+    expect(callout.text()).not.toContain('لغو رایگان')
+    // The deposit numbers must not leak in through some other line either.
+    expect(callout.text()).not.toContain((50000).toLocaleString('fa-IR'))
+  })
+
   // A provider-authored note that the listed duration is a minimum, not a guarantee --
   // must reach the customer, not just live unused in the API response.
   it('shows a service duration note when the provider set one, and omits it when they did not', async () => {
@@ -225,6 +248,7 @@ describe('salon detail page', () => {
       portfolioEnabled: true,
       referralsEnabled: true,
       couponsEnabled: true,
+      onlinePaymentEnabled: true,
     }
 
     wrapper = await mountSuspended(SalonDetailPage)
@@ -260,6 +284,18 @@ describe('salon detail page', () => {
 
     const link = wrapper.get('a[href^="/booking/test-salon/svc1"]')
     expect(link.attributes('href')).toBe('/booking/test-salon/svc1?source=qr')
+  })
+
+  // The portfolio lightbox's own booking pill used to link straight to /booking/... and
+  // silently dropped the attribution a QR scan had landed with.
+  it('carries the same ?source= attribution onto the portfolio booking pill', async () => {
+    routeQuery = { source: 'qr' }
+    mockEndpoints()
+    wrapper = await mountSuspended(SalonDetailPage)
+    await new Promise((r) => setTimeout(r, 0))
+
+    await wrapper.findAll('[data-testid="portfolio-item"]')[0]!.trigger('click')
+    expect(wrapper.get('[data-testid="portfolio-booking-pill"]').attributes('href')).toBe('/booking/test-salon/svc1?source=qr')
   })
 
   it('leaves the booking link untagged with no query source and no search referrer', async () => {

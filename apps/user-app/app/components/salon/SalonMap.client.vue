@@ -57,6 +57,27 @@ function popupHtml(salon: { name: string; slug: string }, coords: { lat: number;
 }
 
 let unmounted = false
+// All markers live in one layer group so a re-render is a single clearLayers() rather than
+// bookkeeping individual marker handles.
+let markerLayer: L.LayerGroup | null = null
+
+function renderMarkers() {
+  if (!mapInstance || !markerLayer) return
+  markerLayer.clearLayers()
+  for (const salon of props.salons) {
+    const coords = props.salonCoords[salon.id]
+    if (!coords) continue
+    // maxWidth 240 rather than Leaflet's 300px default: at 320px this map container is only
+    // 288px wide, so a popup allowed to grow to 300px can never be panned fully into view
+    // (autoPan has nowhere to pan it to) and stays partly clipped by the container's
+    // overflow-hidden -- taking a directions link with it. 240 leaves room for the popup's
+    // own tip and shadow at the hard floor; it only binds for long salon names, since the
+    // popup sizes to its content below that.
+    L.marker([coords.lat, coords.lng])
+      .addTo(markerLayer)
+      .bindPopup(popupHtml(salon, coords), { maxWidth: 240 })
+  }
+}
 
 function initMap() {
   if (unmounted) return
@@ -89,27 +110,37 @@ function initMap() {
     maxZoom: 19,
   }).addTo(mapInstance)
 
-  for (const salon of props.salons) {
-    const coords = props.salonCoords[salon.id]
-    if (!coords) continue
-    // maxWidth 240 rather than Leaflet's 300px default: at 320px this map container is only
-    // 288px wide, so a popup allowed to grow to 300px can never be panned fully into view
-    // (autoPan has nowhere to pan it to) and stays partly clipped by the container's
-    // overflow-hidden -- taking a directions link with it. 240 leaves room for the popup's
-    // own tip and shadow at the hard floor; it only binds for long salon names, since the
-    // popup sizes to its content below that.
-    L.marker([coords.lat, coords.lng])
-      .addTo(mapInstance)
-      .bindPopup(popupHtml(salon, coords), { maxWidth: 240 })
-  }
+  markerLayer = L.layerGroup().addTo(mapInstance)
+  renderMarkers()
 }
 
 onMounted(initMap)
+
+// The map is NOT render-once: index.vue keeps this component mounted while the customer
+// changes city/category/sort in map view, and its salonCoords arrive asynchronously (one
+// request per result, after the results themselves) -- so pins have to follow the props,
+// not just the mount. Deep, because index.vue mutates salonCoords in place key by key.
+watch(
+  () => [props.salons, props.salonCoords] as const,
+  renderMarkers,
+  { deep: true },
+)
+
+// Recenter only on an actual center change (a new city, or "near me"), never on a marker
+// refresh -- a customer who panned away to look around must not be yanked back every time
+// a category filter re-runs the search. Zoom is left where they put it for the same reason.
+watch(
+  () => [props.center.lat, props.center.lng] as const,
+  ([lat, lng]) => {
+    mapInstance?.setView([lat, lng])
+  },
+)
 
 onBeforeUnmount(() => {
   unmounted = true
   mapInstance?.remove()
   mapInstance = null
+  markerLayer = null
 })
 </script>
 

@@ -3,6 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Authenticated-only panel: nothing here belongs in a search index. public/robots.txt
+         stops a well-behaved crawler from fetching at all, but a URL linked from elsewhere
+         can still be indexed url-only on the strength of that link alone -- this tag is what
+         actually keeps it out. Static in index.html rather than injected at runtime, so it is
+         present in the very first byte served, before the SPA boots. -->
+    <meta name="robots" content="noindex,nofollow" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/brand-icon.png" />
     <title>پنل آرایشگاه قیچی</title>

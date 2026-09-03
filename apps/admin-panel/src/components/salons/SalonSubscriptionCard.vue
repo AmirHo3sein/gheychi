@@ -206,13 +206,27 @@ async function createBillingPeriod() {
   }
 }
 
-async function resolvePeriod(period: BillingPeriod, status: 'paid' | 'comped' | 'void') {
+// Settling a period is settle-once on the backend (a resolved period is never overwritten,
+// same as an issued invoice), so it gets the same confirm-before-commit step every other
+// irreversible action in this card already has. One pending confirmation at a time.
+type ResolvedPeriodStatus = 'paid' | 'comped' | 'void'
+const RESOLVE_CONFIRM_COPY: Record<ResolvedPeriodStatus, string> = {
+  paid: 'این دوره پرداخت‌شده ثبت شود؟ این تسویه قابل بازگشت نیست.',
+  comped: 'این دوره رایگان (comp) ثبت شود؟ این تسویه قابل بازگشت نیست.',
+  void: 'این دوره باطل شود؟ این تسویه قابل بازگشت نیست.',
+}
+const pendingResolve = ref<{ periodId: string; status: ResolvedPeriodStatus } | null>(null)
+
+async function resolvePeriod(period: BillingPeriod) {
+  const pending = pendingResolve.value
+  if (!pending || pending.periodId !== period.id) return
   submitting.value = true
   const { data } = await apiFetch<BillingPeriod>(
     `/admin/salons/${props.salonId}/subscription/billing-periods/${period.id}/status`,
-    { method: 'PATCH', body: { status } },
+    { method: 'PATCH', body: { status: pending.status } },
   )
   submitting.value = false
+  pendingResolve.value = null
   if (data) Object.assign(period, data)
 }
 </script>
@@ -377,14 +391,27 @@ async function resolvePeriod(period: BillingPeriod, status: 'paid' | 'comped' | 
                 </div>
                 <div class="flex items-center gap-2">
                   <StatusBadge :label="BILLING_STATUS_LABEL[period.status].label" :tone="BILLING_STATUS_LABEL[period.status].tone" />
-                  <template v-if="period.status === 'pending'">
-                    <AppButton type="button" variant="secondary" :disabled="submitting" :data-testid="`mark-paid-${period.id}`" @click="resolvePeriod(period, 'paid')">
+                  <template v-if="period.status === 'pending' && pendingResolve?.periodId === period.id">
+                    <span class="text-xs font-semibold text-(--tone-danger-text)">{{ RESOLVE_CONFIRM_COPY[pendingResolve.status] }}</span>
+                    <AppButton
+                      type="button"
+                      :variant="pendingResolve.status === 'void' ? 'danger' : 'primary'"
+                      :disabled="submitting"
+                      :data-testid="`confirm-resolve-${period.id}`"
+                      @click="resolvePeriod(period)"
+                    >
+                      تأیید
+                    </AppButton>
+                    <AppButton type="button" variant="ghost" :disabled="submitting" @click="pendingResolve = null">انصراف</AppButton>
+                  </template>
+                  <template v-else-if="period.status === 'pending'">
+                    <AppButton type="button" variant="secondary" :disabled="submitting" :data-testid="`mark-paid-${period.id}`" @click="pendingResolve = { periodId: period.id, status: 'paid' }">
                       پرداخت‌شده
                     </AppButton>
-                    <AppButton type="button" variant="ghost" :disabled="submitting" :data-testid="`mark-comped-${period.id}`" @click="resolvePeriod(period, 'comped')">
+                    <AppButton type="button" variant="ghost" :disabled="submitting" :data-testid="`mark-comped-${period.id}`" @click="pendingResolve = { periodId: period.id, status: 'comped' }">
                       رایگان
                     </AppButton>
-                    <AppButton type="button" variant="ghost" class="text-(--tone-danger-text)!" :disabled="submitting" :data-testid="`mark-void-${period.id}`" @click="resolvePeriod(period, 'void')">
+                    <AppButton type="button" variant="ghost" class="text-(--tone-danger-text)!" :disabled="submitting" :data-testid="`mark-void-${period.id}`" @click="pendingResolve = { periodId: period.id, status: 'void' }">
                       باطل
                     </AppButton>
                   </template>

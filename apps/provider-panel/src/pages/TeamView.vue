@@ -53,6 +53,10 @@ const loading = ref(true)
 // ServicesView.vue's identical loadError pattern.
 const loadError = ref(false)
 const createError = ref('')
+// In-flight guard for the add form -- same shape as ServicesView.vue's `creating`. A
+// double-tap on «افزودن» used to fire two POSTs; the second one 409'd (duplicate member)
+// and replaced the success with a misleading "already a member" error.
+const creating = ref(false)
 const newWorker = reactive({ name: '', phone: '' })
 
 const salonServices = ref<SalonServiceOption[]>([])
@@ -161,6 +165,7 @@ function ratingText(w: Worker): string {
 }
 
 async function addWorker() {
+  if (creating.value) return
   createError.value = ''
   if (!newWorker.name.trim() || !newWorker.phone.trim()) {
     createError.value = 'نام و شماره موبایل الزامی است'
@@ -173,12 +178,14 @@ async function addWorker() {
   // trusting the server string verbatim -- class-validator's DTO messages (e.g. the phone
   // format check) are English and would otherwise leak untranslated onto this Persian-only
   // screen. Mirrors LoginView.vue's pattern.
+  creating.value = true
   const { data, error } = await apiFetch<Worker>('/salons/mine/workers', {
     method: 'POST',
     // Iranian keyboards/IMEs commonly default to Persian numerals -- a phone typed that way
     // looks right on screen but fails the API's /^09\d{9}$/ check, since \d is ASCII-only.
     body: { name: newWorker.name.trim(), phone: toEnglishDigits(newWorker.phone.trim()) },
   })
+  creating.value = false
   if (error) {
     createError.value = error.status === 409
       ? 'این کاربر از قبل عضو تیم است.'
@@ -255,7 +262,17 @@ async function copyReferralCode(code: string) {
       <p v-if="createError" class="flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)">
         {{ createError }}
       </p>
-      <AppButton type="button" variant="primary" block data-testid="submit-add-worker" @click="addWorker">افزودن</AppButton>
+      <AppButton
+        type="button"
+        variant="primary"
+        block
+        data-testid="submit-add-worker"
+        :disabled="creating"
+        :loading="creating"
+        @click="addWorker"
+      >
+        افزودن
+      </AppButton>
     </AppCard>
 
     <div v-if="loadError" data-testid="load-error" class="space-y-3 rounded-xl border border-dashed border-(--color-border) p-4 text-center">

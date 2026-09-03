@@ -86,8 +86,9 @@ const aboutExcerpt = computed(() => {
 // geography column, `location: { type: 'Point', coordinates: [lng, lat] }` -- there is
 // no top-level lat/lng field. Note the coordinate order (lng first), matching
 // apps/user-app's geoJsonToLatLng (app/utils/geo.ts).
-interface SalonResponse extends Omit<typeof form, 'lat' | 'lng' | 'tagline' | 'about' | 'instagramHandle' | 'categoryIds'> {
+interface SalonResponse extends Omit<typeof form, 'lat' | 'lng' | 'description' | 'tagline' | 'about' | 'instagramHandle' | 'categoryIds'> {
   location: { type: 'Point'; coordinates: [number, number] }
+  description: string | null
   tagline: string | null
   about: string | null
   instagramHandle: string | null
@@ -105,6 +106,8 @@ async function load() {
   }
   const { location, tagline, about, instagramHandle, categories, ...rest } = data
   Object.assign(form, rest)
+  // The column is nullable; the textarea (and save() below) work on a string.
+  form.description = data.description ?? ''
   form.lng = location.coordinates[0]
   form.lat = location.coordinates[1]
   form.tagline = tagline ?? ''
@@ -121,7 +124,10 @@ async function save() {
     method: 'PATCH',
     body: {
       name: form.name,
-      description: form.description || undefined,
+      // Sent as-is, never `|| undefined`: omitting the key on an emptied field would make a
+      // previously-written description impossible to clear (same reasoning as the showcase
+      // fields below).
+      description: form.description.trim(),
       genderTarget: form.genderTarget || undefined,
       address: form.address,
       city: form.city,

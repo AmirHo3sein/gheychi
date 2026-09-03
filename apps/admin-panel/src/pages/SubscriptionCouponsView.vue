@@ -3,8 +3,9 @@
      docs/technical-overview/34-subscription-coupons-and-billing.md. A genuinely separate
      concept from the booking-side /coupons screen: these are redeemed by a SALON (once per
      coupon, admin-only) when an admin creates a billing period, not by a customer at
-     checkout. Deliberately simpler than CouponsView.vue -- no edit, no fixed-amount kind,
-     since there's no equivalent "provider issues their own subscription coupon" concept. -->
+     checkout. Deliberately simpler than CouponsView.vue -- no field editing (only
+     deactivate/reactivate), no fixed-amount kind, since there's no equivalent "provider
+     issues their own subscription coupon" concept. -->
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useApi } from '@/composables/useApi'
@@ -91,6 +92,24 @@ async function deactivate(coupon: SubscriptionCoupon) {
   submitting.value = false
   confirmingDeactivateId.value = null
   if (!error) coupon.isActive = false
+}
+
+// DELETE above is a soft deactivate on the backend (SubscriptionCouponsService.deactivate),
+// and PATCH /admin/subscription-coupons/:id accepts isActive -- so an operator who
+// deactivated the wrong code (or wants a paused promo back) has a one-click way back.
+// The only edit exposed here; the other PATCH fields stay unexposed on purpose (see the
+// header comment on why this screen is deliberately simpler than CouponsView.vue).
+async function reactivate(coupon: SubscriptionCoupon) {
+  submitting.value = true
+  const { data } = await apiFetch<SubscriptionCoupon>(`/admin/subscription-coupons/${coupon.id}`, {
+    method: 'PATCH',
+    body: { isActive: true },
+  })
+  submitting.value = false
+  if (data) {
+    Object.assign(coupon, data)
+    pushToast('کد تخفیف اشتراک دوباره فعال شد')
+  }
 }
 </script>
 
@@ -195,6 +214,14 @@ async function deactivate(coupon: SubscriptionCoupon) {
             </template>
             <AppButton v-else type="button" variant="ghost" class="text-(--tone-danger-text)!" :data-testid="`deactivate-${coupon.code}`" @click="confirmingDeactivateId = coupon.id">
               غیرفعال‌سازی
+            </AppButton>
+          </div>
+          <!-- Reactivation is reversible (deactivate is one click away again), so no
+               confirm step -- unlike deactivation, which cuts off a code salons may be
+               mid-way through being quoted. -->
+          <div v-else class="shrink-0">
+            <AppButton type="button" variant="ghost" :disabled="submitting" :data-testid="`reactivate-${coupon.code}`" @click="reactivate(coupon)">
+              فعال‌سازی مجدد
             </AppButton>
           </div>
         </div>

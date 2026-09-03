@@ -60,6 +60,60 @@ describe('home page', () => {
     expect(wrapper.text()).not.toContain('مشکلی در بارگذاری سالن‌ها پیش آمد')
   })
 
+  // `/` is a public route, and an anonymous visitor used to get the "complete your profile"
+  // card -- whose /profile link would only bounce them to /login anyway.
+  it('asks an anonymous visitor to log in, not to complete a profile they do not have', async () => {
+    useSessionStore().$reset()
+    useSessionStore().setUser(null)
+    stub()
+    const wrapper = await mountSuspended(IndexPage)
+    await flushPromises()
+
+    expect(fetchMock).not.toHaveBeenCalledWith('/search', expect.anything())
+    expect(wrapper.find('[data-testid="needs-profile"]').exists()).toBe(false)
+    const prompt = wrapper.get('[data-testid="needs-login"]')
+    expect(prompt.find('a').attributes('href')).toBe('/login')
+    expect(wrapper.text()).not.toContain('مشکلی در بارگذاری سالن‌ها پیش آمد')
+  })
+
+  // The loading/error states used to be nested inside the list branch only, so a failed
+  // (or in-flight) search gave map view no feedback at all -- just the previous pins.
+  it('shows the search error and its retry in map view too', async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/categories') return []
+      if (path === '/cities') return [{ name: 'تهران', lat: 35.6892, lng: 51.389 }]
+      if (path === '/search') throw { response: { status: 500 } }
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    const wrapper = await mountSuspended(IndexPage)
+    await flushPromises()
+
+    await wrapper.get('[aria-label="نوع نمایش"] button:last-child').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('مشکلی در بارگذاری سالن‌ها پیش آمد')
+  })
+
+  it('shows the loading state in map view while a search is in flight', async () => {
+    let resolveSearch: (value: unknown) => void = () => {}
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/categories') return []
+      if (path === '/cities') return [{ name: 'تهران', lat: 35.6892, lng: 51.389 }]
+      if (path === '/search') return new Promise((resolve) => { resolveSearch = resolve })
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    const wrapper = await mountSuspended(IndexPage)
+    await flushPromises()
+
+    await wrapper.get('[aria-label="نوع نمایش"] button:last-child').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="status"]').text()).toContain('در حال بارگذاری')
+
+    resolveSearch({ items: [], nextCursor: null, hasMore: false })
+    await flushPromises()
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+  })
+
   // The city field used to be a native <select> over a 4-city hardcoded starter list
   // (CITY_CENTERS); it's now the full backend-owned city list (GET /cities, same source
   // provider-panel's onboarding uses) through a vue-multiselect field, and picking a city

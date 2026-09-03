@@ -2,6 +2,7 @@
 import { iconForCategory } from '../utils/category-icon'
 import { toSearchGender } from '../utils/gender-map'
 import { geoJsonToLatLng } from '../utils/geo'
+import { buildCanonicalUrl } from '../utils/canonical-url'
 import type { SearchPage, SearchResult } from '../utils/types'
 import type { SelectOption } from '../components/ui/AppSelect.client.vue'
 
@@ -29,7 +30,15 @@ useSeoMeta({
   twitterCard: 'summary',
 })
 
+// Built from the configured site url, NOT from useRequestURL() like og:url/og:image above --
+// the difference is deliberate, not drift. og:url only has to name the page the sharer is
+// looking at, whereas a canonical asserts which single url owns this content, and deriving
+// THAT from the request lets every host/scheme/port variant confidently canonicalise to
+// itself. See utils/canonical-url.ts.
+const canonicalUrl = buildCanonicalUrl(useRuntimeConfig().public.siteUrl, '/')
+
 useHead({
+  link: [{ rel: 'canonical', href: canonicalUrl }],
   script: [
     {
       type: 'application/ld+json',
@@ -78,12 +87,16 @@ const searchGender = computed(() => toSearchGender(session.user?.gender))
 // the generic "something went wrong" card whose retry button could only ever fail again.
 // auth.global.ts sends such a user to /profile before this page renders; this is the local
 // guard for the same precondition (e.g. the value is cleared while this page is open).
-const needsProfile = computed(() => !searchGender.value)
+// Split from the anonymous case: `/` is a public route, and a visitor with no account at
+// all has no profile to "complete" -- /profile would only bounce them to /login anyway, so
+// say login is the missing step instead.
+const needsLogin = computed(() => !session.isLoggedIn)
+const needsProfile = computed(() => session.isLoggedIn && !searchGender.value)
 
 let requestSeq = 0
 
 async function loadSalons() {
-  if (needsProfile.value) {
+  if (needsLogin.value || needsProfile.value) {
     salons.value = []
     searchError.value = false
     loading.value = false
@@ -116,6 +129,10 @@ async function loadSalons() {
   // page size (50) matches the old hard cap.
   salons.value = data?.items ?? []
   loading.value = false
+  // A search re-run while already in map view brings in salons whose coordinates were never
+  // fetched -- the view watcher below only fires on the list→map flip, so without this the
+  // fresh results would have no pins at all (the stale ones were already cleared).
+  if (view.value === 'map') await loadCoordsForMap()
 }
 
 // Selecting a city only updates the search coordinates; the coords watch below is the
@@ -220,6 +237,18 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
         نزدیک من
       </BaseButton>
     </div>
+
+    <!-- Rendered unconditionally, ABOVE every session-dependent branch below. That placement
+         is the point: the results list is client-loaded and session-gated, so this link is
+         the only salon-discovery path in the server-rendered html an anonymous crawler
+         receives for '/'. Without it the home page emits zero internal links toward any
+         salon, leaving the sitemap as the sole entry channel into /salons/:slug. -->
+    <p class="text-sm">
+      <NuxtLink to="/salons" class="inline-flex items-center gap-1 font-medium text-(--color-accent-text) hover:underline">
+        مرور همه سالن‌های زیبایی بر اساس شهر
+        <BaseIcon name="chevron-back" :size="14" />
+      </NuxtLink>
+    </p>
 
     <!-- The label moved onto AppSelect itself: as a bare sibling <label> it named nothing
          (a native `for` can't reach vue-multiselect's combobox div), so the field read as
@@ -341,10 +370,34 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
       </div>
     </div>
 
+    <!-- An anonymous visitor: /search needs a gender, which only an account carries, so
+         there is nothing to show yet and login is the one step that unblocks it. -->
+    <div
+      v-if="needsLogin"
+      data-testid="needs-login"
+      role="status"
+      class="flex flex-col items-center gap-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-6 text-center"
+    >
+      <BaseIcon name="user" :size="20" class="text-(--color-accent-text)" />
+      <p class="text-sm text-(--color-text)">برای دیدن سالن‌های مناسب شما، ابتدا وارد حساب خود شوید.</p>
+      <NuxtLink
+        to="/login"
+        class="inline-flex items-center justify-center rounded-xl bg-(--color-accent-strong) px-4 py-2.5 text-sm font-semibold text-(--color-fill-text) transition-colors hover:bg-(--color-accent-deep)"
+      >
+        ورود یا ثبت‌نام
+      </NuxtLink>
+      <!-- Login is the primary action but no longer the ONLY one: this card is exactly what an
+           anonymous visitor (and every crawler) sees in place of results, and offering nothing
+           but a login wall here is what made the whole salon catalogue undiscoverable without
+           an account. The browse page needs no session at all. -->
+      <NuxtLink to="/salons" class="text-sm font-medium text-(--color-accent-text) hover:underline">
+        یا بدون ورود، سالن‌ها را ببینید
+      </NuxtLink>
+    </div>
     <!-- No gender on the account means no searchable request exists at all, so say what's
          missing and where to fix it instead of showing an error the user can't act on. -->
     <div
-      v-if="needsProfile"
+      v-else-if="needsProfile"
       data-testid="needs-profile"
       role="status"
       class="flex flex-col items-center gap-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-6 text-center"
@@ -358,23 +411,30 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
         تکمیل پروفایل
       </NuxtLink>
     </div>
-    <LazySalonMap v-else-if="view === 'map'" :salons="salons" :center="coords" :salon-coords="salonCoords" />
     <template v-else>
+      <!-- Loading/error sit ABOVE the view switch, so both views get them: they used to be
+           nested inside the list branch only, leaving map view with no feedback at all
+           while a city change re-ran the search (or failed). The map itself stays mounted
+           through a reload rather than being torn down and re-created around the loading
+           line -- SalonMap's own prop watchers refresh its pins in place. -->
       <p v-if="loading" role="status" class="py-8 text-center text-sm text-(--color-text-muted)">در حال بارگذاری...</p>
       <div v-else-if="searchError" role="alert" class="flex flex-col items-center gap-3 rounded-2xl border border-(--color-danger-soft) bg-(--color-danger-soft) p-6 text-center">
         <BaseIcon name="alert-circle" :size="20" class="text-(--color-danger)" />
         <p class="text-sm text-(--color-text)">مشکلی در بارگذاری سالن‌ها پیش آمد.</p>
         <BaseButton variant="secondary" size="md" @click="loadSalons">تلاش دوباره</BaseButton>
       </div>
-      <p v-else-if="!salons.length" class="py-8 text-center text-sm text-(--color-text-muted)">سالنی در این منطقه پیدا نشد</p>
-      <template v-else>
-        <h2 class="sr-only">نتایج جستجو</h2>
-        <!-- Single column stays the true default (mobile-primary per PRODUCT.md); sm/lg
-             columns are a correctness pass for wider viewports, not a layout redesign --
-             SalonCard's own horizontal thumb+text layout is unchanged. -->
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <SalonCard v-for="salon in salons" :key="salon.id" :salon="salon" />
-        </div>
+      <LazySalonMap v-if="view === 'map' && !searchError" :salons="salons" :center="coords" :salon-coords="salonCoords" />
+      <template v-else-if="view === 'list' && !loading && !searchError">
+        <p v-if="!salons.length" class="py-8 text-center text-sm text-(--color-text-muted)">سالنی در این منطقه پیدا نشد</p>
+        <template v-else>
+          <h2 class="sr-only">نتایج جستجو</h2>
+          <!-- Single column stays the true default (mobile-primary per PRODUCT.md); sm/lg
+               columns are a correctness pass for wider viewports, not a layout redesign --
+               SalonCard's own horizontal thumb+text layout is unchanged. -->
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <SalonCard v-for="salon in salons" :key="salon.id" :salon="salon" />
+          </div>
+        </template>
       </template>
     </template>
   </div>

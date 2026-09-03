@@ -24,11 +24,23 @@ interface BookingItem {
   // existing booking was promised. Not read directly here (the status already says
   // everything the card needs), but part of the shape every booking endpoint now returns.
   confirmationMode: 'automatic' | 'manual_approval'
-  // Backend-owned deadlines, both null unless the booking is currently waiting on one:
-  // approvalExpiresAt while a manual request awaits the salon's decision, paymentExpiresAt
-  // once the payment window is open. Display only -- see RemainingTime.vue.
+  // Backend-owned deadlines: approvalExpiresAt is stamped while a manual request awaits the
+  // salon's decision, paymentExpiresAt the moment a payment window opens. Display only as
+  // countdowns -- see RemainingTime.vue.
   approvalExpiresAt: string | null
   paymentExpiresAt: string | null
+  // Whether real money was ever captured online for this booking -- derived server-side
+  // from the Payment row (paid, or since refunded). depositAmount alone can't answer this:
+  // with the platform's online-payment flag off it stays non-zero on bookings nothing was
+  // collected for.
+  depositPaid: boolean
+}
+
+// Whether real money sits behind this booking. Deliberately NOT the live feature flag: a
+// booking paid while the flag was on is still a paid booking after it's switched off, and
+// one confirmed with nothing collected while it was off owes no refund even once it's back on.
+function hasOnlineDeposit(booking: Pick<BookingItem, 'depositPaid'>): boolean {
+  return booking.depositPaid === true
 }
 
 // Mirrors booking/[slug]/[serviceId].vue's local interface -- same
@@ -57,6 +69,10 @@ const bookings = ref<BookingItem[]>([])
 const terms = ref<BookingTerms | null>(null)
 const reviewByBookingId = ref<Record<string, MyReview>>({})
 const loading = ref(true)
+// A failed /bookings/mine must never render as "you have no bookings" -- that empty state
+// is a claim about the customer's data, and a network blip can't be allowed to make it.
+// Same retry-state pattern as account/activity.vue.
+const loadError = ref(false)
 const reviewingBooking = ref<BookingItem | null>(null)
 
 const STATUS_META: Record<BookingItem['status'], { label: string; icon: IconName; badgeClass: string }> = {
@@ -93,12 +109,23 @@ async function loadReviews() {
 
 async function load() {
   loading.value = true
+  loadError.value = false
   const [bookingsRes, termsRes] = await Promise.all([
     apiFetch<BookingItem[]>('/bookings/mine', { silent: true }),
     apiFetch<BookingTerms>('/platform-config/booking-terms', { silent: true }),
     loadReviews(),
   ])
-  bookings.value = bookingsRes.data ?? []
+  // Only the bookings list is load-bearing: terms/reviews failing degrade to their own
+  // fallbacks (generic cancel copy, "ثبت نظر"), so they don't flip the page into an error.
+  if (bookingsRes.error || !bookingsRes.data) {
+    // Cleared rather than left stale: load() also re-runs after a cancel, and a card for a
+    // booking that was just cancelled must not linger beside the error.
+    bookings.value = []
+    loadError.value = true
+    loading.value = false
+    return
+  }
+  bookings.value = bookingsRes.data
   terms.value = termsRes.data ?? null
   loading.value = false
 }
@@ -146,10 +173,18 @@ function cancelOutcomeText(booking: BookingItem): string {
   if (booking.status === 'pending_payment') {
     return 'این نوبت هنوز پرداخت نشده است؛ لغو آن هزینه‌ای برای شما ندارد.'
   }
+  // A confirmed booking with no payment behind it (online payment collection was off when
+  // it was made): promising the deposit "will be refunded in full" would describe money that
+  // never moved. There is nothing to lose and no window to be inside or outside of.
+  if (!hasOnlineDeposit(booking)) {
+    return 'برای این نوبت پیش‌پرداختی دریافت نشده است؛ لغو آن هزینه‌ای برای شما ندارد.'
+  }
   if (!terms.value) {
     // Fallback if /platform-config/booking-terms didn't load -- same general policy
-    // wording as booking/[slug]/[serviceId].vue, combined into one sentence.
-    return 'لغو رایگان تا ۴۸ ساعت قبل از نوبت، پس از آن پیش‌پرداخت قابل بازگشت نیست.'
+    // wording as booking/[slug]/[serviceId].vue, combined into one sentence. 24 matches
+    // the seeded cancellation_window_hours (initial-schema migration), so a config fetch
+    // failure can't quietly promise a longer free-cancel window than the API enforces.
+    return 'لغو رایگان تا ۲۴ ساعت قبل از نوبت، پس از آن پیش‌پرداخت قابل بازگشت نیست.'
   }
   const hoursUntilStart = (new Date(booking.startsAt).getTime() - Date.now()) / (1000 * 60 * 60)
   const windowHours = terms.value.cancellationWindowHours.toLocaleString('fa-IR')
@@ -197,6 +232,10 @@ const { titleId: cancelTitleId } = useDialog(cancelDialogRoot, { onClose: closeC
       <BaseIcon name="spinner" :size="18" class="animate-spin" />
       در حال بارگذاری...
     </p>
+    <BaseCard v-else-if="loadError" data-testid="bookings-load-error" role="alert" class="space-y-3 text-center">
+      <p class="text-sm text-(--color-text-muted)">بارگذاری نوبت‌ها با خطا مواجه شد.</p>
+      <BaseButton variant="secondary" data-testid="bookings-retry-button" @click="load">تلاش مجدد</BaseButton>
+    </BaseCard>
     <p
       v-else-if="!bookings.length"
       data-testid="bookings-empty"

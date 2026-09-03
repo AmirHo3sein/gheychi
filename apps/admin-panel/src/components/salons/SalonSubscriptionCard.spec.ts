@@ -178,7 +178,9 @@ describe('SalonSubscriptionCard', () => {
   })
 
   describe('billing periods', () => {
-    const PERIOD = {
+    // A factory, not a shared constant -- resolvePeriod() Object.assign()s the API response
+    // onto the row in place, which would leak a 'paid' status into the next test.
+    const pendingPeriod = () => ({
       id: 'period-1',
       periodStart: '2026-08-01T00:00:00.000Z',
       periodEnd: '2026-09-01T00:00:00.000Z',
@@ -187,13 +189,13 @@ describe('SalonSubscriptionCard', () => {
       amountToman: 490000,
       status: 'pending' as const,
       resolvedAt: null,
-    }
+    })
 
     it('lists existing billing periods for this salon', async () => {
       fetchMock
         .mockResolvedValueOnce({ data: subscriptionResponse(), error: null })
         .mockResolvedValueOnce({ data: [FREE_PLAN], error: null })
-        .mockResolvedValueOnce({ data: [PERIOD], error: null })
+        .mockResolvedValueOnce({ data: [pendingPeriod()], error: null })
 
       const wrapper = mountCard()
       await flushPromises()
@@ -221,7 +223,7 @@ describe('SalonSubscriptionCard', () => {
       await endPicker!.vm.$emit('update:modelValue', '2026-09-01')
       await wrapper.get('[data-testid="new-period-coupon-input"]').setValue('plus20')
 
-      fetchMock.mockResolvedValueOnce({ data: { ...PERIOD, discountPercent: 20, amountToman: 392000 }, error: null })
+      fetchMock.mockResolvedValueOnce({ data: { ...pendingPeriod(), discountPercent: 20, amountToman: 392000 }, error: null })
       await wrapper.get('[data-testid="submit-new-billing-period"]').trigger('click')
       await flushPromises()
 
@@ -237,17 +239,25 @@ describe('SalonSubscriptionCard', () => {
       expect(pushToastMock).toHaveBeenCalled()
     })
 
-    it('marks a pending period paid and shows the updated status', async () => {
+    it('marks a pending period paid through the confirm step and shows the updated status', async () => {
       fetchMock
         .mockResolvedValueOnce({ data: subscriptionResponse(), error: null })
         .mockResolvedValueOnce({ data: [FREE_PLAN], error: null })
-        .mockResolvedValueOnce({ data: [PERIOD], error: null })
+        .mockResolvedValueOnce({ data: [pendingPeriod()], error: null })
 
       const wrapper = mountCard()
       await flushPromises()
+      fetchMock.mockClear()
 
-      fetchMock.mockResolvedValueOnce({ data: { ...PERIOD, status: 'paid', resolvedAt: '2026-08-30T00:00:00.000Z' }, error: null })
+      // Settlement is settle-once on the backend, so the first click must only open the
+      // confirm step -- never PATCH on its own.
       await wrapper.get('[data-testid="mark-paid-period-1"]').trigger('click')
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(wrapper.find('[data-testid="confirm-resolve-period-1"]').exists()).toBe(true)
+      expect(wrapper.get('[data-testid="billing-period-row"]').text()).toContain('قابل بازگشت نیست')
+
+      fetchMock.mockResolvedValueOnce({ data: { ...pendingPeriod(), status: 'paid', resolvedAt: '2026-08-30T00:00:00.000Z' }, error: null })
+      await wrapper.get('[data-testid="confirm-resolve-period-1"]').trigger('click')
       await flushPromises()
 
       expect(fetchMock).toHaveBeenCalledWith('/admin/salons/s1/subscription/billing-periods/period-1/status', {
@@ -257,6 +267,47 @@ describe('SalonSubscriptionCard', () => {
       expect(wrapper.get('[data-testid="billing-period-row"]').text()).toContain('پرداخت‌شده')
       // A resolved period offers no further status-change actions.
       expect(wrapper.find('[data-testid="mark-paid-period-1"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="confirm-resolve-period-1"]').exists()).toBe(false)
+    })
+
+    it('voids a pending period through the confirm step, sending the status that was picked', async () => {
+      fetchMock
+        .mockResolvedValueOnce({ data: subscriptionResponse(), error: null })
+        .mockResolvedValueOnce({ data: [FREE_PLAN], error: null })
+        .mockResolvedValueOnce({ data: [pendingPeriod()], error: null })
+
+      const wrapper = mountCard()
+      await flushPromises()
+
+      await wrapper.get('[data-testid="mark-void-period-1"]').trigger('click')
+      fetchMock.mockResolvedValueOnce({ data: { ...pendingPeriod(), status: 'void', resolvedAt: '2026-08-30T00:00:00.000Z' }, error: null })
+      await wrapper.get('[data-testid="confirm-resolve-period-1"]').trigger('click')
+      await flushPromises()
+
+      expect(fetchMock).toHaveBeenCalledWith('/admin/salons/s1/subscription/billing-periods/period-1/status', {
+        method: 'PATCH',
+        body: { status: 'void' },
+      })
+      expect(wrapper.get('[data-testid="billing-period-row"]').text()).toContain('باطل‌شده')
+    })
+
+    it('cancelling the confirm step restores the three actions without calling the API', async () => {
+      fetchMock
+        .mockResolvedValueOnce({ data: subscriptionResponse(), error: null })
+        .mockResolvedValueOnce({ data: [FREE_PLAN], error: null })
+        .mockResolvedValueOnce({ data: [pendingPeriod()], error: null })
+
+      const wrapper = mountCard()
+      await flushPromises()
+      fetchMock.mockClear()
+
+      await wrapper.get('[data-testid="mark-comped-period-1"]').trigger('click')
+      const cancel = wrapper.findAll('button').find((b) => b.text() === 'انصراف')
+      await cancel!.trigger('click')
+
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(wrapper.find('[data-testid="confirm-resolve-period-1"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="mark-paid-period-1"]').exists()).toBe(true)
     })
   })
 })

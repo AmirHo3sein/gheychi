@@ -8,6 +8,7 @@ const LINKS: { to: string; label: string; icon: IconName }[] = [
   { to: '/analytics', label: 'آمار و تحلیل', icon: 'chart' },
   { to: '/salons', label: 'آرایشگاه‌ها', icon: 'salons' },
   { to: '/featured', label: 'سالن‌های ویژه', icon: 'star' },
+  { to: '/bookings', label: 'رزروها', icon: 'calendar' },
   { to: '/reviews', label: 'نظرات', icon: 'reviews' },
   { to: '/worker-ratings', label: 'امتیاز کارمندان', icon: 'worker-ratings' },
   { to: '/reports', label: 'گزارش‌ها', icon: 'flag' },

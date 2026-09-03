@@ -171,7 +171,7 @@ describe('HoursView', () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ([{ id: 'ex-3', date: '2026-08-10', isClosed: true, startTime: '13:00:00', endTime: '14:00:00', reason: 'تعمیرات' }]),
+        json: async () => ([{ id: 'ex-3', date: '2026-08-10', isClosed: true, startTime: '13:00:00', endTime: '14:00:00', reason: 'تعمیرات', workerId: null }]),
       })
     vi.stubGlobal('fetch', fetchMock)
 
@@ -182,13 +182,40 @@ describe('HoursView', () => {
     expect(wrapper.text()).toContain('تعمیرات')
   })
 
+  // GET /salons/mine/exceptions returns whole-salon closures AND per-worker days off in one
+  // list (schedule.controller.ts listExceptions). A worker's leave is TeamView.vue's feature;
+  // rendering it here would present it as the salon being closed that day, with a delete
+  // button that removes the worker's leave.
+  it('renders only whole-salon closures, never a worker-scoped day off', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET hours
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ([
+          { id: 'ex-salon', date: '2026-08-01', isClosed: true, startTime: null, endTime: null, reason: 'تعطیلات', workerId: null },
+          { id: 'ex-worker', date: '2026-08-02', isClosed: true, startTime: null, endTime: null, reason: 'مرخصی سارا', workerId: 'w1' },
+        ]),
+      }) // GET exceptions
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(HoursView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(wrapper.text()).toContain('تعطیلات')
+    expect(wrapper.text()).not.toContain('مرخصی سارا')
+    // Exactly one closure card -- so exactly one delete control, and it belongs to the
+    // salon-wide row, not the worker's.
+    expect(wrapper.findAll('[aria-label="حذف تعطیلی"]')).toHaveLength(1)
+  })
+
   it('does not delete a schedule exception without confirmation', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET hours
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ([{ id: 'ex-1', date: '2026-08-01', isClosed: true, startTime: null, endTime: null, reason: null }]),
+        json: async () => ([{ id: 'ex-1', date: '2026-08-01', isClosed: true, startTime: null, endTime: null, reason: null, workerId: null }]),
       }) // GET exceptions
     vi.stubGlobal('fetch', fetchMock)
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
@@ -210,7 +237,7 @@ describe('HoursView', () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ([{ id: 'ex-1', date: '2026-08-01', isClosed: true, startTime: null, endTime: null, reason: null }]),
+        json: async () => ([{ id: 'ex-1', date: '2026-08-01', isClosed: true, startTime: null, endTime: null, reason: null, workerId: null }]),
       }) // GET exceptions
       .mockResolvedValueOnce({ ok: true, status: 204, json: async () => null }) // DELETE exception
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET exceptions (reload)

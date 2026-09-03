@@ -29,6 +29,11 @@ interface ScheduleException {
   startTime: string | null
   endTime: string | null
   reason: string | null
+  // null means a whole-salon closure (this page's feature). A set workerId is one worker's
+  // day off, managed from TeamView.vue -- GET /salons/mine/exceptions returns both kinds in
+  // one list, so this page has to filter, or a worker's leave would render (and be deletable)
+  // here as if the whole salon were closed that day.
+  workerId: string | null
 }
 
 const { apiFetch } = useApi()
@@ -74,7 +79,8 @@ async function loadHours(): Promise<boolean> {
 async function loadExceptions(): Promise<boolean> {
   const { data, error } = await apiFetch<ScheduleException[]>('/salons/mine/exceptions', { silent: true })
   if (error) return false
-  exceptions.value = data ?? []
+  // Whole-salon closures only -- see the workerId comment on ScheduleException above.
+  exceptions.value = (data ?? []).filter((e) => e.workerId === null)
   return true
 }
 

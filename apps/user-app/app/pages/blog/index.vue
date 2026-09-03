@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import type { BlogCategory, BlogListResponse } from '../../utils/types'
+import { buildCanonicalUrl } from '../../utils/canonical-url'
 
 const route = useRoute()
 const router = useRouter()
 const { apiFetch } = useApi()
+const config = useRuntimeConfig()
 
 const PAGE_SIZE = 12
 
@@ -62,9 +64,85 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('fa-IR', { year: 'numeric', month: 'long', day: 'numeric' })
 }
 
+/**
+ * Canonical strategy for this list's `?category=` / `?page=` variants.
+ *
+ * Both params produce genuinely different post sets, so both get a SELF-REFERENCING canonical
+ * rather than being folded back into a bare /blog. Collapsing them would be actively harmful:
+ * a category canonicalising to /blog tells Google that page is a duplicate of the unfiltered
+ * list, and page 2's posts -- which appear on no other url -- would be dropped from the index
+ * along with it. (rel=prev/next is not used: Google stopped treating it as an indexing signal
+ * in 2019, and self-canonical-per-page plus a followable next link is the current guidance.)
+ *
+ * What the canonical DOES collapse is the set of urls that render byte-identical output:
+ *   - `?page=1`  -> /blog. goToPage() already omits page=1 from its own links, but a crawler
+ *                  can reach ?page=1 from anywhere, and it is the same page as /blog.
+ *   - `?category=` (empty) -> /blog. The page treats an empty category as "no filter" rather
+ *                  than as an empty-slug match (a deliberate, documented behaviour), so the
+ *                  two really are one page and must not both be indexable.
+ * buildCanonicalUrl drops '' and undefined values, so both cases fall out of passing the
+ * normalised computed values straight through.
+ *
+ * Not covered here on purpose: a `?page=` beyond the last real page renders the empty state.
+ * It self-canonicalises like any other page rather than 404ing, matching how the sitemap
+ * routes already treat an over-range page as valid-but-empty; such urls are only reachable by
+ * hand-editing, never by following a link this page renders.
+ */
+const canonicalUrl = computed(() =>
+  buildCanonicalUrl(config.public.siteUrl, '/blog', {
+    category: categorySlug.value || undefined,
+    page: page.value > 1 ? page.value : undefined,
+  }),
+)
+
+// Title/description name the active facet so the paginated and per-category variants aren't
+// near-identical to each other in search results (a self-canonical only prevents them being
+// treated as duplicates; distinct titles are what makes them individually useful).
+const activeCategoryName = computed(
+  () => categories.value?.find((c) => c.slug === categorySlug.value)?.name ?? '',
+)
+const pageTitle = computed(() => {
+  const base = activeCategoryName.value ? `بلاگ — ${activeCategoryName.value}` : 'بلاگ — راهنمای زیبایی و مراقبت'
+  return page.value > 1 ? `${base} (صفحه ${page.value.toLocaleString('fa-IR')})` : base
+})
+
 useSeoMeta({
-  title: 'بلاگ — راهنمای زیبایی و مراقبت',
-  description: 'مقالات و راهنمای زیبایی، مو، پوست و ناخن از آرایشگاه',
+  title: () => pageTitle.value,
+  description: 'مقالات و راهنمای زیبایی، مو، پوست و ناخن از قیچی',
+  ogTitle: () => pageTitle.value,
+  ogType: 'website',
+  ogUrl: () => canonicalUrl.value,
+})
+
+useHead({
+  link: [{ rel: 'canonical', href: () => canonicalUrl.value }],
+  script: [
+    {
+      type: 'application/ld+json',
+      // The < escaping matters: JSON.stringify does NOT escape a closing script tag, and the
+      // category name here is admin-authored free text -- same guard as every other JSON-LD
+      // block in this app.
+      innerHTML: () =>
+        JSON.stringify({
+          '@context': 'https://schema.org',
+          '@type': 'BreadcrumbList',
+          itemListElement: [
+            { '@type': 'ListItem', position: 1, name: 'خانه', item: buildCanonicalUrl(config.public.siteUrl, '/') },
+            { '@type': 'ListItem', position: 2, name: 'بلاگ', item: buildCanonicalUrl(config.public.siteUrl, '/blog') },
+            // Third crumb only for a category facet -- a page-2 url is the same level of the
+            // hierarchy as page 1, not a child of it.
+            ...(activeCategoryName.value
+              ? [{
+                  '@type': 'ListItem',
+                  position: 3,
+                  name: activeCategoryName.value,
+                  item: buildCanonicalUrl(config.public.siteUrl, '/blog', { category: categorySlug.value }),
+                }]
+              : []),
+          ],
+        }).replace(/[<]/g, '\\u003c'),
+    },
+  ],
 })
 </script>
 

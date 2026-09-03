@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSessionStore } from '@/stores/session'
 import { resetSalon } from '@/composables/useSalon'
 import { resetFeatureFlags } from '@/composables/useFeatureFlags'
+import { resetToast, useToast } from '@/composables/useToast'
 import { createAppRouter } from './index'
 
 vi.mock('@/pages/LoginView.vue', () => ({ default: { template: '<div />' } }))
@@ -49,6 +50,45 @@ describe('router guard', () => {
     await router.push('/bookings')
     await router.isReady()
     expect(router.currentRoute.value.name).toBe('onboarding')
+  })
+
+  // A 5xx/network failure on the first /salons/mine probe is not "no salon yet" -- routing
+  // it to onboarding would invite an owner with an approved salon to create a second one
+  // (and 409). The navigation is cancelled with a toast instead, and because useSalon leaves
+  // `checked` false on that path, the very next navigation probes again.
+  it('does not send a provider to /onboarding when the salon probe fails with a 5xx, and re-probes on the next navigation', async () => {
+    let salonStatus = 500
+    const fetchMock = vi.fn((url: string) => {
+      if (url.includes('/auth/me')) {
+        return Promise.resolve({ ok: true, status: 200, json: async () => ({ id: 'u1', role: 'provider' }) })
+      }
+      if (url.includes('/salons/mine')) {
+        return salonStatus === 500
+          ? Promise.resolve({ ok: false, status: 500, json: async () => ({ message: 'boom' }) })
+          : Promise.resolve({ ok: true, status: 200, json: async () => ({ id: 's1', status: 'approved' }) })
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({}) })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    useSessionStore().setUser({ id: 'u1', phone: '0912', name: 'Sara', gender: 'female', role: 'provider' })
+    resetToast()
+
+    const router = createAppRouter(createMemoryHistory())
+    const failure = await router.push('/bookings')
+
+    expect(failure).toBeTruthy() // navigation was cancelled, not redirected
+    expect(router.currentRoute.value.name).not.toBe('onboarding')
+    expect(useToast().toasts.value.some((t) => t.message.includes('بارگذاری نشد'))).toBe(true)
+
+    // The API recovers; the next navigation must probe again rather than reuse the failed
+    // result, and land where an approved salon belongs.
+    salonStatus = 200
+    const salonProbes = () => fetchMock.mock.calls.filter(([url]) => String(url).includes('/salons/mine')).length
+    const probesBefore = salonProbes()
+    await router.push('/bookings')
+
+    expect(salonProbes()).toBe(probesBefore + 1)
+    expect(router.currentRoute.value.name).toBe('bookings')
   })
 
   it('sends a provider with a pending salon to /pending-approval', async () => {

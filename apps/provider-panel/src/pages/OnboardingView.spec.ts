@@ -241,6 +241,10 @@ describe('OnboardingView', () => {
     // GET /categories resolves (a brief loading state precedes it).
     await new Promise((r) => setTimeout(r, 0))
 
+    // The price starts EMPTY, not as a pre-filled 0 that reads as "free" and used to be
+    // submittable as one.
+    expect((wrapper.find('[data-testid="service-price"]').element as HTMLInputElement).value).toBe('')
+
     await selectServiceCategory(wrapper)
     await wrapper.find('[data-testid="service-name"]').setValue('رنگ مو')
     await wrapper.find('[data-testid="service-price"]').setValue('500000')
@@ -251,6 +255,20 @@ describe('OnboardingView', () => {
 
     await wrapper.find('[data-testid="service-duration"]').setValue('60')
     expect((submit.element as HTMLButtonElement).disabled).toBe(false)
+
+    // A 0-toman first service is rejected with the same rule and copy ServicesView.vue
+    // applies to every later service -- the API's own @Min(0) would have accepted it.
+    await wrapper.find('[data-testid="service-price"]').setValue('0')
+    expect((submit.element as HTMLButtonElement).disabled).toBe(true)
+    expect(wrapper.get('[data-testid="disabled-hint"]').text()).toBe('قیمت خدمت باید یک عدد صحیح بزرگ‌تر از صفر باشد.')
+
+    // Cleared again (empty, not 0) -- still blocked.
+    await wrapper.find('[data-testid="service-price"]').setValue('')
+    expect((submit.element as HTMLButtonElement).disabled).toBe(true)
+
+    await wrapper.find('[data-testid="service-price"]').setValue('120000')
+    expect((submit.element as HTMLButtonElement).disabled).toBe(false)
+    expect(wrapper.find('[data-testid="disabled-hint"]').exists()).toBe(false)
   })
 
   it('keeps the user on the wizard with an error when the post-salon service creation fails, and does not re-POST /salons on retry', async () => {

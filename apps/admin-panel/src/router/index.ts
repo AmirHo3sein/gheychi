@@ -16,8 +16,9 @@ const routes = [
       { path: 'salons', name: 'salons', component: () => import('@/pages/SalonsView.vue'), meta: { title: 'آرایشگاه‌ها' } },
       { path: 'salons/:id', name: 'salon-detail', component: () => import('@/pages/SalonDetailView.vue'), meta: { title: 'جزئیات آرایشگاه' } },
       { path: 'featured', name: 'featured', component: () => import('@/pages/FeaturedView.vue'), meta: { title: 'سالن‌های ویژه' } },
-      // Deep-link only (no SidebarNav entry): addressed by booking id, so there is nothing
-      // to browse to -- an agent arrives here with an id from a support ticket.
+      { path: 'bookings', name: 'bookings', component: () => import('@/pages/BookingsView.vue'), meta: { title: 'رزروها' } },
+      // No SidebarNav entry of its own: it is addressed by booking id, reached from a row
+      // in the bookings list above (or deep-linked with an id from a support ticket).
       {
         path: 'bookings/:id',
         name: 'booking-timeline',

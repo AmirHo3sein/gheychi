@@ -48,6 +48,9 @@ describe('PendingApprovalView', () => {
       props: {},
     })
     expect(wrapper.text()).toContain('بررسی')
+    // The approver is the platform, not the salon's own team.
+    expect(wrapper.text()).toContain('تایید توسط تیم قیچی')
+    expect(wrapper.text()).not.toContain('تیم آرایشگاه')
   })
 
   it('re-fetches the salon when the refresh button is clicked', async () => {

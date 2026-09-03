@@ -1,6 +1,7 @@
 <!-- apps/admin-panel/src/pages/ReviewsView.vue -->
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import ModerateReviewButton from '@/components/reviews/ModerateReviewButton.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -59,6 +60,7 @@ interface ReviewListResponse {
   pageSize: number
 }
 
+const route = useRoute()
 const { apiFetch } = useApi()
 const reviews = ref<ReviewRow[]>([])
 const loading = ref(true)
@@ -75,16 +77,32 @@ const pageSize = 10
 const salonNameFilter = ref('')
 const statusFilter = ref<'' | 'published' | 'rejected'>('')
 const ratingFilter = ref<'' | number>('')
+// Exact salon-id filter (AdminReviewQueryDto.salonId), reached only through a deep link --
+// ReportsView's "مشاهده نظرات این سالن" escalation link on a review-target report lands
+// here as /reviews?salonId=<uuid>. Read once on setup, never typed by hand. The backend
+// gives salonId precedence over salonName when both are present, so typing a salon name
+// drops this filter (see the watcher below) rather than silently sending a search the
+// server would ignore.
+const salonIdFilter = ref(typeof route.query.salonId === 'string' ? route.query.salonId : '')
+
+// Guards against out-of-order responses, same shape as UsersView.vue: the debounced
+// salon-name watcher and the immediate status/rating watchers can each call load() in
+// quick succession, and a slower earlier request must not overwrite a faster later one.
+// Only the response matching the latest sequence number is committed.
+let latestRequest = 0
 
 async function load() {
   loading.value = true
   loadError.value = false
+  const seq = ++latestRequest
   const params = new URLSearchParams({ page: String(page.value), pageSize: String(pageSize) })
+  if (salonIdFilter.value) params.set('salonId', salonIdFilter.value)
   if (salonNameFilter.value) params.set('salonName', salonNameFilter.value)
   if (statusFilter.value) params.set('status', statusFilter.value)
   if (ratingFilter.value) params.set('rating', String(ratingFilter.value))
 
   const { data, error } = await apiFetch<ReviewListResponse>(`/admin/reviews?${params.toString()}`, { silent: true })
+  if (seq !== latestRequest) return
   if (error) {
     loadError.value = true
     reviews.value = []
@@ -97,8 +115,14 @@ async function load() {
 }
 
 function loadFromFilterChange() {
-  page.value = 1
-  load()
+  // Any filter change invalidates the current page position. When we're past page 1, just
+  // reset it -- the page watcher below triggers the (single) reload; calling load() here too
+  // would fire a redundant concurrent second request.
+  if (page.value !== 1) {
+    page.value = 1
+  } else {
+    load()
+  }
 }
 
 function onUpdated(reviewId: string, status: string) {
@@ -107,6 +131,7 @@ function onUpdated(reviewId: string, status: string) {
 }
 
 function clearFilters() {
+  salonIdFilter.value = ''
   salonNameFilter.value = ''
   statusFilter.value = ''
   ratingFilter.value = ''
@@ -116,11 +141,25 @@ function formatDate(iso: string): string {
   return new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
 }
 
-const hasActiveFilters = computed(() => !!salonNameFilter.value || !!statusFilter.value || !!ratingFilter.value)
+const hasActiveFilters = computed(
+  () => !!salonIdFilter.value || !!salonNameFilter.value || !!statusFilter.value || !!ratingFilter.value,
+)
 
 onMounted(load)
-watch(salonNameFilter, debounce(loadFromFilterChange, 350))
-watch([statusFilter, ratingFilter], loadFromFilterChange)
+// Typing a salon name supersedes the deep-linked salon-id filter (see salonIdFilter above).
+// Clearing the id here triggers its own watcher, which is the reload -- so the debounced
+// name reload is skipped for that one change rather than firing a second request.
+watch(
+  salonNameFilter,
+  debounce((name: string) => {
+    if (name && salonIdFilter.value) {
+      salonIdFilter.value = ''
+      return
+    }
+    loadFromFilterChange()
+  }, 350),
+)
+watch([salonIdFilter, statusFilter, ratingFilter], loadFromFilterChange)
 watch(page, load)
 </script>
 
@@ -140,6 +179,24 @@ watch(page, load)
           <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">امتیاز</label>
           <AppSelect v-model="ratingFilter" :options="RATING_OPTIONS" width="9rem" />
         </div>
+        <!-- The deep-linked salon-id filter has no input of its own -- surface it as a
+             removable chip so the operator can see why the list is narrowed and undo it. -->
+        <span
+          v-if="salonIdFilter"
+          data-testid="salon-id-filter-chip"
+          class="inline-flex items-center gap-1 self-center rounded-full bg-(--color-border-soft) px-2.5 py-1 text-xs font-semibold text-(--color-text-muted)"
+        >
+          فقط نظرات یک سالن
+          <button
+            type="button"
+            class="rounded-full p-0.5 transition-colors hover:text-(--color-text)"
+            aria-label="حذف فیلتر سالن"
+            data-testid="clear-salon-id-filter"
+            @click="salonIdFilter = ''"
+          >
+            <AppIcon name="x" :size="13" />
+          </button>
+        </span>
         <AppButton
           v-if="hasActiveFilters"
           type="button"

@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import type { SalonPortfolioItem } from '../../utils/types'
 import { lockBodyScroll } from '../../utils/scroll-lock'
+import { buildBookingLink, type AttributionSource } from '../../utils/attribution'
 
 const props = defineProps<{
   items: SalonPortfolioItem[]
@@ -10,6 +11,12 @@ const props = defineProps<{
   salonId: string
   /** Same eligibility flag as the salon page's report button (completed booking). */
   canReport?: boolean
+  /**
+   * The salon page's resolved marketing attribution (see utils/attribution.ts) -- threaded
+   * onto this component's own booking pill so a booking started from here is attributed
+   * exactly like one started from the service list.
+   */
+  attributionSource?: AttributionSource | null
 }>()
 
 const lightboxItem = ref<SalonPortfolioItem | null>(null)
@@ -110,7 +117,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: closeLightbox, enabled: () 
         <p v-if="lightboxItem.caption" class="text-sm break-words text-white">{{ lightboxItem.caption }}</p>
         <NuxtLink
           v-if="lightboxService"
-          :to="`/booking/${slug}/${lightboxService.id}`"
+          :to="buildBookingLink(slug, lightboxService.id, attributionSource)"
           data-testid="portfolio-booking-pill"
           class="inline-flex min-h-11 items-center rounded-full bg-(--color-accent) px-4 text-sm font-semibold text-(--color-fill-text)"
         >

@@ -35,6 +35,18 @@ const CONFIRMED_FAR_BOOKING = {
   priceSnapshot: 500_000,
   depositAmount: 100_000,
   status: 'confirmed' as const,
+  paymentExpiresAt: null,
+  // Real money was captured for this booking (the API derives this from the Payment row),
+  // which is what the cancel dialog's refund copy keys off. See the page's own hasOnlineDeposit.
+  depositPaid: true,
+}
+
+// Confirmed with the platform's online-payment flag off: the API recorded depositAmount for
+// reporting but never collected it, so no money ever moved.
+const CONFIRMED_UNPAID_BOOKING = {
+  ...CONFIRMED_FAR_BOOKING,
+  id: 'b-confirmed-unpaid',
+  depositPaid: false,
 }
 
 const COMPLETED_BOOKING = {
@@ -187,6 +199,38 @@ describe('bookings list page', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="cancel-confirm-refund-copy"]').text()).toContain('قابل بازگشت نیست')
+  })
+
+  // The dialog used to promise "your deposit will be refunded in full" for every confirmed
+  // booking -- including ones made while online payment collection was off, where no
+  // deposit was ever taken.
+  it('does not promise a refund for a confirmed booking that never had a deposit collected', async () => {
+    stub([CONFIRMED_UNPAID_BOOKING])
+    wrapper = await mountSuspended(BookingsListPage)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="cancel-booking-button"]').trigger('click')
+    await flushPromises()
+
+    const copy = wrapper.get('[data-testid="cancel-confirm-refund-copy"]').text()
+    expect(copy).toContain('پیش‌پرداختی دریافت نشده است')
+    expect(copy).not.toContain('بازگردانده می‌شود')
+    expect(copy).not.toContain('قابل بازگشت نیست')
+  })
+
+  // The seeded cancellation_window_hours is 24 (initial-schema migration); the fallback
+  // used to say 48, quietly promising a longer free-cancel window than the API enforces.
+  it('falls back to the seeded 24h window when booking-terms did not load', async () => {
+    stub([CONFIRMED_FAR_BOOKING], null)
+    wrapper = await mountSuspended(BookingsListPage)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="cancel-booking-button"]').trigger('click')
+    await flushPromises()
+
+    const copy = wrapper.get('[data-testid="cancel-confirm-refund-copy"]').text()
+    expect(copy).toContain('۲۴ ساعت')
+    expect(copy).not.toContain('۴۸')
   })
 
   it('shows a no-cost cancellation outcome for a pending_payment booking regardless of the window', async () => {
@@ -381,5 +425,28 @@ describe('bookings list page', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="bookings-empty"]').exists()).toBe(true)
+  })
+
+  // A failed list fetch used to render as "نوبتی ثبت نشده است" -- a claim about the
+  // customer's bookings that a network blip has no business making.
+  it('shows a retry state, not the empty state, when the bookings list fails to load', async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/bookings/mine') throw { response: { status: 500 } }
+      if (path === '/platform-config/booking-terms') return TERMS
+      if (path === '/reviews/mine') return []
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    wrapper = await mountSuspended(BookingsListPage)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="bookings-empty"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="bookings-load-error"]').attributes('role')).toBe('alert')
+
+    stub([CONFIRMED_FAR_BOOKING])
+    await wrapper.get('[data-testid="bookings-retry-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="bookings-load-error"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="booking-card"]')).toHaveLength(1)
   })
 })

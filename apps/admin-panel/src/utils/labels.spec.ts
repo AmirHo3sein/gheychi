@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   AUDIT_ACTION_KEYS,
+  AUDIT_TARGET_TYPE_KEYS,
   analyticsEventLabel,
   auditActionLabel,
   blogPostStatusLabel,
@@ -23,6 +24,7 @@ import {
   rewardKindLabel,
   rewardKindUnit,
   showcaseStatusLabel,
+  targetTypeLabel,
   workerRatingStatusLabel,
 } from './labels'
 
@@ -41,9 +43,13 @@ describe('auditActionLabel', () => {
     // (booking.approval.approved/rejected) with the manual booking-approval workflow.
     // 1 more (booking-settings.update) came with the optional manual booking-approval
     // workflow -- the admin-only per-salon approval/payment timeout overrides.
+    // 14 more had accumulated on the backend without a label before the 2026-09 admin-panel
+    // fix sweep caught the drift: feature-flags.update, invoice.payment.record,
+    // salon.handle.set, and the monetization initiative's 3 plan.* + 3 subscription-coupon.*
+    // + 2 subscription.billing-period.* + subscription.cancel/overrides.set/plan.set.
     // This length guard is deliberate: adding a backend @AuditAction without a Farsi label
     // must fail here.
-    expect(AUDIT_ACTION_KEYS).toHaveLength(33)
+    expect(AUDIT_ACTION_KEYS).toHaveLength(47)
     for (const action of AUDIT_ACTION_KEYS) {
       const entry = auditActionLabel(action)
       // A mapped entry never falls back to the raw dotted action name.
@@ -54,6 +60,90 @@ describe('auditActionLabel', () => {
 
   it('falls back to the raw value with a neutral tone for unknown actions', () => {
     expect(auditActionLabel('something.new')).toEqual({ label: 'something.new', tone: 'neutral' })
+  })
+})
+
+// Pinned against the backend: every (action, targetType) pair below is a literal
+// @AuditAction('<action>', '<targetType>') decorator in apps/api/src (grep for
+// `@AuditAction(` there to refresh this list). The length guard above catches a label
+// added or removed on THIS side; this catches the other direction -- a backend action that
+// exists but would render as a raw dotted key in the audit-log table and be missing from
+// the AuditLogView filter dropdown (built from AUDIT_ACTION_KEYS). Kept as a hardcoded list
+// rather than read from the api source with fs, since no admin-panel test reaches across
+// packages that way and the two apps deploy independently.
+const BACKEND_AUDIT_ACTIONS: ReadonlyArray<readonly [action: string, targetType: string]> = [
+  ['blogcategory.create', 'blogcategory'],
+  ['blogcategory.delete', 'blogcategory'],
+  ['blogcategory.update', 'blogcategory'],
+  ['booking-settings.update', 'salon'],
+  ['booking.approval.approved', 'booking'],
+  ['booking.approval.rejected', 'booking'],
+  ['category-request.approve', 'category-request'],
+  ['category-request.reject', 'category-request'],
+  ['category.create', 'category'],
+  ['category.delete', 'category'],
+  ['category.update', 'category'],
+  ['config.update', 'config'],
+  ['coupon.create', 'coupon'],
+  ['coupon.delete', 'coupon'],
+  ['coupon.update', 'coupon'],
+  ['feature-flags.update', 'feature-flags'],
+  ['invoice.payment.record', 'invoice'],
+  ['plan.create', 'plan'],
+  ['plan.delete', 'plan'],
+  ['plan.update', 'plan'],
+  ['post.cover.remove', 'post'],
+  ['post.cover.upload', 'post'],
+  ['post.create', 'post'],
+  ['post.delete', 'post'],
+  ['post.publish', 'post'],
+  ['post.unpublish', 'post'],
+  ['post.update', 'post'],
+  ['referral-reward-type.update', 'referral-reward-type'],
+  ['referral.cancel', 'referral'],
+  ['report.resolve', 'report'],
+  ['review.moderate', 'review'],
+  ['salon.featured.set', 'salon'],
+  ['salon.handle.set', 'salon'],
+  ['salon.portfolio.status.set', 'portfolioitem'],
+  ['salon.status.set', 'salon'],
+  ['salon.story.status.set', 'story'],
+  ['subscription-coupon.create', 'subscription-coupon'],
+  ['subscription-coupon.delete', 'subscription-coupon'],
+  ['subscription-coupon.update', 'subscription-coupon'],
+  ['subscription.billing-period.create', 'subscription-billing-period'],
+  ['subscription.billing-period.status.set', 'subscription-billing-period'],
+  ['subscription.cancel', 'salon-subscription'],
+  ['subscription.overrides.set', 'salon-subscription'],
+  ['subscription.plan.set', 'salon-subscription'],
+  ['user.status.set', 'user'],
+  ['wallet.adjust', 'wallet'],
+  ['worker-rating.moderate', 'worker-rating'],
+]
+
+describe('audit label coverage of the backend @AuditAction list', () => {
+  it('every backend audit action has a Farsi label and is filterable', () => {
+    const missing = BACKEND_AUDIT_ACTIONS.map(([action]) => action).filter((action) => !AUDIT_ACTION_KEYS.includes(action))
+    expect(missing).toEqual([])
+  })
+
+  it('every backend audit target type has a Farsi label', () => {
+    const targetTypes = [...new Set(BACKEND_AUDIT_ACTIONS.map(([, targetType]) => targetType))]
+    const missing = targetTypes.filter((t) => !AUDIT_TARGET_TYPE_KEYS.includes(t))
+    expect(missing).toEqual([])
+    for (const t of targetTypes) expect(targetTypeLabel(t)).not.toBe(t)
+  })
+
+  it('has no label for an action the backend no longer emits (stale-label drift)', () => {
+    const backendActions = BACKEND_AUDIT_ACTIONS.map(([action]) => action)
+    const stale = AUDIT_ACTION_KEYS.filter((action) => !backendActions.includes(action))
+    expect(stale).toEqual([])
+  })
+})
+
+describe('targetTypeLabel', () => {
+  it('falls back to the raw value for unknown target types', () => {
+    expect(targetTypeLabel('something-new')).toBe('something-new')
   })
 })
 

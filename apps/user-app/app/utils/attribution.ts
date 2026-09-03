@@ -28,3 +28,15 @@ export function resolveAttributionSource(querySource: unknown, referrer: string)
   }
   return null
 }
+
+/**
+ * The one place a "Book this service" link is built from a salon page, so every entry point
+ * on it (the service list, a story's booking pill, a portfolio lightbox's booking pill)
+ * carries the same resolved attribution -- a story/portfolio pill that linked straight to
+ * `/booking/...` silently dropped the `?source=` a QR scan had landed with, and the booking
+ * then recorded as unattributed.
+ */
+export function buildBookingLink(slug: string, serviceId: string, attributionSource: AttributionSource | null | undefined): string {
+  const base = `/booking/${slug}/${serviceId}`
+  return attributionSource ? `${base}?source=${attributionSource}` : base
+}

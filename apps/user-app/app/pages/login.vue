@@ -93,6 +93,12 @@ function startExpiryCountdown(seconds: number) {
 onUnmounted(() => clearInterval(expiryTimer))
 
 async function requestOtp() {
+  // Re-entry guard: the phone form's submit and the resend button both land here, and a
+  // double-tap (or Enter + click) used to fire two request-otp calls back to back -- each
+  // one spending a unit of the 3/hour budget and the second invalidating the code the first
+  // had just sent. The button below is also disabled while submitting, but the guard is
+  // what makes the invariant hold regardless of how the call was reached.
+  if (submitting.value) return
   submitting.value = true
   formError.value = ''
   const { data, error } = await apiFetch<{ expiresInSec: number; resendsRemaining: number }>(
@@ -328,7 +334,8 @@ const STEP_HINT: Record<typeof step.value, string> = {
                 <button
                   type="button"
                   class="font-medium text-(--color-accent-text) transition-opacity disabled:cursor-not-allowed disabled:text-(--color-text-muted) disabled:opacity-70"
-                  :disabled="codeExpiresIn > 0 || resendsRemaining === 0"
+                  data-testid="resend-otp-button"
+                  :disabled="submitting || codeExpiresIn > 0 || resendsRemaining === 0"
                   @click="requestOtp"
                 >
                   ارسال مجدد کد

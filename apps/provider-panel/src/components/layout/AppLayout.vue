@@ -3,7 +3,7 @@
 import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { useApi } from '@/composables/useApi'
-import { useSalon } from '@/composables/useSalon'
+import { resetSalon, useSalon } from '@/composables/useSalon'
 import { useTheme } from '@/composables/useTheme'
 import { useSessionStore } from '@/stores/session'
 import BottomNav from './BottomNav.vue'
@@ -23,6 +23,11 @@ function toggleTheme() {
 async function logout() {
   await apiFetch('/auth/logout', { method: 'POST', silent: true })
   session.setUser(null)
+  // useSalon() is a module-level singleton the router guard only probes while `checked`
+  // is false -- without this, the next account to log in on this tab would be routed on
+  // the previous owner's salon (or, after an onboarding-only session, sent to onboarding
+  // despite owning an approved salon).
+  resetSalon()
   await router.push('/login')
 }
 </script>
@@ -78,6 +83,25 @@ async function logout() {
       </nav>
 
       <div class="flex flex-1 items-center justify-end gap-1">
+        <!--
+          The referral/wallet screen's entry point. Not a sixth NAV_TAB: the bottom bar's
+          five destinations are already sized against 320px / 5 = 64px apiece (see
+          BottomNav.vue), and a sixth would shrink every primary destination to make room
+          for a screen an owner visits occasionally. It also cannot live in the dashboard's
+          quick-link grid, where the other secondary screens are reached, because it must be
+          reachable from the wallet-bearing screens themselves. A header affordance is
+          present at every width and on every route without costing the nav anything.
+        -->
+        <RouterLink
+          to="/referral"
+          title="معرفی و پاداش"
+          aria-label="معرفی و پاداش"
+          data-testid="nav-referral"
+          class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-all duration-200 hover:bg-(--color-border-soft) active:scale-90"
+          :class="route.path === '/referral' ? 'bg-(--color-accent-soft) text-(--color-accent-text)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
+        >
+          <AppIcon name="referral" :size="18" />
+        </RouterLink>
         <button
           type="button"
           :title="isDark ? 'حالت روشن' : 'حالت تیره'"

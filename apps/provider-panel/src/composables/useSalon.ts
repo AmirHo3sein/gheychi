@@ -31,8 +31,10 @@ export function useSalon() {
       // A transient failure (network error, 500, etc.) isn't the same as "confirmed no
       // salon" -- leave salon.value as whatever it already was rather than nulling out a
       // possibly-still-valid previous fetch, so a flaky response can't bounce an already-
-      // approved provider into onboarding.
-      checked.value = true
+      // approved provider into onboarding. `checked` is deliberately left untouched too:
+      // if this was the very first probe it stays false, so the router guard re-probes on
+      // the next navigation instead of treating `salon: null` as a settled "no salon" for
+      // the rest of the tab's session.
       return { error }
     }
     salon.value = data

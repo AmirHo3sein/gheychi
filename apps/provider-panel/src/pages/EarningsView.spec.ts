@@ -43,9 +43,25 @@ describe('EarningsView', () => {
 
     const wrapper = await mountEarnings()
 
-    expect(wrapper.text()).toContain('مجموع دریافتی')
-    expect(wrapper.text()).toContain('مبلغ قابل پرداخت')
+    expect(wrapper.text()).toContain('مجموع بیعانه')
+    expect(wrapper.text()).toContain('سهم شما از بیعانه')
     expect(wrapper.find('[data-testid="retry-earnings"]').exists()).toBe(false)
+  })
+
+  /**
+   * The figure is SUM(financial_transactions.gross_amount) -- the online DEPOSIT only, on
+   * bookings that reached completed/no-show. It used to be labeled "مجموع دریافتی" (total
+   * received) with nothing saying "deposit", so a salon read it as their revenue and could
+   * not reconcile it against anything.
+   */
+  it('names the headline figure as a deposit and explains what it excludes', async () => {
+    stubFetchByUrl({})
+
+    const wrapper = await mountEarnings()
+
+    expect(wrapper.text()).toContain('مجموع بیعانه')
+    expect(wrapper.text()).not.toContain('مجموع دریافتی')
+    expect(wrapper.get('[data-testid="earnings-deposit-note"]').text()).toContain('بیعانهٔ آنلاین')
   })
 
   it('renders a retry-capable error state (not a blank page) when the fetch fails', async () => {
@@ -80,7 +96,7 @@ describe('EarningsView', () => {
     // load() fires two requests every call now (earnings + invoices, in parallel).
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(wrapper.find('[data-testid="retry-earnings"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('مجموع دریافتی')
+    expect(wrapper.text()).toContain('مجموع بیعانه')
   })
 
   it('shows the empty state instead of crashing when the API returns no data', async () => {
@@ -151,7 +167,7 @@ describe('EarningsView', () => {
 
     const wrapper = await mountEarnings()
 
-    expect(wrapper.text()).toContain('مجموع دریافتی') // earnings still rendered
+    expect(wrapper.text()).toContain('مجموع بیعانه') // earnings still rendered
     expect(wrapper.text()).toContain('تاریخچه تسویه‌حساب بارگذاری نشد.')
   })
 })

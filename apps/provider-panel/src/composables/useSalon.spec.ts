@@ -51,6 +51,25 @@ describe('useSalon', () => {
     expect(salon.value).toBeNull()
   })
 
+  // A failed FIRST probe must not look like a settled "no salon": the router guard only
+  // re-probes while `checked` is false, so flipping it here would trap an owner whose
+  // /salons/mine happened to 5xx once in onboarding for the rest of the tab's session.
+  it('does not mark the probe as checked when the very first fetch fails with a non-404', async () => {
+    resetSalon()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ message: 'Internal server error' }),
+    }))
+
+    const { salon, checked, refetch } = useSalon()
+    const { error } = await refetch()
+
+    expect(error).toEqual({ status: 500, message: 'Internal server error' })
+    expect(salon.value).toBeNull()
+    expect(checked.value).toBe(false)
+  })
+
   it('leaves salon unchanged on a non-404 error (e.g. a transient 500)', async () => {
     resetSalon()
 

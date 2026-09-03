@@ -9,7 +9,7 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { useApi } from '@/composables/useApi'
 import { useCities } from '@/composables/useCities'
-import { useSalon } from '@/composables/useSalon'
+import { resetSalon, useSalon } from '@/composables/useSalon'
 import { useServiceCategories } from '@/composables/useServiceCategories'
 import { useSessionStore } from '@/stores/session'
 import { validateWorkingHours } from '@/utils/working-hours'
@@ -37,6 +37,10 @@ const stepCard = useTemplateRef<HTMLDivElement>('stepCard')
 async function logout() {
   await apiFetch('/auth/logout', { method: 'POST', silent: true })
   session.setUser(null)
+  // Same reason as AppLayout's: `checked` is true here (the guard already probed and
+  // found no salon), so without a reset the next account to log in would be sent
+  // straight back to onboarding without ever being probed.
+  resetSalon()
   await router.push('/login')
 }
 // Tracks whether POST /salons already succeeded in a prior submit() attempt so a retry
@@ -64,7 +68,8 @@ const form = reactive({
   service: {
     categoryId: null as number | null,
     name: '',
-    price: 0,
+    // Starts empty, not 0 -- see FirstServiceStep.vue's model comment.
+    price: null as number | null,
     durationMin: 30,
   },
 })
@@ -95,14 +100,24 @@ const hoursValidation = computed(() => validateWorkingHours(form.hours))
 // with no warning -- require at least one before step 2 can advance.
 const isHoursValid = computed(() => form.hours.some((h) => h.enabled) && hoursValidation.value.message === '')
 
-const isServiceValid = computed(
+// Same rule (and copy) as ServicesView.vue's addService(): the API's @Min(0) would accept
+// a 0 and publish a free, bookable first service with a 0 deposit -- a genuinely free
+// service isn't something this wizard offers, and 0 is exactly what an untouched field
+// used to submit.
+const SERVICE_PRICE_ERROR = 'قیمت خدمت باید یک عدد صحیح بزرگ‌تر از صفر باشد.'
+const isServicePriceValid = computed(
+  () => form.service.price !== null && Number.isInteger(form.service.price) && form.service.price > 0,
+)
+
+const isServiceOtherFieldsValid = computed(
   () =>
     form.service.categoryId !== null &&
     form.service.name.trim().length >= 2 &&
-    form.service.price >= 0 &&
     form.service.durationMin >= 5 &&
     form.service.durationMin <= 600,
 )
+
+const isServiceValid = computed(() => isServiceOtherFieldsValid.value && isServicePriceValid.value)
 
 const canGoNext = computed(() => {
   if (step.value === 1) return isSalonInfoValid.value
@@ -121,7 +136,10 @@ const disabledHint = computed(() => {
     return hoursValidation.value.message || 'حداقل یک روز کاری را فعال کنید تا آرایشگاه قابل رزرو باشد.'
   }
   if (step.value === 3 && !isServiceValid.value) {
-    return 'برای ثبت، دسته‌بندی، نام خدمت (حداقل ۲ حرف)، قیمت و مدت زمان معتبر (۵ تا ۶۰۰ دقیقه) وارد کنید.'
+    // When the price is the only thing left, say exactly what's wrong with it rather than
+    // re-listing every field -- an owner who typed 0 needs to hear "greater than zero".
+    if (isServiceOtherFieldsValid.value) return SERVICE_PRICE_ERROR
+    return 'برای ثبت، دسته‌بندی، نام خدمت (حداقل ۲ حرف)، قیمت (بزرگ‌تر از صفر) و مدت زمان معتبر (۵ تا ۶۰۰ دقیقه) وارد کنید.'
   }
   return ''
 })

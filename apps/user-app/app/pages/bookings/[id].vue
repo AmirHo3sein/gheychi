@@ -28,6 +28,7 @@ interface BookingDetail {
   confirmationMode: 'automatic' | 'manual_approval'
   approvalExpiresAt: string | null
   paymentExpiresAt: string | null
+  depositPaid: boolean
 }
 
 // Mirrors bookings/index.vue's own interface/const of the same names -- this codebase's
@@ -124,6 +125,30 @@ async function cancelBooking() {
 
 const reviewOpen = ref(false)
 
+// Whether the "پیش‌پرداخت" figure describes money that actually moved: the API derives
+// depositPaid from the Payment row (paid, or since refunded) -- see BookingsService's
+// depositPaidFor -- plus the two extra signals this endpoint exposes: a refund in any state
+// can only exist for a captured payment, and wallet credit applied at checkout is real money
+// the customer parted with even when it covered the whole deposit and no gateway session was
+// ever needed.
+const hasOnlineDeposit = computed(() => {
+  const b = booking.value
+  if (!b) return false
+  return b.depositPaid === true || b.refundStatus !== null || (b.walletAmountUsed ?? 0) > 0
+})
+
+// A pending_approval request hasn't reached any payment yet, so the only honest tense is
+// what WILL be owed -- and that is only true while the platform actually collects online.
+// A pending_payment booking has a live gateway session by definition, so its deposit line
+// stays unconditional. Every other status reads from the booking's own history above.
+const showDepositLine = computed(() => {
+  const b = booking.value
+  if (!b) return false
+  if (b.status === 'pending_approval') return featureFlags.value.onlinePaymentEnabled
+  if (b.status === 'pending_payment') return true
+  return hasOnlineDeposit.value
+})
+
 // A withdrawn review has no label -- reviews_booking_uidx keeps that booking
 // permanently un-reviewable, so the template shows a note instead of a button.
 const reviewButtonLabel = computed(() => {
@@ -166,11 +191,17 @@ const reviewButtonLabel = computed(() => {
         <p>مبلغ کل: <span dir="ltr" class="tnum">{{ formatToman(booking.priceSnapshot) }}</span> تومان</p>
         <!-- The label carries the tense. On a pending_approval booking this figure is what
              WILL be due if the salon says yes, and reading it as a paid amount is exactly
-             the misunderstanding this whole flow has to avoid. -->
-        <p>
+             the misunderstanding this whole flow has to avoid. Absent entirely when no
+             money moved (see showDepositLine): depositAmount is recorded on every row for
+             CRM/reporting even when the platform collected nothing, so printing it as
+             "پیش‌پرداخت: X تومان" would invent a payment. -->
+        <p v-if="showDepositLine" data-testid="deposit-line">
           {{ booking.status === 'pending_approval' ? 'پیش‌پرداخت پس از تایید سالن' : 'پیش‌پرداخت' }}:
           <span dir="ltr" class="tnum">{{ formatToman(booking.depositAmount) }}</span> تومان
         </p>
+        <!-- Tense-neutral on purpose: true of a live booking (paid at the salon), a
+             cancelled one, and a rejected request alike. -->
+        <p v-else data-testid="no-deposit-line" class="text-(--color-text-muted)">پیش‌پرداختی به‌صورت آنلاین دریافت نشده است</p>
         <!-- depositAmount above is already what's charged online (post-wallet) --
              this line exists only so the reduction is traceable back to the wallet,
              mirroring booking.entity.ts's own walletAmountUsed doc comment. -->

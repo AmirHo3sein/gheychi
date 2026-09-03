@@ -347,4 +347,40 @@ describe('login page - OTP expiry and resend budget', () => {
 
     expect(wrapper.find('[data-testid="resend-limit-warning"]').exists()).toBe(false)
   })
+
+  // Each request-otp call spends one of the three-per-hour budget and invalidates the code
+  // the previous one sent, so a double-tap on resend used to cost the user twice over.
+  it('fires request-otp once for a double-tap on resend, and disables the button while it is in flight', async () => {
+    vi.useFakeTimers()
+    fetchMock.mockResolvedValueOnce({ expiresInSec: 2, resendsRemaining: 2 })
+    const wrapper = await mountSuspended(LoginPage)
+    await wrapper.find('input[type="tel"]').setValue('09120000000')
+    await wrapper.find('form').trigger('submit.prevent')
+    await vi.runOnlyPendingTimersAsync()
+    // Let the code expire so resend unlocks.
+    await vi.advanceTimersByTimeAsync(3_000)
+    await wrapper.vm.$nextTick()
+
+    const resend = () => wrapper.get('[data-testid="resend-otp-button"]')
+    expect(resend().attributes('disabled')).toBeUndefined()
+
+    // The resend request hangs -- long enough for a second tap to land on it.
+    let resolveResend: (value: unknown) => void = () => {}
+    fetchMock.mockImplementationOnce(() => new Promise((resolve) => { resolveResend = resolve }))
+    fetchMock.mockClear()
+
+    await resend().trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(resend().attributes('disabled')).toBeDefined()
+    await resend().trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith('/auth/request-otp', expect.objectContaining({ method: 'POST' }))
+
+    resolveResend({ expiresInSec: 120, resendsRemaining: 1 })
+    await vi.runOnlyPendingTimersAsync()
+    // Back on a fresh code: locked again by the new TTL, not by the in-flight guard.
+    expect(wrapper.find('[data-testid="code-expiry"]').exists()).toBe(true)
+  })
 })

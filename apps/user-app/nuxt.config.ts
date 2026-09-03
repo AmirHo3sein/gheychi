@@ -78,6 +78,12 @@ export default defineNuxtConfig({
       // dropped that module in favor of a paginated, multi-file sitemap (see
       // server/utils/sitemap.ts).
       siteUrl: process.env.NUXT_PUBLIC_SITE_URL ?? 'http://localhost:3003',
+      // Browser crash reporting (app/plugins/sentry.client.ts). Empty = reporting is never
+      // initialized at all, which is the default everywhere except a configured production
+      // deploy -- see app/utils/error-reporting.ts. Being a runtimeConfig value rather than
+      // a build-time `import.meta.env` read (which is what the two panels have to do) means
+      // turning it on is an .env edit plus `up -d user-app`, with no image rebuild.
+      sentryDsn: process.env.NUXT_PUBLIC_SENTRY_DSN ?? '',
     },
   },
   pwa: {

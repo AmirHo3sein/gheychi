@@ -1,7 +1,8 @@
-import { mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
+import { resetToast, useToast } from '@/composables/useToast'
 import BookingsView from './BookingsView.vue'
 
 // A manual-approval request exactly as GET /salons/mine/bookings returns one: nothing is
@@ -15,6 +16,12 @@ const PENDING_REQUEST = {
   paymentExpiresAt: null, workerId: null, workerName: null,
   customerName: 'مریم احمدی', customerPhone: '09120000000', source: 'online',
 }
+
+// This view now owns a polling interval and a document-level visibilitychange listener, so
+// a wrapper left mounted at the end of a test is not inert: it keeps ticking against the
+// NEXT test's stubbed fetch and answers its visibilitychange dispatches. Auto-unmounting
+// every wrapper is what keeps each test measuring one page instead of all of them.
+enableAutoUnmount(afterEach)
 
 describe('BookingsView', () => {
   afterEach(() => {
@@ -441,5 +448,182 @@ describe('BookingsView', () => {
     expect(wrapper.find('[data-testid="pending-request-req1"]').exists()).toBe(false)
     // ...and the booking is still on the agenda, now reading as expired.
     expect(wrapper.get('[data-testid="booking-req1"]').text()).toContain('منقضی شده')
+  })
+})
+
+// -- Live refresh (polling) --
+//
+// The panel has no push and no socket, so this interval is the ONLY way a request that
+// arrives while the tab is already open ever reaches the owner before its deadline. These
+// tests pin the four things that make the difference between a fallback and a liability:
+// it announces genuinely-new work exactly once, it stops entirely while nobody is looking,
+// an outage degrades quietly instead of wiping the screen, and it dies with the component.
+describe('BookingsView live refresh', () => {
+  // Only the interval is faked. setTimeout stays real so the `await new Promise(r =>
+  // setTimeout(r, 0))` flushes this file already relies on keep working unchanged -- with
+  // setTimeout faked too, every one of them would deadlock.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    resetToast()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+    // Reset the flag WITHOUT dispatching: the wrappers are still mounted at this point
+    // (enableAutoUnmount runs after this hook), and a dispatch here would restart their
+    // pollers against an already-unstubbed fetch.
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+  })
+
+  // `document.hidden` is a prototype getter, so an own property on the instance is what
+  // shadows it. configurable so afterEach can put it back.
+  function setTabHidden(hidden: boolean) {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: hidden })
+    document.dispatchEvent(new Event('visibilitychange'))
+  }
+
+  const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body })
+  const flush = () => new Promise((r) => setTimeout(r, 0))
+
+  // The three fetches loadAll() issues on mount, in order.
+  function mockInitialLoad(fetchMock: ReturnType<typeof vi.fn>, bookings: unknown[] = []) {
+    return fetchMock
+      .mockResolvedValueOnce(ok(bookings))
+      .mockResolvedValueOnce(ok([])) // workers
+      .mockResolvedValueOnce(ok([])) // services
+  }
+
+  async function mountLoaded(fetchMock: ReturnType<typeof vi.fn>) {
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(BookingsView)
+    await flush()
+    return wrapper
+  }
+
+  it('announces genuinely new requests exactly once and surfaces a persistent count badge', async () => {
+    const second = { ...PENDING_REQUEST, id: 'req2', approvalExpiresAt: '2030-06-14T21:30:00.000Z' }
+    const fetchMock = mockInitialLoad(vi.fn(), [PENDING_REQUEST])
+      .mockResolvedValue(ok([PENDING_REQUEST, second])) // every poll from here on
+
+    const wrapper = await mountLoaded(fetchMock)
+
+    // The queue that was already there on arrival is NOT announced -- it is what the owner
+    // opened the page to look at, not news.
+    expect(useToast().toasts.value).toHaveLength(0)
+    expect(wrapper.find('[data-testid="new-requests-badge"]').exists()).toBe(false)
+
+    vi.advanceTimersByTime(30_000)
+    await flush()
+
+    expect(useToast().toasts.value).toHaveLength(1)
+    expect(useToast().toasts.value[0]!.message).toContain('درخواست نوبت جدید')
+    const badge = wrapper.get('[data-testid="new-requests-badge"]')
+    expect(badge.text()).toContain((1).toLocaleString('fa-IR'))
+    // ...and the card itself is marked, so a queue of several says which one is new.
+    expect(wrapper.find('[data-testid="new-request-req2"]').exists()).toBe(true)
+
+    // A second tick returning the same list must not re-announce anything.
+    vi.advanceTimersByTime(30_000)
+    await flush()
+    expect(useToast().toasts.value).toHaveLength(1)
+
+    // The badge is the owner's to clear.
+    await badge.trigger('click')
+    expect(wrapper.find('[data-testid="new-requests-badge"]').exists()).toBe(false)
+  })
+
+  it('collapses several simultaneous arrivals into one toast', async () => {
+    const fetchMock = mockInitialLoad(vi.fn(), []).mockResolvedValue(
+      ok([PENDING_REQUEST, { ...PENDING_REQUEST, id: 'req2' }, { ...PENDING_REQUEST, id: 'req3' }]),
+    )
+
+    const wrapper = await mountLoaded(fetchMock)
+    vi.advanceTimersByTime(30_000)
+    await flush()
+
+    expect(useToast().toasts.value).toHaveLength(1)
+    expect(useToast().toasts.value[0]!.message).toContain((3).toLocaleString('fa-IR'))
+    expect(wrapper.get('[data-testid="new-requests-badge"]').text()).toContain((3).toLocaleString('fa-IR'))
+  })
+
+  it('issues no requests while the tab is hidden, and refetches the moment it is visible again', async () => {
+    const fetchMock = mockInitialLoad(vi.fn(), []).mockResolvedValue(ok([]))
+    await mountLoaded(fetchMock)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+
+    setTabHidden(true)
+    vi.advanceTimersByTime(5 * 60_000) // ten intervals' worth
+    await flush()
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+
+    // Back on screen: refresh immediately rather than making the owner wait out an interval
+    // at the exact moment the data is most likely to be stale.
+    setTabHidden(false)
+    await flush()
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(fetchMock.mock.calls[3]![0]).toContain('/salons/mine/bookings')
+  })
+
+  it('keeps the rendered list intact and stays silent when polls fail, then recovers', async () => {
+    const booking = {
+      id: 'b1', serviceId: 's1', serviceName: 'کوتاهی مو', priceSnapshot: 150000,
+      startsAt: '2030-08-01T09:00:00.000Z', status: 'confirmed', workerId: null, workerName: null,
+    }
+    const fetchMock = mockInitialLoad(vi.fn(), [booking])
+      .mockResolvedValue({ ok: false, status: 500, json: async () => ({ message: 'boom' }) })
+
+    const wrapper = await mountLoaded(fetchMock)
+
+    for (let i = 0; i < 5; i++) {
+      vi.advanceTimersByTime(30_000)
+      await flush()
+    }
+
+    // An outage degrades into "slightly stale", never into an emptied page...
+    expect(wrapper.find('[data-testid="booking-b1"]').exists()).toBe(true)
+    // ...and never into a toast per tick.
+    expect(useToast().toasts.value).toHaveLength(0)
+    // The one place it IS admitted, once two consecutive failures rule out a single blip.
+    expect(wrapper.get('[data-testid="sync-status"]').text()).toContain('اتصال برقرار نیست')
+
+    fetchMock.mockResolvedValue(ok([booking]))
+    vi.advanceTimersByTime(30_000)
+    await flush()
+    expect(wrapper.get('[data-testid="sync-status"]').text()).not.toContain('اتصال برقرار نیست')
+  })
+
+  it('stops polling once the component is unmounted', async () => {
+    const fetchMock = mockInitialLoad(vi.fn(), []).mockResolvedValue(ok([]))
+    const wrapper = await mountLoaded(fetchMock)
+
+    wrapper.unmount()
+    vi.advanceTimersByTime(5 * 60_000)
+    await flush()
+
+    // A leaked interval would keep fetching (and writing into a dead component) for the
+    // rest of the session -- the classic bug this route-level page would hit on every
+    // navigation away.
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('never lands a background refresh on top of an in-flight mutation', async () => {
+    const fetchMock = mockInitialLoad(vi.fn(), [PENDING_REQUEST])
+    // The approve POST that never settles -- the window in which a poll could clobber the
+    // owner's own optimistic/awaiting state.
+    fetchMock.mockReturnValueOnce(new Promise(() => {}))
+    fetchMock.mockResolvedValue(ok([]))
+
+    const wrapper = await mountLoaded(fetchMock)
+    await wrapper.get('[data-testid="approve-request"]').trigger('click')
+    await flush()
+    expect(fetchMock).toHaveBeenCalledTimes(4) // 3 initial + the hanging approve
+
+    vi.advanceTimersByTime(3 * 30_000)
+    await flush()
+
+    // No extra GET was issued: the mutation's own refetch (once it settles) is a strictly
+    // fresher read than any tick fired underneath it.
+    expect(fetchMock).toHaveBeenCalledTimes(4)
   })
 })

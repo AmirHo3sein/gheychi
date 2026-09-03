@@ -26,6 +26,7 @@ const BASE_BOOKING = {
   confirmationMode: 'automatic' as 'automatic' | 'manual_approval',
   approvalExpiresAt: null as string | null,
   paymentExpiresAt: null as string | null,
+  depositPaid: false,
 }
 
 // Deadlines are expressed relative to the real clock so these assertions don't depend on
@@ -71,6 +72,7 @@ describe('booking detail page', () => {
       portfolioEnabled: true,
       referralsEnabled: true,
       couponsEnabled: true,
+      onlinePaymentEnabled: true,
     }
   })
 
@@ -179,6 +181,7 @@ describe('booking detail page', () => {
       portfolioEnabled: true,
       referralsEnabled: true,
       couponsEnabled: true,
+      onlinePaymentEnabled: true,
     }
     stub({ ...BASE_BOOKING, status: 'completed' })
     wrapper = await mountSuspended(BookingDetailPage)
@@ -351,5 +354,56 @@ describe('booking detail page', () => {
     await flushPromises()
 
     expect(fetchMock).not.toHaveBeenCalledWith('/bookings/b1/cancel', expect.anything())
+  })
+
+  // depositAmount is recorded on every booking row for reporting, even when the platform's
+  // online-payment flag was off and nothing was ever collected -- the page used to print it
+  // as "پیش‌پرداخت: X تومان" regardless, inventing a payment.
+  it('prints the deposit for a confirmed booking whose deposit was actually captured', async () => {
+    stub({ ...BASE_BOOKING, status: 'confirmed', depositPaid: true })
+    wrapper = await mountSuspended(BookingDetailPage)
+
+    expect(wrapper.get('[data-testid="deposit-line"]').text()).toContain((200_000).toLocaleString('fa-IR'))
+    expect(wrapper.find('[data-testid="no-deposit-line"]').exists()).toBe(false)
+  })
+
+  it('says no deposit was collected for a confirmed booking with no payment behind it', async () => {
+    stub({ ...BASE_BOOKING, status: 'confirmed', depositPaid: false })
+    wrapper = await mountSuspended(BookingDetailPage)
+
+    expect(wrapper.find('[data-testid="deposit-line"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="no-deposit-line"]').text()).toContain('دریافت نشده است')
+    expect(wrapper.text()).not.toContain('پیش‌پرداخت:')
+  })
+
+  // A refund can only exist for a captured payment, and wallet credit is real money the
+  // customer parted with -- either one is proof of a deposit on its own, even on an older
+  // row with no payment-window snapshot.
+  it('treats a refund state or applied wallet credit as proof a deposit was collected', async () => {
+    stub({ ...BASE_BOOKING, refundStatus: 'done' })
+    wrapper = await mountSuspended(BookingDetailPage)
+    expect(wrapper.find('[data-testid="deposit-line"]').exists()).toBe(true)
+
+    wrapper.unmount()
+    clearNuxtData(['booking-detail-b1', 'booking-review-b1'])
+    stub({ ...BASE_BOOKING, status: 'confirmed', walletAmountUsed: 200_000, depositAmount: 0 })
+    wrapper = await mountSuspended(BookingDetailPage)
+    expect(wrapper.find('[data-testid="deposit-line"]').exists()).toBe(true)
+  })
+
+  it('does not forecast a deposit on a pending request while online payment is off', async () => {
+    useState('feature-flags').value = {
+      reviewsEnabled: true,
+      storiesEnabled: true,
+      portfolioEnabled: true,
+      referralsEnabled: true,
+      couponsEnabled: true,
+      onlinePaymentEnabled: false,
+    }
+    stub({ ...BASE_BOOKING, status: 'pending_approval', confirmationMode: 'manual_approval', approvalExpiresAt: inMinutes(45) })
+    wrapper = await mountSuspended(BookingDetailPage)
+
+    expect(wrapper.text()).not.toContain('پیش‌پرداخت پس از تایید سالن')
+    expect(wrapper.find('[data-testid="no-deposit-line"]').exists()).toBe(true)
   })
 })

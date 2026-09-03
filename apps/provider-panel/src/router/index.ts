@@ -4,6 +4,7 @@ import { useSessionStore } from '@/stores/session'
 import { useSalon } from '@/composables/useSalon'
 import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
 import AppLayout from '@/components/layout/AppLayout.vue'
 
 const routes = [
@@ -27,6 +28,11 @@ const routes = [
       { path: 'reviews', name: 'reviews', component: () => import('@/pages/ReviewsView.vue') },
       { path: 'earnings', name: 'earnings', component: () => import('@/pages/EarningsView.vue') },
       { path: 'plan', name: 'plan', component: () => import('@/pages/PlanView.vue') },
+      // Deliberately NOT guarded on `referralsEnabled`. The flag only stops new rewards
+      // being granted server-side; the page still holds the owner's referral history and
+      // their wallet balance, which is real money that must stay reachable regardless.
+      // The page renders its own explanatory disabled state -- see ReferralView.vue.
+      { path: 'referral', name: 'referral', component: () => import('@/pages/ReferralView.vue') },
       { path: 'customers', name: 'customers', component: () => import('@/pages/CustomersView.vue') },
       { path: 'customers/:id', name: 'customer-detail', component: () => import('@/pages/CustomerDetailView.vue') },
     ],
@@ -69,7 +75,17 @@ export function createAppRouter(history: RouterHistory): Router {
     }
 
     const { salon, checked, refetch } = useSalon()
-    if (!checked.value) await refetch()
+    if (!checked.value) {
+      const { error } = await refetch()
+      // A non-404 failure (5xx, network) leaves salon null AND checked false -- that is not
+      // "no salon yet", so it must not route to onboarding (where an owner with an approved
+      // salon would be invited to create a second one). Cancel this navigation and say so;
+      // the next navigation (or a reload) probes again since `checked` never flipped.
+      if (error && !salon.value) {
+        useToast().push('اطلاعات آرایشگاه بارگذاری نشد. دوباره تلاش کنید.')
+        return false
+      }
+    }
 
     if (!salon.value) {
       return to.name === 'onboarding' ? true : { name: 'onboarding' }

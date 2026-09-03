@@ -58,7 +58,7 @@ async function checkStatus() {
       {{
         salon?.status === 'suspended'
           ? 'برای اطلاعات بیشتر با پشتیبانی تماس بگیرید.'
-          : 'به محض تایید توسط تیم آرایشگاه، به شما اطلاع داده می‌شود.'
+          : 'به محض تایید توسط تیم قیچی، به شما اطلاع داده می‌شود.'
       }}
     </p>
     <!-- The onboarding wizard creates the salon before it saves the hours and the first

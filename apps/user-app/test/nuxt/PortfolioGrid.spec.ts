@@ -55,6 +55,13 @@ describe('PortfolioGrid', () => {
     expect(pill.attributes('href')).toBe('/booking/test-salon/svc1')
   })
 
+  it('threads the salon page attribution onto the booking pill', async () => {
+    const wrapper = await mountSuspended(PortfolioGrid, { props: { ...BASE_PROPS, attributionSource: 'qr' } })
+    await wrapper.findAll('[data-testid="portfolio-item"]')[0]!.trigger('click')
+
+    expect(wrapper.get('[data-testid="portfolio-booking-pill"]').attributes('href')).toBe('/booking/test-salon/svc1?source=qr')
+  })
+
   it('shows no booking pill when the serviceId matches none of the fetched services', async () => {
     const wrapper = await mountSuspended(PortfolioGrid, { props: BASE_PROPS })
     await wrapper.findAll('[data-testid="portfolio-item"]')[1]!.trigger('click')

@@ -228,6 +228,32 @@ describe('account referral page', () => {
     expect(wrapper.find('[data-testid="next-page"]').classes()).toContain('min-h-11')
   })
 
+  // Same reasoning as account-wallet.spec.ts: a failed fetch is not "nothing yet".
+  it('shows retry states, not the empty states, when the invites or rewards lists fail to load', async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/referrals/my-code') return MY_CODE
+      if (path === '/referrals/mine') throw { response: { status: 500 } }
+      if (path === '/referrals/mine/rewards') throw { response: { status: 500 } }
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    const wrapper = await mountSuspended(ReferralPage)
+
+    expect(wrapper.find('[data-testid="empty-state"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="rewards-empty-state"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="referrals-load-error"]').attributes('role')).toBe('alert')
+    expect(wrapper.get('[data-testid="rewards-load-error"]').attributes('role')).toBe('alert')
+
+    stub(MY_CODE, [], 0, 20, [], 0)
+    await wrapper.get('[data-testid="referrals-retry-button"]').trigger('click')
+    await wrapper.get('[data-testid="rewards-retry-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="referrals-load-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="rewards-load-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="empty-state"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="rewards-empty-state"]').exists()).toBe(true)
+  })
+
   it('shows the rewards empty state when nothing has been granted yet', async () => {
     stub(MY_CODE, [], 0, 20, [], 0)
     const wrapper = await mountSuspended(ReferralPage)

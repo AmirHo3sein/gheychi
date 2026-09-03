@@ -60,7 +60,10 @@ const { data: balances } = await useAsyncData('wallet-balances', async () => {
 
 // Filter/page state lives in the route query (same idiom as blog/index.vue) so a page
 // turn is one router.push and useAsyncData refetches exactly once.
-const { data: transactions, pending: transactionsPending } = await useAsyncData(
+// `transactions` is null exactly when the fetch failed (apiFetch never throws, and a
+// successful response always carries `items`) -- rendered as a retry state, never as the
+// "no transactions yet" empty state, which is a claim about the customer's money.
+const { data: transactions, pending: transactionsPending, refresh: refreshTransactions } = await useAsyncData(
   'wallet-transactions',
   async () => {
     const { data } = await apiFetch<WalletTransactionsResponse>('/wallet/mine/transactions', {
@@ -130,8 +133,13 @@ useSeoMeta({ title: 'کیف پول — قیچی' })
     <section class="space-y-3">
       <h2 class="font-bold">تاریخچه تراکنش‌ها</h2>
 
+      <BaseCard v-if="!transactions" data-testid="transactions-load-error" role="alert" class="space-y-3 text-center">
+        <p class="text-sm text-(--color-text-muted)">بارگذاری تاریخچه تراکنش‌ها با خطا مواجه شد.</p>
+        <BaseButton variant="secondary" data-testid="transactions-retry-button" :loading="transactionsPending" @click="refreshTransactions()">تلاش مجدد</BaseButton>
+      </BaseCard>
+
       <p
-        v-if="!transactions?.items?.length"
+        v-else-if="!transactions.items.length"
         data-testid="empty-state"
         class="py-6 text-center text-sm text-(--color-text-muted)"
       >

@@ -7,6 +7,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useApi } from '@/composables/useApi'
+import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import { useSalon } from '@/composables/useSalon'
 
 interface Review {
@@ -26,14 +27,24 @@ interface SalonReviewsPage {
 
 const { apiFetch } = useApi()
 const { salon } = useSalon()
+const { flags: featureFlags } = useFeatureFlags()
 const reviews = ref<Review[]>([])
 const loading = ref(true)
 const loadError = ref(false)
 const drafts = reactive<Record<string, string>>({})
 const sending = reactive<Record<string, boolean>>({})
 
+// This page reads the same public, paginated listing the customer app does (the API
+// defaults to 50 per page) -- without paging, a salon's 51st-and-older reviews were simply
+// unreachable from here. `page` is 1-based, as the API's SalonReviewsQueryDto expects.
+const page = ref(1)
+const total = ref(0)
+const pageSize = ref(50)
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
+
 // Unanswered reviews surface first (a review awaiting a reply is the one that needs
-// action), ties broken by most-recent first.
+// action), ties broken by most-recent first. Sorted within the current page only -- the
+// API orders by createdAt DESC, so an old unanswered review still lives on a later page.
 const sortedReviews = computed(() =>
   [...reviews.value].sort((a, b) => {
     const aAnswered = a.salonReply ? 1 : 0
@@ -64,17 +75,32 @@ function formatRelativeDate(iso: string): string {
 
 async function load() {
   if (!salon.value) return
+  // The listing is gated server-side while the flag is off (listForSalon returns an empty
+  // page), so fetching would only produce a misleading "no reviews yet" -- the template
+  // shows the disabled banner instead.
+  if (!featureFlags.value.reviewsEnabled) {
+    loading.value = false
+    return
+  }
   loading.value = true
   loadError.value = false
-  const { data, error } = await apiFetch<SalonReviewsPage>(`/salons/${salon.value.id}/reviews`, { silent: true })
+  const { data, error } = await apiFetch<SalonReviewsPage>(`/salons/${salon.value.id}/reviews?page=${page.value}`, { silent: true })
   if (error) {
     loadError.value = true
     loading.value = false
     return
   }
   reviews.value = data?.items ?? []
+  total.value = data?.total ?? reviews.value.length
+  if (data?.pageSize) pageSize.value = data.pageSize
   for (const r of reviews.value) drafts[r.id] = r.salonReply ?? ''
   loading.value = false
+}
+
+async function goToPage(target: number) {
+  if (loading.value || target < 1 || target > totalPages.value || target === page.value) return
+  page.value = target
+  await load()
 }
 
 onMounted(load)
@@ -98,7 +124,20 @@ async function sendReply(id: string) {
   <div class="mx-auto w-full max-w-4xl space-y-3 p-4 lg:p-6">
     <h1 class="text-lg font-bold text-(--color-text)">نظرات مشتریان</h1>
 
-    <div v-if="loadError" class="space-y-3 rounded-xl border border-dashed border-(--color-border) p-4 text-center">
+    <!-- Unlike stories/portfolio (whose management keeps working while their flag is off),
+         the reviews listing itself is gated server-side, so there is nothing to manage here
+         until it's re-enabled -- the banner replaces the list rather than sitting above it. -->
+    <p
+      v-if="!featureFlags.reviewsEnabled"
+      data-testid="reviews-disabled-banner"
+      role="status"
+      class="flex items-center gap-2 rounded-xl bg-(--tone-warning-bg) p-3 text-sm text-(--tone-warning-text)"
+    >
+      <AppIcon name="warning" :size="16" class="shrink-0" />
+      بخش نظرات موقتاً در پلتفرم غیرفعال است؛ نظرات مشتریان پس از فعال شدن دوباره اینجا نمایش داده می‌شوند.
+    </p>
+
+    <div v-else-if="loadError" class="space-y-3 rounded-xl border border-dashed border-(--color-border) p-4 text-center">
       <p class="text-sm text-(--tone-danger-text)">نظرات بارگذاری نشد.</p>
       <AppButton variant="secondary" data-testid="retry-reviews" @click="load">
         تلاش دوباره
@@ -162,6 +201,35 @@ async function sendReply(id: string) {
           </AppButton>
         </div>
       </AppCard>
+
+      <!-- Same prev/next shape as BookingsView's day nav: in RTL the FIRST child sits at the
+           physical right, so "previous" (rotated chevron) points right and "next" points
+           left, each away from the indicator between them. -->
+      <div v-if="totalPages > 1" data-testid="reviews-pager" class="flex items-center justify-center gap-2 pt-1">
+        <AppButton
+          type="button"
+          variant="ghost"
+          aria-label="صفحه قبل"
+          data-testid="reviews-prev-page"
+          :disabled="page <= 1 || loading"
+          @click="goToPage(page - 1)"
+        >
+          <AppIcon name="chevron-left" :size="16" class="rotate-180" />
+        </AppButton>
+        <span class="tnum text-sm text-(--color-text-muted)" data-testid="reviews-page-indicator">
+          صفحه {{ page.toLocaleString('fa-IR') }} از {{ totalPages.toLocaleString('fa-IR') }}
+        </span>
+        <AppButton
+          type="button"
+          variant="ghost"
+          aria-label="صفحه بعد"
+          data-testid="reviews-next-page"
+          :disabled="page >= totalPages || loading"
+          @click="goToPage(page + 1)"
+        >
+          <AppIcon name="chevron-left" :size="16" />
+        </AppButton>
+      </div>
     </template>
   </div>
 </template>

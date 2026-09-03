@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { SalonPortfolioItem, SalonStoryItem } from '../../utils/types'
-import { resolveAttributionSource } from '../../utils/attribution'
+import { buildBookingLink, resolveAttributionSource, type AttributionSource } from '../../utils/attribution'
 import { resolveSalonDescription } from '../../utils/salon-seo'
 import { readStorySeen } from '../../utils/story-seen'
 import { applyDiscount } from '../../utils/discount'
@@ -50,19 +50,28 @@ const { flags: featureFlags } = useFeatureFlags()
 // carried onto the "Book" link's own query string so the booking page can read it at
 // submission time. See utils/attribution.ts's own doc comment for why this lives here
 // rather than sessionStorage: the salon page is always the entry point a QR/shareable link
-// lands on, never the booking page directly.
-const attributionSource = ref<string | null>(null)
+// lands on, never the booking page directly. Also handed down to StoryViewer/PortfolioGrid,
+// whose own booking pills are entry points onto the same booking page.
+const attributionSource = ref<AttributionSource | null>(null)
 onMounted(() => {
   attributionSource.value = resolveAttributionSource(route.query.source, document.referrer)
 })
 function bookingLink(serviceId: string): string {
-  const base = `/booking/${slug}/${serviceId}`
-  return attributionSource.value ? `${base}?source=${attributionSource.value}` : base
+  return buildBookingLink(slug, serviceId, attributionSource.value)
 }
 
-const { data: page } = await useAsyncData(`salon-${slug}`, async () => {
+// Two outcomes in one payload so the whole decision is made in a single SSR pass: either the
+// page's data, or the current handle of a salon whose handle this used to be. The canonical
+// lookup only runs on the path where the profile fetch ALREADY 404'd, so a live handle costs
+// no extra request -- see the API's SalonsService.resolveCanonicalSlug for why the profile
+// endpoint deliberately does not serve a renamed salon under its old handle itself.
+const { data: resolved } = await useAsyncData(`salon-${slug}`, async () => {
   const salonRes = await apiFetch<Salon>(`/salons/${slug}`, { silent: true })
-  if (!salonRes.data) return null
+  if (!salonRes.data) {
+    const canonicalRes = await apiFetch<{ slug: string; moved: boolean }>(`/salons/${slug}/canonical`, { silent: true })
+    const movedTo = canonicalRes.data?.moved ? canonicalRes.data.slug : null
+    return { movedTo, page: null }
+  }
 
   const [servicesRes, hoursRes, exceptionsRes, photosRes, reviewsRes, portfolioRes, workersRes, termsRes] = await Promise.all([
     apiFetch<SalonServiceItem[]>(`/salons/${slug}/services`, { silent: true }),
@@ -76,65 +85,90 @@ const { data: page } = await useAsyncData(`salon-${slug}`, async () => {
   ])
 
   return {
-    salon: salonRes.data,
-    services: servicesRes.data ?? [],
-    hours: hoursRes.data ?? [],
-    // Already future-dated (today included) by the API -- see public-salon-content.controller.ts.
-    exceptions: exceptionsRes.data ?? [],
-    photos: photosRes.data ?? [],
-    // Only the first page is rendered today, matching search's own precedent -- the
-    // default page size (50) matches the old hard cap so this is invisible for the
-    // overwhelming majority of salons.
-    reviews: reviewsRes.data?.items ?? [],
-    portfolio: portfolioRes.data ?? [],
-    workers: workersRes.data ?? [],
-    terms: termsRes.data,
+    movedTo: null as string | null,
+    page: {
+      salon: salonRes.data,
+      services: servicesRes.data ?? [],
+      hours: hoursRes.data ?? [],
+      // Already future-dated (today included) by the API -- see public-salon-content.controller.ts.
+      exceptions: exceptionsRes.data ?? [],
+      photos: photosRes.data ?? [],
+      // Only the first page is rendered today, matching search's own precedent -- the
+      // default page size (50) matches the old hard cap so this is invisible for the
+      // overwhelming majority of salons.
+      reviews: reviewsRes.data?.items ?? [],
+      portfolio: portfolioRes.data ?? [],
+      workers: workersRes.data ?? [],
+      terms: termsRes.data,
+    },
   }
 })
 
-if (!page.value) {
+// Everything below (and the whole template) still reads `page` exactly as before -- only the
+// wrapper around it changed, so the redirect could ride along in the same payload.
+const page = computed(() => resolved.value?.page ?? null)
+
+if (resolved.value?.movedTo) {
+  // A PERMANENT redirect, not the default 302: this handle will never come back (it stays
+  // reserved to this salon in salon_slug_history), so search engines should transfer the old
+  // URL's ranking rather than keep re-checking it. The query string is carried over verbatim
+  // because a printed QR code's `?source=qr` is the entire reason handle history exists --
+  // losing it here would silently mis-attribute every scan of every already-printed code.
+  //
+  // `<script setup>` cannot early-return, so the SEO block below lives in the else branch:
+  // navigateTo on the server only stages the response (it does not abort this setup), and
+  // the template's own `v-if="page"` Suspense guard already renders nothing for a null page.
+  await navigateTo({ path: `/salons/${resolved.value.movedTo}`, query: route.query }, { redirectCode: 301, replace: true })
+} else if (!page.value) {
   throw createError({ statusCode: 404, statusMessage: 'Salon not found' })
+} else {
+  // about-excerpt ?? tagline ?? description ?? name—address (empty strings fall through).
+  const seoDescription = resolveSalonDescription(page.value.salon)
+  // Falls back to the first portfolio image when the salon has no gallery photos.
+  const seoImage = page.value.photos[0]?.url ?? page.value.portfolio[0]?.url
+  // Built from the ROUTE's slug, which is always the salon's current handle by this point (a
+  // former handle 301s above and never renders) -- so a salon page has exactly one canonical
+  // URL no matter how many handles it has worn. Same absolute-URL-from-request pattern as
+  // blog/[slug].vue.
+  const canonicalUrl = `${useRequestURL().origin}/salons/${slug}`
+
+  useSeoMeta({
+    title: page.value.salon.name,
+    description: seoDescription,
+    ogTitle: page.value.salon.name,
+    ogDescription: seoDescription,
+    ogUrl: canonicalUrl,
+    ogImage: seoImage,
+    // 'summary_large_image' only makes sense once there's actually an image to show large;
+    // with none, 'summary' is the correct (and still valid) fallback card type.
+    twitterCard: seoImage ? 'summary_large_image' : 'summary',
+  })
+
+  useHead({
+    link: [{ rel: 'canonical', href: canonicalUrl }],
+    script: [
+      {
+        type: 'application/ld+json',
+        // The < escaping matters: stringify does NOT escape a closing script tag, so a
+        // provider-authored name/address containing one could otherwise break out of this block.
+        innerHTML: JSON.stringify({
+          '@context': 'https://schema.org',
+          '@type': 'BeautySalon',
+          name: page.value.salon.name,
+          description: seoDescription,
+          address: { '@type': 'PostalAddress', streetAddress: page.value.salon.address, addressLocality: page.value.salon.city },
+          // The API's handle regex ([A-Za-z0-9._]{1,30}) is what makes this interpolation safe.
+          sameAs: page.value.salon.instagramHandle
+            ? [`https://instagram.com/${page.value.salon.instagramHandle}`]
+            : undefined,
+          aggregateRating: page.value.salon.ratingCount > 0
+            ? { '@type': 'AggregateRating', ratingValue: page.value.salon.ratingAvg, reviewCount: page.value.salon.ratingCount }
+            : undefined,
+        }).replace(/[<]/g, '\\u003c'),
+      },
+    ],
+  })
 }
-
-// about-excerpt ?? tagline ?? description ?? name—address (empty strings fall through).
-const seoDescription = resolveSalonDescription(page.value.salon)
-// Falls back to the first portfolio image when the salon has no gallery photos.
-const seoImage = page.value.photos[0]?.url ?? page.value.portfolio[0]?.url
-
-useSeoMeta({
-  title: page.value.salon.name,
-  description: seoDescription,
-  ogTitle: page.value.salon.name,
-  ogDescription: seoDescription,
-  ogImage: seoImage,
-  // 'summary_large_image' only makes sense once there's actually an image to show large;
-  // with none, 'summary' is the correct (and still valid) fallback card type.
-  twitterCard: seoImage ? 'summary_large_image' : 'summary',
-})
-
-useHead({
-  script: [
-    {
-      type: 'application/ld+json',
-      // The < escaping matters: stringify does NOT escape a closing script tag, so a
-      // provider-authored name/address containing one could otherwise break out of this block.
-      innerHTML: JSON.stringify({
-        '@context': 'https://schema.org',
-        '@type': 'BeautySalon',
-        name: page.value.salon.name,
-        description: seoDescription,
-        address: { '@type': 'PostalAddress', streetAddress: page.value.salon.address, addressLocality: page.value.salon.city },
-        // The API's handle regex ([A-Za-z0-9._]{1,30}) is what makes this interpolation safe.
-        sameAs: page.value.salon.instagramHandle
-          ? [`https://instagram.com/${page.value.salon.instagramHandle}`]
-          : undefined,
-        aggregateRating: page.value.salon.ratingCount > 0
-          ? { '@type': 'AggregateRating', ratingValue: page.value.salon.ratingAvg, reviewCount: page.value.salon.ratingCount }
-          : undefined,
-      }).replace(/[<]/g, '\\u003c'),
-    },
-  ],
-})
 
 // A single-item shape for SalonMap.client.vue, which is built for the multi-salon search
 // map (index.vue) -- distanceKm isn't meaningful on a single salon's own profile and is
@@ -162,7 +196,11 @@ const storySeen = ref<string | null>(null)
 const viewerOpen = ref(false)
 
 onMounted(async () => {
-  storySeen.value = readStorySeen(page.value!.salon.id)
+  // Same reason the template carries `v-if="page"`: on the handle-redirect path there is no
+  // salon here at all (the 301 above is what this render is for), and on the client the
+  // outgoing navigation can still let this hook fire once before the component is discarded.
+  if (!page.value) return
+  storySeen.value = readStorySeen(page.value.salon.id)
   const storiesPromise = apiFetch<SalonStoryItem[]>(`/salons/${slug}/stories`, { silent: true })
 
   if (session.isLoggedIn) {
@@ -433,19 +471,29 @@ function scrollToSection(id: string) {
            this page already fetches (booking-terms) but the cancellation window previously
            went completely unshown despite the deposit being real, non-trivial money --
            PRODUCT.md is explicit that a booking's financial commitment must never feel
-           hidden or ambiguous. -->
-      <div class="mb-3 space-y-1.5 rounded-xl bg-(--color-surface-subtle) p-3 text-xs text-(--color-text-muted)">
-        <p class="flex items-start gap-1.5">
+           hidden or ambiguous. The same principle cuts the other way when the platform's
+           online-payment flag is off: the API then confirms every booking with nothing
+           collected (createHold's requiresPayment gating), so stating a deposit "is taken"
+           would be a straight lie -- say what actually happens instead, matching the
+           booking page's own flag-off copy. -->
+      <div data-testid="booking-policy-callout" class="mb-3 space-y-1.5 rounded-xl bg-(--color-surface-subtle) p-3 text-xs text-(--color-text-muted)">
+        <template v-if="featureFlags.onlinePaymentEnabled">
+          <p class="flex items-start gap-1.5">
+            <BaseIcon name="shield" :size="14" class="mt-0.5 shrink-0" />
+            <span v-if="page.terms">
+              برای تضمین نوبت، پیش‌پرداخت آنلاین معادل ٪{{ page.terms.depositPercent.toLocaleString('fa-IR') }} مبلغ خدمت
+              (حداقل <span dir="ltr" class="tnum">{{ formatToman(page.terms.depositMinToman) }}</span> تومان) دریافت می‌شود.
+            </span>
+            <span v-else>برای تضمین نوبت، پیش‌پرداخت آنلاین دریافت می‌شود.</span>
+          </p>
+          <p v-if="page.terms" class="flex items-start gap-1.5">
+            <BaseIcon name="clock" :size="14" class="mt-0.5 shrink-0" />
+            <span>لغو رایگان تا {{ page.terms.cancellationWindowHours.toLocaleString('fa-IR') }} ساعت پیش از نوبت امکان‌پذیر است.</span>
+          </p>
+        </template>
+        <p v-else class="flex items-start gap-1.5">
           <BaseIcon name="shield" :size="14" class="mt-0.5 shrink-0" />
-          <span v-if="page.terms">
-            برای تضمین نوبت، پیش‌پرداخت آنلاین معادل ٪{{ page.terms.depositPercent.toLocaleString('fa-IR') }} مبلغ خدمت
-            (حداقل <span dir="ltr" class="tnum">{{ formatToman(page.terms.depositMinToman) }}</span> تومان) دریافت می‌شود.
-          </span>
-          <span v-else>برای تضمین نوبت، پیش‌پرداخت آنلاین دریافت می‌شود.</span>
-        </p>
-        <p v-if="page.terms" class="flex items-start gap-1.5">
-          <BaseIcon name="clock" :size="14" class="mt-0.5 shrink-0" />
-          <span>لغو رایگان تا {{ page.terms.cancellationWindowHours.toLocaleString('fa-IR') }} ساعت پیش از نوبت امکان‌پذیر است.</span>
+          <span>پیش‌پرداختی دریافت نمی‌شود؛ هزینه خدمت در سالن پرداخت می‌شود.</span>
         </p>
       </div>
       <ul v-if="page.services.length" class="space-y-2">
@@ -501,6 +549,7 @@ function scrollToSection(id: string) {
       :slug="slug"
       :salon-id="page.salon.id"
       :can-report="canReport"
+      :attribution-source="attributionSource"
     />
 
     <section>
@@ -583,6 +632,7 @@ function scrollToSection(id: string) {
       :slug="slug"
       :salon-id="page.salon.id"
       :can-report="canReport"
+      :attribution-source="attributionSource"
       @close="closeStoryViewer"
     />
 

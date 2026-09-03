@@ -157,6 +157,44 @@ describe('SalonSettingsView', () => {
     })
   })
 
+  // `description || undefined` used to omit the key whenever the field was emptied, so a
+  // description once written could never be cleared -- the PATCH just left it untouched.
+  it('sends an emptied description as "" so it can actually be cleared, and a null one loads as an empty field', async () => {
+    fetchMock.mockResolvedValueOnce({ data: { ...validSalon, description: 'توضیح قدیمی' }, error: null }) // GET /salons/mine
+    fetchMock.mockResolvedValueOnce(CATEGORIES_RESPONSE) // GET /categories
+    fetchMock.mockResolvedValueOnce(CITIES_RESPONSE) // GET /cities
+    const wrapper = mount(SalonSettingsView)
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    // The description textarea has no testid; it is the one labelled «توضیحات (اختیاری)».
+    const label = wrapper.findAll('label').find((l) => l.text() === 'توضیحات (اختیاری)')!
+    const textarea = wrapper.get(`#${label.attributes('for')}`)
+    expect((textarea.element as HTMLTextAreaElement).value).toBe('توضیح قدیمی')
+
+    await textarea.setValue('   ')
+    fetchMock.mockResolvedValueOnce({ data: { id: 's1' }, error: null }) // PATCH
+    fetchMock.mockResolvedValueOnce({ data: validSalon, error: null }) // useSalon refetch
+    await wrapper.get('[data-testid="save-button"]').trigger('click')
+
+    expect(fetchMock).toHaveBeenCalledWith('/salons/mine', {
+      method: 'PATCH',
+      body: expect.objectContaining({ description: '' }),
+    })
+    wrapper.unmount()
+
+    // A never-set (null) description must not surface as the literal text "null".
+    fetchMock.mockReset()
+    fetchMock.mockResolvedValueOnce({ data: { ...validSalon, description: null }, error: null }) // GET /salons/mine
+    fetchMock.mockResolvedValueOnce(CATEGORIES_RESPONSE) // GET /categories
+    fetchMock.mockResolvedValueOnce(CITIES_RESPONSE) // GET /cities
+    const wrapper2 = mount(SalonSettingsView)
+    await wrapper2.vm.$nextTick()
+    await wrapper2.vm.$nextTick()
+    const label2 = wrapper2.findAll('label').find((l) => l.text() === 'توضیحات (اختیاری)')!
+    expect((wrapper2.get(`#${label2.attributes('for')}`).element as HTMLTextAreaElement).value).toBe('')
+  })
+
   // The owner picks the MODE and nothing else -- the approval/payment windows behind it are
   // platform-managed (admin-only), so this page may state them but never offer a control.
   it('loads the current confirmation mode, switches it, and PATCHes the new value', async () => {

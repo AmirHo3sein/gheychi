@@ -1,3 +1,4 @@
+import { buildEnv } from '@/utils/build-env'
 import { useToast } from './useToast'
 
 export interface ApiError {
@@ -18,7 +19,7 @@ interface ApiFetchOptions {
   redirectOn401?: boolean
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3002/api'
+const API_BASE = buildEnv(import.meta.env.VITE_API_BASE, 'http://localhost:3002/api')
 
 /**
  * Shown instead of a DTO rejection's own text. Nest's global ValidationPipe reports a failed

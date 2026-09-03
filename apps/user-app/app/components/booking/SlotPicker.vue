@@ -18,12 +18,19 @@ const selectedDate = ref<string | null>(null)
 const loading = ref(true)
 const hasError = ref(false)
 
+// Same stale-response guard as index.vue's search: tapping worker A then B fires two
+// availability requests, and if A's lands last it would overwrite B's slots with A's --
+// offering the customer exactly the times their chosen worker is busy in.
+let requestSeq = 0
+
 async function fetchSlots() {
+  const seq = ++requestSeq
   loading.value = true
   const { data, error } = await apiFetch<DayAvailability[]>(`/salons/${props.salonId}/availability`, {
     query: { serviceId: props.serviceId, workerId: props.workerId || undefined },
     silent: true,
   })
+  if (seq !== requestSeq) return
   hasError.value = !!error
   days.value = data ?? []
   selectedDate.value = pickDefaultDate(days.value)

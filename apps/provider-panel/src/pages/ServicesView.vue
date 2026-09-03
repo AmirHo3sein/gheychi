@@ -40,6 +40,10 @@ const categories = ref<{ id: number; name: string }[]>([])
 const loading = ref(true)
 const loadError = ref(false)
 const createError = ref('')
+// In-flight guard for the add form -- same shape as categoryRequestSubmitting below. Without
+// it a double-tap on «افزودن» posted the same service twice (the API has no uniqueness rule
+// on service names, so both rows stuck).
+const creating = ref(false)
 const newService = reactive({
   categoryId: null as number | null,
   name: '',
@@ -175,6 +179,7 @@ async function submitCategoryRequest() {
 }
 
 async function addService() {
+  if (creating.value) return
   createError.value = ''
   if (!newService.categoryId) {
     createError.value = 'دسته‌بندی خدمت را انتخاب کنید.'
@@ -214,7 +219,9 @@ async function addService() {
   }
   if (newService.discountPercent) body.discountPercent = Number(newService.discountPercent)
   if (newService.description.trim()) body.description = newService.description.trim()
+  creating.value = true
   const { error } = await apiFetch('/salons/mine/services', { method: 'POST', body })
+  creating.value = false
   if (error) return
 
   newService.categoryId = null
@@ -606,7 +613,7 @@ async function updateDescription(service: Service) {
       <p v-if="createError" class="flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)">
         {{ createError }}
       </p>
-      <AppButton type="button" block data-testid="add-service" @click="addService">
+      <AppButton type="button" block data-testid="add-service" :disabled="creating" :loading="creating" @click="addService">
         افزودن
       </AppButton>
     </AppCard>

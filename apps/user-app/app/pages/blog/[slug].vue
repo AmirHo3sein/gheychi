@@ -136,7 +136,7 @@ const publishedDate = new Date(post.value.publishedAt).toLocaleDateString('fa-IR
          related-posts recommendation engine. -->
     <BaseCard padding="lg" class="space-y-3 text-center">
       <p class="font-bold text-(--color-text)">دنبال یک سالن مطمئن می‌گردی؟</p>
-      <p class="text-sm text-(--color-text-muted)">سالن‌های تأییدشده نزدیک خودت را در آرایشگاه پیدا کن.</p>
+      <p class="text-sm text-(--color-text-muted)">سالن‌های تأییدشده نزدیک خودت را در قیچی پیدا کن.</p>
       <BaseButton block @click="navigateTo('/')">
         <template #icon><BaseIcon name="search" :size="16" /></template>
         پیدا کردن سالن نزدیک شما

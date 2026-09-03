@@ -202,6 +202,45 @@ export function bookingConfirmationModeLabel(mode: string): LabelEntry {
   return BOOKING_CONFIRMATION_MODE[mode] ?? { label: mode, tone: 'neutral' }
 }
 
+// payments.status. 'refund_pending' is the one an operator is actually hunting for -- money
+// is owed back and has not been returned yet -- so it carries the danger tone rather than a
+// softer "in progress" one; 'refunded' is a settled, successful outcome.
+const PAYMENT_STATUS: Record<string, LabelEntry> = {
+  initiated: { label: 'در انتظار پرداخت', tone: 'warning' },
+  paid: { label: 'پرداخت‌شده', tone: 'success' },
+  refund_pending: { label: 'در انتظار استرداد', tone: 'danger' },
+  refunded: { label: 'مسترد شده', tone: 'neutral' },
+  failed: { label: 'ناموفق', tone: 'danger' },
+}
+
+export function paymentStatusLabel(status: string): LabelEntry {
+  return PAYMENT_STATUS[status] ?? { label: status, tone: 'neutral' }
+}
+
+// bookings.source -- how the row was CREATED, not the marketing channel (that's
+// attributionSource below). 'manual' is the owner recording a walk-in or phone customer.
+const BOOKING_SOURCE: Record<string, string> = {
+  online: 'رزرو آنلاین',
+  manual: 'ثبت توسط آرایشگاه',
+}
+
+export function bookingSourceLabel(source: string): string {
+  return BOOKING_SOURCE[source] ?? source
+}
+
+// bookings.attribution_source -- the marketing channel a booking is attributed to. NULL
+// (organic in-app navigation, or any manual booking) has no entry here on purpose; a caller
+// renders that as "—" rather than inventing an "organic" label the backend never writes.
+const BOOKING_ATTRIBUTION_SOURCE: Record<string, string> = {
+  qr: 'کد QR',
+  direct: 'لینک مستقیم',
+  search: 'موتور جست‌وجو',
+}
+
+export function bookingAttributionSourceLabel(source: string): string {
+  return BOOKING_ATTRIBUTION_SOURCE[source] ?? source
+}
+
 // booking_events.event_type -- a deliberate superset of the status transitions (see
 // booking-event.entity.ts), so several of these describe things happening *around* a
 // status change and have no BOOKING_STATUS counterpart.
@@ -308,6 +347,21 @@ const AUDIT_ACTION: Record<string, LabelEntry> = {
   'booking.approval.approved': { label: 'تایید درخواست رزرو', tone: 'success' },
   'booking.approval.rejected': { label: 'رد درخواست رزرو', tone: 'danger' },
   'booking-settings.update': { label: 'ویرایش تنظیمات رزرو سالن', tone: 'info' },
+  'feature-flags.update': { label: 'تغییر قابلیت‌های پلتفرم', tone: 'warning' },
+  'invoice.payment.record': { label: 'ثبت پرداخت صورتحساب', tone: 'success' },
+  'salon.handle.set': { label: 'تغییر شناسه عمومی آرایشگاه', tone: 'info' },
+  // Monetization initiative (plans, subscriptions, subscription coupons, billing periods).
+  'plan.create': { label: 'ایجاد پلن اشتراک', tone: 'success' },
+  'plan.update': { label: 'ویرایش پلن اشتراک', tone: 'info' },
+  'plan.delete': { label: 'حذف پلن اشتراک', tone: 'danger' },
+  'subscription.plan.set': { label: 'تغییر پلن اشتراک آرایشگاه', tone: 'info' },
+  'subscription.cancel': { label: 'لغو اشتراک آرایشگاه', tone: 'danger' },
+  'subscription.overrides.set': { label: 'تغییر استثنای امکانات آرایشگاه', tone: 'warning' },
+  'subscription.billing-period.create': { label: 'ایجاد دوره صورتحساب اشتراک', tone: 'success' },
+  'subscription.billing-period.status.set': { label: 'تسویه دوره صورتحساب اشتراک', tone: 'warning' },
+  'subscription-coupon.create': { label: 'ایجاد کد تخفیف اشتراک', tone: 'success' },
+  'subscription-coupon.update': { label: 'ویرایش کد تخفیف اشتراک', tone: 'info' },
+  'subscription-coupon.delete': { label: 'غیرفعال‌سازی کد تخفیف اشتراک', tone: 'danger' },
 }
 
 // Canonical list of the audited action names -- filter dropdowns and tests derive from
@@ -332,7 +386,16 @@ const AUDIT_TARGET_TYPE: Record<string, string> = {
   referral: 'معرفی',
   coupon: 'کد تخفیف',
   'worker-rating': 'ارزیابی کارمند',
+  'feature-flags': 'قابلیت‌های پلتفرم',
+  invoice: 'صورتحساب',
+  plan: 'پلن اشتراک',
+  'salon-subscription': 'اشتراک آرایشگاه',
+  'subscription-billing-period': 'دوره صورتحساب اشتراک',
+  'subscription-coupon': 'کد تخفیف اشتراک',
 }
+
+// Canonical list of the audited target types -- see AUDIT_ACTION_KEYS above.
+export const AUDIT_TARGET_TYPE_KEYS = Object.keys(AUDIT_TARGET_TYPE)
 
 const REPORT_STATUS: Record<string, LabelEntry> = {
   open: { label: 'باز', tone: 'warning' },

@@ -118,8 +118,11 @@ const referrerPhoneFilter = ref('')
 
 // Keyed by referral id. Present (even mid-fetch, as `{ loading: true, items: [] }`) once
 // a row's details have been expanded at least once -- doubles as the "already
-// fetched, don't refetch" cache.
-const rewardsByReferral = ref<Record<string, { loading: boolean; items: ReferralRewardRow[] }>>({})
+// fetched, don't refetch" cache. A FAILED fetch is deliberately not cached as a result:
+// an empty `items` here renders every side as "هنوز اعطا نشده", which for a granted
+// referral is a false statement, not a degraded one. It's kept as `error: true` so the
+// row shows a retry instead, and loadRewards() treats that entry as "not fetched yet".
+const rewardsByReferral = ref<Record<string, { loading: boolean; error: boolean; items: ReferralRewardRow[] }>>({})
 
 async function load() {
   loading.value = true
@@ -142,10 +145,13 @@ async function load() {
 }
 
 async function loadRewards(referralId: string) {
-  if (rewardsByReferral.value[referralId]) return
-  rewardsByReferral.value[referralId] = { loading: true, items: [] }
-  const { data } = await apiFetch<ReferralRewardRow[]>(`/admin/referrals/${referralId}/rewards`, { silent: true })
-  rewardsByReferral.value[referralId] = { loading: false, items: data ?? [] }
+  const cached = rewardsByReferral.value[referralId]
+  if (cached && !cached.error) return
+  rewardsByReferral.value[referralId] = { loading: true, error: false, items: [] }
+  const { data, error } = await apiFetch<ReferralRewardRow[]>(`/admin/referrals/${referralId}/rewards`, { silent: true })
+  rewardsByReferral.value[referralId] = error
+    ? { loading: false, error: true, items: [] }
+    : { loading: false, error: false, items: data ?? [] }
 }
 
 function rewardForRole(referralId: string, role: BeneficiaryRole): ReferralRewardRow | undefined {
@@ -347,7 +353,7 @@ watch(page, load)
                         <!-- Per-side referral_rewards detail (GET /admin/referrals/:id/rewards),
                              fetched lazily on first expand of this row (see @click above). -->
                         <p v-if="rewardsByReferral[referral.id]?.loading" class="text-(--color-text-muted)">در حال بارگذاری…</p>
-                        <template v-else-if="rewardsByReferral[referral.id]">
+                        <template v-else-if="rewardsByReferral[referral.id] && !rewardsByReferral[referral.id]!.error">
                           <div v-if="rewardForRole(referral.id, role)" :data-testid="`reward-status-${role}`" class="mt-1 space-y-1">
                             <p class="flex items-center gap-1.5">
                               <StatusBadge
@@ -380,6 +386,25 @@ watch(page, load)
                           <p v-else class="mt-1 text-(--color-text-muted)">هنوز اعطا نشده</p>
                         </template>
                       </div>
+                      <!-- One notice for the whole detail, not one per side: the failure is the
+                           single rewards fetch, and "هنوز اعطا نشده" above must never stand in
+                           for it (see rewardsByReferral). -->
+                      <p
+                        v-if="rewardsByReferral[referral.id]?.error"
+                        data-testid="rewards-load-error"
+                        class="flex flex-wrap items-center gap-1.5 text-(--tone-danger-text)"
+                      >
+                        <AppIcon name="warning" :size="13" />
+                        خطا در دریافت وضعیت پاداش‌ها.
+                        <button
+                          type="button"
+                          class="font-semibold underline underline-offset-2 hover:opacity-80"
+                          data-testid="rewards-retry"
+                          @click="loadRewards(referral.id)"
+                        >
+                          تلاش دوباره
+                        </button>
+                      </p>
                     </div>
                   </div>
                 </details>

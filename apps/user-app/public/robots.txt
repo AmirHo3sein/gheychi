@@ -1,9 +1,0 @@
-User-agent: *
-Allow: /
-Allow: /salons/
-Disallow: /admin/
-Disallow: /bookings
-Disallow: /profile
-Disallow: /booking/
-
-Sitemap: /sitemap.xml

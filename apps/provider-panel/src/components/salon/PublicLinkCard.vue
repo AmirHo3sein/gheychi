@@ -15,10 +15,11 @@ import { useToast } from '@/composables/useToast'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
+import { buildEnv } from '@/utils/build-env'
 
 // Public, non-secret -- baked into the static bundle at build time (see this app's own
 // Dockerfile ARG/ENV and docs/deployment/DEPLOY.md), mirroring VITE_API_BASE's own pattern.
-const CUSTOMER_APP_BASE = import.meta.env.VITE_CUSTOMER_APP_BASE ?? 'http://localhost:3003'
+const CUSTOMER_APP_BASE = buildEnv(import.meta.env.VITE_CUSTOMER_APP_BASE, 'http://localhost:3003')
 // Mirrors UpdateHandleDto's own @Matches regex (apps/api/src/salons/dto/salon-handle.dto.ts)
 // -- client-side validation only saves a round trip; the server is still the sole authority
 // (reserved-word and uniqueness checks can only happen there).
@@ -149,6 +150,14 @@ async function saveHandle() {
         data-testid="handle-input"
         :error="handleError"
       />
+      <!-- The single most common worry when renaming a link that is already printed on
+           signage and business cards. Both halves are real guarantees, not reassurance:
+           salon_slug_history keeps the old handle redirecting (a permanent 301) and keeps it
+           reserved to this salon so nobody else can take it. -->
+      <p data-testid="handle-history-note" class="text-xs text-(--color-text-muted)">
+        نگران لینک‌ها و کدهای QR قبلی نباشید: آدرس قبلی همیشه به آدرس جدید هدایت می‌شود و برای
+        سالن شما رزرو می‌ماند، پس سالن دیگری نمی‌تواند آن را بگیرد.
+      </p>
       <div class="flex gap-2.5">
         <AppButton type="button" variant="primary" :disabled="saving" data-testid="save-handle-button" @click="saveHandle">
           ذخیره

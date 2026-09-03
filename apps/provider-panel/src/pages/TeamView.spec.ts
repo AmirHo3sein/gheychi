@@ -423,6 +423,35 @@ describe('TeamView add-member form', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3) // only the initial list + services + exceptions load
   })
 
+  it('ignores a second click on «افزودن» while the create request is still in flight', async () => {
+    const wrapper = await mountView()
+
+    let resolveCreate!: (value: unknown) => void
+    fetchMock.mockImplementationOnce(() => new Promise((resolve) => { resolveCreate = resolve }))
+
+    await wrapper.get('input[placeholder="نام"]').setValue('علی')
+    await wrapper.get('input[placeholder="شماره موبایل"]').setValue('09121234567')
+    const submit = wrapper.get('[data-testid="submit-add-worker"]')
+    await submit.trigger('click')
+    await submit.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const posts = fetchMock.mock.calls.filter(([path, opts]) => path === '/salons/mine/workers' && opts?.method === 'POST')
+    expect(posts).toHaveLength(1)
+    expect((submit.element as HTMLButtonElement).disabled).toBe(true)
+    expect(submit.attributes('aria-busy')).toBe('true')
+
+    resolveCreate({
+      data: { id: 'w3', name: 'علی', active: true, ratingAvg: '0.00', ratingCount: 0, createdAt: '2026-07-03T00:00:00.000Z', serviceIds: [] },
+      error: null,
+    })
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.vm.$nextTick()
+
+    expect((submit.element as HTMLButtonElement).disabled).toBe(false)
+    expect(wrapper.text()).toContain('علی')
+  })
+
   it('maps a non-409 server error (e.g. phone-format validation) to a fixed Persian message, never the raw server string', async () => {
     const wrapper = await mountView()
 

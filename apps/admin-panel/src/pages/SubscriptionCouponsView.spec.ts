@@ -99,5 +99,39 @@ describe('SubscriptionCouponsView', () => {
     expect(fetchMock).toHaveBeenCalledWith('/admin/subscription-coupons/coupon-1', { method: 'DELETE' })
     expect(wrapper.get('[data-testid="subscription-coupon-card"]').text()).toContain('غیرفعال')
     expect(wrapper.find('[data-testid="deactivate-PLUS20"]').exists()).toBe(false)
+    // A deactivated code is not a dead end -- the reactivate action takes its place.
+    expect(wrapper.find('[data-testid="reactivate-PLUS20"]').exists()).toBe(true)
+  })
+
+  it('reactivates an inactive coupon via PATCH { isActive: true } and swaps the row back to active', async () => {
+    fetchMock.mockResolvedValueOnce({ data: [{ ...plus20Coupon(), isActive: false }], error: null })
+    const wrapper = await mountView()
+    expect(wrapper.find('[data-testid="deactivate-PLUS20"]').exists()).toBe(false)
+
+    fetchMock.mockResolvedValueOnce({ data: plus20Coupon(), error: null })
+    await wrapper.get('[data-testid="reactivate-PLUS20"]').trigger('click')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith('/admin/subscription-coupons/coupon-1', {
+      method: 'PATCH',
+      body: { isActive: true },
+    })
+    expect(wrapper.get('[data-testid="subscription-coupon-card"]').text()).toContain('فعال')
+    expect(wrapper.find('[data-testid="reactivate-PLUS20"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="deactivate-PLUS20"]').exists()).toBe(true)
+    expect(pushToastMock).toHaveBeenCalled()
+  })
+
+  it('leaves an inactive coupon inactive when the reactivate PATCH fails', async () => {
+    fetchMock.mockResolvedValueOnce({ data: [{ ...plus20Coupon(), isActive: false }], error: null })
+    const wrapper = await mountView()
+
+    fetchMock.mockResolvedValueOnce({ data: null, error: { status: 500, message: 'boom' } })
+    await wrapper.get('[data-testid="reactivate-PLUS20"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="reactivate-PLUS20"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="deactivate-PLUS20"]').exists()).toBe(false)
+    expect(pushToastMock).not.toHaveBeenCalled()
   })
 })

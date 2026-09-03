@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
+import { flushPromises } from '@vue/test-utils'
 import SlotPicker from '../../app/components/booking/SlotPicker.vue'
 
 // Same pattern as useApi.spec.ts / auth.global.spec.ts: `useApi` wraps the real
@@ -166,5 +167,33 @@ describe('SlotPicker', () => {
     fetchMock.mockRejectedValue({ response: { status: 500 }, statusMessage: 'Server error' })
     const wrapper = await mountSuspended(SlotPicker, { props: { salonId: 's1', serviceId: 'sv1' } })
     expect(wrapper.text()).toContain('مشکلی پیش آمد')
+  })
+
+  // Tapping worker A then B fires two availability requests; if A's response lands last it
+  // used to overwrite B's slots -- offering exactly the times the chosen worker is busy in.
+  it('discards a stale availability response that lands after a newer worker selection', async () => {
+    const pending: Record<string, (value: unknown) => void> = {}
+    fetchMock.mockImplementation(
+      (_path: string, opts: { query: { workerId?: string } }) =>
+        new Promise((resolve) => { pending[opts.query.workerId!] = resolve }),
+    )
+
+    const wrapper = await mountSuspended(SlotPicker, { props: { salonId: 's1', serviceId: 'sv1', workerId: 'w-a' } })
+    await wrapper.setProps({ workerId: 'w-b' })
+    await flushPromises()
+    expect(Object.keys(pending)).toEqual(['w-a', 'w-b'])
+
+    // B (the newer request) answers first.
+    pending['w-b']!([{ date: '2026-07-11', slots: ['2026-07-11T09:00:00.000Z'] }])
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="slot-button"]')).toHaveLength(1)
+    expect(wrapper.text()).toContain('۱۲:۳۰') // 09:00Z in Tehran
+
+    // A's slower response arrives afterwards and must be ignored.
+    pending['w-a']!([{ date: '2026-07-12', slots: ['2026-07-12T10:00:00.000Z', '2026-07-12T10:30:00.000Z'] }])
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="slot-button"]')).toHaveLength(1)
+    expect(wrapper.text()).toContain('۱۲:۳۰')
+    expect(wrapper.text()).not.toContain('۱۳:۳۰')
   })
 })

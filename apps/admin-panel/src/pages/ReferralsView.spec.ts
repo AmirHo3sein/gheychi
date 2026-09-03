@@ -288,6 +288,53 @@ describe('ReferralsView', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('a failed rewards fetch shows an error with retry, never "هنوز اعطا نشده", and is not cached', async () => {
+    fetchMock.mockResolvedValueOnce({ data: { items: [{ ...referral }], total: 1, page: 1, pageSize: 20 }, error: null })
+    const wrapper = mount(ReferralsView)
+    await flushPromises()
+
+    fetchMock.mockResolvedValueOnce({ data: null, error: { status: 500, message: 'boom' } })
+    await wrapper.get('summary').trigger('click')
+    await flushPromises()
+
+    const details = wrapper.get('[data-testid="referral-details"]')
+    expect(details.find('[data-testid="rewards-load-error"]').exists()).toBe(true)
+    // An empty result on error would be a false "not granted yet" for a granted referral.
+    expect(details.text()).not.toContain('هنوز اعطا نشده')
+    expect(details.find('[data-testid="reward-status-referrer"]').exists()).toBe(false)
+
+    // Retry re-issues the fetch (the failure was not cached as a result) and renders it.
+    fetchMock.mockClear()
+    fetchMock.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'rr-1',
+          beneficiaryRole: 'referrer',
+          beneficiaryUserId: 'u-referrer',
+          rewardKind: 'wallet_credit',
+          rewardValue: 50000,
+          status: 'granted',
+          grantedAt: '2026-07-22T10:00:00.000Z',
+          reversedAt: null,
+          reversalReason: null,
+          reversalShortfallAmount: null,
+          walletTransactionId: 'wtx-1',
+          couponId: null,
+          couponCode: null,
+          couponIsActive: null,
+        },
+      ],
+      error: null,
+    })
+    await wrapper.get('[data-testid="rewards-retry"]').trigger('click')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith('/admin/referrals/ref-1/rewards', { silent: true })
+    expect(details.find('[data-testid="rewards-load-error"]').exists()).toBe(false)
+    expect(details.get('[data-testid="reward-status-referrer"]').text()).toContain('اعطا شد')
+    expect(details.text()).toContain('هنوز اعطا نشده') // the referred side genuinely has no row
+  })
+
   it('shows a fixed_discount coupon reward\'s resolved toman amount distinctly from a percent one', async () => {
     fetchMock.mockResolvedValueOnce({
       data: { items: [{ ...referral, referredRewardKind: 'fixed_discount', referredRewardValue: 50000 }], total: 1, page: 1, pageSize: 20 },

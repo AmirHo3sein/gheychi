@@ -5,9 +5,15 @@ import AppSelect from '@/components/ui/AppSelect.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 
 const fetchMock = vi.fn()
+// Mutable per test: ReviewsView reads route.query.salonId once on setup (the deep link
+// from ReportsView's review-escalation link). Reset to no query in beforeEach.
+let routeQuery: Record<string, string> = {}
 
 vi.mock('@/composables/useApi', () => ({
   useApi: () => ({ apiFetch: fetchMock }),
+}))
+vi.mock('vue-router', () => ({
+  useRoute: () => ({ query: routeQuery }),
 }))
 
 const publishedReview = {
@@ -32,6 +38,111 @@ const withdrawnReview = {
 describe('ReviewsView', () => {
   beforeEach(() => {
     fetchMock.mockReset()
+    routeQuery = {}
+  })
+
+  describe('salonId deep link (ReportsView review-escalation link)', () => {
+    const SALON_ID = '11111111-1111-4111-8111-111111111111'
+
+    it('sends the salonId query param to the API on load and shows a removable chip', async () => {
+      routeQuery = { salonId: SALON_ID }
+      fetchMock.mockResolvedValue({ data: { items: [{ ...publishedReview }], total: 1, page: 1, pageSize: 10 }, error: null })
+      const wrapper = mount(ReviewsView)
+      await flushPromises()
+
+      expect(fetchMock).toHaveBeenCalledWith(`/admin/reviews?page=1&pageSize=10&salonId=${SALON_ID}`, { silent: true })
+      expect(wrapper.find('[data-testid="salon-id-filter-chip"]').exists()).toBe(true)
+      expect(wrapper.text()).toContain('پاک کردن فیلترها')
+    })
+
+    it('removing the chip reloads without the salonId param', async () => {
+      routeQuery = { salonId: SALON_ID }
+      fetchMock.mockResolvedValue({ data: { items: [], total: 0, page: 1, pageSize: 10 }, error: null })
+      const wrapper = mount(ReviewsView)
+      await flushPromises()
+      fetchMock.mockClear()
+
+      await wrapper.get('[data-testid="clear-salon-id-filter"]').trigger('click')
+      await flushPromises()
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(fetchMock).toHaveBeenLastCalledWith('/admin/reviews?page=1&pageSize=10', { silent: true })
+      expect(wrapper.find('[data-testid="salon-id-filter-chip"]').exists()).toBe(false)
+    })
+
+    it('typing a salon name supersedes the salonId filter -- the two are never sent together', async () => {
+      routeQuery = { salonId: SALON_ID }
+      fetchMock.mockResolvedValue({ data: { items: [], total: 0, page: 1, pageSize: 10 }, error: null })
+      const wrapper = mount(ReviewsView)
+      await flushPromises()
+      fetchMock.mockClear()
+
+      await wrapper.get('input').setValue('نمونه')
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      await flushPromises()
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      const url = fetchMock.mock.calls[0]![0] as string
+      expect(url).toContain('salonName=')
+      expect(url).not.toContain('salonId=')
+    })
+
+    it('ignores a non-string salonId query value', async () => {
+      // A repeated ?salonId=a&salonId=b arrives as an array from vue-router.
+      routeQuery = { salonId: ['a', 'b'] as unknown as string }
+      fetchMock.mockResolvedValue({ data: { items: [], total: 0, page: 1, pageSize: 10 }, error: null })
+      mount(ReviewsView)
+      await flushPromises()
+
+      expect(fetchMock).toHaveBeenCalledWith('/admin/reviews?page=1&pageSize=10', { silent: true })
+    })
+  })
+
+  it('a filter change while past page 1 issues exactly one request (page reset rides along)', async () => {
+    fetchMock.mockResolvedValue({ data: { items: [{ ...publishedReview }], total: 25, page: 1, pageSize: 10 }, error: null })
+    const wrapper = mount(ReviewsView)
+    await flushPromises()
+
+    wrapper.findComponent(Pagination).vm.$emit('update:page', 2)
+    await flushPromises()
+    expect(fetchMock).toHaveBeenLastCalledWith('/admin/reviews?page=2&pageSize=10', { silent: true })
+    fetchMock.mockClear()
+
+    wrapper.findComponent(AppSelect).vm.$emit('update:modelValue', 'rejected')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenLastCalledWith('/admin/reviews?page=1&pageSize=10&status=rejected', { silent: true })
+  })
+
+  it('drops a slow earlier response that resolves after a newer request (request-sequence guard)', async () => {
+    fetchMock.mockResolvedValueOnce({ data: { items: [], total: 0, page: 1, pageSize: 10 }, error: null })
+    const wrapper = mount(ReviewsView)
+    await flushPromises()
+
+    type ListResult = { data: { items: typeof publishedReview[]; total: number; page: number; pageSize: number }; error: null }
+    let resolveSlow!: (value: ListResult) => void
+    // First filter change: a request that hangs...
+    fetchMock.mockReturnValueOnce(new Promise<ListResult>((resolve) => { resolveSlow = resolve }))
+    const [statusSelect, ratingSelect] = wrapper.findAllComponents(AppSelect)
+    statusSelect!.vm.$emit('update:modelValue', 'rejected')
+    await flushPromises()
+
+    // ...then a second filter change whose request answers first.
+    fetchMock.mockResolvedValueOnce({
+      data: { items: [{ ...publishedReview, id: 'newest', salonName: 'جدیدترین' }], total: 1, page: 1, pageSize: 10 },
+      error: null,
+    })
+    ratingSelect!.vm.$emit('update:modelValue', 5)
+    await flushPromises()
+    expect(wrapper.text()).toContain('جدیدترین')
+
+    // The stale response lands late and must not clobber the newer list.
+    resolveSlow({ data: { items: [{ ...publishedReview, id: 'stale', salonName: 'قدیمی' }], total: 1, page: 1, pageSize: 10 }, error: null })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('جدیدترین')
+    expect(wrapper.text()).not.toContain('قدیمی')
   })
 
   it('loads reviews and renders salon name, formatted date, and status label on each card', async () => {

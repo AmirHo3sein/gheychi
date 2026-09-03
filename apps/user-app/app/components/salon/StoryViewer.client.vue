@@ -3,6 +3,7 @@
 import type { SalonStoryItem } from '../../utils/types'
 import { lockBodyScroll } from '../../utils/scroll-lock'
 import { recordStorySeen } from '../../utils/story-seen'
+import { buildBookingLink, type AttributionSource } from '../../utils/attribution'
 
 const props = defineProps<{
   /** Oldest-first, exactly as the public endpoint returns them. */
@@ -12,6 +13,12 @@ const props = defineProps<{
   salonId: string
   /** Same eligibility flag as the salon page's report button (completed booking). */
   canReport?: boolean
+  /**
+   * The salon page's resolved marketing attribution (see utils/attribution.ts) -- threaded
+   * onto this component's own booking pill so a booking started from here is attributed
+   * exactly like one started from the service list.
+   */
+  attributionSource?: AttributionSource | null
 }>()
 
 const emit = defineEmits<{ close: [] }>()
@@ -291,7 +298,7 @@ const { titleId } = useDialog(dialogRoot, { onClose: close, enabled: () => !repo
         <p v-if="current.caption" data-testid="story-caption" class="text-sm break-words text-white">{{ current.caption }}</p>
         <NuxtLink
           v-if="currentService"
-          :to="`/booking/${slug}/${currentService.id}`"
+          :to="buildBookingLink(slug, currentService.id, attributionSource)"
           data-testid="story-booking-pill"
           class="inline-flex min-h-11 items-center rounded-full bg-(--color-accent) px-4 text-sm font-semibold text-(--color-fill-text)"
         >

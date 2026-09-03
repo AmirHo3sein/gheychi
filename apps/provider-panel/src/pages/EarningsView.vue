@@ -111,7 +111,12 @@ function isValidAmount(amount: number | null | undefined): boolean {
           <!-- min-w-0 + break-words: a large toman figure is a long unbreakable digit run,
                and it must wrap inside the card rather than widen it. -->
           <div class="min-w-0">
-            <p class="text-xs text-(--color-text-muted)">مجموع دریافتی</p>
+            <!-- Was "مجموع دریافتی" ("total received"), which invited a salon to read it as
+                 their revenue. It is SUM(financial_transactions.gross_amount): the ONLINE
+                 DEPOSIT only, and only on bookings that reached completed/no-show (or a
+                 forfeited late cancellation). The cash the customer hands over in the salon
+                 is the large majority of the price and this platform never sees it. -->
+            <p class="text-xs text-(--color-text-muted)">مجموع بیعانهٔ آنلاین (از ابتدا)</p>
             <p class="break-words text-xl font-bold text-(--color-text)"><span dir="ltr" class="tnum">{{ formattedAmount(earnings.totalCollected) }}</span><span v-if="isValidAmount(earnings.totalCollected)"> تومان</span></p>
           </div>
         </div>
@@ -135,12 +140,21 @@ function isValidAmount(amount: number | null | undefined): boolean {
             <AppIcon name="check" :size="18" />
           </div>
           <div class="min-w-0">
-            <p class="text-xs text-(--color-text-muted)">مبلغ قابل پرداخت</p>
+            <p class="text-xs text-(--color-text-muted)">سهم شما از بیعانه</p>
             <p class="break-words text-xl font-bold text-(--tone-success-text)"><span dir="ltr" class="tnum">{{ formattedAmount(earnings.netPayout) }}</span><span v-if="isValidAmount(earnings.netPayout)"> تومان</span></p>
           </div>
         </div>
       </AppCard>
     </div>
+
+    <!-- One line, directly under the three figures rather than in a tooltip: the numbers are
+         meaningless (and easy to under-read as "the platform is paying me very little")
+         without it. -->
+    <p v-if="!loading && !loadError && earnings" data-testid="earnings-deposit-note" class="text-xs leading-6 text-(--color-text-muted)">
+      این سه رقم فقط مربوط به <strong class="font-semibold">بیعانهٔ آنلاین</strong> است — مبلغی که مشتری هنگام رزرو در سایت پرداخت می‌کند و
+      پلتفرم کارمزد خود را از همان کسر می‌کند. باقیِ مبلغ خدمت را مشتری مستقیماً در سالن به شما می‌پردازد و در این ارقام دیده نمی‌شود.
+      کارمزد فقط برای نوبت‌های انجام‌شده یا عدم‌حضور محاسبه می‌شود.
+    </p>
 
     <div v-if="!loading && !loadError" class="space-y-3">
       <h2 class="text-base font-bold text-(--color-text)">تسویه‌حساب‌های ماهانه</h2>

@@ -1,0 +1,12 @@
+# This app is an authenticated-only salon-owner tool -- every route behind it requires a
+# session, so there is nothing here a search engine should ever index. Vite copies public/
+# verbatim into dist/, which the runner image serves as nginx's html root
+# (Dockerfile: COPY --from=installer /app/apps/provider-panel/dist /usr/share/nginx/html),
+# so this file lands at the served root as /robots.txt with no extra wiring.
+#
+# robots.txt only stops well-behaved crawlers from FETCHING; a URL linked from elsewhere can
+# still be indexed url-only. index.html therefore also carries <meta name="robots"
+# content="noindex,nofollow">, which is what actually keeps it out of an index -- the two are
+# complementary, not redundant.
+User-agent: *
+Disallow: /

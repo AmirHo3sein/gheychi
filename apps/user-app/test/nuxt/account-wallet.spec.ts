@@ -70,6 +70,27 @@ describe('account wallet page', () => {
     vi.unstubAllGlobals()
   })
 
+  // A failed transactions fetch used to render as "no transactions yet" -- a claim about
+  // the customer's money that a network blip has no business making.
+  it('shows a retry state, not the empty state, when the transaction list fails to load', async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/wallet/mine') return { balances: [] }
+      if (path === '/wallet/mine/transactions') throw { response: { status: 500 } }
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    const wrapper = await mountSuspended(WalletPage)
+
+    expect(wrapper.find('[data-testid="empty-state"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="transactions-load-error"]').attributes('role')).toBe('alert')
+
+    stub([], [TX_CREDIT], 1)
+    await wrapper.get('[data-testid="transactions-retry-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="transactions-load-error"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="wallet-transaction"]')).toHaveLength(1)
+  })
+
   it('renders the balance card and a signed, colored transaction list', async () => {
     stub([{ currency: 'toman', balance: 30_000 }], [TX_DEBIT, TX_CREDIT], 2)
     const wrapper = await mountSuspended(WalletPage)

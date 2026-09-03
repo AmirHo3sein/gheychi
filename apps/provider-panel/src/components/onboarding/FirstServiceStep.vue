@@ -9,7 +9,10 @@ import AppIcon from '../ui/AppIcon.vue'
 import AppSelect from '../ui/AppSelect.vue'
 import type { SelectOption } from '../ui/AppSelect.vue'
 
-const model = defineModel<{ categoryId: number | null; name: string; price: number; durationMin: number }>({
+// price is null while the field is empty -- there is no meaningful default for a price
+// (a pre-filled 0 would read as "free" and, until OnboardingView started rejecting it,
+// could actually be submitted as one).
+const model = defineModel<{ categoryId: number | null; name: string; price: number | null; durationMin: number }>({
   required: true,
 })
 
@@ -83,10 +86,10 @@ onMounted(loadCategories)
     />
     <div class="grid grid-cols-2 gap-3">
       <AppMoneyInput
-        :model-value="String(model.price)"
+        :model-value="model.price === null ? '' : String(model.price)"
         label="قیمت (تومان)"
         data-testid="service-price"
-        @update:model-value="model.price = Number($event)"
+        @update:model-value="model.price = $event === '' ? null : Number($event)"
       />
       <AppInput
         :model-value="String(model.durationMin)"

@@ -10,6 +10,7 @@ import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
+import { useVisiblePolling } from '@/composables/useVisiblePolling'
 import { toEnglishDigits } from '@/utils/digits'
 import { bookingStatusLabel } from '@/utils/labels'
 import { formatToman } from '@/utils/format-toman'
@@ -65,7 +66,7 @@ const submittingId = ref<string | null>(null)
 async function fetchBookings(): Promise<boolean> {
   const { data, error } = await apiFetch<Booking[]>('/salons/mine/bookings', { silent: true })
   if (error) return false
-  bookings.value = data ?? []
+  applyBookings(data ?? [])
   return true
 }
 
@@ -92,6 +93,117 @@ async function loadAll() {
 }
 
 onMounted(loadAll)
+
+// -- Live refresh -------------------------------------------------------------------
+//
+// There is no push channel to this panel at all: provider-panel is a plain Vite SPA with
+// no service worker, so an owner never becomes a `push_subscriptions` row and every
+// owner-directed push resolves to zero subscriptions. There is no socket either. That left
+// exactly one channel that reaches an owner about a new manual-approval request -- a single
+// SMS -- while this screen, which is where the decision is actually made, fetched once on
+// mount and then showed a frozen queue for as long as the tab stayed open. Against a
+// default 10-minute approval window that is long enough for a request to arrive, lapse and
+// release its slot without ever being rendered. Polling is the fallback that closes it.
+//
+// 30s is chosen against that 10-minute window: a tick costs at most 5% of the owner's
+// decision time, so "arrived" and "on screen" are close enough that the remaining window is
+// still worth acting on, at a ceiling of 120 requests/hour per open tab -- and only while
+// the tab is visible (see useVisiblePolling). GET /salons/mine/bookings is one already-
+// enriched query capped at 1000 rows server-side, so a tick is a single cheap read, not a
+// fan-out. Faster buys nothing a human can act on; meaningfully slower starts eating a real
+// share of a 10-minute deadline.
+//
+// No audible cue: this app ships no audio asset and no sound is used anywhere in it, and
+// adding one for this would be a new asset plus an autoplay-policy problem, not a one-liner.
+const POLL_INTERVAL_MS = 30_000
+
+// Pending-request ids this tab has already shown the owner. Seeded (silently) from the
+// first successful load so the queue that was already there on arrival is not announced as
+// if it just landed; everything after that is genuinely new. Never pruned -- a request
+// cannot return to pending_approval once it leaves, so a re-announcement is impossible, and
+// the set is bounded by how many requests one session sees.
+const seenPendingIds = new Set<string>()
+let arrivalsSeeded = false
+
+// The ids behind the "new" badge. Kept as ids rather than a bare counter so the badge can
+// self-correct: a new request that the owner then approves (or that lapses) stops counting
+// without anything having to remember to decrement.
+const newRequestIds = ref<string[]>([])
+const lastSyncAt = ref<Date | null>(null)
+// Consecutive failed background refreshes. One failure is a blip; the pill only admits to
+// being offline once a second one confirms it, so a single dropped request doesn't flash a
+// warning at an owner whose data is in fact 30 seconds old.
+const pollFailures = ref(0)
+const pollDegraded = computed(() => pollFailures.value >= 2)
+
+function applyBookings(list: Booking[]) {
+  bookings.value = list
+  lastSyncAt.value = new Date()
+  noteArrivals(list)
+}
+
+function noteArrivals(list: Booking[]) {
+  const pendingIds = list.filter((b) => b.status === 'pending_approval').map((b) => b.id)
+  if (!arrivalsSeeded) {
+    arrivalsSeeded = true
+    for (const id of pendingIds) seenPendingIds.add(id)
+    return
+  }
+  const arrivals = pendingIds.filter((id) => !seenPendingIds.has(id))
+  if (arrivals.length === 0) return
+  for (const id of arrivals) seenPendingIds.add(id)
+  newRequestIds.value = [...newRequestIds.value, ...arrivals]
+  // Exactly one toast per refresh however many arrived at once -- three toasts stacked for
+  // three requests says nothing the count doesn't, and the badge is the durable signal
+  // anyway (a toast the owner was away from the keyboard for is gone in 5 seconds).
+  pushToast(
+    arrivals.length === 1
+      ? 'درخواست نوبت جدیدی دریافت شد'
+      : `${arrivals.length.toLocaleString('fa-IR')} درخواست نوبت جدید دریافت شد`,
+  )
+}
+
+// Only counts requests still actually waiting -- see newRequestIds' own comment.
+const newRequestCount = computed(() => pendingRequests.value.filter((b) => newRequestIds.value.includes(b.id)).length)
+const isNewRequest = (id: string) => newRequestIds.value.includes(id)
+
+function dismissNewRequests() {
+  newRequestIds.value = []
+}
+
+// A background read must never land on top of a write the owner just started: approve,
+// reject, mark-status and cancel all refetch when they settle, and assignWorker writes its
+// response straight onto the row object, which a concurrent whole-list replacement would
+// silently discard. This is also why the initial-load error state suppresses polling -- the
+// retry button is the explicit recovery path there, and refreshing bookings alone could not
+// repair a failed workers/services fetch anyway (worker assignment would stay empty).
+function refreshBlocked(): boolean {
+  return submittingId.value !== null || manualSubmitting.value || loading.value || loadError.value
+}
+
+async function pollBookings() {
+  const { data, error } = await apiFetch<Booking[]>('/salons/mine/bookings', { silent: true })
+  // Re-checked AFTER the await, not only before the tick: the owner can click approve while
+  // this read is already in flight, and applying a list fetched before that write would
+  // briefly roll the card back to its pre-click state. Dropping the payload costs nothing --
+  // the mutation's own refetch is a strictly fresher read of the same list.
+  if (refreshBlocked()) return
+  if (error || !data) {
+    // Deliberately leaves bookings.value alone and is `silent`, so an outage degrades into
+    // "this list is a little stale" (said once, by the pill) rather than into an emptied
+    // page or a toast every 30 seconds for as long as the API is down.
+    pollFailures.value += 1
+    return
+  }
+  pollFailures.value = 0
+  applyBookings(data)
+}
+
+useVisiblePolling({ poll: pollBookings, intervalMs: POLL_INTERVAL_MS, shouldSkip: refreshBlocked })
+
+function formatSyncTime(date: Date): string {
+  return new Intl.DateTimeFormat('fa-IR', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tehran' }).format(date)
+}
 
 // Backend returns startsAt DESC (furthest-future first), which buries the next
 // imminent booking under farther-future ones -- re-sort ascending so the soonest
@@ -401,10 +513,25 @@ const groupedBookings = computed<BookingGroup[]>(() => {
 
 <template>
   <div class="mx-auto w-full max-w-3xl space-y-6 p-4 lg:p-6">
-    <div>
-      <h1 class="text-xl font-bold text-(--color-text)">نوبت‌ها</h1>
-      <p class="mt-1 text-sm text-(--color-text-muted)">
-        {{ todayCount > 0 ? `امروز ${todayCount.toLocaleString('fa-IR')} نوبت دارید` : 'امروز نوبتی ثبت نشده است' }}
+    <div class="flex flex-wrap items-start justify-between gap-2">
+      <div>
+        <h1 class="text-xl font-bold text-(--color-text)">نوبت‌ها</h1>
+        <p class="mt-1 text-sm text-(--color-text-muted)">
+          {{ todayCount > 0 ? `امروز ${todayCount.toLocaleString('fa-IR')} نوبت دارید` : 'امروز نوبتی ثبت نشده است' }}
+        </p>
+      </div>
+      <!-- The one honest thing a self-refreshing list owes its reader: when it last actually
+           heard from the server. Quiet by default, and it is the ONLY place a failed
+           background refresh is reported -- no toast fires on a poll, at any tick count. -->
+      <p
+        v-if="lastSyncAt"
+        data-testid="sync-status"
+        class="tnum inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs"
+        :class="pollDegraded ? 'bg-(--tone-warning-bg) font-semibold text-(--tone-warning-text)' : 'text-(--color-text-muted)'"
+      >
+        <AppIcon :name="pollDegraded ? 'warning' : 'hours'" :size="13" class="shrink-0" />
+        <span v-if="pollDegraded">اتصال برقرار نیست — آخرین به‌روزرسانی {{ formatSyncTime(lastSyncAt) }}</span>
+        <span v-else>به‌روزرسانی خودکار — {{ formatSyncTime(lastSyncAt) }}</span>
       </p>
     </div>
 
@@ -431,6 +558,21 @@ const groupedBookings = computed<BookingGroup[]>(() => {
           <div class="flex flex-wrap items-center gap-2 px-1">
             <h2 class="font-bold text-(--color-text)">درخواست‌های در انتظار تایید</h2>
             <StatusBadge :label="`${pendingRequests.length.toLocaleString('fa-IR')} درخواست`" tone="warning" />
+            <!-- Survives the toast: a toast is gone in 5 seconds and an owner who stepped
+                 away misses it entirely, so the count of what arrived while they weren't
+                 looking has to persist until they act on it or dismiss it. role="status"
+                 so a screen reader is told too, since the toast is the visual-only half. -->
+            <button
+              v-if="newRequestCount > 0"
+              type="button"
+              data-testid="new-requests-badge"
+              role="status"
+              class="inline-flex min-h-8 items-center gap-1.5 rounded-full bg-(--color-accent-strong) px-3 text-xs font-bold text-(--color-fill-text) transition-transform active:scale-95"
+              @click="dismissNewRequests"
+            >
+              <AppIcon name="plus" :size="12" class="shrink-0" />
+              <span class="tnum">{{ newRequestCount.toLocaleString('fa-IR') }} درخواست جدید</span>
+            </button>
           </div>
           <!-- The one thing an owner must not misread: nothing has been paid yet. -->
           <p class="px-1 text-xs text-(--color-text-muted)">
@@ -474,16 +616,21 @@ const groupedBookings = computed<BookingGroup[]>(() => {
                   </p>
                 </div>
               </div>
-              <!-- Display only: the real deadline lives on the server (approvalExpiresAt is
-                   its snapshot), and an expired request is refused there, not here. -->
-              <span
-                v-if="b.approvalExpiresAt"
-                :data-testid="`approval-remaining-${b.id}`"
-                class="tnum inline-flex shrink-0 items-center gap-1.5 rounded-full bg-(--tone-warning-bg) px-2.5 py-1 text-xs font-semibold text-(--tone-warning-text)"
-              >
-                <AppIcon name="hours" :size="13" class="shrink-0" />
-                {{ formatRemainingTime(b.approvalExpiresAt, now) }}
-              </span>
+              <div class="flex shrink-0 flex-col items-end gap-1.5">
+                <!-- Which of several queued requests is the one that just arrived -- the
+                     heading badge gives the count, this points at the card. -->
+                <StatusBadge v-if="isNewRequest(b.id)" :data-testid="`new-request-${b.id}`" label="جدید" tone="info" />
+                <!-- Display only: the real deadline lives on the server (approvalExpiresAt is
+                     its snapshot), and an expired request is refused there, not here. -->
+                <span
+                  v-if="b.approvalExpiresAt"
+                  :data-testid="`approval-remaining-${b.id}`"
+                  class="tnum inline-flex items-center gap-1.5 rounded-full bg-(--tone-warning-bg) px-2.5 py-1 text-xs font-semibold text-(--tone-warning-text)"
+                >
+                  <AppIcon name="hours" :size="13" class="shrink-0" />
+                  {{ formatRemainingTime(b.approvalExpiresAt, now) }}
+                </span>
+              </div>
             </div>
 
             <div v-if="rejectingId === b.id" class="space-y-2 border-t border-(--color-border-soft) pt-3">
