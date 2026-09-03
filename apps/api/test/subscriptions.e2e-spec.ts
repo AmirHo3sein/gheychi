@@ -61,6 +61,19 @@ describe('Plans & salon subscriptions (e2e)', () => {
       expect(res.body.entitlements).toEqual({ smsMonthlyQuota: 100 });
     });
 
+    // A typo in this free-form JSON bag previously saved silently -- the resolution
+    // engine's absent-default for the real key (0 for smsMonthlyQuota) then applied with
+    // no admin-visible signal at all. This is the API-boundary fix for that.
+    it('rejects a plan entitlements bag with an unknown key', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/admin/plans')
+        .set('Cookie', adminCookie)
+        .send({ key: 'typo-plan', name: 'تایپو', entitlements: { smsMonthlyQouta: 100 } })
+        .expect(400);
+
+      expect(res.body.message.join(' ')).toContain('smsMonthlyQouta');
+    });
+
     it('rejects a duplicate key with a clean conflict', async () => {
       await request(app.getHttpServer())
         .post('/api/admin/plans')
@@ -129,6 +142,48 @@ describe('Plans & salon subscriptions (e2e)', () => {
         .expect(200);
 
       await request(app.getHttpServer()).delete(`/api/admin/plans/${plus.id}`).set('Cookie', adminCookie).expect(409);
+    });
+
+    // The subscriber-visibility gap this closes: before this, an admin had no way to see
+    // which salons are on a plan before editing or deactivating it, short of opening every
+    // salon's own detail page. salonId was moved onto 'plus' by the test just above.
+    it('reports subscriberCount per plan, and lets an admin list exactly which salons are on one', async () => {
+      const [plus] = await ds.query(`SELECT id FROM plans WHERE key = 'plus'`);
+      const [free] = await ds.query(`SELECT id FROM plans WHERE key = 'free'`);
+
+      const list = await request(app.getHttpServer()).get('/api/admin/plans').set('Cookie', adminCookie).expect(200);
+      const plusRow = list.body.find((p: { key: string }) => p.key === 'plus');
+      const freeRow = list.body.find((p: { key: string }) => p.key === 'free');
+      expect(plusRow.subscriberCount).toBe(1);
+      expect(freeRow.subscriberCount).toBe(0);
+
+      const salons = await request(app.getHttpServer())
+        .get(`/api/admin/plans/${plus.id}/salons`)
+        .set('Cookie', adminCookie)
+        .expect(200);
+      expect(salons.body).toHaveLength(1);
+      expect(salons.body[0].id).toBe(salonId);
+
+      const emptySalons = await request(app.getHttpServer())
+        .get(`/api/admin/plans/${free.id}/salons`)
+        .set('Cookie', adminCookie)
+        .expect(200);
+      expect(emptySalons.body).toEqual([]);
+    });
+
+    it('404s listing salons for an unknown plan id', async () => {
+      await request(app.getHttpServer())
+        .get('/api/admin/plans/00000000-0000-0000-0000-000000000000/salons')
+        .set('Cookie', adminCookie)
+        .expect(404);
+    });
+
+    it('rejects a non-admin caller listing a plan\'s salons', async () => {
+      const [plus] = await ds.query(`SELECT id FROM plans WHERE key = 'plus'`);
+      await request(app.getHttpServer())
+        .get(`/api/admin/plans/${plus.id}/salons`)
+        .set('Cookie', ownerCookie)
+        .expect(403);
     });
 
     it('deletes an unused, non-default plan cleanly', async () => {
@@ -271,6 +326,23 @@ describe('Plans & salon subscriptions (e2e)', () => {
 
       expect(res.body.subscription.entitlementOverrides).toBeNull();
       expect(res.body.resolvedEntitlements).toEqual({ smsMonthlyQuota: 50, crmCustomerCap: 100 });
+    });
+
+    it('rejects an override bag with an unknown key', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/admin/salons/${salonId}/subscription/overrides`)
+        .set('Cookie', adminCookie)
+        .send({ overrides: { crmCustomerCapp: 5 } })
+        .expect(400);
+
+      expect(res.body.message.join(' ')).toContain('crmCustomerCapp');
+
+      // The rejected write must not have applied -- still whatever the prior test left.
+      const after = await request(app.getHttpServer())
+        .get(`/api/admin/salons/${salonId}/subscription`)
+        .set('Cookie', adminCookie)
+        .expect(200);
+      expect(after.body.subscription.entitlementOverrides).toBeNull();
     });
 
     it('rejects a body with neither null nor an object', async () => {

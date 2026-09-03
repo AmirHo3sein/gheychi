@@ -1,4 +1,5 @@
-import { IsObject, IsUUID, ValidateIf } from 'class-validator';
+import { IsObject, IsUUID, Validate, ValidateIf } from 'class-validator';
+import { KnownEntitlementKeysConstraint } from '../entitlement-keys';
 
 export class AssignPlanDto {
   @IsUUID()
@@ -13,5 +14,6 @@ export class SetOverridesDto {
   // @IsOptional, which would skip validation for undefined too.
   @ValidateIf((_, value) => value !== null)
   @IsObject()
+  @Validate(KnownEntitlementKeysConstraint)
   overrides: Record<string, unknown> | null;
 }

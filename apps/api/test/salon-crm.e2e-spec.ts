@@ -193,6 +193,60 @@ describe('Salon CRM (e2e)', () => {
         .send({ note: 'نفوذ' })
         .expect(404); // no salon of their own at all -- SalonOwnerGuard itself 404s first
     });
+
+    // The sibling test above only proves SalonOwnerGuard's earlier gate (that caller has no
+    // salon at all). This is the actual cross-tenant boundary CRM's own `WHERE salon_id = $1`
+    // scoping exists to enforce: a SECOND real, approved salon with a SECOND real customer
+    // (a genuine booking, not a bare user row), read by the FIRST salon's owner -- who does
+    // own a salon, just not this customer's.
+    it('a real salon owner cannot read or note a customer who genuinely belongs to a DIFFERENT salon', async () => {
+      const rivalOwnerCookie = await loginAs(app, '09151110005');
+      const { salonId: rivalSalonId, serviceId: rivalServiceId } = await createApprovedSalonWithService(
+        app,
+        rivalOwnerCookie,
+        { name: 'Rival CRM Salon' },
+        { price: 500_000 },
+      );
+      const rivalCustomerCookie = await loginAs(app, '09151110006');
+      const rivalBooking = await request(app.getHttpServer())
+        .post('/api/bookings')
+        .set('Cookie', rivalCustomerCookie)
+        .send({ salonId: rivalSalonId, serviceId: rivalServiceId, startsAt: futureIso(24) })
+        .expect(201);
+      const rivalAuthority = new URL(rivalBooking.body.paymentUrl).searchParams.get('Authority')!;
+      await request(app.getHttpServer())
+        .get('/api/payments/callback')
+        .query({ Authority: rivalAuthority, Status: 'OK' })
+        .expect(302);
+
+      // Sanity: the rival owner genuinely sees this customer through their OWN salon's CRM.
+      const rivalList = await request(app.getHttpServer())
+        .get('/api/salons/mine/customers')
+        .set('Cookie', rivalOwnerCookie)
+        .expect(200);
+      expect(rivalList.body.items).toHaveLength(1);
+      const rivalCustomerId = rivalList.body.items[0].userId;
+
+      // The original salon's owner (ownerCookie) DOES own a real salon -- SalonOwnerGuard
+      // lets them through -- but this customer belongs only to the rival salon.
+      await request(app.getHttpServer())
+        .get(`/api/salons/mine/customers/${rivalCustomerId}`)
+        .set('Cookie', ownerCookie)
+        .expect(404);
+
+      await request(app.getHttpServer())
+        .post(`/api/salons/mine/customers/${rivalCustomerId}/notes`)
+        .set('Cookie', ownerCookie)
+        .send({ note: 'نفوذ واقعی بین دو سالن' })
+        .expect(404);
+
+      // And the reverse direction: the rival owner cannot reach the original salon's real
+      // customer either -- the scoping is symmetric, not a one-off special case.
+      await request(app.getHttpServer())
+        .get(`/api/salons/mine/customers/${customerId}`)
+        .set('Cookie', rivalOwnerCookie)
+        .expect(404);
+    });
   });
 
   describe('GET /salons/mine/dashboard-summary', () => {

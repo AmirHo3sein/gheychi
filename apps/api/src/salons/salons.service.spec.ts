@@ -499,8 +499,24 @@ describe('SalonsService', () => {
 
       const result = await service.updateHandle('s1', 'my-new-handle');
 
-      expect(emUpdate).toHaveBeenCalledWith(Salon, { id: 's1' }, { slug: 'my-new-handle' });
+      expect(emUpdate).toHaveBeenCalledWith(Salon, { id: 's1', slug: 'old-handle' }, { slug: 'my-new-handle' });
       expect(result.slug).toBe('my-new-handle');
+    });
+
+    // The CAS guard: two concurrent renames of the SAME salon must not silently let the
+    // loser overwrite the winner's already-committed slug based on a stale read.
+    it('rejects with a clean, retryable conflict when the salon\'s slug already moved since it was read', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 's1', slug: 'old-handle' });
+      emUpdate.mockResolvedValue({ affected: 0 });
+
+      await expect(service.updateHandle('s1', 'my-new-handle')).rejects.toBeInstanceOf(ConflictException);
+      await expect(service.updateHandle('s1', 'my-new-handle')).rejects.toThrow(
+        'نشانی سالن هم‌زمان توسط عملیات دیگری تغییر کرده است؛ دوباره تلاش کنید',
+      );
+      // The throw happens inside the transaction callback before any reservation lookup
+      // or history write is attempted.
+      expect(emFindOneBy).not.toHaveBeenCalled();
+      expect(emInsert).not.toHaveBeenCalled();
     });
 
     // The whole point of the table: a printed QR code outlives any rename, and the handle it

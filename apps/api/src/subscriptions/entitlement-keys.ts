@@ -1,3 +1,5 @@
+import { ValidationArguments, ValidatorConstraint, ValidatorConstraintInterface } from 'class-validator';
+
 /**
  * The registry of every entitlement key the platform understands.
  *
@@ -65,4 +67,35 @@ export const ENTITLEMENT_KEYS = Object.keys(ENTITLEMENT_DEFINITIONS) as Entitlem
 
 export function isKnownEntitlementKey(key: string): key is EntitlementKey {
   return Object.hasOwn(ENTITLEMENT_DEFINITIONS, key);
+}
+
+/**
+ * class-validator constraint wiring the registry above into every DTO that accepts a raw
+ * entitlements bag (`plans.entitlements`, `salon_subscriptions.entitlement_overrides`).
+ * Both are admin-edited free-form jsonb, so without this a typo in the admin panel's JSON
+ * editor (e.g. `smsMonthlyQouta`) previously saved silently -- the resolution engine falls
+ * back to the registry's absent-default for the real key, which for `smsMonthlyQuota` is
+ * 0 (blocked), silently disabling a paid capability with no admin-visible signal at all.
+ * `@Validate(KnownEntitlementKeysConstraint)` rejects the write at the API boundary
+ * instead, same house pattern as `PercentRewardValueCapConstraint` (referral.dto.ts).
+ */
+function unknownEntitlementKeysIn(value: unknown): string[] {
+  if (value === null || value === undefined) return []; // @IsOptional/@ValidateIf's job
+  if (typeof value !== 'object' || Array.isArray(value)) return []; // @IsObject's job
+  return Object.keys(value).filter((key) => !isKnownEntitlementKey(key));
+}
+
+@ValidatorConstraint({ name: 'knownEntitlementKeys', async: false })
+export class KnownEntitlementKeysConstraint implements ValidatorConstraintInterface {
+  // Stateless (recomputes from ValidationArguments.value in both methods) rather than
+  // caching onto `this` -- this constraint is instantiated once and shared across
+  // concurrent requests by class-validator's own container.
+  validate(value: unknown): boolean {
+    return unknownEntitlementKeysIn(value).length === 0;
+  }
+
+  defaultMessage(args: ValidationArguments): string {
+    const unknownKeys = unknownEntitlementKeysIn(args.value);
+    return `کلید(های) نامعتبر در entitlements: ${unknownKeys.join(', ')} -- کلیدهای معتبر: ${ENTITLEMENT_KEYS.join(', ')}`;
+  }
 }

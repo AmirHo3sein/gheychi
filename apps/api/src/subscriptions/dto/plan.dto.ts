@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsInt, IsObject, IsOptional, IsString, Length, Matches, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsObject, IsOptional, IsString, Length, Matches, Min, Validate } from 'class-validator';
+import { KnownEntitlementKeysConstraint } from '../entitlement-keys';
 
 export class CreatePlanDto {
   // Internal identifier -- immutable after creation (absent from UpdatePlanDto below), see
@@ -25,6 +26,7 @@ export class CreatePlanDto {
 
   @IsOptional()
   @IsObject()
+  @Validate(KnownEntitlementKeysConstraint)
   entitlements?: Record<string, unknown>;
 
   @IsOptional()
@@ -52,6 +54,7 @@ export class UpdatePlanDto {
 
   @IsOptional()
   @IsObject()
+  @Validate(KnownEntitlementKeysConstraint)
   entitlements?: Record<string, unknown>;
 
   @IsOptional()

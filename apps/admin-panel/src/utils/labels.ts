@@ -346,6 +346,7 @@ const AUDIT_ACTION: Record<string, LabelEntry> = {
   'worker-rating.moderate': { label: 'تعدیل ارزیابی کارمند', tone: 'warning' },
   'booking.approval.approved': { label: 'تایید درخواست رزرو', tone: 'success' },
   'booking.approval.rejected': { label: 'رد درخواست رزرو', tone: 'danger' },
+  'booking.rescheduled': { label: 'جابه‌جایی زمان نوبت', tone: 'info' },
   'booking-settings.update': { label: 'ویرایش تنظیمات رزرو سالن', tone: 'info' },
   'feature-flags.update': { label: 'تغییر قابلیت‌های پلتفرم', tone: 'warning' },
   'invoice.payment.record': { label: 'ثبت پرداخت صورتحساب', tone: 'success' },

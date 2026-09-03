@@ -19,6 +19,7 @@ describe('PlansService', () => {
   let qbWhere: jest.Mock;
   let qbExecute: jest.Mock;
   let dataSourceTransaction: jest.Mock;
+  let dataSourceQuery: jest.Mock;
 
   beforeEach(async () => {
     repo = {
@@ -37,12 +38,13 @@ describe('PlansService', () => {
     dataSourceTransaction = jest.fn((cb: (em: unknown) => unknown) =>
       cb({ update: emUpdate, findOneBy: emFindOneBy, createQueryBuilder: jest.fn(() => qb) }),
     );
+    dataSourceQuery = jest.fn().mockResolvedValue([]);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         PlansService,
         { provide: getRepositoryToken(Plan), useValue: repo },
-        { provide: DataSource, useValue: { transaction: dataSourceTransaction } },
+        { provide: DataSource, useValue: { transaction: dataSourceTransaction, query: dataSourceQuery } },
       ],
     }).compile();
     service = moduleRef.get(PlansService);
@@ -130,6 +132,42 @@ describe('PlansService', () => {
       repo.findOneBy.mockResolvedValue({ id: 'p2', isDefault: false });
       await service.remove('p2');
       expect(repo.delete).toHaveBeenCalledWith('p2');
+    });
+  });
+
+  describe('list (with subscriber counts)', () => {
+    it('attaches 0 for a plan with no matching count row -- a LEFT-JOIN-shaped result, not an N+1', async () => {
+      repo.find.mockResolvedValue([{ id: 'p1', key: 'free' }, { id: 'p2', key: 'plus' }]);
+      dataSourceQuery.mockResolvedValue([{ plan_id: 'p2', count: '3' }]);
+
+      const result = await service.list();
+
+      expect(result).toEqual([
+        { id: 'p1', key: 'free', subscriberCount: 0 },
+        { id: 'p2', key: 'plus', subscriberCount: 3 },
+      ]);
+      // Exactly one query for the whole list, not one per plan.
+      expect(dataSourceQuery).toHaveBeenCalledTimes(1);
+      expect(dataSourceQuery.mock.calls[0][0]).toContain("status = 'active'");
+    });
+  });
+
+  describe('listSalons', () => {
+    it('404s for an unknown plan id, without ever querying salons', async () => {
+      repo.findOneBy.mockResolvedValue(null);
+      await expect(service.listSalons('missing')).rejects.toBeInstanceOf(NotFoundException);
+      expect(dataSourceQuery).not.toHaveBeenCalled();
+    });
+
+    it('queries only ACTIVE subscriptions on this plan', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'p1' });
+      dataSourceQuery.mockResolvedValue([{ id: 's1', name: 'Salon A', slug: 'salon-a', status: 'approved' }]);
+
+      const result = await service.listSalons('p1');
+
+      expect(result).toEqual([{ id: 's1', name: 'Salon A', slug: 'salon-a', status: 'approved' }]);
+      expect(dataSourceQuery.mock.calls[0][0]).toContain("ss.status = 'active'");
+      expect(dataSourceQuery.mock.calls[0][1]).toEqual(['p1']);
     });
   });
 });

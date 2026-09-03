@@ -236,7 +236,21 @@ export class SalonsService {
         // can actually see the reservation it just wrote. Checking first and updating second
         // would leave exactly the hijack window this table exists to close: both statements
         // would observe a handle that is free-and-unreserved and the later writer would win it.
-        await em.update(Salon, { id: salonId }, { slug: handle });
+        //
+        // `slug: previousSlug` in the WHERE makes this the same CAS idiom every other
+        // status-transition mutation in this codebase uses. Without it, two concurrent
+        // renames of the SAME salon (e.g. owner + admin) would both blindly overwrite
+        // `salons.slug` regardless of what the other already committed -- Postgres's
+        // row-level lock still serializes them and the loser's later INSERT below happens
+        // to conflict on `previousSlug` in the common case (self-healing the data), but it
+        // surfaces as a confusing "used by another salon" error for what is really just a
+        // stale read of this salon's own row. Checking `affected` here fails the loser
+        // immediately, before any of that, with an accurate message telling them to retry
+        // against the salon's current state.
+        const updateResult = await em.update(Salon, { id: salonId, slug: previousSlug }, { slug: handle });
+        if (!updateResult.affected) {
+          throw new ConflictException('نشانی سالن هم‌زمان توسط عملیات دیگری تغییر کرده است؛ دوباره تلاش کنید');
+        }
 
         const reservation = await em.findOneBy(SalonSlugHistory, { slug: handle });
         if (reservation && reservation.salonId !== salonId && !asAdmin) {

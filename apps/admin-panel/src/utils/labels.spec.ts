@@ -1,4 +1,6 @@
 // apps/admin-panel/src/utils/labels.spec.ts
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   AUDIT_ACTION_KEYS,
@@ -47,9 +49,14 @@ describe('auditActionLabel', () => {
     // fix sweep caught the drift: feature-flags.update, invoice.payment.record,
     // salon.handle.set, and the monetization initiative's 3 plan.* + 3 subscription-coupon.*
     // + 2 subscription.billing-period.* + subscription.cancel/overrides.set/plan.set.
+    // 1 more (booking.rescheduled) had likewise accumulated without a label -- caught by the
+    // 2026-09-04 verification audit, which also replaced the coverage describe block below
+    // with a real scan of the backend source (see scanBackendAuditActions) instead of a
+    // second hand-maintained list, since the hand-maintained one was exactly how this one
+    // slipped through undetected in the first place.
     // This length guard is deliberate: adding a backend @AuditAction without a Farsi label
     // must fail here.
-    expect(AUDIT_ACTION_KEYS).toHaveLength(47)
+    expect(AUDIT_ACTION_KEYS).toHaveLength(48)
     for (const action of AUDIT_ACTION_KEYS) {
       const entry = auditActionLabel(action)
       // A mapped entry never falls back to the raw dotted action name.
@@ -63,65 +70,59 @@ describe('auditActionLabel', () => {
   })
 })
 
-// Pinned against the backend: every (action, targetType) pair below is a literal
-// @AuditAction('<action>', '<targetType>') decorator in apps/api/src (grep for
-// `@AuditAction(` there to refresh this list). The length guard above catches a label
-// added or removed on THIS side; this catches the other direction -- a backend action that
-// exists but would render as a raw dotted key in the audit-log table and be missing from
-// the AuditLogView filter dropdown (built from AUDIT_ACTION_KEYS). Kept as a hardcoded list
-// rather than read from the api source with fs, since no admin-panel test reaches across
-// packages that way and the two apps deploy independently.
-const BACKEND_AUDIT_ACTIONS: ReadonlyArray<readonly [action: string, targetType: string]> = [
-  ['blogcategory.create', 'blogcategory'],
-  ['blogcategory.delete', 'blogcategory'],
-  ['blogcategory.update', 'blogcategory'],
-  ['booking-settings.update', 'salon'],
-  ['booking.approval.approved', 'booking'],
-  ['booking.approval.rejected', 'booking'],
-  ['category-request.approve', 'category-request'],
-  ['category-request.reject', 'category-request'],
-  ['category.create', 'category'],
-  ['category.delete', 'category'],
-  ['category.update', 'category'],
-  ['config.update', 'config'],
-  ['coupon.create', 'coupon'],
-  ['coupon.delete', 'coupon'],
-  ['coupon.update', 'coupon'],
-  ['feature-flags.update', 'feature-flags'],
-  ['invoice.payment.record', 'invoice'],
-  ['plan.create', 'plan'],
-  ['plan.delete', 'plan'],
-  ['plan.update', 'plan'],
-  ['post.cover.remove', 'post'],
-  ['post.cover.upload', 'post'],
-  ['post.create', 'post'],
-  ['post.delete', 'post'],
-  ['post.publish', 'post'],
-  ['post.unpublish', 'post'],
-  ['post.update', 'post'],
-  ['referral-reward-type.update', 'referral-reward-type'],
-  ['referral.cancel', 'referral'],
-  ['report.resolve', 'report'],
-  ['review.moderate', 'review'],
-  ['salon.featured.set', 'salon'],
-  ['salon.handle.set', 'salon'],
-  ['salon.portfolio.status.set', 'portfolioitem'],
-  ['salon.status.set', 'salon'],
-  ['salon.story.status.set', 'story'],
-  ['subscription-coupon.create', 'subscription-coupon'],
-  ['subscription-coupon.delete', 'subscription-coupon'],
-  ['subscription-coupon.update', 'subscription-coupon'],
-  ['subscription.billing-period.create', 'subscription-billing-period'],
-  ['subscription.billing-period.status.set', 'subscription-billing-period'],
-  ['subscription.cancel', 'salon-subscription'],
-  ['subscription.overrides.set', 'salon-subscription'],
-  ['subscription.plan.set', 'salon-subscription'],
-  ['user.status.set', 'user'],
-  ['wallet.adjust', 'wallet'],
-  ['worker-rating.moderate', 'worker-rating'],
-]
+// Pinned against the backend by actually reading it, not by a hand-maintained copy: a
+// hardcoded list here can drift silently the moment someone adds a backend @AuditAction and
+// forgets this file exists (exactly what happened with booking.rescheduled, caught by the
+// 2026-09 verification audit -- the old hardcoded list was stale and the length guard above
+// only ever checks THIS side against itself, so it can't catch that). Reading is test-time
+// only, not a runtime import -- it does not couple the two apps' deployments, unlike a real
+// shared-package dependency would.
+// Walks up from wherever the test runner's own cwd happens to be (repo root via turbo/pnpm
+// -w, or this app's own directory when run directly) to find the monorepo root, identified
+// by pnpm-workspace.yaml -- more robust than import.meta.url, which is not always a real
+// file:// URL under Vitest's module system.
+function findMonorepoRoot(startDir: string): string {
+  let dir = startDir
+  for (let i = 0; i < 10; i++) {
+    if (existsSync(join(dir, 'pnpm-workspace.yaml'))) return dir
+    const parent = dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  throw new Error(`Could not find pnpm-workspace.yaml above ${startDir}`)
+}
+
+function findApiSrcDir(): string {
+  return join(findMonorepoRoot(process.cwd()), 'apps/api/src')
+}
+
+function listTsFilesRecursive(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = join(dir, entry.name)
+    if (entry.isDirectory()) return listTsFilesRecursive(full)
+    return entry.name.endsWith('.ts') && !entry.name.endsWith('.spec.ts') ? [full] : []
+  })
+}
+
+function scanBackendAuditActions(): ReadonlyArray<readonly [action: string, targetType: string]> {
+  const pattern = /@AuditAction\(\s*'([^']+)'\s*,\s*'([^']+)'/g
+  const found = new Map<string, string>();
+  for (const file of listTsFilesRecursive(findApiSrcDir())) {
+    const source = readFileSync(file, 'utf8')
+    for (const match of source.matchAll(pattern)) found.set(match[1]!, match[2]!)
+  }
+  return [...found.entries()].sort(([a], [b]) => a.localeCompare(b))
+}
+
+const BACKEND_AUDIT_ACTIONS = scanBackendAuditActions()
 
 describe('audit label coverage of the backend @AuditAction list', () => {
+  // Canary for the scan itself: a broken path or regex would make BACKEND_AUDIT_ACTIONS
+  // silently empty, which would make every test below vacuously pass instead of failing.
+  it('actually found a realistic number of real backend audit actions', () => {
+    expect(BACKEND_AUDIT_ACTIONS.length).toBeGreaterThan(40)
+  })
+
   it('every backend audit action has a Farsi label and is filterable', () => {
     const missing = BACKEND_AUDIT_ACTIONS.map(([action]) => action).filter((action) => !AUDIT_ACTION_KEYS.includes(action))
     expect(missing).toEqual([])

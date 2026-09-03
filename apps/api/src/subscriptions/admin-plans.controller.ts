@@ -24,6 +24,11 @@ export class AdminPlansController {
     return this.plans.list();
   }
 
+  @Get(':id/salons')
+  listSalons(@Param('id', ParseUUIDPipe) id: string) {
+    return this.plans.listSalons(id);
+  }
+
   @Post()
   @UseInterceptors(AuditInterceptor)
   @AuditAction('plan.create', 'plan')

@@ -18,13 +18,13 @@ vi.mock('@/composables/useToast', () => ({
 function freePlan() {
   return {
     id: 'plan-free', key: 'free', name: 'رایگان', description: null, monthlyPriceToman: 0,
-    isActive: true, isDefault: true, sortOrder: 0, entitlements: {},
+    isActive: true, isDefault: true, sortOrder: 0, entitlements: {}, subscriberCount: 0,
   }
 }
 function plusPlan() {
   return {
     id: 'plan-plus', key: 'plus', name: 'پلاس', description: 'برای سالن‌های فعال', monthlyPriceToman: 490000,
-    isActive: true, isDefault: false, sortOrder: 1, entitlements: { smsMonthlyQuota: 100 },
+    isActive: true, isDefault: false, sortOrder: 1, entitlements: { smsMonthlyQuota: 100 }, subscriberCount: 2,
   }
 }
 
@@ -176,6 +176,37 @@ describe('PlansView', () => {
 
     expect(fetchMock).toHaveBeenCalledWith('/admin/plans/plan-plus', { method: 'DELETE' })
     expect(wrapper.findAll('[data-testid="plan-card"]')).toHaveLength(1)
+  })
+
+  it('shows subscriberCount and fetches+expands the salons list on demand, only once', async () => {
+    fetchMock.mockResolvedValueOnce({ data: [plusPlan()], error: null })
+    const wrapper = await mountView()
+
+    expect(wrapper.get('[data-testid="toggle-salons-plus"]').text()).toContain('2')
+
+    fetchMock.mockResolvedValueOnce({
+      data: [
+        { id: 's1', name: 'سالن الف', slug: 'salon-a', status: 'approved' },
+        { id: 's2', name: 'سالن ب', slug: 'salon-b', status: 'approved' },
+      ],
+      error: null,
+    })
+    await wrapper.get('[data-testid="toggle-salons-plus"]').trigger('click')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith('/admin/plans/plan-plus/salons', { silent: true })
+    const list = wrapper.get('[data-testid="salons-list-plus"]')
+    expect(list.text()).toContain('سالن الف')
+    expect(list.text()).toContain('سالن ب')
+
+    // Collapsing and re-expanding must not re-fetch -- the first response is cached.
+    fetchMock.mockClear()
+    await wrapper.get('[data-testid="toggle-salons-plus"]').trigger('click')
+    expect(wrapper.find('[data-testid="salons-list-plus"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="toggle-salons-plus"]').trigger('click')
+    await flushPromises()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="salons-list-plus"]').text()).toContain('سالن الف')
   })
 
   it('keeps a plan in the list when delete fails (e.g. a 409 conflict)', async () => {

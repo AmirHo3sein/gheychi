@@ -29,6 +29,14 @@ interface Plan {
   isDefault: boolean
   sortOrder: number
   entitlements: Record<string, unknown>
+  subscriberCount: number
+}
+
+interface PlanSalonSummary {
+  id: string
+  name: string
+  slug: string
+  status: string
 }
 
 const { apiFetch } = useApi()
@@ -206,6 +214,27 @@ async function remove(plan: Plan) {
   // toast path -- nothing special to do here beyond not removing the row.
   if (!error) plans.value = plans.value.filter((p) => p.id !== plan.id)
 }
+
+// --- Subscriber list (which salons are actually on this plan) ---------------
+// Fetched on demand, not alongside the plan list itself -- subscriberCount already answers
+// "how many" for every plan at once; the per-salon detail is only worth a request once an
+// admin is actually about to act on a specific plan.
+const expandedSalonsId = ref<string | null>(null)
+const loadingSalonsId = ref<string | null>(null)
+const salonsByPlanId = ref<Record<string, PlanSalonSummary[]>>({})
+
+async function toggleSalonsList(plan: Plan) {
+  if (expandedSalonsId.value === plan.id) {
+    expandedSalonsId.value = null
+    return
+  }
+  expandedSalonsId.value = plan.id
+  if (salonsByPlanId.value[plan.id]) return
+  loadingSalonsId.value = plan.id
+  const { data } = await apiFetch<PlanSalonSummary[]>(`/admin/plans/${plan.id}/salons`, { silent: true })
+  loadingSalonsId.value = null
+  if (data) salonsByPlanId.value[plan.id] = data
+}
 </script>
 
 <template>
@@ -214,7 +243,7 @@ async function remove(plan: Plan) {
       <div>
         <h1 class="text-lg font-bold text-(--color-text)">پلن‌های اشتراک</h1>
         <p class="mt-1 text-sm text-(--color-text-muted)">
-          نام، قیمت و امکانات هر پلن از همین‌جا قابل تعریف است. اعمال محدودیت‌ها روی سالن‌ها در فازهای بعدی پیاده‌سازی می‌شود.
+          نام، قیمت و امکانات هر پلن از همین‌جا قابل تعریف است. کلیدهای شناخته‌شده امکانات (مثل سقف پیامک ماهانه) واقعاً روی سالن‌های مشترک اعمال می‌شوند.
         </p>
       </div>
       <AppButton v-if="!creating" type="button" variant="primary" data-testid="new-plan-button" @click="creating = true">
@@ -322,6 +351,27 @@ async function remove(plan: Plan) {
           </div>
 
           <p class="mt-3 break-words text-xs text-(--color-text-muted)">{{ formatEntitlements(plan.entitlements) }}</p>
+
+          <button
+            type="button"
+            class="mt-2 text-xs font-semibold text-(--color-accent) hover:underline"
+            :data-testid="`toggle-salons-${plan.key}`"
+            @click="toggleSalonsList(plan)"
+          >
+            {{ plan.subscriberCount }} سالن مشترک
+            <span v-if="plan.subscriberCount > 0">{{ expandedSalonsId === plan.id ? '(بستن)' : '(مشاهده)' }}</span>
+          </button>
+
+          <div v-if="expandedSalonsId === plan.id" :data-testid="`salons-list-${plan.key}`" class="mt-2 rounded-lg bg-(--color-surface-subtle) p-2.5">
+            <p v-if="loadingSalonsId === plan.id" class="text-xs text-(--color-text-muted)">در حال بارگذاری…</p>
+            <p v-else-if="(salonsByPlanId[plan.id]?.length ?? 0) === 0" class="text-xs text-(--color-text-muted)">هیچ سالنی روی این پلن نیست.</p>
+            <ul v-else class="space-y-1">
+              <li v-for="salon in salonsByPlanId[plan.id]" :key="salon.id" class="flex items-center justify-between gap-2 text-xs text-(--color-text)">
+                <span class="truncate">{{ salon.name }}</span>
+                <StatusBadge :label="salon.status" tone="neutral" />
+              </li>
+            </ul>
+          </div>
 
           <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-(--color-border-soft) pt-3.5">
             <AppButton type="button" variant="secondary" :data-testid="`edit-plan-${plan.key}`" @click="startEdit(plan)">

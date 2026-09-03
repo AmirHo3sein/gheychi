@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import { DataSource } from 'typeorm';
 import { loginAs, loginAsAdmin } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
 import { createApprovedSalon } from './factories/salon.factory';
@@ -243,6 +244,44 @@ describe('Salon public handle (e2e)', () => {
         .send({ handle: 'admin-recourse-after-deny' })
         .expect(200);
       expect(res.body.slug).toBe('admin-recourse-after-deny');
+    });
+  });
+
+  // Real-Postgres proof of the CAS guard in SalonsService.updateHandle: the `WHERE
+  // slug = previousSlug` on the salons UPDATE means two concurrent renames of the SAME
+  // salon can't both land -- the loser must fail cleanly and retry, never silently
+  // overwrite whichever one actually committed. A dedicated salon, not the shared one
+  // above, so this doesn't disturb the sequential narrative's handle state.
+  describe('concurrency: two renames of the same salon at once', () => {
+    it('lets exactly one rename win; the loser gets a clean, retryable conflict', async () => {
+      const raceOwnerCookie = await loginAs(app, '09141119999');
+      const { salonId: raceSalonId } = await createApprovedSalon(app, raceOwnerCookie, { name: 'Race Handle Salon' });
+
+      const [first, second] = await Promise.all([
+        request(app.getHttpServer())
+          .patch('/api/salons/mine/handle')
+          .set('Cookie', raceOwnerCookie)
+          .send({ handle: 'race-handle-a' }),
+        request(app.getHttpServer())
+          .patch('/api/salons/mine/handle')
+          .set('Cookie', raceOwnerCookie)
+          .send({ handle: 'race-handle-b' }),
+      ]);
+
+      const statuses = [first.status, second.status].sort();
+      expect(statuses).toEqual([200, 409]);
+      const winner = [first, second].find((r) => r.status === 200)!;
+      const loser = [first, second].find((r) => r.status === 409)!;
+      expect(loser.body.message).toContain('هم‌زمان');
+
+      const ds = app.get(DataSource);
+      const [row] = await ds.query(`SELECT slug FROM salons WHERE id = $1`, [raceSalonId]);
+      expect(row.slug).toBe(winner.body.slug);
+
+      // Exactly one history row for whatever the salon's original (pre-race) handle
+      // was -- the winner's release, recorded once, never twice.
+      const history = await ds.query(`SELECT slug FROM salon_slug_history WHERE salon_id = $1`, [raceSalonId]);
+      expect(history).toHaveLength(1);
     });
   });
 });

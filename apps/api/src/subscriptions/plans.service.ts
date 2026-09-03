@@ -5,6 +5,20 @@ import { isForeignKeyViolation, isUniqueViolation } from '../common/postgres-err
 import { CreatePlanDto, UpdatePlanDto } from './dto/plan.dto';
 import { Plan } from './plan.entity';
 
+export interface PlanWithSubscriberCount extends Plan {
+  /** Count of `active` salon_subscriptions rows on this plan right now -- a `canceled`
+   *  subscription's `plan_id` is left stale (see SalonSubscription's own doc comment), so
+   *  counting it here would overstate who is actually affected by editing this plan. */
+  subscriberCount: number;
+}
+
+export interface PlanSalonSummary {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+}
+
 @Injectable()
 export class PlansService {
   constructor(
@@ -12,8 +26,35 @@ export class PlansService {
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
-  list(): Promise<Plan[]> {
-    return this.repo.find({ order: { sortOrder: 'ASC', createdAt: 'ASC' } });
+  // Subscriber counts, not just the plan list: before this, an admin had no way to see the
+  // blast radius of editing or deactivating a plan without opening every salon's detail
+  // page individually. One raw query, not per-plan N+1 -- a LEFT JOIN so a plan with zero
+  // subscribers still gets a row (COUNT of no matching right-side rows is 0, not omitted).
+  // Raw SQL against `salon_subscriptions` rather than a Salon-entity join: this module
+  // deliberately has no dependency on SalonsModule (see subscriptions.module.ts's own
+  // comment) so SalonsModule can import this one without a cycle.
+  async list(): Promise<PlanWithSubscriberCount[]> {
+    const plans = await this.repo.find({ order: { sortOrder: 'ASC', createdAt: 'ASC' } });
+    const counts: Array<{ plan_id: string; count: string }> = await this.dataSource.query(
+      `SELECT plan_id, COUNT(*) AS count FROM salon_subscriptions WHERE status = 'active' GROUP BY plan_id`,
+    );
+    const countByPlanId = new Map(counts.map((row) => [row.plan_id, Number(row.count)]));
+    return plans.map((plan) => ({ ...plan, subscriberCount: countByPlanId.get(plan.id) ?? 0 }));
+  }
+
+  /** Which salons are actually on this plan right now -- the detail behind list()'s count,
+   *  for an admin about to edit or deactivate it. */
+  async listSalons(planId: string): Promise<PlanSalonSummary[]> {
+    const plan = await this.repo.findOneBy({ id: planId });
+    if (!plan) throw new NotFoundException('Plan not found');
+    return this.dataSource.query(
+      `SELECT s.id, s.name, s.slug, s.status
+       FROM salons s
+       JOIN salon_subscriptions ss ON ss.salon_id = s.id
+       WHERE ss.plan_id = $1 AND ss.status = 'active'
+       ORDER BY s.name ASC`,
+      [planId],
+    );
   }
 
   async create(dto: CreatePlanDto): Promise<Plan> {
