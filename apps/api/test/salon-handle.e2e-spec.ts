@@ -220,4 +220,29 @@ describe('Salon public handle (e2e)', () => {
       .send({ handle: 'nope' })
       .expect(403);
   });
+
+  describe('entitlements.customHandle gate', () => {
+    it('blocks the owner route once an admin denies the entitlement, but never blocks the admin-override route', async () => {
+      await request(app.getHttpServer())
+        .patch(`/api/admin/salons/${salonId}/subscription/overrides`)
+        .set('Cookie', adminCookie)
+        .send({ overrides: { customHandle: false } })
+        .expect(200);
+
+      const denied = await request(app.getHttpServer())
+        .patch('/api/salons/mine/handle')
+        .set('Cookie', ownerCookie)
+        .send({ handle: 'denied-by-entitlement' })
+        .expect(403);
+      expect(denied.body.message).toContain('نشانی اختصاصی');
+
+      // The documented recourse: even with the entitlement denied, admin override still works.
+      const res = await request(app.getHttpServer())
+        .patch(`/api/admin/salons/${salonId}/handle`)
+        .set('Cookie', adminCookie)
+        .send({ handle: 'admin-recourse-after-deny' })
+        .expect(200);
+      expect(res.body.slug).toBe('admin-recourse-after-deny');
+    });
+  });
 });

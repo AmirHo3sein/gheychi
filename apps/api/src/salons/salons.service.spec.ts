@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, QueryFailedError } from 'typeorm';
@@ -6,6 +6,7 @@ import { AdminNotificationsService } from '../admin-notifications/admin-notifica
 import { AnalyticsService } from '../analytics/analytics.service';
 import { ServiceCategory } from '../catalog/service-category.entity';
 import { CitiesService } from '../cities/cities.service';
+import { EntitlementsService } from '../subscriptions/entitlements.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { UsersService } from '../users/users.service';
 import { SalonCategory } from './salon-category.entity';
@@ -25,6 +26,7 @@ describe('SalonsService', () => {
   let citiesService: { findIdByName: jest.Mock };
   let analytics: { track: jest.Mock };
   let subscriptions: { createDefaultSubscription: jest.Mock };
+  let entitlements: { requireFeature: jest.Mock };
   let emSave: jest.Mock;
   let emCreate: jest.Mock;
   let emInsert: jest.Mock;
@@ -77,6 +79,10 @@ describe('SalonsService', () => {
     slugHistoryRepo = { findOneBy: jest.fn().mockResolvedValue(null) };
     analytics = { track: jest.fn().mockResolvedValue(undefined) };
     subscriptions = { createDefaultSubscription: jest.fn().mockResolvedValue(undefined) };
+    // Default: entitlement granted, matching the registry's customHandle default (true) --
+    // every pre-existing updateHandle test exercises the owner path and must keep passing
+    // unless it explicitly opts into the denied case.
+    entitlements = { requireFeature: jest.fn().mockResolvedValue(undefined) };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -91,6 +97,7 @@ describe('SalonsService', () => {
         { provide: AnalyticsService, useValue: analytics },
         { provide: SubscriptionsService, useValue: subscriptions },
         { provide: getRepositoryToken(SalonSlugHistory), useValue: slugHistoryRepo },
+        { provide: EntitlementsService, useValue: entitlements },
       ],
     }).compile();
     service = moduleRef.get(SalonsService);
@@ -565,6 +572,35 @@ describe('SalonsService', () => {
       expect(result.slug).toBe('same-handle');
       expect(dataSourceTransaction).not.toHaveBeenCalled();
       expect(emInsert).not.toHaveBeenCalled();
+    });
+
+    describe('entitlements.customHandle gate', () => {
+      it('rejects the owner path with a 403 when the entitlement is denied, and never touches the salon row', async () => {
+        entitlements.requireFeature.mockRejectedValue(new ForbiddenException('ویرایش نشانی اختصاصی در پلن فعلی سالن شما فعال نیست'));
+
+        await expect(service.updateHandle('s1', 'my-new-handle')).rejects.toBeInstanceOf(ForbiddenException);
+        expect(entitlements.requireFeature).toHaveBeenCalledWith('s1', 'customHandle', expect.any(String));
+        expect(repo.findOneBy).not.toHaveBeenCalled();
+      });
+
+      it('lets the owner path through when the entitlement is granted (true or absent, both resolved by EntitlementsService)', async () => {
+        repo.findOneBy.mockResolvedValue({ id: 's1', slug: 'old-handle' });
+
+        const result = await service.updateHandle('s1', 'my-new-handle');
+
+        expect(entitlements.requireFeature).toHaveBeenCalledWith('s1', 'customHandle', expect.any(String));
+        expect(result.slug).toBe('my-new-handle');
+      });
+
+      it('never checks the entitlement on the admin-override path, even when it would be denied', async () => {
+        entitlements.requireFeature.mockRejectedValue(new ForbiddenException('denied'));
+        repo.findOneBy.mockResolvedValue({ id: 's1', slug: 'old-handle' });
+
+        const result = await service.updateHandle('s1', 'my-new-handle', true);
+
+        expect(entitlements.requireFeature).not.toHaveBeenCalled();
+        expect(result.slug).toBe('my-new-handle');
+      });
     });
   });
 

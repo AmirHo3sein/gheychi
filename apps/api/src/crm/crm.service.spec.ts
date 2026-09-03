@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { EntitlementsService } from '../subscriptions/entitlements.service';
 import { CrmService } from './crm.service';
 import { CustomerNote } from './customer-note.entity';
 
@@ -9,6 +10,7 @@ describe('CrmService', () => {
   let service: CrmService;
   let dataSourceQuery: jest.Mock;
   let notesRepo: { find: jest.Mock; create: jest.Mock; save: jest.Mock; delete: jest.Mock };
+  let entitlements: { getLimit: jest.Mock };
 
   beforeEach(async () => {
     dataSourceQuery = jest.fn();
@@ -18,12 +20,16 @@ describe('CrmService', () => {
       save: jest.fn((v) => Promise.resolve({ id: 'note-1', ...v })),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
     };
+    // Default: no cap configured (the registry's own crmCustomerCap default), matching every
+    // pre-existing listCustomers test's expectation of unbounded behavior.
+    entitlements = { getLimit: jest.fn().mockResolvedValue(null) };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         CrmService,
         { provide: DataSource, useValue: { query: dataSourceQuery } },
         { provide: getRepositoryToken(CustomerNote), useValue: notesRepo },
+        { provide: EntitlementsService, useValue: entitlements },
       ],
     }).compile();
     service = moduleRef.get(CrmService);
@@ -102,7 +108,7 @@ describe('CrmService', () => {
 
       const [sql, params] = dataSourceQuery.mock.calls[0]!;
       expect(sql).toContain('ORDER BY last_visit_at DESC NULLS LAST, user_id ASC');
-      expect(params).toEqual(['salon-1', null, null, 20, 0]);
+      expect(params).toEqual(['salon-1', null, null, 20, 0, null]);
       expect(result).toMatchObject({ page: 1, pageSize: 20, total: 0 });
     });
 
@@ -111,7 +117,7 @@ describe('CrmService', () => {
 
       await service.listCustomers('salon-1', { page: 3, pageSize: 25 });
 
-      expect(dataSourceQuery.mock.calls[0]![1]).toEqual(['salon-1', null, null, 25, 50]);
+      expect(dataSourceQuery.mock.calls[0]![1]).toEqual(['salon-1', null, null, 25, 50, null]);
     });
 
     it('reads the filtered total off the window function, not the page length', async () => {
@@ -145,6 +151,41 @@ describe('CrmService', () => {
       await service.listCustomers('salon-1', { sort: 'value' });
 
       expect(dataSourceQuery.mock.calls[0]![0]).toContain('ORDER BY gross_value DESC, user_id ASC');
+    });
+
+    describe('entitlements.crmCustomerCap', () => {
+      it('resolves the cap via EntitlementsService and threads it through as the capped-CTE LIMIT parameter', async () => {
+        entitlements.getLimit.mockResolvedValueOnce(50);
+        dataSourceQuery.mockResolvedValueOnce([]);
+
+        await service.listCustomers('salon-1');
+
+        expect(entitlements.getLimit).toHaveBeenCalledWith('salon-1', 'crmCustomerCap');
+        const [sql, params] = dataSourceQuery.mock.calls[0]!;
+        expect(sql).toContain('LIMIT $6::bigint');
+        expect(params).toEqual(['salon-1', null, null, 20, 0, 50]);
+      });
+
+      it('leaves the customer set unbounded (LIMIT NULL) when no cap is configured -- existing behavior', async () => {
+        dataSourceQuery.mockResolvedValueOnce([]);
+
+        await service.listCustomers('salon-1');
+
+        expect(dataSourceQuery.mock.calls[0]![1]).toEqual(['salon-1', null, null, 20, 0, null]);
+      });
+
+      it('bounds the reported total to the cap, not the true customer count, since total_count is read off the capped CTE', async () => {
+        // The window function runs over `capped`, so a mocked total_count already reflects
+        // what a real Postgres LIMIT would have done upstream -- this pins that the mapping
+        // trusts total_count as-is rather than re-deriving it from the page length.
+        entitlements.getLimit.mockResolvedValueOnce(1);
+        dataSourceQuery.mockResolvedValueOnce([row({ total_count: '1' })]);
+
+        const result = await service.listCustomers('salon-1');
+
+        expect(result.total).toBe(1);
+        expect(result.items).toHaveLength(1);
+      });
     });
   });
 

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { likeContains } from '../common/like-pattern';
+import { EntitlementsService } from '../subscriptions/entitlements.service';
 import { CustomerNote } from './customer-note.entity';
 import { CUSTOMER_SORTS, CustomerSort } from './dto/customer-list-query.dto';
 
@@ -158,6 +159,7 @@ export class CrmService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     @InjectRepository(CustomerNote) private readonly notes: Repository<CustomerNote>,
+    private readonly entitlements: EntitlementsService,
   ) {}
 
   /**
@@ -183,6 +185,11 @@ export class CrmService {
     // never shown.
     const orderBy = `${CUSTOMER_SORTS[filters.sort ?? 'recent']}, user_id ASC`;
     const search = filters.q ? likeContains(filters.q) : null;
+    // Ceiling on the CRM customer list (entitlements.crmCustomerCap). `null` means
+    // unlimited -- the registry default, and also exactly what Postgres' own `LIMIT NULL`
+    // means (documented as identical to `LIMIT ALL`, i.e. no limit at all), so the same
+    // parameter/placeholder carries both the capped and uncapped case with no branching SQL.
+    const cap = await this.entitlements.getLimit(salonId, 'crmCustomerCap');
 
     const rows: Array<{
       user_id: string;
@@ -226,9 +233,21 @@ export class CrmService {
             ELSE 'returning'
           END AS segment
         FROM per_customer
+      -- 'capped' is the entitlement ceiling applied to the salon's WHOLE customer universe,
+      -- before any of this request's own search/segment/sort/page -- an admin-set cap bounds
+      -- what the CRM can ever surface, not just what one particular filtered view returns.
+      -- Ordered by the same "most recently seen" default the list itself defaults to, so an
+      -- unlimited-vs-capped salon differ only in how many of the same, deterministically
+      -- ranked rows are visible -- never in WHICH ones. LIMIT $6 with $6 = NULL is Postgres'
+      -- own documented equivalent of LIMIT ALL (no limit), so this needs no branching SQL for
+      -- the (default, far more common) unlimited case.
+      ), capped AS (
+        SELECT * FROM segmented
+        ORDER BY last_visit_at DESC NULLS LAST, user_id ASC
+        LIMIT $6::bigint
       )
       SELECT *, COUNT(*) OVER() AS total_count
-      FROM segmented
+      FROM capped
       -- ESCAPE '\\' in this TS template literal emits a single backslash into the SQL. The
       -- pattern itself is wildcard-escaped by likeContains() so a customer searching for
       -- "%" gets no rows rather than every row.
@@ -237,7 +256,7 @@ export class CrmService {
       ORDER BY ${orderBy}
       LIMIT $4 OFFSET $5
       `,
-      [salonId, search, filters.segment ?? null, pageSize, (page - 1) * pageSize],
+      [salonId, search, filters.segment ?? null, pageSize, (page - 1) * pageSize, cap],
     );
 
     return {

@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
-import { loginAs } from './utils/auth-helper';
+import { loginAs, loginAsAdmin } from './utils/auth-helper';
 import { enableOnlinePayments, resetDatabase } from './utils/db';
 import { createApprovedSalonWithService } from './factories/salon.factory';
 import { createTestApp } from './utils/test-app';
@@ -436,5 +436,34 @@ describe('Salon CRM (e2e)', () => {
         .query({ sort: 'gross_value; DROP TABLE bookings' })
         .set('Cookie', ownerCookie)
         .expect(400));
+  });
+
+  describe('entitlements.crmCustomerCap', () => {
+    it('bounds the customer list (and its reported total) to an admin-configured cap, then restores when cleared', async () => {
+      const adminCookie = await loginAsAdmin(app, '09151110099');
+
+      const before = await request(app.getHttpServer()).get('/api/salons/mine/customers').set('Cookie', ownerCookie).expect(200);
+      expect(before.body.total).toBe(2); // both fixture customers, unlimited by default
+
+      await request(app.getHttpServer())
+        .patch(`/api/admin/salons/${salonId}/subscription/overrides`)
+        .set('Cookie', adminCookie)
+        .send({ overrides: { crmCustomerCap: 1 } })
+        .expect(200);
+
+      const capped = await request(app.getHttpServer()).get('/api/salons/mine/customers').set('Cookie', ownerCookie).expect(200);
+      expect(capped.body.total).toBe(1);
+      expect(capped.body.items).toHaveLength(1);
+
+      // Cleared back to unlimited so this doesn't leak into any other case sharing this salon.
+      await request(app.getHttpServer())
+        .patch(`/api/admin/salons/${salonId}/subscription/overrides`)
+        .set('Cookie', adminCookie)
+        .send({ overrides: null })
+        .expect(200);
+
+      const restored = await request(app.getHttpServer()).get('/api/salons/mine/customers').set('Cookie', ownerCookie).expect(200);
+      expect(restored.body.total).toBe(2);
+    });
   });
 });

@@ -6,6 +6,7 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { ServiceCategory } from '../catalog/service-category.entity';
 import { CitiesService } from '../cities/cities.service';
 import { isUniqueViolation } from '../common/postgres-error-codes';
+import { EntitlementsService } from '../subscriptions/entitlements.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { UsersService } from '../users/users.service';
 import { UpdateSalonStatusDto } from './dto/admin-salon-status.dto';
@@ -43,6 +44,9 @@ export class SalonsService {
     // Read-only here (the write side happens inside updateHandle's own transaction, through
     // that transaction's EntityManager) -- this repo backs resolveCanonicalSlug's lookup.
     @InjectRepository(SalonSlugHistory) private readonly slugHistory: Repository<SalonSlugHistory>,
+    // Gates updateHandle's owner path against entitlements.customHandle -- see that method's
+    // own doc comment for why the admin-override path is never gated by it.
+    private readonly entitlements: EntitlementsService,
   ) {}
 
   /** Throws BadRequestException (not a raw FK-violation 500) for an id that doesn't exist. */
@@ -201,10 +205,18 @@ export class SalonsService {
    * already audited (`salon.handle.set`, with a real before/after slug diff). The losing
    * salon's reservation row is dropped rather than kept, because the handle now resolves to a
    * live salon -- a stale history row for it could never be honoured anyway.
+   *
+   * `asAdmin: false` (the owner's own route) is additionally gated on
+   * `entitlements.customHandle`. `asAdmin: true` is deliberately NEVER gated by it -- the
+   * admin-override path is this feature's documented recourse regardless of what the salon's
+   * own plan allows, exactly like it already ignores the slug-history reservation above.
    */
   async updateHandle(salonId: string, handle: string, asAdmin = false): Promise<Salon> {
     if (RESERVED_SALON_HANDLES.has(handle)) {
       throw new BadRequestException('این آدرس رزرو شده و قابل استفاده نیست');
+    }
+    if (!asAdmin) {
+      await this.entitlements.requireFeature(salonId, 'customHandle', 'ویرایش نشانی اختصاصی در پلن فعلی سالن شما فعال نیست');
     }
     const salon = await this.repo.findOneBy({ id: salonId });
     if (!salon) throw new NotFoundException('No salon for this account');
