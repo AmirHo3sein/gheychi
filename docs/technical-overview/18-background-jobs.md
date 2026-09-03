@@ -42,7 +42,9 @@ Redis is used for short-lived coordination primitives, never as a queue of recor
 | `otp:att:{phone}` | wrong-guess counter across all IPs (max 30 — the code is deleted) | 120s |
 | `backup:last-success` | ISO timestamp of the last successful backup report, read by the staleness job | none (durable) |
 | `lock:booking:{salonId}` | distributed mutex around the booking-hold critical section | 5000ms (`SET NX PX` with a per-call token), released by an atomic owner-checked Lua compare-and-delete so an expired holder can never delete a successor's lock |
-| `cron-lock:{jobName}` | `CronJobRunner`/`CronLockService`'s per-job mutex (see above) — a second instance's overlapping tick 409s out (no-ops) rather than double-running | 60s default (`SET NX PX`), per-job override (e.g. storage reconciliation: 10min), explicit `DEL` on release |
+| `cron-lock:{jobName}` | `CronJobRunner`/`CronLockService`'s per-job mutex (see above) — a second instance's overlapping tick 409s out (no-ops) rather than double-running | 60s default (`SET NX PX`), per-job override (e.g. storage reconciliation: 10min), released by the same owner-checked Lua compare-and-delete as `lock:booking:{salonId}` above (see "Distributed-lock correctness" below) |
+| `session:revoked:{jti}` | JWT session-revocation denylist — `POST /auth/logout` writes this, `AuthGuard` checks it before loading the user (fail-closed on a Redis error) | remaining lifetime of the token at logout (up to 30 days) — see [05-authentication.md](./05-authentication.md) |
+| `platform-config:{key}` | `PlatformConfigService`'s read-through cache for hot-path config reads (booking creation/cancellation, coupon validation, ...) — a value that only ever changes via an explicit admin action, invalidated on write, not just left to expire | 60s |
 | `referral:validate:rl:{ip}` | rate-limits the public `GET /referrals/validate` code-enumeration surface (max 20) | 3600s |
 | `alert:dedup:{alertKey}` | one alert per condition per window | default 6h, up to 24h for some |
 | `alert:sms-count:{hourBucket}` | hourly SMS-paging circuit breaker (default cap 30) | 3600s |

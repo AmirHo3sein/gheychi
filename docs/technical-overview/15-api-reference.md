@@ -31,6 +31,7 @@ Guard shorthand: **Auth** = the global `AuthGuard` only (valid session). **Admin
 | `PATCH /salons/mine/handle` | Owner | Change the public handle (`slug`; reserved-word-checked, 409 if taken) — [31](./31-public-handle-and-attribution.md) |
 | `POST /salons/mine/resubmit` | Owner | Rejected → pending |
 | `GET /salons/:slug` | Public | Public profile (approved-only) |
+| `GET /salons/:slug/canonical` | Public | `{slug, moved}` — resolves a released handle via `salon_slug_history` (404 if the salon is no longer `approved`, never leaking existence); `moved: true` is what `user-app` turns into a real SSR 301 — [31](./31-public-handle-and-attribution.md) |
 
 ## Salons — `mine/*` sub-resources (all Owner-guarded)
 
@@ -50,7 +51,7 @@ Guard shorthand: **Auth** = the global `AuthGuard` only (valid session). **Admin
 | `catalog/category-requests.controller.ts` | `GET/POST /salons/mine/category-requests` (`{name, note?}`; one open request per name per salon) |
 | `salons/salon-mine-subscription.controller.ts` | `GET /salons/mine/subscription` (read-only: plan + resolved entitlements) — [30](./30-subscription-plan-foundation.md) |
 | `billing/salon-billing-periods.controller.ts` | `GET /salons/mine/subscription/billing-periods` (read-only billing history) — [34](./34-subscription-coupons-and-billing.md) |
-| `crm/salon-customers.controller.ts` | `GET /salons/mine/customers`, `GET /salons/mine/customers/:customerId`, `POST /salons/mine/customers/:customerId/notes`, `DELETE /salons/mine/customers/:customerId/notes/:noteId`, `GET /salons/mine/dashboard-summary?from=&to=`, `GET /salons/mine/sms-quota`, `POST /salons/mine/customers/:customerId/sms` (`{message}`; 409 unless salon `approved` or quota exhausted; wire text prefixed with the salon name) — [32](./32-salon-crm.md), [33](./33-salon-sms-quota.md) |
+| `crm/salon-customers.controller.ts` | `GET /salons/mine/customers`, `GET /salons/mine/customers/:customerId`, `POST /salons/mine/customers/:customerId/notes`, `DELETE /salons/mine/customers/:customerId/notes/:noteId`, `GET /salons/mine/dashboard-summary?from=&to=`, `GET /salons/mine/funnel?from=&to=` (this salon's own slice of the booking funnel, read from `analytics_events.salon_id`), `GET /salons/mine/sms-quota`, `POST /salons/mine/customers/:customerId/sms` (`{message}`; 409 unless salon `approved` or quota exhausted; wire text prefixed with the salon name) — [32](./32-salon-crm.md), [33](./33-salon-sms-quota.md) |
 
 ## Salons — public content (Public)
 
@@ -109,7 +110,7 @@ A booking-conflict 409 from `POST /bookings`/`assign-worker` (createHold/createM
 | `GET/PATCH /admin/referral-reward-types` / `/:type` | Admin (PATCH audited) |
 | `GET /admin/referrals` | Admin |
 | `GET /admin/referrals/:id/rewards` | Admin |
-| `PATCH /admin/referrals/:id/cancel` | Admin, audited |
+| `POST /admin/referrals/:id/cancel` | Admin, audited |
 
 ## Wallet (`wallet/`)
 
@@ -219,7 +220,8 @@ A booking-conflict 409 from `POST /bookings`/`assign-worker` (createHold/createM
 
 | Route | Guard |
 |---|---|
-| `GET/POST /admin/plans`, `PATCH/DELETE /admin/plans/:id` | Admin, audited (`plan.create/update/delete`). `key` is create-only; `update` refuses to deactivate the default plan or default an inactive one; `DELETE` is 204 |
+| `GET/POST /admin/plans`, `PATCH/DELETE /admin/plans/:id` | Admin, audited (`plan.create/update/delete`). `key` is create-only; `update` refuses to deactivate the default plan or default an inactive one; `DELETE` is 204. `GET` includes each plan's `subscriberCount` (active subscriptions only) |
+| `GET /admin/plans/:id/salons` | Admin — which salons are actually on this plan right now (`active` subscriptions only), the detail behind `subscriberCount` above; 404 for an unknown plan id (added 2026-09-04) |
 | `POST/GET /admin/subscription-coupons`, `PATCH/DELETE /admin/subscription-coupons/:id` | Admin, audited (`subscription-coupon.*`). Percent-only, platform-wide; `PATCH {isActive:true}` reactivates |
 | (`/admin/salons/:salonId/subscription*` listed above under Salons — admin) | Admin |
 
@@ -247,7 +249,7 @@ A booking-conflict 409 from `POST /bookings`/`assign-worker` (createHold/createM
 | `GET /liveness` | Public | Process-alive only, touches neither DB nor Redis — for an orchestrator's liveness probe, so a brief Postgres/Redis blip never gets a healthy process killed |
 | `GET /readiness` | Public | Same DB+Redis check as `/health`, under its own explicit name |
 
-`/liveness` and `/readiness` are additive; `/health` is unchanged. `route-guard-audit.spec.ts` asserts the exact count of `@Controller(` decorators (66 across 65 files as of 2026-09-03 — `admin-referrals.controller.ts` declares two) so a new controller cannot be added without the audit noticing, pins the CI-enforced `@Public()` allowlist, and asserts the Admin/Owner guard on every `admin/*` / `salons/mine*` route. See [21-security.md](./21-security.md).
+`/liveness` and `/readiness` are additive; `/health` is unchanged. `route-guard-audit.spec.ts` asserts the exact count of `@Controller(` decorators (67 across 66 files as of 2026-09-04 — `admin-referrals.controller.ts` declares two) so a new controller cannot be added without the audit noticing, pins the CI-enforced `@Public()` allowlist, and asserts the Admin/Owner guard on every `admin/*` / `salons/mine*` route. See [21-security.md](./21-security.md).
 
 ## Notable file-upload endpoints
 
@@ -268,7 +270,7 @@ Every upload endpoint (`salons/mine/photos`, `salons/mine/portfolio`, `salons/mi
 | GET | `/admin/salons/:id/booking-settings` | `RolesGuard('admin')` | The salon's mode (read-only here), its raw overrides (`approvalTimeoutOverride`/`paymentTimeoutOverride`, `null` = inherit) and the **effective** resolved values with their global defaults and `*IsOverridden` flags. |
 | PATCH | `/admin/salons/:id/booking-settings` | `RolesGuard('admin')` | Set or clear the per-salon overrides. Body `{ approvalTimeoutMinutes?, paymentTimeoutMinutes? }`, each `1..1440` or an explicit `null` to inherit. Audited as `booking-settings.update`. |
 | GET | `/admin/bookings/:id/events` | `RolesGuard('admin')` | The booking's full lifecycle timeline, oldest first. |
-| POST | `/bookings/:id/reschedule` | Auth (customer must own the booking) | Move a live booking to a new time, keeping the same row/payment/history. Body `{ startsAt }`; `endsAt` is always recomputed from the service duration. Allowed only while still inside the cancellation window, measured against the **original** start — otherwise it would be a free escape hatch from deposit forfeiture. 409 inside the window, 400 for a past time or a non-movable status. |
+| POST | `/bookings/:id/reschedule` | Auth (customer must own the booking) | Move a live booking to a new time, keeping the same row/payment/history. Body `{ startsAt }`; `endsAt` is always recomputed from the service duration. For the customer, allowed only while still **more than `cancellation_window_hours` before the ORIGINAL start** (never the requested new one) — otherwise it would be a free escape hatch from deposit forfeiture: push the appointment out, then "cancel early" for a full refund. 409 once inside that window (too close to the original start), 400 for a past time or a non-movable status. The salon's own reschedule route has no such restriction — see [09-booking-engine.md](./09-booking-engine.md). |
 | POST | `/salons/mine/bookings/:id/reschedule` | `SalonOwnerGuard` + audited (`booking.rescheduled`) | The same move, salon-initiated — no cancellation-window restriction, since the salon is already trusted with cancelling outright. |
 
 Changed shapes on existing routes:

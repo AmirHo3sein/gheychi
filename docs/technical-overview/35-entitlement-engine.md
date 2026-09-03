@@ -52,8 +52,12 @@ absent-behaviour decided once.
 
 ## Wired today
 
-- `smsMonthlyQuota` — enforced by `SalonSmsQuotaService` for **every** salon-triggered SMS
-  (see [33-salon-sms-quota.md](./33-salon-sms-quota.md)).
+- `smsMonthlyQuota` — enforced against **every** salon-triggered SMS, reading the same
+  entitlement key and writing the same `salon_sms_messages` log either way. The worker-invite
+  and manual-booking-confirmation paths route through the shared `SalonSmsQuotaService`; the
+  CRM free-text message (the flagship case) currently enforces it via its own duplicated
+  inline copy of the same check rather than that shared service — a maintenance hazard, not
+  a metering gap (see [33-salon-sms-quota.md](./33-salon-sms-quota.md)).
 
 The remaining keys are registered with behaviour-preserving defaults and are ready to be
 gated; each is a one-line `requireFeature`/`getLimit` call at the point of use.

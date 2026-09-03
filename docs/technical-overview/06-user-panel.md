@@ -13,6 +13,7 @@ File-based routing under `app/pages/`. `components: [{ path: '~/components', pat
 | `/profile` | Auth required | — | Name/gender edit, push toggle, links to favorites/wallet/referral/activity, logout |
 | `/account/favorites` | Auth required | — | Favorited salons (`GET /favorites`) |
 | `/account/activity` | Auth required | — | Unified personal timeline (`GET /activity/mine`): bookings, wallet transactions, reviews, referral rewards |
+| `/salons` | **Public** | **Yes — `useAsyncData` + `useSeoMeta`** | Crawlable public salon listing — filter/paginate over the same search the home page hits client-side, but SSR'd so it's a real indexable surface rather than a search-only client fetch |
 | `/salons/[slug]` | **Public** | **Yes — `useAsyncData` + `useSeoMeta` + JSON-LD `BeautySalon`** | Salon profile — services, hours, photos, stories, portfolio, reviews, workers, favorite/report actions. **The primary SEO surface.** |
 | `/blog`, `/blog/[slug]` | **Public** | **Yes — SSR + `useSeoMeta` + JSON-LD `Article` (article page)** | Content-marketing blog. Second SEO surface. |
 | `/booking/[slug]/[serviceId]` | Auth required | `useAsyncData` | Service booking: worker picker, slot picker, coupon validation, wallet-balance apply, deposit math, Zarinpal redirect |

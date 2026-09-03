@@ -133,7 +133,7 @@ GET /referrals/mine                  (auth) — referral history
 GET /referrals/mine/rewards          (auth) — reward history
 GET/PATCH /admin/referral-reward-types
 GET /admin/referrals                 GET /admin/referrals/:id/rewards
-PATCH /admin/referrals/:id/cancel    (only from awaiting_qualifying_event)
+POST /admin/referrals/:id/cancel     (only from awaiting_qualifying_event)
 ```
 
 ## Related documents

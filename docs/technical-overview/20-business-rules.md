@@ -14,6 +14,7 @@ A consolidated reference of every enforced business rule in the platform, groupe
 | `booking_approval_timeout_minutes` | 10 | `BookingApprovalExpiryJob` — [28-booking-approval-workflow.md](./28-booking-approval-workflow.md) |
 | `reminder_lead_hours` | 3 | `BookingReminderJob` |
 | `review_edit_window_hours` | 72 | `ReviewsService.assertWithinEditWindow()` |
+| `no_show_grace_minutes` | 30 | `BookingsService.updateStatus()` — refuses `no_show` until `startsAt + grace` (see below) |
 
 `PlatformConfigService.onApplicationBootstrap()` refuses to start the process (raw `Error`, listing every problem) unless every required `platform_config` key and feature-flag row is present and valid; its per-key getters are defense-in-depth on top of that — a row deleted or corrupted directly in the DB after boot throws a typed `InternalServerErrorException` (`Missing platform_config key: …` / `Invalid platform_config value: …`) rather than a silently-wrong number. Values are Redis-cached for 60s (`CACHE_TTL_SEC`).
 
@@ -133,7 +134,7 @@ A consolidated reference of every enforced business rule in the platform, groupe
 - Only an `approved` salon may send (409 otherwise) — the sender is the platform's shared number, so an unvetted `pending` salon must never be able to put words on it.
 - The wire text is always `"{salon.name}: {message}"` — the salon name prefix is delivery framing (anti-impersonation on a shared sender), not content; the logged `salon_sms_messages.message` stays the owner's own unprefixed text.
 - A send is quota-checked, then actually sent, then logged — in that order, so a failed send never consumes quota. Unlike every automated notification SMS in this codebase, a real send failure is NOT swallowed; it's the owner's own primary action, so it must surface as a real error.
-- The worker-added invite SMS (`salon-workers.controller.ts`) is likewise sent only when the salon is `approved`; the roster row is created either way. It is outside the quota (an automated platform notice, not owner free text), which is exactly why the approval gate is the only thing standing between a self-registered `pending` salon with an arbitrary name and attacker-worded SMS to any number.
+- The worker-added invite SMS (`salon-workers.controller.ts`) is likewise sent only when the salon is `approved`; the roster row is created either way. It is metered against the salon's `smsMonthlyQuota` (`SalonSmsQuotaService.tryConsume`), same as every other salon-triggered SMS — the approval gate and the quota are two independent lines of defense against a self-registered `pending` salon with an arbitrary name sending attacker-worded SMS to any number.
 
 ## Subscription coupons + billing rules
 

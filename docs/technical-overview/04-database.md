@@ -2,7 +2,7 @@
 
 PostgreSQL 16 + PostGIS. TypeORM 0.3 with `synchronize: false` — the migration files under `apps/api/src/migrations/` are the sole source of truth for schema. Migrations run via `pnpm --filter @gheychi/api migration:run` and are **never** run automatically on deploy/boot (a deliberate manual step — see [25-future-improvements.md](./25-future-improvements.md) / deployment docs).
 
-**Codebase-wide convention: no ORM relations.** Every entity file declares foreign keys as bare `@Column({ name: 'xxx_id' }) xxxId: string`, never a TypeORM `@ManyToOne`/`@OneToMany`/`@JoinColumn`. All joins are done by hand in service code — either a manual batched `In(...)` lookup (e.g. `SalonsService.attachCategories`, `BookingsService.attachNames`, `SalonWorkersController.attachServiceIds`) or a raw `QueryBuilder`. This is confirmed with zero exceptions across all 47 entity files.
+**Codebase-wide convention: no ORM relations.** Every entity file declares foreign keys as bare `@Column({ name: 'xxx_id' }) xxxId: string`, never a TypeORM `@ManyToOne`/`@OneToMany`/`@JoinColumn`. All joins are done by hand in service code — either a manual batched `In(...)` lookup (e.g. `SalonsService.attachCategories`, `BookingsService.attachNames`, `SalonWorkersController.attachServiceIds`) or a raw `QueryBuilder`. This is confirmed with zero exceptions across all 48 entity files.
 
 ## Full ER diagram
 
@@ -145,6 +145,9 @@ All under `apps/api/src/migrations/`, filename-timestamp-ordered. This list doub
 
 ### `salons`
 `id`, `owner_id (unique — 1 salon/owner)`, `name`, `slug (unique)`, `description?`, `tagline? (≤120)`, `about? (≤2000)`, `instagram_handle? (≤30, strict charset)`, `gender_target ('women'|'men')`, `status ('pending'→'approved'|'rejected'|'suspended')`, `rejection_reason?`, `suspended_cause? ('admin'|'owner_suspended')`, `address`, `city` (**free text — still the actual source of truth, no validation against `cities`**), `city_id? (nullable FK to `cities(id)`, best-effort exact-name match on create/update — see [24-technical-debt.md](./24-technical-debt.md))`, `location geography(Point,4326)` (GIST-indexed), `capacity (default 1)`, `rating_avg numeric(3,2)` / `rating_count`, `is_featured` / `featured_until?`, `booking_confirmation_mode ('automatic'|'manual_approval', default automatic — owner-set)`, `approval_timeout_minutes?` / `payment_timeout_minutes?` (CHECK 1–1440, `NULL` = inherit the global config; **admin-only**, deliberately absent from `UpdateSalonDto` — see [28](./28-booking-approval-workflow.md)), `created_at`. `slug` is provider-editable (reserved-word-checked) and doubles as the public handle — [31](./31-public-handle-and-attribution.md).
+
+### `salon_slug_history`
+`slug` (**PRIMARY KEY**, not a surrogate uuid — the point: "this handle is spoken for, permanently" is a database invariant, not an application check), `salon_id (FK, ON DELETE CASCADE)`, `released_at`, plus a `(salon_id)` index. One row per handle a salon has ever released via a rename; recorded in the same transaction as the rename itself. Source of both the `GET /salons/:slug/canonical` 301-redirect (an already-printed QR/shared link keeps working) and the reservation that stops a different salon claiming the freed handle and inheriting its traffic. No backfill — see [31-public-handle-and-attribution.md](./31-public-handle-and-attribution.md).
 
 ### `salon_services`
 `id`, `salon_id (cascade)`, `category_id (restrict)`, `name`, `description?`, `price bigint`, `duration_min`, `is_active (default true)`, `discount_percent? (1–100)`, `created_at`.

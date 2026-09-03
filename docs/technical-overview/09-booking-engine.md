@@ -193,11 +193,12 @@ booking and free part of a slot it still occupies).
 
 - The **salon**, always (subject to the status rules below) — it is already trusted with
   cancelling outright, and moving a booking is accommodating the customer.
-- The **customer**, only while still inside the cancellation window — measured against the
-  booking's **original** start, never the requested new one. Without that, reschedule is a
-  free escape hatch from deposit forfeiture: a customer an hour before their appointment
-  could push it a week out and then cancel "early" for a full refund, defeating exactly what
-  the cancellation window exists to prevent.
+- The **customer**, only while still **outside** the cancellation window (more than
+  `cancellation_window_hours` before the booking's **original** start, never the requested
+  new one) — i.e. exactly the same "far enough out" condition that lets a free cancellation
+  through. Without that, reschedule is a free escape hatch from deposit forfeiture: a
+  customer an hour before their appointment could push it a week out and then cancel "early"
+  for a full refund, defeating exactly what the cancellation window exists to prevent.
 
 **Statuses:** only `SLOT_BLOCKING_STATUSES` (`pending_approval`, `pending_payment`,
 `confirmed`) can move. A completed/no-show booking already happened; a cancelled or expired

@@ -27,15 +27,20 @@ export interface SmsQuotaStatus {
  * `[periodStart, periodEnd)` -- `periodEnd` IS the next month's first instant -- matching
  * every invoicing query against the same helper.
  *
- * Two entry points, because the callers differ in kind:
- *  - `consumeOrThrow` for an action the owner explicitly asked for (the CRM message). Being
- *    over quota is a real answer they must see, so it throws and the caller surfaces it.
- *  - `tryConsume` for an SMS that is a side effect of some other successful action (a
- *    worker was added; a walk-in was booked). Those must NOT fail the real operation just
- *    because the SMS budget is gone -- the roster row and the booking still stand, the
- *    message is simply skipped and logged.
+ * One real entry point today -- `tryConsume`, for an SMS that is a side effect of some
+ * other successful action (a worker was added; a walk-in was booked). Those must NOT fail
+ * the real operation just because the SMS budget is gone -- the roster row and the booking
+ * still stand, the message is simply skipped and logged. It records the send AFTER it
+ * succeeds, so a failed send never consumes quota.
  *
- * Both record the send AFTER it succeeds, so a failed send never consumes quota.
+ * The CRM free-text message (an action the owner explicitly asked for, where being over
+ * quota is a real answer they must see rather than a silent skip) does NOT go through this
+ * service -- `CustomerSmsService` carries its own separate, duplicated resolve+count+check
+ * logic against the same `smsMonthlyQuota` entitlement and the same `salon_sms_messages`
+ * table (see its own doc comment). The meter stays accurate either way since both write to
+ * the same log; this is a maintenance hazard (a future change to one path can silently
+ * diverge from the other), not a metering gap. Unifying the two is a real, still-open
+ * follow-up, not something this comment should pretend already happened.
  */
 @Injectable()
 export class SalonSmsQuotaService {

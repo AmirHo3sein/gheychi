@@ -49,10 +49,10 @@ sequenceDiagram
 
 ## Token & cookie details
 
-- **JWT claims**: `{ sub: userId, role: UserRole }` only — no other custom claims.
+- **JWT claims**: `{ sub: userId, role: UserRole, jti: randomUUID() }` — the `jti` exists solely to key the revocation denylist below, and carries no other meaning.
 - **Expiry**: 30 days (`JwtModule.registerAsync`'s `expiresIn: '30d'`), matching the cookie's `maxAge`.
 - **Secret**: `JWT_SECRET` env var, required (`getOrThrow`) — the API will not boot without it. In `NODE_ENV=production` it is additionally checked at module registration by `auth/jwt-secret.util.ts` `assertProductionJwtSecret()`: a known `.env.example` placeholder (`dev-secret-change-me`, `test-secret`, `secret`, `changeme`) or anything shorter than 32 characters aborts boot with a clear error, so a forgeable session secret fails the deploy rather than the first login. Dev/test keep their short fixed secrets untouched.
-- **No revocation**: the JWT carries no `jti` and there is no denylist — logout clears the cookie, but a copied token stays valid until its 30-day expiry (suspension is the only server-side kill switch, via `AuthGuard`'s per-request status check). Tracked in [24-technical-debt.md](./24-technical-debt.md).
+- **Revocation**: logout revokes the specific token via a Redis denylist keyed by its `jti`, on top of the account-level suspension kill switch — see "## Session revocation" below for both mechanisms in full.
 - **Cookie**: name `session`, `httpOnly: true` (never readable by JS on any frontend), `sameSite: 'lax'`, `secure: NODE_ENV === 'production'`.
 - Tokens are **never** exposed to JavaScript on any frontend — every frontend's session state is populated by calling `GET /auth/me` and trusting the cookie to do its job silently on every subsequent request (`credentials: 'include'`/`credentials: include` on every `fetch`/`$fetch`).
 

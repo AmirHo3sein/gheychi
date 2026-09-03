@@ -39,6 +39,7 @@ The salon-owner back office. Vue 3 + Vite SPA (no SSR need — fully authenticat
 | `PlanView.vue` | Read-only "my plan": resolved entitlements + billing-period history; no controls by owner decision ([30](./30-subscription-plan-foundation.md), [34](./34-subscription-coupons-and-billing.md)) |
 | `CustomersView.vue` | CRM customer list with segment filter, revenue dashboard, remaining-SMS-quota line ([32-salon-crm.md](./32-salon-crm.md)) |
 | `CustomerDetailView.vue` | One customer's booking history, owner notes, and the free-text SMS compose card ([33-salon-sms-quota.md](./33-salon-sms-quota.md)) |
+| `ReferralView.vue` | The owner's own referral code, activity, granted rewards, and wallet balance/transactions read together on one screen; renders its own explanatory disabled state when the `salon_owner` referral-reward type is off |
 
 Every page has a colocated `.spec.ts`. Logout (`AppLayout.vue` and `OnboardingView.vue`) calls `resetSalon()` alongside the session clear, so a second account logging in on the same tab never inherits the previous salon's cached probe.
 
