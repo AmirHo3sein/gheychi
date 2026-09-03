@@ -15,6 +15,7 @@ describe('resetDatabase (e2e infra)', () => {
     const redis = new Redis({
       host: process.env.REDIS_HOST ?? 'localhost',
       port: +(process.env.REDIS_PORT ?? 6379),
+      password: process.env.REDIS_PASSWORD || undefined,
     });
     await redis.set('reset-database-regression-probe', '1');
     expect(await redis.exists('reset-database-regression-probe')).toBe(1);

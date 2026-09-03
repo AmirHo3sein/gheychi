@@ -33,6 +33,21 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    # Not publicly exposed (no published port, internal network only), but that was the
+    # ONLY control -- any compromised sibling container on this network could otherwise
+    # read live OTP codes (a full account-takeover primitive), delete cron/booking locks
+    # to force duplicate job runs, or clear rate-limit counters. requirepass closes that.
+    # Also disables CONFIG (an unauthenticated caller could otherwise reconfigure a
+    # running Redis instance, e.g. turning off persistence or renaming other commands).
+    # ${REDIS_PASSWORD} is resolved by Compose's own variable substitution from the .env
+    # file in this same deploy directory -- deliberately NOT `env_file: .env` on this
+    # service, which would hand redis the whole shared secret bag for no reason beyond
+    # this one value (the same "every container gets the full .env" debt tracked in
+    # docs/technical-overview/24-technical-debt.md; no need to add a new instance of it).
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --rename-command CONFIG ""
     mem_limit: 256m
     memswap_limit: 256m
     cpus: 0.5
