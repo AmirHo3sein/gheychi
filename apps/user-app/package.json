@@ -4,15 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "nuxt build",
-    "dev": "nuxt dev --port 3003",
-    "generate": "nuxt generate",
-    "preview": "nuxt preview",
+    "build": "cross-env NODE_OPTIONS=\"--require ./scripts/polyfill-set-methods.cjs\" nuxt build",
+    "dev": "cross-env NODE_OPTIONS=\"--require ./scripts/polyfill-set-methods.cjs\" nuxt dev --port 3003",
+    "generate": "cross-env NODE_OPTIONS=\"--require ./scripts/polyfill-set-methods.cjs\" nuxt generate",
+    "preview": "cross-env NODE_OPTIONS=\"--require ./scripts/polyfill-set-methods.cjs\" nuxt preview",
     "postinstall": "nuxt prepare && node scripts/fix-shared-vue-instance.cjs",
-    "test": "vitest run",
-    "test:coverage": "vitest run --coverage",
+    "test": "cross-env NODE_OPTIONS=\"--require ./scripts/polyfill-set-methods.cjs\" vitest run",
+    "test:coverage": "cross-env NODE_OPTIONS=\"--require ./scripts/polyfill-set-methods.cjs\" vitest run --coverage",
     "test:e2e": "node e2e/prepare-db.cjs && playwright test",
-    "typecheck": "nuxt typecheck"
+    "typecheck": "cross-env NODE_OPTIONS=\"--require ./scripts/polyfill-set-methods.cjs\" nuxt typecheck"
   },
   "dependencies": {
     "@fontsource-variable/vazirmatn": "^5.2.8",
@@ -36,6 +36,7 @@
     "@vite-pwa/nuxt": "^1.1.1",
     "@vitest/coverage-v8": "^3.2.6",
     "@vue/test-utils": "^2.4.6",
+    "cross-env": "^7.0.3",
     "happy-dom": "^15.11.0",
     "ioredis": "^5.6.0",
     "pg": "^8.13.0",

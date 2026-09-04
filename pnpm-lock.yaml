@@ -408,6 +408,9 @@ importers:
       '@vue/test-utils':
         specifier: ^2.4.6
         version: 2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@5.9.3))
+      cross-env:
+        specifier: ^7.0.3
+        version: 7.0.3
       happy-dom:
         specifier: ^15.11.0
         version: 15.11.7
