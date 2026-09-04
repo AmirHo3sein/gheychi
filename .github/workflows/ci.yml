@@ -149,7 +149,7 @@ jobs:
 
       - name: Upload coverage reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-reports
           path: |
@@ -195,7 +195,7 @@ jobs:
 
       - name: Upload user-app Playwright trace/video on failure
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: user-app-playwright-report
           path: apps/user-app/test-results/
@@ -217,7 +217,7 @@ jobs:
 
       - name: Upload provider-panel Playwright trace/video on failure
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: provider-panel-playwright-report
           path: apps/provider-panel/test-results/
@@ -235,7 +235,7 @@ jobs:
 
       - name: Upload admin-panel Playwright trace/video on failure
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: admin-panel-playwright-report
           path: apps/admin-panel/test-results/
@@ -257,7 +257,7 @@ jobs:
 
       - name: Upload cross-app Playwright trace/video on failure
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cross-app-playwright-report
           path: apps/e2e-cross-app/test-results/
