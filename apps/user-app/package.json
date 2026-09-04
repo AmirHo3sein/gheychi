@@ -8,7 +8,7 @@
     "dev": "cross-env NODE_OPTIONS=\"--require ./scripts/polyfill-set-methods.cjs\" nuxt dev --port 3003",
     "generate": "cross-env NODE_OPTIONS=\"--require ./scripts/polyfill-set-methods.cjs\" nuxt generate",
     "preview": "cross-env NODE_OPTIONS=\"--require ./scripts/polyfill-set-methods.cjs\" nuxt preview",
-    "postinstall": "nuxt prepare && node scripts/fix-shared-vue-instance.cjs",
+    "postinstall": "nuxt prepare && ([ -f scripts/fix-shared-vue-instance.cjs ] && node scripts/fix-shared-vue-instance.cjs || true)",
     "test": "cross-env NODE_OPTIONS=\"--require ./scripts/polyfill-set-methods.cjs\" vitest run",
     "test:coverage": "cross-env NODE_OPTIONS=\"--require ./scripts/polyfill-set-methods.cjs\" vitest run --coverage",
     "test:e2e": "node e2e/prepare-db.cjs && playwright test",
