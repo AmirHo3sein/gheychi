@@ -229,7 +229,12 @@ async function confirmCancel() {
 }
 
 const cancelDialogRoot = ref<HTMLElement | null>(null)
-const { titleId: cancelTitleId } = useDialog(cancelDialogRoot, { onClose: closeCancelConfirm })
+// The cast works around a vue-tsc/vue 3.5.42 template-ref inference mismatch (see
+// useDialog.ts's own signature) -- cancelDialogRoot really is Ref<HTMLElement | null> at
+// runtime.
+const { titleId: cancelTitleId } = useDialog(cancelDialogRoot as unknown as Ref<HTMLElement | null>, {
+  onClose: closeCancelConfirm,
+})
 
 // Reschedule -- moves the SAME booking to a new time (POST /bookings/:id/reschedule) rather
 // than cancel-and-rebook, which for a within-window cancellation forfeited the deposit and
@@ -281,7 +286,10 @@ async function confirmReschedule() {
 }
 
 const rescheduleDialogRoot = ref<HTMLElement | null>(null)
-const { titleId: rescheduleTitleId } = useDialog(rescheduleDialogRoot, { onClose: closeRescheduleDialog })
+// Same vue-tsc/vue 3.5.42 template-ref inference workaround as cancelDialogRoot above.
+const { titleId: rescheduleTitleId } = useDialog(rescheduleDialogRoot as unknown as Ref<HTMLElement | null>, {
+  onClose: closeRescheduleDialog,
+})
 </script>
 
 <template>

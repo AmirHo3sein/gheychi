@@ -199,7 +199,12 @@ const dialogRoot = ref<HTMLElement | null>(null)
 // Escape while reportOpen is then handled entirely by ReportForm's own useDialog,
 // which emits close -> closeReport() above, matching the prior single-listener
 // branch ("Escape dismisses the form, not the viewer") with no double-handling.
-const { titleId } = useDialog(dialogRoot, { onClose: close, enabled: () => !reportOpen.value })
+// The cast works around a vue-tsc/vue 3.5.42 template-ref inference mismatch (see
+// useDialog.ts's own signature) -- dialogRoot really is Ref<HTMLElement | null> at runtime.
+const { titleId } = useDialog(dialogRoot as unknown as Ref<HTMLElement | null>, {
+  onClose: close,
+  enabled: () => !reportOpen.value,
+})
 </script>
 
 <template>

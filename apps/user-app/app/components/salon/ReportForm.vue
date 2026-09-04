@@ -68,7 +68,9 @@ function close() {
 }
 
 const dialogRoot = ref<HTMLElement | null>(null)
-const { titleId } = useDialog(dialogRoot, { onClose: close })
+// The cast works around a vue-tsc/vue 3.5.42 template-ref inference mismatch (see
+// useDialog.ts's own signature) -- dialogRoot really is Ref<HTMLElement | null> at runtime.
+const { titleId } = useDialog(dialogRoot as unknown as Ref<HTMLElement | null>, { onClose: close })
 </script>
 
 <template>
