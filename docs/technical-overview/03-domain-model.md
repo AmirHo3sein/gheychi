@@ -47,7 +47,26 @@ The single account table for every person on the platform — customer, salon ow
 The unit of discovery and booking. One salon per owner (`salons.owner_id` is unique). Has a moderation lifecycle (`pending → approved | rejected | suspended`), a `genderTarget` (`women|men`) that gates every search/listing result with no bypass, a free-text `city`, a PostGIS `location` point, and now a set of owner-curated category tags (`salon_categories`, independent of which services it currently offers). Only `approved` salons are ever publicly visible.
 
 ### SalonService
-A single bookable offering at a salon (e.g. "Haircut — 45 min — 250,000 toman"), scoped to a `ServiceCategory`. Carries its own optional direct discount (`discountPercent`).
+A single bookable offering at a salon (e.g. "Haircut — 45 min — 250,000 toman"), scoped to
+either a system `ServiceCategory` or the salon's own private `SalonCustomCategory` (exactly
+one of the two). `pricingType` (`fixed | from | range | quote`, default `fixed`) governs
+whether `price` is a definite amount, a floor ("from"), a range minimum (paired with
+`priceMax`), or absent entirely ("price upon consultation") — see
+[36-service-pricing-and-packages.md](./36-service-pricing-and-packages.md) for the full
+model. Carries its own optional direct discount (`discountPercent`), which only ever applies
+to `pricingType = 'fixed'`. `durationMax` is an optional, purely informational estimate
+alongside the required `durationMin` the booking engine actually schedules against.
+
+### SalonCustomCategory
+A salon-private counterpart to `ServiceCategory`: created and usable immediately by the
+owner, no admin approval, never joined into the global category list or `salon_categories`'
+search tags. See [36](./36-service-pricing-and-packages.md).
+
+### SalonPackage
+A named, described bundle of a salon's own existing services (`SalonPackageItem`, an ordered
+many-to-many), shown on the salon's public page for presentation only — never itself booked,
+paid, refunded, or commissioned. Each listed service is booked individually through the
+existing single-service flow. See [36](./36-service-pricing-and-packages.md).
 
 ### Worker
 A staff member at a salon, backed by a real `User` account (added by the owner via phone number, using the same `findOrCreateByPhone` idiom as OTP signup). Workers can optionally be restricted to a subset of the salon's services (`worker_services` join table) — see [09-booking-engine.md](./09-booking-engine.md) for the full eligibility model. Workers accrue their own rating, separate from the salon's overall rating.

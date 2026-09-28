@@ -15,15 +15,18 @@ export interface SalonOverrides {
 
 export interface ServiceOverrides {
   name?: string;
+  pricingType?: 'fixed' | 'from' | 'range' | 'quote';
   price?: number;
+  priceMax?: number;
   durationMin?: number;
+  durationMax?: number;
   discountPercent?: number;
 }
 
 // Every test DB has at least the migration-seeded categories, so callers never need their
 // own category seed step -- same assumption every hand-rolled setup this replaces already
 // made (`categoriesRes.body[0].id`).
-async function firstCategoryId(app: INestApplication): Promise<number> {
+export async function firstCategoryId(app: INestApplication): Promise<number> {
   const res = await request(app.getHttpServer()).get('/api/categories').expect(200);
   return res.body[0].id;
 }
@@ -81,16 +84,26 @@ export async function createService(
   categoryId: number,
   overrides: ServiceOverrides = {},
 ): Promise<string> {
+  // price only defaults to 500000 when pricingType is ALSO unspecified -- a caller
+  // explicitly requesting 'quote' (no price allowed at all) or 'range' (needs priceMax
+  // too) is responsible for supplying whatever price/priceMax shape that type requires,
+  // exactly like a real caller of this DTO would be.
+  const body: Record<string, unknown> = {
+    categoryId,
+    name: overrides.name ?? 'Cut',
+    durationMin: overrides.durationMin ?? 60,
+  };
+  if (overrides.pricingType !== undefined) body.pricingType = overrides.pricingType;
+  if (overrides.price !== undefined) body.price = overrides.price;
+  else if (overrides.pricingType === undefined) body.price = 500000;
+  if (overrides.priceMax !== undefined) body.priceMax = overrides.priceMax;
+  if (overrides.durationMax !== undefined) body.durationMax = overrides.durationMax;
+  if (overrides.discountPercent !== undefined) body.discountPercent = overrides.discountPercent;
+
   const res = await request(app.getHttpServer())
     .post('/api/salons/mine/services')
     .set('Cookie', ownerCookie)
-    .send({
-      categoryId,
-      name: overrides.name ?? 'Cut',
-      price: overrides.price ?? 500000,
-      durationMin: overrides.durationMin ?? 60,
-      ...(overrides.discountPercent !== undefined ? { discountPercent: overrides.discountPercent } : {}),
-    })
+    .send(body)
     .expect(201);
   return res.body.id;
 }

@@ -13,13 +13,19 @@ import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import { formatToman } from '@/utils/format-toman'
 
+type PricingType = 'fixed' | 'from' | 'range' | 'quote'
+
 interface Service {
   id: string
-  categoryId: number
+  categoryId: number | null
+  customCategoryId: string | null
   name: string
   description: string | null
-  price: number
+  pricingType: PricingType
+  price: number | null
+  priceMax: number | null
   durationMin: number
+  durationMax: number | null
   isActive: boolean
   discountPercent: number | null
 }
@@ -33,10 +39,45 @@ interface CategoryRequestRow {
   createdAt: string
 }
 
+interface CustomCategory {
+  id: string
+  name: string
+}
+
+const PRICING_TYPE_META: Record<PricingType, { label: string; hint: string }> = {
+  fixed: { label: 'قیمت ثابت', hint: 'مبلغ دقیق و قطعی' },
+  from: { label: 'شروع از', hint: 'حداقل قیمت، ممکن است بیشتر شود' },
+  range: { label: 'بازه قیمتی', hint: 'بین یک حداقل و حداکثر مشخص' },
+  quote: { label: 'قیمت توافقی', hint: 'قیمت پس از مشاوره تعیین می‌شود' },
+}
+const PRICING_TYPES: PricingType[] = ['fixed', 'from', 'range', 'quote']
+
+// A system category's option value is prefixed "sys:<id>", a custom one "custom:<uuid>" --
+// one flat AppSelect list can then represent "exactly one of the two", matching the API's
+// own mutually-exclusive categoryId/customCategoryId shape, with no optgroup support needed.
+function categorySelectionOf(categoryId: number | null, customCategoryId: string | null): string | null {
+  if (categoryId !== null) return `sys:${categoryId}`
+  if (customCategoryId !== null) return `custom:${customCategoryId}`
+  return null
+}
+function parseCategorySelection(selection: string | null): { categoryId: number | null; customCategoryId: string | null } {
+  if (!selection) return { categoryId: null, customCategoryId: null }
+  const [kind, id] = selection.split(':')
+  return kind === 'sys' ? { categoryId: Number(id), customCategoryId: null } : { categoryId: null, customCategoryId: id }
+}
+
+function priceDisplay(s: Pick<Service, 'pricingType' | 'price' | 'priceMax'>): string {
+  if (s.pricingType === 'quote') return 'قیمت توافقی'
+  if (s.pricingType === 'range') return `${formatToman(s.price ?? 0)} تا ${formatToman(s.priceMax ?? 0)} تومان`
+  if (s.pricingType === 'from') return `از ${formatToman(s.price ?? 0)} تومان`
+  return `${formatToman(s.price ?? 0)} تومان`
+}
+
 const { apiFetch } = useApi()
 const { push: pushToast } = useToast()
 const services = ref<Service[]>([])
 const categories = ref<{ id: number; name: string }[]>([])
+const customCategories = ref<CustomCategory[]>([])
 const loading = ref(true)
 const loadError = ref(false)
 const createError = ref('')
@@ -45,24 +86,35 @@ const createError = ref('')
 // on service names, so both rows stuck).
 const creating = ref(false)
 const newService = reactive({
-  categoryId: null as number | null,
+  categorySelection: null as string | null,
   name: '',
   description: '',
+  pricingType: 'fixed' as PricingType,
   price: 0,
+  priceMax: 0,
   durationMin: 30,
+  durationMax: null as number | null,
   discountPercent: null as number | null,
 })
 
 // Inline "request a new category" form -- collapsed by default, opened via a link right
 // under the category select. Deliberately separate from newService: submitting a
 // category request is its own action, not a step toward creating a service (the salon
-// has to wait for admin approval before it can pick the new category at all).
+// has to wait for admin approval before it can pick the new category at all). Distinct
+// from "create a custom category" below, which is immediate and self-serve.
 const categoryRequests = ref<CategoryRequestRow[]>([])
 const requestingCategory = ref(false)
 const categoryRequestName = ref('')
 const categoryRequestNote = ref('')
 const categoryRequestError = ref('')
 const categoryRequestSubmitting = ref(false)
+
+// "Create a custom category" -- immediate and private to this salon, unlike the
+// admin-approved request flow above. Once created it's selected right away.
+const creatingCustomCategory = ref(false)
+const customCategoryName = ref('')
+const customCategoryError = ref('')
+const customCategorySubmitting = ref(false)
 
 const CATEGORY_REQUEST_STATUS_META: Record<CategoryRequestRow['status'], { label: string; tone: 'warning' | 'success' | 'danger' }> = {
   pending: { label: 'در انتظار بررسی', tone: 'warning' },
@@ -74,7 +126,10 @@ const CATEGORY_REQUEST_STATUS_META: Record<CategoryRequestRow['status'], { label
 // plain Postgres `text`) -- this is a client-side sanity bound, not a mirrored API rule.
 const DESCRIPTION_MAX_LENGTH = 300
 
-const categoryOptions = computed<SelectOption[]>(() => categories.value.map((c) => ({ value: c.id, label: c.name })))
+const categoryOptions = computed<SelectOption[]>(() => [
+  ...categories.value.map((c) => ({ value: `sys:${c.id}`, label: c.name })),
+  ...customCategories.value.map((c) => ({ value: `custom:${c.id}`, label: `${c.name} (سفارشی)` })),
+])
 
 // Create/UpdateServiceDto both bound discountPercent with @IsInt @Min(1) @Max(100); the
 // create form and the per-row editor share the rule, so they share the check and the copy.
@@ -85,7 +140,9 @@ function isValidDiscount(value: number): boolean {
 
 // The price field edits a draft string rather than s.price directly: AppInput needs a real
 // two-way v-model target, and updatePrice() below has to be able to put a rejected edit back
-// to the last persisted price (same reason PortfolioView.vue keeps captionDrafts).
+// to the last persisted price (same reason PortfolioView.vue keeps captionDrafts). Only ever
+// used for pricingType === 'fixed' rows -- FROM/RANGE/QUOTE are edited via the pricing-type
+// panel below instead.
 const priceDrafts = reactive<Record<string, string>>({})
 
 // Same draft treatment as priceDrafts, for the same reason plus one more: a rejected
@@ -109,16 +166,72 @@ const durationDrafts = reactive<Record<string, string>>({})
 // which the label/hint below spells out explicitly.
 const DURATION_PRESETS = [15, 30, 45, 60, 90] as const
 
+// Per-row "change pricing type" panel state -- a service switching type is an atomic
+// operation (see the API's reconcilePricingOnUpdate), so it gets its own small draft
+// object rather than reusing priceDrafts/discountDrafts, which only ever handle a bare
+// price/discount edit on an already-FIXED service.
+const editingPricing = reactive<Record<string, boolean>>({})
+const pricingDrafts = reactive<Record<string, { pricingType: PricingType; price: number; priceMax: number; discountPercent: number | null }>>({})
+
+function openPricingEditor(s: Service) {
+  pricingDrafts[s.id] = {
+    pricingType: s.pricingType,
+    price: s.price ?? 0,
+    priceMax: s.priceMax ?? 0,
+    discountPercent: s.discountPercent,
+  }
+  editingPricing[s.id] = true
+}
+function cancelPricingEditor(id: string) {
+  editingPricing[id] = false
+}
+
+async function savePricingEditor(s: Service) {
+  const draft = pricingDrafts[s.id]
+  const error = validatePricingDraft(draft)
+  if (error) {
+    pushToast(error)
+    return
+  }
+  const body: Record<string, unknown> = { pricingType: draft.pricingType }
+  if (draft.pricingType !== 'quote') body.price = draft.price
+  if (draft.pricingType === 'range') body.priceMax = draft.priceMax
+  if (draft.pricingType === 'fixed') body.discountPercent = draft.discountPercent
+  const { data, error: apiError } = await apiFetch<Service>(`/salons/mine/services/${s.id}`, { method: 'PATCH', body })
+  if (apiError || !data) return
+  Object.assign(s, data)
+  priceDrafts[s.id] = String(s.price ?? '')
+  discountDrafts[s.id] = s.discountPercent === null ? '' : String(s.discountPercent)
+  editingPricing[s.id] = false
+  pushToast('قیمت‌گذاری به‌روزرسانی شد')
+}
+
+function validatePricingDraft(draft: { pricingType: PricingType; price: number; priceMax: number; discountPercent: number | null }): string {
+  if (draft.pricingType !== 'quote') {
+    if (!Number.isInteger(draft.price) || draft.price <= 0) return 'قیمت خدمت باید یک عدد صحیح بزرگ‌تر از صفر باشد.'
+  }
+  if (draft.pricingType === 'range') {
+    if (!Number.isInteger(draft.priceMax) || draft.priceMax < draft.price) {
+      return 'حداکثر قیمت باید عددی صحیح و بزرگ‌تر یا برابر با حداقل باشد.'
+    }
+  }
+  if (draft.pricingType === 'fixed' && draft.discountPercent !== null && !isValidDiscount(draft.discountPercent)) {
+    return DISCOUNT_RANGE_ERROR
+  }
+  return ''
+}
+
 async function load() {
   loading.value = true
   loadError.value = false
 
-  const [servicesRes, categoriesRes] = await Promise.all([
+  const [servicesRes, categoriesRes, customCategoriesRes] = await Promise.all([
     apiFetch<Service[]>('/salons/mine/services', { silent: true }),
     apiFetch<{ id: number; name: string }[]>('/categories', { silent: true }),
+    apiFetch<CustomCategory[]>('/salons/mine/custom-categories', { silent: true }),
   ])
 
-  if (servicesRes.error || categoriesRes.error) {
+  if (servicesRes.error || categoriesRes.error || customCategoriesRes.error) {
     loadError.value = true
     loading.value = false
     return
@@ -126,12 +239,13 @@ async function load() {
 
   services.value = servicesRes.data ?? []
   for (const s of services.value) {
-    priceDrafts[s.id] = String(s.price)
+    priceDrafts[s.id] = String(s.price ?? '')
     discountDrafts[s.id] = s.discountPercent === null ? '' : String(s.discountPercent)
     descriptionDrafts[s.id] = s.description ?? ''
     durationDrafts[s.id] = String(s.durationMin)
   }
   categories.value = categoriesRes.data ?? []
+  customCategories.value = customCategoriesRes.data ?? []
   loading.value = false
 }
 
@@ -178,10 +292,49 @@ async function submitCategoryRequest() {
   await loadCategoryRequests()
 }
 
+function openCustomCategory() {
+  creatingCustomCategory.value = true
+  customCategoryName.value = ''
+  customCategoryError.value = ''
+}
+function cancelCustomCategory() {
+  creatingCustomCategory.value = false
+}
+
+async function submitCustomCategory() {
+  customCategoryError.value = ''
+  const name = customCategoryName.value.trim()
+  if (name.length < 2 || name.length > 60) {
+    customCategoryError.value = 'نام دسته‌بندی باید بین ۲ تا ۶۰ حرف باشد.'
+    return
+  }
+  customCategorySubmitting.value = true
+  const { data, error } = await apiFetch<CustomCategory>('/salons/mine/custom-categories', { method: 'POST', body: { name } })
+  customCategorySubmitting.value = false
+  if (error || !data) return
+
+  customCategories.value.push(data)
+  newService.categorySelection = `custom:${data.id}`
+  creatingCustomCategory.value = false
+  pushToast('دسته‌بندی سفارشی ایجاد شد')
+}
+
+function resetNewService() {
+  newService.categorySelection = null
+  newService.name = ''
+  newService.description = ''
+  newService.pricingType = 'fixed'
+  newService.price = 0
+  newService.priceMax = 0
+  newService.durationMin = 30
+  newService.durationMax = null
+  newService.discountPercent = null
+}
+
 async function addService() {
   if (creating.value) return
   createError.value = ''
-  if (!newService.categoryId) {
+  if (!newService.categorySelection) {
     createError.value = 'دسته‌بندی خدمت را انتخاب کنید.'
     return
   }
@@ -189,11 +342,14 @@ async function addService() {
     createError.value = 'نام خدمت باید حداقل ۲ حرف باشد.'
     return
   }
-  // An emptied price field arrives here as 0 (Number('') === 0), and the API's @Min(0)
-  // accepts it -- which would publish a free, bookable service with a 0 deposit. Same guard
-  // as updatePrice() below; a genuinely free service isn't something this screen offers.
-  if (!Number.isInteger(newService.price) || newService.price <= 0) {
-    createError.value = 'قیمت خدمت باید یک عدد صحیح بزرگ‌تر از صفر باشد.'
+  const pricingError = validatePricingDraft({
+    pricingType: newService.pricingType,
+    price: newService.price,
+    priceMax: newService.priceMax,
+    discountPercent: newService.discountPercent,
+  })
+  if (pricingError) {
+    createError.value = pricingError
     return
   }
   // CreateServiceDto's @Min(5)/@Max(600). Clearing the field lands here as 0 (Number('')),
@@ -203,33 +359,30 @@ async function addService() {
     createError.value = 'مدت زمان خدمت باید عددی صحیح بین ۵ تا ۶۰۰ دقیقه باشد.'
     return
   }
-  // Optional, but when given it must satisfy @Min(1)/@Max(100).
-  if (newService.discountPercent !== null && !isValidDiscount(newService.discountPercent)) {
-    createError.value = DISCOUNT_RANGE_ERROR
+  if (newService.durationMax !== null && newService.durationMax < newService.durationMin) {
+    createError.value = 'حداکثر مدت زمان نمی‌تواند کمتر از حداقل باشد.'
     return
   }
 
-  // discountPercent is optional on create (unlike update, the create DTO has no null-clear
-  // path) -- omit it entirely rather than sending an empty/NaN value when left blank.
+  const { categoryId, customCategoryId } = parseCategorySelection(newService.categorySelection)
   const body: Record<string, unknown> = {
-    categoryId: newService.categoryId,
+    ...(categoryId !== null ? { categoryId } : { customCategoryId }),
     name: newService.name,
-    price: newService.price,
+    pricingType: newService.pricingType,
     durationMin: newService.durationMin,
   }
-  if (newService.discountPercent) body.discountPercent = Number(newService.discountPercent)
+  if (newService.pricingType !== 'quote') body.price = newService.price
+  if (newService.pricingType === 'range') body.priceMax = newService.priceMax
+  if (newService.pricingType === 'fixed' && newService.discountPercent) body.discountPercent = Number(newService.discountPercent)
+  if (newService.durationMax !== null) body.durationMax = newService.durationMax
   if (newService.description.trim()) body.description = newService.description.trim()
+
   creating.value = true
   const { error } = await apiFetch('/salons/mine/services', { method: 'POST', body })
   creating.value = false
   if (error) return
 
-  newService.categoryId = null
-  newService.name = ''
-  newService.description = ''
-  newService.price = 0
-  newService.durationMin = 30
-  newService.discountPercent = null
+  resetNewService()
   await load()
 }
 
@@ -253,12 +406,13 @@ async function deactivate(service: Service) {
 
 // The price field commits on `change` (i.e. on blur), and its value is the salon's public,
 // bookable price -- so it gets both a validity guard and a confirm, unlike the discount
-// field below. Two reasons the guard is not paranoia: a `type="number"` input silently
-// discards Persian digits, so the natural "select all, retype ۱۸۰۰۰۰" leaves the field
-// empty and fires `change` on blur; and the API's @Min(0) happily accepts the resulting 0,
-// which makes the service free to book with a 0 deposit. On any rejected value the input is
-// put back to the price we last knew about, so the field never shows something that isn't
-// what the salon is actually charging.
+// field below. Only ever rendered for pricingType === 'fixed' rows (see the template) --
+// FROM/RANGE/QUOTE go through the pricing-type panel above instead. Two reasons the guard
+// is not paranoia: a `type="number"` input silently discards Persian digits, so the natural
+// "select all, retype ۱۸۰۰۰۰" leaves the field empty and fires `change` on blur; and the
+// API's @Min(0) happily accepts the resulting 0, which makes the service free to book with
+// a 0 deposit. On any rejected value the input is put back to the price we last knew about,
+// so the field never shows something that isn't what the salon is actually charging.
 async function updatePrice(service: Service) {
   // Vue casts a v-model on an `<input type="number">` to a real number (and leaves anything
   // unparseable as the raw string), so the draft is only nominally a string -- normalize.
@@ -266,23 +420,23 @@ async function updatePrice(service: Service) {
   const price = Number(raw)
   // Integer-only mirrors UpdateServiceDto's @IsInt -- a fractional toman would just 400.
   if (raw === '' || !Number.isInteger(price) || price <= 0) {
-    priceDrafts[service.id] = String(service.price)
+    priceDrafts[service.id] = String(service.price ?? '')
     pushToast('قیمت باید یک عدد صحیح بزرگ‌تر از صفر باشد.')
     return
   }
   if (price === service.price) return
 
   const confirmed = window.confirm(
-    `قیمت «${service.name}» از ${formatToman(service.price)} به ${formatToman(price)} تومان تغییر کند؟`,
+    `قیمت «${service.name}» از ${formatToman(service.price ?? 0)} به ${formatToman(price)} تومان تغییر کند؟`,
   )
   if (!confirmed) {
-    priceDrafts[service.id] = String(service.price)
+    priceDrafts[service.id] = String(service.price ?? '')
     return
   }
 
   const { error } = await apiFetch(`/salons/mine/services/${service.id}`, { method: 'PATCH', body: { price } })
   if (error) {
-    priceDrafts[service.id] = String(service.price)
+    priceDrafts[service.id] = String(service.price ?? '')
     return
   }
   service.price = price
@@ -415,6 +569,7 @@ async function updateDescription(service: Service) {
             <div class="flex flex-wrap items-center justify-between gap-2">
               <div class="flex min-w-0 flex-wrap items-center gap-2">
                 <p class="min-w-0 break-words text-sm font-bold text-(--color-text)">{{ s.name }}</p>
+                <StatusBadge :label="PRICING_TYPE_META[s.pricingType].label" tone="info" />
                 <StatusBadge v-if="s.discountPercent" :label="`٪${s.discountPercent} تخفیف`" tone="success" />
               </div>
               <AppButton type="button" variant="danger" class="shrink-0" data-testid="deactivate-service" @click="deactivate(s)">
@@ -422,27 +577,98 @@ async function updateDescription(service: Service) {
                 غیرفعال‌سازی
               </AppButton>
             </div>
-            <!-- A 2-up grid rather than fixed w-32/w-24 widths: the old fixed widths also
-                 collided with AppInput's own w-full (both land on the <input> via $attrs).
-                 Capped at sm so the two short numeric fields don't stretch across a laptop. -->
-            <div class="grid grid-cols-2 gap-3 sm:max-w-sm">
+
+            <!-- FIXED-only inline price/discount editors, unchanged from before pricing
+                 types existed -- committing a bare number here never needs an atomic type
+                 switch. -->
+            <template v-if="s.pricingType === 'fixed' && !editingPricing[s.id]">
+              <div class="grid grid-cols-2 gap-3 sm:max-w-sm">
+                <AppMoneyInput
+                  v-model="priceDrafts[s.id]"
+                  label="قیمت (تومان)"
+                  data-testid="service-price-input"
+                  @change="updatePrice(s)"
+                />
+                <AppInput
+                  v-model="discountDrafts[s.id]"
+                  label="٪ تخفیف"
+                  type="number"
+                  min="1"
+                  max="100"
+                  placeholder="٪ تخفیف"
+                  class="tnum"
+                  @change="updateDiscount(s)"
+                />
+              </div>
+              <button
+                type="button"
+                class="text-xs text-(--color-accent-text) underline-offset-2 hover:underline"
+                @click="openPricingEditor(s)"
+              >
+                تغییر نوع قیمت‌گذاری
+              </button>
+            </template>
+
+            <!-- FROM/RANGE/QUOTE: a compact read-only summary plus an edit affordance --
+                 changing anything here is an atomic type switch, not a bare number edit. -->
+            <div v-else-if="!editingPricing[s.id]" class="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-(--color-surface-subtle) p-3">
+              <p class="text-sm font-semibold text-(--color-text)">{{ priceDisplay(s) }}</p>
+              <button
+                type="button"
+                data-testid="edit-pricing-type"
+                class="text-xs text-(--color-accent-text) underline-offset-2 hover:underline"
+                @click="openPricingEditor(s)"
+              >
+                ویرایش قیمت‌گذاری
+              </button>
+            </div>
+
+            <div v-if="editingPricing[s.id]" class="space-y-2 rounded-xl border border-(--color-border) bg-(--color-surface) p-3">
+              <fieldset class="grid grid-cols-2 gap-2">
+                <legend class="sr-only">نوع قیمت‌گذاری</legend>
+                <label
+                  v-for="t in PRICING_TYPES"
+                  :key="t"
+                  class="flex cursor-pointer items-start gap-2 rounded-xl border p-2 text-xs"
+                  :class="pricingDrafts[s.id].pricingType === t ? 'border-(--color-accent-strong) bg-(--color-accent-soft)' : 'border-(--color-border)'"
+                >
+                  <input v-model="pricingDrafts[s.id].pricingType" type="radio" :value="t" class="mt-0.5" />
+                  <span>
+                    <span class="block font-semibold text-(--color-text)">{{ PRICING_TYPE_META[t].label }}</span>
+                    <span class="block text-(--color-text-muted)">{{ PRICING_TYPE_META[t].hint }}</span>
+                  </span>
+                </label>
+              </fieldset>
+
               <AppMoneyInput
-                v-model="priceDrafts[s.id]"
-                label="قیمت (تومان)"
-                data-testid="service-price-input"
-                @change="updatePrice(s)"
+                v-if="pricingDrafts[s.id].pricingType !== 'quote'"
+                :model-value="String(pricingDrafts[s.id].price)"
+                :label="pricingDrafts[s.id].pricingType === 'range' ? 'حداقل قیمت (تومان)' : 'قیمت (تومان)'"
+                @update:model-value="(v) => (pricingDrafts[s.id].price = Number(v))"
+              />
+              <AppMoneyInput
+                v-if="pricingDrafts[s.id].pricingType === 'range'"
+                :model-value="String(pricingDrafts[s.id].priceMax)"
+                label="حداکثر قیمت (تومان)"
+                @update:model-value="(v) => (pricingDrafts[s.id].priceMax = Number(v))"
               />
               <AppInput
-                v-model="discountDrafts[s.id]"
-                label="٪ تخفیف"
+                v-if="pricingDrafts[s.id].pricingType === 'fixed'"
+                :model-value="pricingDrafts[s.id].discountPercent != null ? String(pricingDrafts[s.id].discountPercent) : ''"
+                label="٪ تخفیف (اختیاری)"
                 type="number"
                 min="1"
                 max="100"
-                placeholder="٪ تخفیف"
                 class="tnum"
-                @change="updateDiscount(s)"
+                @update:model-value="(v) => (pricingDrafts[s.id].discountPercent = v === '' ? null : Number(v))"
               />
+
+              <div class="flex flex-wrap gap-2">
+                <AppButton type="button" data-testid="save-pricing-type" @click="savePricingEditor(s)">ذخیره</AppButton>
+                <AppButton type="button" variant="secondary" @click="cancelPricingEditor(s.id)">انصراف</AppButton>
+              </div>
             </div>
+
             <div class="sm:max-w-sm">
               <AppInput
                 v-model="durationDrafts[s.id]"
@@ -457,6 +683,9 @@ async function updateDescription(service: Service) {
               <p class="mt-1 text-xs text-(--color-text-muted)">
                 این عدد فاصله بین نوبت‌های قابل رزرو این خدمت را هم تعیین می‌کند؛ برای مثال یک خدمت
                 ۱۵ دقیقه‌ای هر ۱۵ دقیقه یک نوبت جدید باز می‌کند.
+              </p>
+              <p v-if="s.durationMax" class="mt-1 text-xs text-(--color-text-muted)">
+                مدت زمان تخمینی: تا {{ s.durationMax.toLocaleString('fa-IR') }} دقیقه
               </p>
               <div class="mt-1.5 flex flex-wrap gap-1.5">
                 <button
@@ -493,19 +722,58 @@ async function updateDescription(service: Service) {
 
     <AppCard class="space-y-3">
       <h2 class="font-bold text-(--color-text)">افزودن خدمت جدید</h2>
-      <AppSelect v-model="newService.categoryId" :options="categoryOptions" placeholder="دسته‌بندی" data-testid="new-service-category" />
+      <AppSelect v-model="newService.categorySelection" :options="categoryOptions" placeholder="دسته‌بندی" data-testid="new-service-category" />
 
-      <button
-        v-if="!requestingCategory"
-        type="button"
-        data-testid="open-category-request"
-        class="text-xs text-(--color-accent-text) underline-offset-2 hover:underline"
-        @click="openCategoryRequest"
-      >
-        دسته‌بندی مدنظرتان در لیست نیست؟ درخواست دسته‌بندی جدید
-      </button>
+      <div class="flex flex-wrap gap-3">
+        <button
+          v-if="!requestingCategory"
+          type="button"
+          data-testid="open-category-request"
+          class="text-xs text-(--color-accent-text) underline-offset-2 hover:underline"
+          @click="openCategoryRequest"
+        >
+          دسته‌بندی مدنظرتان در لیست نیست؟ درخواست دسته‌بندی جدید
+        </button>
+        <button
+          v-if="!creatingCustomCategory"
+          type="button"
+          data-testid="open-custom-category"
+          class="text-xs text-(--color-accent-text) underline-offset-2 hover:underline"
+          @click="openCustomCategory"
+        >
+          + دسته‌بندی سفارشی برای همین سالن
+        </button>
+      </div>
 
-      <div v-else class="space-y-2 rounded-xl border border-(--color-border) bg-(--color-surface) p-3">
+      <div v-if="creatingCustomCategory" class="space-y-2 rounded-xl border border-(--color-border) bg-(--color-surface) p-3">
+        <p class="text-sm font-semibold text-(--color-text)">دسته‌بندی سفارشی جدید</p>
+        <p class="text-xs text-(--color-text-muted)">
+          این دسته‌بندی فقط برای سالن شما قابل استفاده است و بلافاصله آماده می‌شود؛ نیازی به تایید مدیر نیست.
+        </p>
+        <AppInput
+          v-model="customCategoryName"
+          label="نام دسته‌بندی سفارشی"
+          placeholder="مثلاً: خدمات ویژه"
+          data-testid="custom-category-name"
+          :error="customCategoryError"
+        />
+        <div class="flex flex-wrap gap-2">
+          <AppButton
+            type="button"
+            data-testid="submit-custom-category"
+            :loading="customCategorySubmitting"
+            :disabled="customCategorySubmitting"
+            @click="submitCustomCategory"
+          >
+            ایجاد و انتخاب
+          </AppButton>
+          <AppButton type="button" variant="secondary" :disabled="customCategorySubmitting" @click="cancelCustomCategory">
+            انصراف
+          </AppButton>
+        </div>
+      </div>
+
+      <div v-if="requestingCategory" class="space-y-2 rounded-xl border border-(--color-border) bg-(--color-surface) p-3">
         <p class="text-sm font-semibold text-(--color-text)">درخواست دسته‌بندی جدید</p>
         <AppInput
           v-model="categoryRequestName"
@@ -548,12 +816,38 @@ async function updateDescription(service: Service) {
       </div>
 
       <AppInput v-model="newService.name" placeholder="نام خدمت" />
+
+      <fieldset class="grid grid-cols-2 gap-2">
+        <legend class="mb-1 block text-sm font-medium text-(--color-text)">نوع قیمت‌گذاری</legend>
+        <label
+          v-for="t in PRICING_TYPES"
+          :key="t"
+          class="flex cursor-pointer items-start gap-2 rounded-xl border p-2.5 text-xs"
+          :class="newService.pricingType === t ? 'border-(--color-accent-strong) bg-(--color-accent-soft)' : 'border-(--color-border)'"
+          :data-testid="`new-service-pricing-type-${t}`"
+        >
+          <input v-model="newService.pricingType" type="radio" :value="t" class="mt-0.5" />
+          <span>
+            <span class="block font-semibold text-(--color-text)">{{ PRICING_TYPE_META[t].label }}</span>
+            <span class="block text-(--color-text-muted)">{{ PRICING_TYPE_META[t].hint }}</span>
+          </span>
+        </label>
+      </fieldset>
+
       <div class="grid grid-cols-2 gap-3">
         <AppMoneyInput
+          v-if="newService.pricingType !== 'quote'"
           :model-value="String(newService.price)"
-          label="قیمت (تومان)"
+          :label="newService.pricingType === 'range' ? 'حداقل قیمت (تومان)' : 'قیمت (تومان)'"
           data-testid="new-service-price-input"
           @update:model-value="(v) => (newService.price = Number(v))"
+        />
+        <AppMoneyInput
+          v-if="newService.pricingType === 'range'"
+          :model-value="String(newService.priceMax)"
+          label="حداکثر قیمت (تومان)"
+          data-testid="new-service-price-max-input"
+          @update:model-value="(v) => (newService.priceMax = Number(v))"
         />
         <div>
           <AppInput
@@ -601,6 +895,7 @@ async function updateDescription(service: Service) {
         </p>
       </div>
       <AppInput
+        v-if="newService.pricingType === 'fixed'"
         :model-value="newService.discountPercent != null ? String(newService.discountPercent) : ''"
         label="٪ تخفیف (اختیاری)"
         type="number"

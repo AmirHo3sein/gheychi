@@ -21,7 +21,31 @@ interface Salon {
   instagramHandle: string | null
   location: { type: 'Point'; coordinates: [number, number] }
 }
-interface SalonServiceItem { id: string; name: string; description: string | null; price: number; durationMin: number; discountPercent: number | null }
+type PricingType = 'fixed' | 'from' | 'range' | 'quote'
+interface SalonServiceItem {
+  id: string
+  name: string
+  description: string | null
+  pricingType: PricingType
+  price: number | null
+  priceMax: number | null
+  durationMin: number
+  durationMax: number | null
+  discountPercent: number | null
+}
+// Catalog/display only -- a package is never itself booked; each item links through to its
+// OWN existing single-service booking flow (see public-salon-content.controller.ts's own
+// doc comment on GET /salons/:slug/packages).
+interface SalonPackageItem { serviceId: string; name: string; pricingType: PricingType; price: number | null; durationMin: number }
+interface SalonPackage {
+  id: string
+  name: string
+  description: string | null
+  pricingType: PricingType
+  price: number | null
+  priceMax: number | null
+  items: SalonPackageItem[]
+}
 interface WorkingHourItem { weekday: number; openTime: string; closeTime: string }
 // Both times null = closed all day; both set = closed only during [startTime, endTime) on
 // `date` -- mirrors ScheduleException's own shape (schedule-exception.entity.ts), minus the
@@ -73,8 +97,9 @@ const { data: resolved } = await useAsyncData(`salon-${slug}`, async () => {
     return { movedTo, page: null }
   }
 
-  const [servicesRes, hoursRes, exceptionsRes, photosRes, reviewsRes, portfolioRes, workersRes, termsRes] = await Promise.all([
+  const [servicesRes, packagesRes, hoursRes, exceptionsRes, photosRes, reviewsRes, portfolioRes, workersRes, termsRes] = await Promise.all([
     apiFetch<SalonServiceItem[]>(`/salons/${slug}/services`, { silent: true }),
+    apiFetch<SalonPackage[]>(`/salons/${slug}/packages`, { silent: true }),
     apiFetch<WorkingHourItem[]>(`/salons/${slug}/hours`, { silent: true }),
     apiFetch<SalonExceptionItem[]>(`/salons/${slug}/exceptions`, { silent: true }),
     apiFetch<PhotoItem[]>(`/salons/${slug}/photos`, { silent: true }),
@@ -89,6 +114,7 @@ const { data: resolved } = await useAsyncData(`salon-${slug}`, async () => {
     page: {
       salon: salonRes.data,
       services: servicesRes.data ?? [],
+      packages: packagesRes.data ?? [],
       hours: hoursRes.data ?? [],
       // Already future-dated (today included) by the API -- see public-salon-content.controller.ts.
       exceptions: exceptionsRes.data ?? [],
@@ -331,12 +357,17 @@ onMounted(() => {
   isOpenNow.value = todayRanges.some((r) => hhmm >= r.openTime.slice(0, 5) && hhmm < r.closeTime.slice(0, 5))
 })
 
-// Anchors the sticky footer's "شروع از X تومان" -- the cheapest bookable service AFTER its
-// own discount, matching how the service list below prices each row (never the pre-discount
-// price, which no customer would actually pay).
+// Anchors the sticky footer's "شروع از X تومان" -- the cheapest HONEST floor across every
+// service: FIXED's own discounted price (never the pre-discount price, which no customer
+// would actually pay -- discounting never applies to FROM/RANGE, see
+// service-pricing.util.ts's validateDiscountForPricingType), or FROM/RANGE's own floor
+// price (a real lower bound the actual price can never fall below). QUOTE has no number at
+// all and is excluded, mirroring search.service.ts's own min_price computation exactly.
 const minServicePrice = computed(() => {
-  if (!page.value?.services.length) return null
-  return Math.min(...page.value.services.map((s) => applyDiscount(s.price, s.discountPercent)))
+  const prices = (page.value?.services ?? [])
+    .map((s) => (s.pricingType === 'fixed' ? applyDiscount(s.price!, s.discountPercent) : s.price))
+    .filter((p): p is number => p !== null)
+  return prices.length ? Math.min(...prices) : null
 })
 
 // The #services/#reviews links below used to be plain `<a href="#...">` anchors, relying on
@@ -498,9 +529,17 @@ function scrollToSection(id: string) {
       </div>
       <ul v-if="page.services.length" class="space-y-2">
         <li v-for="service in page.services" :key="service.id">
+          <!-- Only a FIXED-price service can go through the automatic online booking flow
+               (the API rejects a hold attempt against any other pricing type -- see
+               BookingsService.createHoldImpl's pricingType guard), so FROM/RANGE/QUOTE
+               block the click into a flow that would 400 at submission and drop the hover
+               affordance, rather than rendering a plain <div> (which would need duplicating
+               this whole card's markup across two branches just to dodge one click). -->
           <NuxtLink
             :to="bookingLink(service.id)"
-            class="block rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 text-sm shadow-(--shadow-sm) transition-shadow hover:shadow-(--shadow-md)"
+            class="block rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 text-sm shadow-(--shadow-sm) transition-shadow"
+            :class="service.pricingType === 'fixed' ? 'hover:shadow-(--shadow-md)' : 'cursor-default'"
+            @click="(e: MouseEvent) => { if (service.pricingType !== 'fixed') e.preventDefault() }"
           >
             <!-- Same shape as the booking page's price row, and for the same reason: at
                  320px a provider-authored service name, a discount badge and a
@@ -516,16 +555,27 @@ function scrollToSection(id: string) {
                 >
                   ٪{{ service.discountPercent.toLocaleString('fa-IR') }} تخفیف
                 </span>
-                <span class="flex flex-col items-end whitespace-nowrap leading-tight">
+                <span v-if="service.pricingType === 'fixed'" class="flex flex-col items-end whitespace-nowrap leading-tight">
                   <span v-if="service.discountPercent" class="text-xs text-(--color-text-muted) line-through">
-                    <span dir="ltr" class="tnum">{{ formatToman(service.price) }}</span> تومان
+                    <span dir="ltr" class="tnum">{{ formatToman(service.price!) }}</span> تومان
                   </span>
                   <span class="font-bold text-(--color-text)">
-                    <span dir="ltr" class="tnum">{{ formatToman(applyDiscount(service.price, service.discountPercent)) }}</span> تومان
+                    <span dir="ltr" class="tnum">{{ formatToman(applyDiscount(service.price!, service.discountPercent)) }}</span> تومان
                   </span>
                 </span>
+                <span v-else-if="service.pricingType === 'from'" class="font-bold text-(--color-text) whitespace-nowrap">
+                  از <span dir="ltr" class="tnum">{{ formatToman(service.price!) }}</span> تومان
+                </span>
+                <span v-else-if="service.pricingType === 'range'" class="font-bold text-(--color-text) whitespace-nowrap">
+                  <span dir="ltr" class="tnum">{{ formatToman(service.price!) }}</span> تا
+                  <span dir="ltr" class="tnum">{{ formatToman(service.priceMax!) }}</span> تومان
+                </span>
+                <span v-else class="font-bold text-(--color-text) whitespace-nowrap">قیمت توافقی</span>
               </span>
             </div>
+            <p v-if="service.pricingType !== 'fixed'" class="mt-1 text-xs text-(--color-text-muted)">
+              برای رزرو این خدمت باید ابتدا با سالن هماهنگ کنید.
+            </p>
             <!-- Provider-authored note on the listed duration (e.g. "may take longer") --
                  the duration above is a minimum, not a guarantee, and this is where a salon
                  says so explicitly instead of a customer being surprised mid-appointment. -->
@@ -540,6 +590,48 @@ function scrollToSection(id: string) {
       >
         در حال حاضر خدمتی برای رزرو ثبت نشده است
       </p>
+    </section>
+
+    <!-- Packages are catalog/display only -- never bookable as one unit (see
+         SalonPackage's own doc comment on the backend). Each listed service links through
+         to its OWN existing single-service entry in the section above; this section exists
+         purely so a bundle like "Bridal Package" reads as one coherent offering. -->
+    <section v-if="page.packages.length" id="packages">
+      <h2 class="mb-2 text-xl font-bold text-(--color-text)">پکیج‌ها</h2>
+      <ul class="space-y-2">
+        <li
+          v-for="pkg in page.packages"
+          :key="pkg.id"
+          class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 text-sm shadow-(--shadow-sm)"
+        >
+          <div class="flex items-center justify-between gap-3">
+            <span class="min-w-0 break-words font-bold text-(--color-text)">{{ pkg.name }}</span>
+            <span class="font-bold whitespace-nowrap text-(--color-text)">
+              <template v-if="pkg.pricingType === 'quote'">قیمت توافقی</template>
+              <template v-else-if="pkg.pricingType === 'range'">
+                <span dir="ltr" class="tnum">{{ formatToman(pkg.price!) }}</span> تا
+                <span dir="ltr" class="tnum">{{ formatToman(pkg.priceMax!) }}</span> تومان
+              </template>
+              <template v-else-if="pkg.pricingType === 'from'">
+                از <span dir="ltr" class="tnum">{{ formatToman(pkg.price!) }}</span> تومان
+              </template>
+              <template v-else>
+                <span dir="ltr" class="tnum">{{ formatToman(pkg.price!) }}</span> تومان
+              </template>
+            </span>
+          </div>
+          <p v-if="pkg.description" class="mt-1 text-xs text-(--color-text-muted)">{{ pkg.description }}</p>
+          <ul class="mt-2 flex flex-wrap gap-1.5">
+            <li
+              v-for="item in pkg.items"
+              :key="item.serviceId"
+              class="rounded-full bg-(--color-surface-subtle) px-2.5 py-1 text-xs text-(--color-text-muted)"
+            >
+              {{ item.name }}
+            </li>
+          </ul>
+        </li>
+      </ul>
     </section>
 
     <PortfolioGrid

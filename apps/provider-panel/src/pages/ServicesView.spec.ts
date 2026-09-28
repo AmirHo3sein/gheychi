@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import AppMoneyInput from '@/components/ui/AppMoneyInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import { resetToast, useToast } from '@/composables/useToast'
 import ServicesView from './ServicesView.vue'
@@ -10,20 +11,26 @@ import ServicesView from './ServicesView.vue'
 const SERVICE = {
   id: 'svc-1',
   categoryId: 1,
+  customCategoryId: null,
   name: 'کوتاهی مو',
   description: null,
+  pricingType: 'fixed' as const,
   price: 100000,
+  priceMax: null,
   durationMin: 30,
+  durationMax: null,
   isActive: true,
   discountPercent: null,
 }
 
-// ServicesView fires two separate onMounted hooks -- load() (services + categories, via
-// Promise.all) and loadCategoryRequests() -- and Vue runs onMounted callbacks synchronously
-// in registration order up to each one's first await, so the real fetch() call order is
-// always: services, categories, category-requests. Every test below queues this as the 3rd
-// response so later user-triggered calls land at the expected index.
+// ServicesView fires two separate onMounted hooks -- load() (services + categories +
+// custom-categories, via Promise.all) and loadCategoryRequests() -- and Vue runs onMounted
+// callbacks synchronously in registration order up to each one's first await, so the real
+// fetch() call order is always: services, categories, custom-categories, category-requests.
+// Every test below queues these as the first 4 responses so later user-triggered calls land
+// at the expected index.
 const CATEGORY_REQUESTS_EMPTY = { ok: true, status: 200, json: async () => [] }
+const CUSTOM_CATEGORIES_EMPTY = { ok: true, status: 200, json: async () => [] }
 
 describe('ServicesView', () => {
   beforeEach(() => {
@@ -38,6 +45,7 @@ describe('ServicesView', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
     vi.stubGlobal('fetch', fetchMock)
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
@@ -51,7 +59,7 @@ describe('ServicesView', () => {
 
     expect(confirmSpy).toHaveBeenCalled()
     // Only the three initial GETs happened -- no DELETE was fired.
-    expect(fetchMock.mock.calls.length).toBe(3)
+    expect(fetchMock.mock.calls.length).toBe(4)
     // The service row is still rendered -- declining the confirm must not remove it.
     expect(wrapper.text()).toContain('کوتاهی مو')
   })
@@ -60,6 +68,7 @@ describe('ServicesView', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
       .mockResolvedValueOnce({ ok: true, status: 204, json: async () => null }) // DELETE service
     vi.stubGlobal('fetch', fetchMock)
@@ -71,7 +80,7 @@ describe('ServicesView', () => {
     await wrapper.find('[data-testid="deactivate-service"]').trigger('click')
     await new Promise((r) => setTimeout(r, 0))
 
-    const deleteCall = fetchMock.mock.calls[3]!
+    const deleteCall = fetchMock.mock.calls[4]!
     expect(deleteCall[0]).toContain('/salons/mine/services/svc-1')
     expect(deleteCall[1]).toMatchObject({ method: 'DELETE' })
     expect(wrapper.text()).not.toContain('کوتاهی مو')
@@ -81,6 +90,7 @@ describe('ServicesView', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
     vi.stubGlobal('fetch', fetchMock)
 
@@ -94,6 +104,7 @@ describe('ServicesView', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({ message: 'boom' }) }) // GET services fails
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
     vi.stubGlobal('fetch', fetchMock)
 
@@ -108,9 +119,11 @@ describe('ServicesView', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({ message: 'boom' }) }) // GET services fails
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services (retry)
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories (retry)
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
     vi.stubGlobal('fetch', fetchMock)
 
     const wrapper = mount(ServicesView)
@@ -119,7 +132,7 @@ describe('ServicesView', () => {
     await wrapper.find('[data-testid="retry-services"]').trigger('click')
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(fetchMock.mock.calls.length).toBe(5)
+    expect(fetchMock.mock.calls.length).toBe(7)
     expect(wrapper.find('[data-testid="retry-services"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('کوتاهی مو')
   })
@@ -128,6 +141,7 @@ describe('ServicesView', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ...SERVICE, price: 150000 }) }) // PATCH price
     vi.stubGlobal('fetch', fetchMock)
@@ -142,7 +156,7 @@ describe('ServicesView', () => {
     await input.trigger('change')
     await new Promise((r) => setTimeout(r, 0))
 
-    const patchCall = fetchMock.mock.calls[3]!
+    const patchCall = fetchMock.mock.calls[4]!
     expect(patchCall[0]).toContain('/salons/mine/services/svc-1')
     expect(patchCall[1]).toMatchObject({ method: 'PATCH' })
     expect(JSON.parse(patchCall[1].body)).toEqual({ price: 150000 })
@@ -155,6 +169,7 @@ describe('ServicesView', () => {
       const fetchMock = vi.fn()
         .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
         .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+        .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
         .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
       vi.stubGlobal('fetch', fetchMock)
       const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
@@ -168,7 +183,7 @@ describe('ServicesView', () => {
       await new Promise((r) => setTimeout(r, 0))
 
       // Only the three initial GETs happened -- no PATCH was fired.
-      expect(fetchMock.mock.calls.length).toBe(3)
+      expect(fetchMock.mock.calls.length).toBe(4)
       expect(confirmSpy).not.toHaveBeenCalled()
       // AppMoneyInput redraws comma-grouped once it isn't focused (this test never focuses
       // it, matching how the rejection restores the field programmatically, not via a user
@@ -186,6 +201,7 @@ describe('ServicesView', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ...SERVICE, price: 180000 }) }) // PATCH price
     vi.stubGlobal('fetch', fetchMock)
@@ -199,7 +215,7 @@ describe('ServicesView', () => {
     await input.trigger('change')
     await new Promise((r) => setTimeout(r, 0))
 
-    const patchCall = fetchMock.mock.calls[3]!
+    const patchCall = fetchMock.mock.calls[4]!
     expect(JSON.parse(patchCall[1].body)).toEqual({ price: 180000 })
     expect(useToast().toasts.value.some((t) => t.message === 'قیمت به‌روزرسانی شد')).toBe(true)
   })
@@ -208,6 +224,7 @@ describe('ServicesView', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
     vi.stubGlobal('fetch', fetchMock)
     vi.spyOn(window, 'confirm').mockReturnValue(false)
@@ -220,7 +237,7 @@ describe('ServicesView', () => {
     await input.trigger('change')
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(fetchMock.mock.calls.length).toBe(3)
+    expect(fetchMock.mock.calls.length).toBe(4)
     expect((input.element as HTMLInputElement).value).toBe('۱۰۰٬۰۰۰')
     expect(useToast().toasts.value.some((t) => t.message === 'قیمت به‌روزرسانی شد')).toBe(false)
   })
@@ -230,17 +247,19 @@ describe('ServicesView', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
       .mockImplementationOnce(() => new Promise((resolve) => { resolveCreate = resolve })) // POST service -- held open
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services (reload)
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories (reload)
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
     vi.stubGlobal('fetch', fetchMock)
 
     const wrapper = mount(ServicesView)
     await new Promise((r) => setTimeout(r, 0))
 
     await wrapper.find('input[placeholder="نام خدمت"]').setValue('رنگ مو')
-    await wrapper.findComponent(AppSelect).vm.$emit('update:modelValue', 1)
+    await wrapper.findComponent(AppSelect).vm.$emit('update:modelValue', 'sys:1')
     await wrapper.get('[data-testid="new-service-price-input"]').setValue('150000')
 
     const addButton = wrapper.get('[data-testid="add-service"]')
@@ -248,8 +267,8 @@ describe('ServicesView', () => {
     await addButton.trigger('click')
     await new Promise((r) => setTimeout(r, 0))
 
-    // Three initial GETs + exactly ONE POST, and the button is visibly busy meanwhile.
-    expect(fetchMock.mock.calls.length).toBe(4)
+    // Four initial GETs + exactly ONE POST, and the button is visibly busy meanwhile.
+    expect(fetchMock.mock.calls.length).toBe(5)
     expect((addButton.element as HTMLButtonElement).disabled).toBe(true)
     expect(addButton.attributes('aria-busy')).toBe('true')
 
@@ -264,6 +283,7 @@ describe('ServicesView', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
     vi.stubGlobal('fetch', fetchMock)
 
@@ -281,7 +301,7 @@ describe('ServicesView', () => {
 
     expect(wrapper.text()).toContain('قیمت خدمت باید یک عدد صحیح بزرگ‌تر از صفر باشد')
     // Only the three initial GETs happened -- no POST was fired.
-    expect(fetchMock.mock.calls.length).toBe(3)
+    expect(fetchMock.mock.calls.length).toBe(4)
   })
 
   // CreateServiceDto is @Min(5)/@Max(600) on durationMin, and clearing the field lands here
@@ -293,6 +313,7 @@ describe('ServicesView', () => {
       const fetchMock = vi.fn()
         .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
         .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+        .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
         .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
       vi.stubGlobal('fetch', fetchMock)
 
@@ -312,7 +333,7 @@ describe('ServicesView', () => {
       await new Promise((r) => setTimeout(r, 0))
 
       expect(wrapper.text()).toContain('مدت زمان خدمت باید عددی صحیح بین ۵ تا ۶۰۰ دقیقه باشد.')
-      expect(fetchMock.mock.calls.length).toBe(3)
+      expect(fetchMock.mock.calls.length).toBe(4)
     },
   )
 
@@ -320,6 +341,7 @@ describe('ServicesView', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
     vi.stubGlobal('fetch', fetchMock)
 
@@ -338,7 +360,7 @@ describe('ServicesView', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     expect(wrapper.text()).toContain('درصد تخفیف باید عددی صحیح بین ۱ تا ۱۰۰ باشد.')
-    expect(fetchMock.mock.calls.length).toBe(3)
+    expect(fetchMock.mock.calls.length).toBe(4)
   })
 
   // The row's `min="1"` attribute never stopped anyone typing 0, and UpdateServiceDto's
@@ -349,6 +371,7 @@ describe('ServicesView', () => {
       const fetchMock = vi.fn()
         .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE, discountPercent: 20 }] }) // GET services
         .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+        .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
         .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
       vi.stubGlobal('fetch', fetchMock)
 
@@ -362,7 +385,7 @@ describe('ServicesView', () => {
       await discountInput.trigger('change')
       await new Promise((r) => setTimeout(r, 0))
 
-      expect(fetchMock.mock.calls.length).toBe(3)
+      expect(fetchMock.mock.calls.length).toBe(4)
       expect((discountInput.element as HTMLInputElement).value).toBe('20')
       expect(useToast().toasts.value.some((t) => t.message === 'درصد تخفیف باید عددی صحیح بین ۱ تا ۱۰۰ باشد.')).toBe(true)
       expect(useToast().toasts.value.some((t) => t.message === 'تخفیف به‌روزرسانی شد')).toBe(false)
@@ -373,6 +396,7 @@ describe('ServicesView', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
       .mockResolvedValue({ ok: true, status: 200, json: async () => ({ ...SERVICE }) }) // PATCHes
     vi.stubGlobal('fetch', fetchMock)
@@ -385,7 +409,7 @@ describe('ServicesView', () => {
     await discountInput.trigger('change')
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(JSON.parse(fetchMock.mock.calls[3]![1].body)).toEqual({ discountPercent: 20 })
+    expect(JSON.parse(fetchMock.mock.calls[4]![1].body)).toEqual({ discountPercent: 20 })
     expect(useToast().toasts.value.some((t) => t.message === 'تخفیف به‌روزرسانی شد')).toBe(true)
 
     // Emptying the field is the clear path -- null, not 0.
@@ -393,13 +417,14 @@ describe('ServicesView', () => {
     await discountInput.trigger('change')
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(JSON.parse(fetchMock.mock.calls[4]![1].body)).toEqual({ discountPercent: null })
+    expect(JSON.parse(fetchMock.mock.calls[5]![1].body)).toEqual({ discountPercent: null })
   })
 
   it('saves a valid duration change for an existing service, with no confirm dialog', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ...SERVICE, durationMin: 15 }) }) // PATCH
     vi.stubGlobal('fetch', fetchMock)
@@ -414,7 +439,7 @@ describe('ServicesView', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     expect(confirmSpy).not.toHaveBeenCalled()
-    expect(JSON.parse(fetchMock.mock.calls[3]![1].body)).toEqual({ durationMin: 15 })
+    expect(JSON.parse(fetchMock.mock.calls[4]![1].body)).toEqual({ durationMin: 15 })
     expect(useToast().toasts.value.some((t) => t.message === 'مدت زمان به‌روزرسانی شد')).toBe(true)
   })
 
@@ -422,6 +447,7 @@ describe('ServicesView', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
     vi.stubGlobal('fetch', fetchMock)
 
@@ -433,7 +459,7 @@ describe('ServicesView', () => {
     await durationInput.trigger('change')
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(fetchMock.mock.calls.length).toBe(3) // no PATCH fired
+    expect(fetchMock.mock.calls.length).toBe(4) // no PATCH fired
     expect((durationInput.element as HTMLInputElement).value).toBe('30')
     expect(useToast().toasts.value.some((t) => t.message === 'مدت زمان باید عددی صحیح بین ۵ تا ۶۰۰ دقیقه باشد.')).toBe(true)
   })
@@ -442,6 +468,7 @@ describe('ServicesView', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ...SERVICE, durationMin: 60 }) }) // PATCH
     vi.stubGlobal('fetch', fetchMock)
@@ -452,13 +479,14 @@ describe('ServicesView', () => {
     await wrapper.get('[data-testid="service-duration-preset-60"]').trigger('click')
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(JSON.parse(fetchMock.mock.calls[3]![1].body)).toEqual({ durationMin: 60 })
+    expect(JSON.parse(fetchMock.mock.calls[4]![1].body)).toEqual({ durationMin: 60 })
   })
 
   it('sets the new-service form duration via a preset button', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
     vi.stubGlobal('fetch', fetchMock)
 
@@ -475,6 +503,7 @@ describe('ServicesView', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
       .mockResolvedValue({ ok: true, status: 200, json: async () => ({ ...SERVICE }) }) // PATCHes
     vi.stubGlobal('fetch', fetchMock)
@@ -487,7 +516,7 @@ describe('ServicesView', () => {
     await noteField.trigger('change')
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(JSON.parse(fetchMock.mock.calls[3]![1].body)).toEqual({
+    expect(JSON.parse(fetchMock.mock.calls[4]![1].body)).toEqual({
       description: 'این زمان تقریبی است و ممکن است بیشتر طول بکشد',
     })
     expect(useToast().toasts.value.some((t) => t.message === 'توضیحات به‌روزرسانی شد')).toBe(true)
@@ -497,13 +526,14 @@ describe('ServicesView', () => {
     await noteField.trigger('change')
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(JSON.parse(fetchMock.mock.calls[4]![1].body)).toEqual({ description: null })
+    expect(JSON.parse(fetchMock.mock.calls[5]![1].body)).toEqual({ description: null })
   })
 
   it('sends the duration note when adding a new service, and omits it when left blank', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
       .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ ...SERVICE }) }) // POST
       .mockResolvedValue({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // reload
@@ -512,7 +542,7 @@ describe('ServicesView', () => {
     const wrapper = mount(ServicesView)
     await new Promise((r) => setTimeout(r, 0))
 
-    await wrapper.findComponent(AppSelect).vm.$emit('update:modelValue', 1)
+    await wrapper.findComponent(AppSelect).vm.$emit('update:modelValue', 'sys:1')
     await wrapper.find('input[placeholder="نام خدمت"]').setValue('کوتاهی مو')
     await wrapper.find('textarea').setValue('این خدمت گاهی بیشتر از حد معمول طول می‌کشد')
     await wrapper.get('[data-testid="new-service-price-input"]').setValue('100000')
@@ -530,6 +560,7 @@ describe('ServicesView', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
     vi.stubGlobal('fetch', fetchMock)
 
@@ -545,13 +576,14 @@ describe('ServicesView', () => {
 
     expect(wrapper.text()).toContain('دسته‌بندی خدمت را انتخاب کنید')
     // Only the three initial GETs happened -- no POST was fired.
-    expect(fetchMock.mock.calls.length).toBe(3)
+    expect(fetchMock.mock.calls.length).toBe(4)
   })
 
   it('renders past category requests with their status', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
@@ -576,6 +608,7 @@ describe('ServicesView', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
     vi.stubGlobal('fetch', fetchMock)
 
@@ -589,6 +622,7 @@ describe('ServicesView', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
     vi.stubGlobal('fetch', fetchMock)
 
@@ -602,13 +636,14 @@ describe('ServicesView', () => {
 
     expect(wrapper.text()).toContain('نام دسته‌بندی باید بین ۲ تا ۶۰ حرف باشد.')
     // Only the three initial GETs happened -- no POST was fired.
-    expect(fetchMock.mock.calls.length).toBe(3)
+    expect(fetchMock.mock.calls.length).toBe(4)
   })
 
   it('submits a category request, toasts, and reloads the request list', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests (initial)
       .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ id: 'cr1' }) }) // POST
       .mockResolvedValueOnce({
@@ -626,7 +661,7 @@ describe('ServicesView', () => {
     await wrapper.get('[data-testid="submit-category-request"]').trigger('click')
     await new Promise((r) => setTimeout(r, 0))
 
-    const postCall = fetchMock.mock.calls[3]!
+    const postCall = fetchMock.mock.calls[4]!
     expect(postCall[0]).toContain('/salons/mine/category-requests')
     expect(postCall[1]).toMatchObject({ method: 'POST' })
     expect(JSON.parse(postCall[1].body)).toEqual({ name: 'ماساژ درمانی' })
@@ -640,6 +675,7 @@ describe('ServicesView', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+      .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
     vi.stubGlobal('fetch', fetchMock)
 
@@ -651,6 +687,176 @@ describe('ServicesView', () => {
     await wrapper.get('[data-testid="cancel-category-request"]').trigger('click')
 
     expect(wrapper.find('[data-testid="category-request-name"]').exists()).toBe(false)
-    expect(fetchMock.mock.calls.length).toBe(3)
+    expect(fetchMock.mock.calls.length).toBe(4)
+  })
+
+  describe('pricing types', () => {
+    it('creates a FROM service with just a starting price, no discount field shown', async () => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+        .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
+        .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
+        .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ ...SERVICE, id: 'svc-2' }) }) // POST
+        .mockResolvedValue({ ok: true, status: 200, json: async () => [] }) // reload
+      vi.stubGlobal('fetch', fetchMock)
+
+      const wrapper = mount(ServicesView)
+      await new Promise((r) => setTimeout(r, 0))
+
+      await wrapper.findComponent(AppSelect).vm.$emit('update:modelValue', 'sys:1')
+      await wrapper.find('input[placeholder="نام خدمت"]').setValue('رنگ مو')
+      await wrapper.get('[data-testid="new-service-pricing-type-from"] input[type="radio"]').setValue(true)
+      // The discount field only makes sense for FIXED -- must disappear once FROM is picked.
+      expect(wrapper.find('input[placeholder="٪ تخفیف (اختیاری)"]').exists()).toBe(false)
+      await wrapper.get('[data-testid="new-service-price-input"]').setValue('1000000')
+
+      const addButton = wrapper.findAll('button').find((b) => b.text() === 'افزودن')!
+      await addButton.trigger('click')
+      await new Promise((r) => setTimeout(r, 0))
+
+      const postCall = fetchMock.mock.calls.find((c) => (c[1] as { method?: string })?.method === 'POST')!
+      expect(JSON.parse((postCall[1] as { body: string }).body)).toMatchObject({
+        pricingType: 'from',
+        price: 1000000,
+      })
+    })
+
+    it('creates a RANGE service with both bounds shown and required', async () => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+        .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
+        .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
+        .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ ...SERVICE, id: 'svc-2' }) }) // POST
+        .mockResolvedValue({ ok: true, status: 200, json: async () => [] }) // reload
+      vi.stubGlobal('fetch', fetchMock)
+
+      const wrapper = mount(ServicesView)
+      await new Promise((r) => setTimeout(r, 0))
+
+      await wrapper.findComponent(AppSelect).vm.$emit('update:modelValue', 'sys:1')
+      await wrapper.find('input[placeholder="نام خدمت"]').setValue('کراتین')
+      await wrapper.get('[data-testid="new-service-pricing-type-range"] input[type="radio"]').setValue(true)
+      expect(wrapper.find('[data-testid="new-service-price-max-input"]').exists()).toBe(true)
+      await wrapper.get('[data-testid="new-service-price-input"]').setValue('2000000')
+      await wrapper.get('[data-testid="new-service-price-max-input"]').setValue('5000000')
+
+      const addButton = wrapper.findAll('button').find((b) => b.text() === 'افزودن')!
+      await addButton.trigger('click')
+      await new Promise((r) => setTimeout(r, 0))
+
+      const postCall = fetchMock.mock.calls.find((c) => (c[1] as { method?: string })?.method === 'POST')!
+      expect(JSON.parse((postCall[1] as { body: string }).body)).toMatchObject({
+        pricingType: 'range',
+        price: 2000000,
+        priceMax: 5000000,
+      })
+    })
+
+    it('creates a QUOTE service with no price field at all', async () => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+        .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
+        .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
+        .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ ...SERVICE, id: 'svc-2' }) }) // POST
+        .mockResolvedValue({ ok: true, status: 200, json: async () => [] }) // reload
+      vi.stubGlobal('fetch', fetchMock)
+
+      const wrapper = mount(ServicesView)
+      await new Promise((r) => setTimeout(r, 0))
+
+      await wrapper.findComponent(AppSelect).vm.$emit('update:modelValue', 'sys:1')
+      await wrapper.find('input[placeholder="نام خدمت"]').setValue('مشاوره ویژه')
+      await wrapper.get('[data-testid="new-service-pricing-type-quote"] input[type="radio"]').setValue(true)
+      expect(wrapper.find('[data-testid="new-service-price-input"]').exists()).toBe(false)
+
+      const addButton = wrapper.findAll('button').find((b) => b.text() === 'افزودن')!
+      await addButton.trigger('click')
+      await new Promise((r) => setTimeout(r, 0))
+
+      const postCall = fetchMock.mock.calls.find((c) => (c[1] as { method?: string })?.method === 'POST')!
+      const body = JSON.parse((postCall[1] as { body: string }).body)
+      expect(body.pricingType).toBe('quote')
+      expect(body.price).toBeUndefined()
+    })
+
+    it('shows the pricing-type editor for a non-fixed existing service instead of the bare price input', async () => {
+      const fromService = { ...SERVICE, id: 'svc-from', pricingType: 'from' as const, price: 900000 }
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [fromService] }) // GET services
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+        .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
+        .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
+      vi.stubGlobal('fetch', fetchMock)
+
+      const wrapper = mount(ServicesView)
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(wrapper.find('[data-testid="service-price-input"]').exists()).toBe(false)
+      expect(wrapper.text()).toContain('از')
+      expect(wrapper.find('[data-testid="edit-pricing-type"]').exists()).toBe(true)
+    })
+
+    it('switching an existing service to RANGE via the row editor sends both bounds together', async () => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+        .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
+        .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ...SERVICE, pricingType: 'range', price: 1000000, priceMax: 3000000, discountPercent: null }) }) // PATCH
+      vi.stubGlobal('fetch', fetchMock)
+
+      const wrapper = mount(ServicesView)
+      await new Promise((r) => setTimeout(r, 0))
+
+      await wrapper.get('button.text-xs').trigger('click') // "تغییر نوع قیمت‌گذاری"
+      const rangeRadio = wrapper.findAll('input[type="radio"][value="range"]')[0]!
+      await rangeRadio.setValue(true)
+
+      const moneyComponents = wrapper.findAllComponents(AppMoneyInput)
+      const minInput = moneyComponents.find((c) => c.props('label') === 'حداقل قیمت (تومان)')!
+      const maxInput = moneyComponents.find((c) => c.props('label') === 'حداکثر قیمت (تومان)')!
+      await minInput.vm.$emit('update:modelValue', '1000000')
+      await maxInput.vm.$emit('update:modelValue', '3000000')
+
+      await wrapper.get('[data-testid="save-pricing-type"]').trigger('click')
+      await new Promise((r) => setTimeout(r, 0))
+
+      const patchCall = fetchMock.mock.calls[4]!
+      expect(JSON.parse((patchCall[1] as { body: string }).body)).toMatchObject({
+        pricingType: 'range',
+        price: 1000000,
+        priceMax: 3000000,
+      })
+    })
+  })
+
+  describe('custom categories', () => {
+    it('creates a custom category and selects it immediately, with no admin approval step', async () => {
+      const newCategory = { id: 'cc-1', name: 'خدمات ویژه' }
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET services
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+        .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
+        .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
+        .mockResolvedValueOnce({ ok: true, status: 201, json: async () => newCategory }) // POST custom-category
+      vi.stubGlobal('fetch', fetchMock)
+
+      const wrapper = mount(ServicesView)
+      await new Promise((r) => setTimeout(r, 0))
+
+      await wrapper.get('[data-testid="open-custom-category"]').trigger('click')
+      await wrapper.get('[data-testid="custom-category-name"]').setValue('خدمات ویژه')
+      await wrapper.get('[data-testid="submit-custom-category"]').trigger('click')
+      await new Promise((r) => setTimeout(r, 0))
+
+      const postCall = fetchMock.mock.calls[4]!
+      expect(postCall[0]).toContain('/salons/mine/custom-categories')
+      expect(JSON.parse((postCall[1] as { body: string }).body)).toEqual({ name: 'خدمات ویژه' })
+      // The new category appears in the select immediately -- no reload/approval round-trip.
+      expect(wrapper.find('[data-testid="custom-category-name"]').exists()).toBe(false)
+    })
   })
 })

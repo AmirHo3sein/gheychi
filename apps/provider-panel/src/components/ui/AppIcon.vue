@@ -5,7 +5,7 @@ import {
   CircleUser, Building2, TriangleAlert, Plus, Pencil, Trash2, Scissors, Palette, Droplet, Gem, Sparkles,
   Paintbrush, Eye, Zap, Phone, Lock, Sun, Moon, RotateCcw, Images, Clock, MapPin, Upload, ImageOff, Store,
   CircleFadingPlus, GalleryHorizontalEnd, ChevronUp, ChevronDown, Percent, Users, LoaderCircle, Calendar, Layers,
-  Contact, Gift, Copy,
+  Contact, Gift, Copy, Package,
 } from '@lucide/vue'
 
 const ICONS = {
@@ -58,6 +58,7 @@ const ICONS = {
   customers: Contact,
   referral: Gift,
   copy: Copy,
+  packages: Package,
 } as const
 
 export type IconName = keyof typeof ICONS

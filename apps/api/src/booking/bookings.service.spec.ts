@@ -218,6 +218,7 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
   const SERVICE = {
     id: 'service-1',
     salonId: 'salon-1',
+    pricingType: 'fixed' as const,
     price: 150_000,
     durationMin: 30,
     discountPercent: null as number | null,
@@ -584,7 +585,9 @@ describe('BookingsService.createManual', () => {
   let analyticsTrack: jest.Mock;
 
   const SALON = { id: 'salon-1', status: 'approved', capacity: 1, name: 'Test Salon' };
-  const SERVICE = { id: 'service-1', salonId: 'salon-1', price: 150_000, durationMin: 30, isActive: true };
+  const SERVICE = {
+    id: 'service-1', salonId: 'salon-1', pricingType: 'fixed' as const, price: 150_000, durationMin: 30, isActive: true,
+  };
   const CUSTOMER = { id: 'customer-1', name: null as string | null, phone: '09120000000' };
   const DTO = {
     phone: '09120000000',

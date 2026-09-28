@@ -1,4 +1,4 @@
-import { Body, Controller, NotFoundException, Post, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, NotFoundException, Post, Req } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
 import { Repository } from 'typeorm';
@@ -31,6 +31,12 @@ export class CouponValidationController {
 
     const service = await this.services.findOneBy({ id: dto.serviceId, salonId: dto.salonId, isActive: true });
     if (!service) throw new NotFoundException('Service not found');
+    // Same restriction as BookingsService.createHold: a coupon discounts a known price,
+    // and FROM/RANGE/QUOTE services don't have one until the salon and customer agree on
+    // it directly -- there is nothing for this preview to discount.
+    if (service.pricingType !== 'fixed') {
+      throw new BadRequestException('این خدمت قیمت مشخصی ندارد و کد تخفیف برای آن قابل استفاده نیست');
+    }
 
     const coupon = await this.couponsService.resolveAndValidate(dto.code, dto.salonId, (req.user as User).id);
 
@@ -43,7 +49,7 @@ export class CouponValidationController {
       coupon.discountPercent !== null
         ? { kind: 'percent', value: coupon.discountPercent }
         : { kind: 'fixed', value: coupon.discountFixedAmount! };
-    const { finalPrice, winner } = resolveBestPriceWithWinner(service.price, [serviceCandidate, couponCandidate]);
+    const { finalPrice, winner } = resolveBestPriceWithWinner(service.price!, [serviceCandidate, couponCandidate]);
 
     const depositPercent = await this.config.getDepositPercent();
     const depositMin = await this.config.getDepositMinToman();

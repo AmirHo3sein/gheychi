@@ -338,6 +338,108 @@ describe('Search (e2e)', () => {
     expect(bySlug['near-salon']).toBe(200000);
   });
 
+  // --- pricing types (FROM/RANGE/QUOTE) ---------------------------------------------
+
+  describe('pricing-type-aware search', () => {
+    const PRICING_SALON_ID = '30000000-0000-4000-8000-000000000001';
+
+    beforeAll(async () => {
+      const ds = app.get(DataSource);
+      await ds.query(
+        `INSERT INTO users (id, phone, role) VALUES ('00000000-0000-4000-8000-000000000005', '09120000005', 'provider')`,
+      );
+      await ds.query(
+        `INSERT INTO salons (id, owner_id, name, slug, gender_target, status, address, city, location) VALUES
+          ($1, '00000000-0000-4000-8000-000000000005', 'Pricing Types Salon', 'pricing-types-salon', 'women',
+           'approved', 'E', 'Tehran', ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography)`,
+        [PRICING_SALON_ID, ANCHOR.lng + 0.001, ANCHOR.lat],
+      );
+      // FROM 900,000 (floor only); RANGE 2,000,000-5,000,000; QUOTE (no number at all).
+      await ds.query(
+        `INSERT INTO salon_services (salon_id, category_id, name, pricing_type, price, price_max, duration_min) VALUES
+          ($1, $2, 'Hair Coloring', 'from', 900000, NULL, 90),
+          ($1, $2, 'Keratin', 'range', 2000000, 5000000, 180),
+          ($1, $2, 'Special Treatment', 'quote', NULL, NULL, 60)`,
+        [PRICING_SALON_ID, firstCategoryId],
+      );
+    });
+
+    it('minPrice takes the lowest floor across FIXED (discounted)/FROM/RANGE, ignoring QUOTE entirely', async () => {
+      const bySlug = await minPriceBySlug({});
+      // 900,000 (FROM's own floor) beats RANGE's 2,000,000 floor; QUOTE contributes nothing.
+      expect(bySlug['pricing-types-salon']).toBe(900000);
+    });
+
+    it('a FROM service never satisfies priceMax -- its real price could be arbitrarily higher than its floor', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', priceMax: 950000 })
+        .expect(200);
+      const slugs = res.body.items.map((s: { slug: string }) => s.slug);
+      expect(slugs).not.toContain('pricing-types-salon');
+    });
+
+    it('a FROM service DOES satisfy priceMin alone -- its real price is always >= its floor', async () => {
+      // priceMin only (no priceMax): a combined window is a stricter, different question --
+      // see the RANGE test below for why a real price known only as "2M-5M" can't also
+      // promise it's under some LOW ceiling in the same breath.
+      const res = await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', priceMin: 800000 })
+        .expect(200);
+      const slugs = res.body.items.map((s: { slug: string }) => s.slug);
+      expect(slugs).toContain('pricing-types-salon');
+    });
+
+    it('a RANGE service satisfies priceMax using its own known ceiling', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', priceMin: 1900000, priceMax: 5000000 })
+        .expect(200);
+      const slugs = res.body.items.map((s: { slug: string }) => s.slug);
+      expect(slugs).toContain('pricing-types-salon');
+    });
+
+    it('a RANGE service does not satisfy a priceMax below its own ceiling', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', priceMin: 1900000, priceMax: 3000000 })
+        .expect(200);
+      const slugs = res.body.items.map((s: { slug: string }) => s.slug);
+      // The FROM service (900k) is out of this [1.9M, 3M] window and RANGE's own ceiling
+      // (5M) exceeds priceMax, so neither service can honestly satisfy both bounds at once.
+      expect(slugs).not.toContain('pricing-types-salon');
+    });
+
+    it('a QUOTE-only salon never matches any price filter', async () => {
+      const ds = app.get(DataSource);
+      const quoteOnlySalonId = '30000000-0000-4000-8000-000000000002';
+      await ds.query(
+        `INSERT INTO users (id, phone, role) VALUES ('00000000-0000-4000-8000-000000000006', '09120000006', 'provider')`,
+      );
+      await ds.query(
+        `INSERT INTO salons (id, owner_id, name, slug, gender_target, status, address, city, location) VALUES
+          ($1, '00000000-0000-4000-8000-000000000006', 'Quote Only Salon', 'quote-only-salon', 'women',
+           'approved', 'F', 'Tehran', ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography)`,
+        [quoteOnlySalonId, ANCHOR.lng + 0.002, ANCHOR.lat],
+      );
+      await ds.query(
+        `INSERT INTO salon_services (salon_id, category_id, name, pricing_type, price, price_max, duration_min) VALUES
+          ($1, $2, 'Consultation Only', 'quote', NULL, NULL, 30)`,
+        [quoteOnlySalonId, firstCategoryId],
+      );
+
+      const bySlug = await minPriceBySlug({});
+      expect(bySlug['quote-only-salon']).toBeNull();
+
+      const res = await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', priceMin: 0, priceMax: 1_000_000_000 })
+        .expect(200);
+      expect(res.body.items.map((s: { slug: string }) => s.slug)).not.toContain('quote-only-salon');
+    });
+  });
+
   // --- cursor pagination -------------------------------------------------------------
 
   it('responds with the {items, nextCursor, hasMore} shape, hasMore=false and nextCursor=null on a single page', async () => {

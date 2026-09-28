@@ -3,7 +3,7 @@ import request from 'supertest';
 import { loginAs } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
-import { createApprovedSalonWithService } from './factories/salon.factory';
+import { createApprovedSalonWithService, createService, firstCategoryId } from './factories/salon.factory';
 
 describe('Salon-side booking management (e2e)', () => {
   let app: INestApplication;
@@ -178,5 +178,43 @@ describe('Manual/offline bookings (e2e)', () => {
       .expect(201);
     expect(second.body.customerName).toBe('اسم واقعی');
     expect(second.body.customerPhone).toBe(phone);
+  });
+
+  describe('non-fixed pricing types require a negotiated price override', () => {
+    it('rejects a manual booking for a QUOTE service with no priceOverrideToman', async () => {
+      const quoteServiceId = await createService(app, ownerCookie, await firstCategoryId(app), { pricingType: 'quote' });
+      await request(app.getHttpServer())
+        .post('/api/salons/mine/bookings')
+        .set('Cookie', ownerCookie)
+        .send({ phone: '09121110010', serviceId: quoteServiceId, startsAt: new Date(Date.now() + 120 * 60 * 60_000).toISOString() })
+        .expect(400);
+    });
+
+    it('records the owners negotiated price as the priceSnapshot for a QUOTE service', async () => {
+      const quoteServiceId = await createService(app, ownerCookie, await firstCategoryId(app), { pricingType: 'quote' });
+      const res = await request(app.getHttpServer())
+        .post('/api/salons/mine/bookings')
+        .set('Cookie', ownerCookie)
+        .send({
+          phone: '09121110011',
+          serviceId: quoteServiceId,
+          startsAt: new Date(Date.now() + 144 * 60 * 60_000).toISOString(),
+          priceOverrideToman: 3200000,
+        })
+        .expect(201);
+      expect(res.body.priceSnapshot).toBe(3200000);
+    });
+
+    it('rejects a priceOverrideToman on an already-FIXED service -- a second, possibly-conflicting number invites confusion', () =>
+      request(app.getHttpServer())
+        .post('/api/salons/mine/bookings')
+        .set('Cookie', ownerCookie)
+        .send({
+          phone: '09121110012',
+          serviceId,
+          startsAt: new Date(Date.now() + 168 * 60 * 60_000).toISOString(),
+          priceOverrideToman: 999999,
+        })
+        .expect(400));
   });
 });

@@ -404,3 +404,94 @@ describe('Bookings — create hold (e2e)', () => {
     });
   });
 });
+
+describe('Bookings — pricing-type guard (e2e)', () => {
+  let app: INestApplication;
+  let customerCookie: string;
+
+  beforeAll(async () => {
+    await resetDatabase();
+    await enableOnlinePayments();
+    app = await createTestApp();
+    customerCookie = await loginAs(app, '09127770003');
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  function futureIso(hoursFromNow: number): string {
+    return new Date(Date.now() + hoursFromNow * 60 * 60_000).toISOString();
+  }
+
+  it('rejects an online booking against a FROM service -- no single known price to charge', async () => {
+    const { salonId, serviceId } = await createApprovedSalonWithService(
+      app,
+      await loginAs(app, '09127770010'),
+      { name: 'From Pricing Salon' },
+      { pricingType: 'from', price: 1000000 },
+    );
+    await request(app.getHttpServer())
+      .post('/api/bookings')
+      .set('Cookie', customerCookie)
+      .send({ salonId, serviceId, startsAt: futureIso(24) })
+      .expect(400);
+  });
+
+  it('rejects an online booking against a RANGE service', async () => {
+    const { salonId, serviceId } = await createApprovedSalonWithService(
+      app,
+      await loginAs(app, '09127770011'),
+      { name: 'Range Pricing Salon' },
+      { pricingType: 'range', price: 2000000, priceMax: 5000000 },
+    );
+    await request(app.getHttpServer())
+      .post('/api/bookings')
+      .set('Cookie', customerCookie)
+      .send({ salonId, serviceId, startsAt: futureIso(24) })
+      .expect(400);
+  });
+
+  it('rejects an online booking against a QUOTE service', async () => {
+    const { salonId, serviceId } = await createApprovedSalonWithService(
+      app,
+      await loginAs(app, '09127770012'),
+      { name: 'Quote Pricing Salon' },
+      { pricingType: 'quote' },
+    );
+    await request(app.getHttpServer())
+      .post('/api/bookings')
+      .set('Cookie', customerCookie)
+      .send({ salonId, serviceId, startsAt: futureIso(24) })
+      .expect(400);
+  });
+
+  it('rejects a coupon-validate preview against a non-fixed service', async () => {
+    const { salonId, serviceId } = await createApprovedSalonWithService(
+      app,
+      await loginAs(app, '09127770013'),
+      { name: 'Coupon Guard Salon' },
+      { pricingType: 'quote' },
+    );
+    await request(app.getHttpServer())
+      .post('/api/coupons/validate')
+      .set('Cookie', customerCookie)
+      .send({ salonId, serviceId, code: 'ANYTHING' })
+      .expect(400);
+  });
+
+  it('still allows a normal FIXED-price booking through, unchanged', async () => {
+    const { salonId, serviceId } = await createApprovedSalonWithService(
+      app,
+      await loginAs(app, '09127770014'),
+      { name: 'Fixed Pricing Salon' },
+      { price: 1500000 },
+    );
+    const res = await request(app.getHttpServer())
+      .post('/api/bookings')
+      .set('Cookie', customerCookie)
+      .send({ salonId, serviceId, startsAt: futureIso(24) })
+      .expect(201);
+    expect(res.body.booking.priceSnapshot).toBe(1500000);
+  });
+});

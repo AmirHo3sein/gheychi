@@ -100,18 +100,26 @@ export class SearchService {
         (s.is_featured AND (s.featured_until IS NULL OR s.featured_until > now())) AS is_featured,
         ST_Distance(s.location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) / 1000.0 AS distance_km,
         -- The card's "از X تومان" has to quote what the customer would actually be
-        -- charged, so the minimum is taken over each service's DISCOUNTED price. Note
-        -- MIN(discounted), not discount-applied-to-MIN(price): the cheapest service
-        -- before a discount is often not the cheapest one after it.
+        -- charged (FIXED), or an honest floor (FROM/RANGE both give a real minimum the
+        -- actual price can never fall below) -- QUOTE has no number at all and is
+        -- excluded automatically since its price column is NULL and MIN() ignores NULLs.
+        -- Note MIN(discounted), not discount-applied-to-MIN(price), for FIXED: the
+        -- cheapest service before a discount is often not the cheapest one after it.
+        -- Discounting never applies to FROM/RANGE (salon_services_discount_fixed_only_chk),
+        -- so their own price column (the floor) is already the honest per-row contribution.
         --
-        -- The expression mirrors applyDiscount() (booking/discount.util.ts) exactly, so a
-        -- card price can never disagree with checkout by a rounding unit: the ::numeric
+        -- The FIXED branch mirrors applyDiscount() (booking/discount.util.ts) exactly, so
+        -- a card price can never disagree with checkout by a rounding unit: the ::numeric
         -- cast is load-bearing twice over -- it keeps price * pct / 100 out of integer
         -- division, and it picks round(numeric) (half away from zero, matching JS
         -- Math.round for positive prices) over round(double precision), which
         -- banker's-rounds. A NULL discount_percent means "no discount" and the CHECK
         -- constraint pins the rest to 1..100, so the 0 case is exactly a no-op here.
-        (SELECT MIN(round(ss.price::numeric * (100 - COALESCE(ss.discount_percent, 0)) / 100))
+        (SELECT MIN(
+           CASE WHEN ss.pricing_type = 'fixed'
+             THEN round(ss.price::numeric * (100 - COALESCE(ss.discount_percent, 0)) / 100)
+             ELSE ss.price
+           END)
            FROM salon_services ss
            WHERE ss.salon_id = s.id AND ss.is_active
              AND ($5::int IS NULL OR ss.category_id = $5)) AS min_price,
@@ -136,12 +144,26 @@ export class SearchService {
           SELECT 1 FROM salon_categories sc2
           WHERE sc2.salon_id = s.id AND sc2.category_id = $5))
         AND ($6::text IS NULL OR s.name ILIKE '%' || $6 || '%')
+        -- Honest bounds, pricing-type-aware: a FIXED service's discounted price can prove
+        -- either bound exactly, same as before. A FROM service's floor can only ever prove
+        -- a LOWER bound (its real price could be arbitrarily higher, so it must never
+        -- satisfy priceMax -- see 20-business-rules.md's search-honesty rule) but DOES
+        -- satisfy priceMin (the real price is always >= the floor). A RANGE service's own
+        -- floor/ceiling prove priceMin/priceMax respectively -- both are real, known bounds.
+        -- QUOTE has no number and never matches either (its pricing_type isn't 'fixed' or
+        -- 'from'/'range', so both branches below are false for it).
         AND (
           ($7::bigint IS NULL AND $8::bigint IS NULL) OR EXISTS (
             SELECT 1 FROM salon_services ss2
             WHERE ss2.salon_id = s.id AND ss2.is_active
-              AND ($7::bigint IS NULL OR round(ss2.price::numeric * (100 - COALESCE(ss2.discount_percent, 0)) / 100) >= $7)
-              AND ($8::bigint IS NULL OR round(ss2.price::numeric * (100 - COALESCE(ss2.discount_percent, 0)) / 100) <= $8)
+              AND ($7::bigint IS NULL OR (
+                (ss2.pricing_type = 'fixed' AND round(ss2.price::numeric * (100 - COALESCE(ss2.discount_percent, 0)) / 100) >= $7)
+                OR (ss2.pricing_type IN ('from', 'range') AND ss2.price >= $7)
+              ))
+              AND ($8::bigint IS NULL OR (
+                (ss2.pricing_type = 'fixed' AND round(ss2.price::numeric * (100 - COALESCE(ss2.discount_percent, 0)) / 100) <= $8)
+                OR (ss2.pricing_type = 'range' AND ss2.price_max <= $8)
+              ))
           )
         )
       ORDER BY is_featured DESC, ${secondarySort}

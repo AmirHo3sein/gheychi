@@ -282,6 +282,7 @@ const funnelHasData = computed(() => (funnel.value?.stages ?? []).some((s) => s.
 
 const QUICK_LINKS: Array<{ to: string; label: string; icon: IconName }> = [
   { to: '/customers', label: 'مشتریان', icon: 'customers' },
+  { to: '/packages', label: 'پکیج‌ها', icon: 'packages' },
   { to: '/hours', label: 'ساعات کاری', icon: 'hours' },
   { to: '/photos', label: 'تصاویر', icon: 'photos' },
   { to: '/stories', label: 'استوری‌ها', icon: 'stories' },

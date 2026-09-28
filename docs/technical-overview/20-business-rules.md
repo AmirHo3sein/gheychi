@@ -59,6 +59,7 @@ A consolidated reference of every enforced business rule in the platform, groupe
 - One redemption per user per coupon code, DB-enforced (`UNIQUE(coupon_id, user_id)`).
 - A capped coupon's redemption count is checked under a row lock on the coupon itself (needed specifically for platform-wide coupons, which can be redeemed concurrently from unrelated salons).
 - A referral-issued coupon (`issued_to_user_id` set) is usable only by that one recipient — probing whether it exists for someone else returns the same generic "invalid code" message as a nonexistent code.
+- A service's own `discountPercent` is only ever meaningful (and only ever settable) when `pricingType === 'fixed'` — a percentage off a price that isn't fixed would misrepresent what the customer actually pays. Online booking, and the coupon-validate preview, both reject any non-`fixed` service outright rather than trying to discount a floor/range/absent price — see [36-service-pricing-and-packages.md](./36-service-pricing-and-packages.md).
 
 ## Wallet rules
 
@@ -151,6 +152,7 @@ A consolidated reference of every enforced business rule in the platform, groupe
 - A salon must have at least one category tag from creation onward — `categoryIds` requires `@ArrayMinSize(1)` on both create and (when supplied) update.
 - A category referenced by any service or any salon tag cannot be deleted — enforced by the database's own foreign-key restrict behavior, not an app-level pre-check.
 - Category tags are owner-curated and **independent** of the salon's current service list (post multi-category migration) — removing all services in a category does not remove the tag, and adding a genuinely new kind of service does not automatically add a tag.
+- A service that doesn't fit any system category can be filed under a **salon-custom category** (`salon_custom_categories`) instead — self-serve, created and used in the same request, no admin approval step. These never join the global taxonomy: they carry no search tags, never appear as a filter option to customers, and are visible only within their owning salon's own service list. `salon_services.category_id`/`custom_category_id` are mutually exclusive (DB CHECK) — a service has exactly one or the other. A custom category referenced by a service can't be deleted (FK restrict, same posture as system categories), and every read/write is scoped to the caller's own salon (`ForbiddenException` on cross-salon access). This is a deliberately separate mechanism from `CategoryRequest` (which asks an admin to grow the *global* taxonomy) — see [36-service-pricing-and-packages.md](./36-service-pricing-and-packages.md).
 
 ## Search rules
 
@@ -158,7 +160,8 @@ A consolidated reference of every enforced business rule in the platform, groupe
 - Default search radius is 15km (raised from an original 5km after real salons were found being silently excluded in large metros).
 - Results are cursor-paginated (`{items, nextCursor, hasMore}`, `DEFAULT_PAGE_SIZE = 50`) with a `MAX_FETCH_ROWS = 1000` safety ceiling past which `hasMore` is forced `false` — see [22-performance.md](./22-performance.md) for why page *N* costs *N* times page 1.
 - `priceMin`/`priceMax` must be integers in `0..MAX_PRICE_TOMAN` (`common/money-limits.ts`, 1,000,000,000) — the same ceiling `CreateServiceDto`/`UpdateServiceDto.price` enforce; a fractional/`Infinity`/`NaN` bound used to pass `@Min` and then 500 on the `::bigint` bind.
-- The minimum-price figure shown per salon reflects the *post-discount* minimum across active services, computed with the exact same rounding rule as checkout (`applyDiscount`) so the two numbers can never disagree by a rounding unit.
+- The minimum-price figure shown per salon reflects the minimum *provable floor* across active services, not just the post-discount minimum of fixed-price ones: a `fixed` service contributes its post-discount price (computed with the exact same rounding rule as checkout, `applyDiscount`, so the two numbers can never disagree by a rounding unit), a `from`/`range` service contributes its floor price, and a `quote` service (no floor at all) contributes nothing.
+- `priceMin`/`priceMax` filter honesty (see [36-service-pricing-and-packages.md](./36-service-pricing-and-packages.md) for the full semantics table): a search result must never claim a service satisfies a bound it can't prove. `fixed`'s discounted price can prove either bound; `from`'s floor can only prove `priceMin` (its true ceiling is unknown, so it must never be presented as satisfying `priceMax`); `range` proves `priceMin` off its floor and `priceMax` off its ceiling; `quote` proves neither and never matches a price-filtered search.
 
 ## Commission & invoicing rules
 

@@ -185,6 +185,13 @@ export class BookingsService {
     ]);
     if (!salon) throw new NotFoundException('Salon not found');
     if (!service) throw new NotFoundException('Service not found');
+    // Online, automatic payment/deposit only ever makes sense against one known price.
+    // FROM/RANGE/QUOTE services have no such number until a real conversation with the
+    // salon settles on one -- the owner records that outcome via createManual's
+    // priceOverrideToman once it's known, rather than this endpoint guessing at it.
+    if (service.pricingType !== 'fixed') {
+      throw new BadRequestException('برای این خدمت باید مستقیماً با سالن هماهنگ کنید');
+    }
 
     const startsAt = new Date(dto.startsAt);
     if (Number.isNaN(startsAt.getTime()) || startsAt <= new Date()) {
@@ -286,7 +293,9 @@ export class BookingsService {
             ? { kind: 'percent', value: coupon.discountPercent }
             : { kind: 'fixed', value: coupon.discountFixedAmount! }
           : null;
-        const { finalPrice, winner } = resolveBestPriceWithWinner(service.price, [serviceCandidate, couponCandidate]);
+        // Non-null: the pricingType guard above already rejected anything but 'fixed',
+        // which the DB shape CHECK guarantees always has a non-null price.
+        const { finalPrice, winner } = resolveBestPriceWithWinner(service.price!, [serviceCandidate, couponCandidate]);
         const discountPercent = winner?.kind === 'percent' ? winner.value : null;
         const discountFixedAmount = winner?.kind === 'fixed' ? winner.value : null;
         // A coupon that LOSES the comparison must not be spent. resolveBestPriceWithWinner
@@ -482,7 +491,7 @@ export class BookingsService {
                 // effect, not the service discount's. (Before the couponApplied gate above
                 // this same expression credited the service discount's value to the coupon
                 // whenever the service discount won, inflating usage reporting.)
-                discountAmount: service.price - finalPrice,
+                discountAmount: service.price! - finalPrice,
               }),
             );
           } catch (err) {
@@ -595,6 +604,24 @@ export class BookingsService {
     if (!salon) throw new NotFoundException('Salon not found');
     if (!service) throw new NotFoundException('Service not found');
 
+    // A FIXED service already has one definite price -- a second, owner-typed number here
+    // would only invite confusion about which is real, so the override is refused. Every
+    // other pricing type has no number at all until a real conversation with the customer
+    // settled on one; the owner is that conversation, so their entered amount IS the price,
+    // recorded here rather than guessed at anywhere automated.
+    let priceSnapshot: number;
+    if (service.pricingType === 'fixed') {
+      if (dto.priceOverrideToman !== undefined) {
+        throw new BadRequestException('این خدمت قیمت ثابت دارد و نیازی به وارد کردن قیمت نیست');
+      }
+      priceSnapshot = service.price!;
+    } else {
+      if (dto.priceOverrideToman === undefined) {
+        throw new BadRequestException('برای این خدمت باید قیمت نهایی توافق‌شده را وارد کنید');
+      }
+      priceSnapshot = dto.priceOverrideToman;
+    }
+
     const startsAt = new Date(dto.startsAt);
     if (Number.isNaN(startsAt.getTime()) || startsAt <= new Date()) {
       throw new BadRequestException('startsAt must be a valid future date-time');
@@ -671,7 +698,7 @@ export class BookingsService {
             serviceId: dto.serviceId,
             startsAt,
             endsAt,
-            priceSnapshot: service.price,
+            priceSnapshot,
             depositAmount: 0,
             workerId: dto.workerId ?? null,
             // Straight to 'confirmed' even when the salon runs manual_approval, and

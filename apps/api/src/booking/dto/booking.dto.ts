@@ -1,5 +1,6 @@
-import { Transform } from 'class-transformer';
-import { IsBoolean, IsIn, IsISO8601, IsOptional, IsString, IsUUID, Length, Matches } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsBoolean, IsIn, IsISO8601, IsInt, IsOptional, IsString, IsUUID, Length, Matches, Max, Min } from 'class-validator';
+import { MAX_PRICE_TOMAN } from '../../common/money-limits';
 import { IRAN_MOBILE } from '../../common/validators';
 
 export class AvailabilityQueryDto {
@@ -103,6 +104,18 @@ export class CreateManualBookingDto {
   @IsString()
   @Length(1, 500)
   notes?: string;
+
+  // Required (by BookingsService.createManual, not here -- this DTO can't see the
+  // service's own pricingType) whenever the service isn't 'fixed': the real, negotiated
+  // price the owner and customer actually agreed on. Forbidden for a 'fixed' service --
+  // its own price is already definite, so a second, possibly-conflicting number here
+  // would only invite confusion about which one is real.
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(MAX_PRICE_TOMAN)
+  priceOverrideToman?: number;
 }
 
 /**

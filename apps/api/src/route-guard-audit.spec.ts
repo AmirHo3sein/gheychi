@@ -60,6 +60,8 @@ import { PublicSalonContentController } from './salons/public-salon-content.cont
 import { SalonMineSubscriptionController } from './salons/salon-mine-subscription.controller';
 import { SalonOwnerGuard } from './salons/salon-owner.guard';
 import { SalonPhotosController } from './salons/salon-photos.controller';
+import { SalonCustomCategoriesController } from './salons/salon-custom-categories.controller';
+import { SalonPackagesController } from './salons/salon-packages.controller';
 import { SalonPortfolioController } from './salons/salon-portfolio.controller';
 import { SalonServicesController } from './salons/salon-services.controller';
 import { SalonStoriesController } from './salons/salon-stories.controller';
@@ -138,6 +140,8 @@ const ALL_CONTROLLERS: Function[] = [
   AdminSalonsController,
   AdminShowcaseController,
   PublicSalonContentController,
+  SalonCustomCategoriesController,
+  SalonPackagesController,
   SalonPhotosController,
   SalonPortfolioController,
   SalonServicesController,
@@ -197,6 +201,7 @@ const PUBLIC_ROUTES: Array<[Function, string]> = [
   [ReferralsController, 'validate'], // IP-rate-limited separately, see referrals.controller.ts
   [SalonReviewsController, 'list'],
   [PublicSalonContentController, 'listServices'],
+  [PublicSalonContentController, 'listPackages'],
   [PublicSalonContentController, 'listHours'],
   [PublicSalonContentController, 'listExceptions'],
   [PublicSalonContentController, 'listPhotos'],

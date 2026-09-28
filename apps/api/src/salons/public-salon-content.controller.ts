@@ -7,6 +7,8 @@ import { PlatformConfigService } from '../platform-config/platform-config.servic
 import { ListWorkersQueryDto, WorkerRatingsQueryDto } from './dto/worker.dto';
 import { PortfolioItem } from './portfolio-item.entity';
 import { ScheduleException } from './schedule-exception.entity';
+import { SalonPackageItem } from './salon-package-item.entity';
+import { SalonPackage } from './salon-package.entity';
 import { SalonService } from './salon-service.entity';
 import { SalonPhoto } from './salon-photo.entity';
 import { SalonStory } from './salon-story.entity';
@@ -23,6 +25,8 @@ export class PublicSalonContentController {
     private readonly salonsService: SalonsService,
     private readonly workerEligibility: WorkerEligibilityService,
     @InjectRepository(SalonService) private readonly services: Repository<SalonService>,
+    @InjectRepository(SalonPackage) private readonly packages: Repository<SalonPackage>,
+    @InjectRepository(SalonPackageItem) private readonly packageItems: Repository<SalonPackageItem>,
     @InjectRepository(WorkingHour) private readonly hours: Repository<WorkingHour>,
     @InjectRepository(ScheduleException) private readonly exceptions: Repository<ScheduleException>,
     @InjectRepository(SalonPhoto) private readonly photos: Repository<SalonPhoto>,
@@ -42,6 +46,47 @@ export class PublicSalonContentController {
   async listServices(@Param('slug') slug: string) {
     const salonId = await this.requireSalonId(slug);
     return this.services.find({ where: { salonId, isActive: true }, order: { createdAt: 'ASC' } });
+  }
+
+  @Get('packages')
+  async listPackages(@Param('slug') slug: string) {
+    const salonId = await this.requireSalonId(slug);
+    const packages = await this.packages.find({ where: { salonId, isActive: true }, order: { createdAt: 'ASC' } });
+    if (packages.length === 0) return [];
+
+    // One extra query for every item across every package, joined back to its own service
+    // for display (name/price/durationMin) -- a package is catalog-only (see
+    // salon-package.entity.ts's own doc comment), so this is purely informational, never
+    // consulted by booking. Each service link routes the customer through the existing,
+    // unchanged single-service booking flow.
+    const items = await this.packageItems
+      .createQueryBuilder('item')
+      .innerJoin(SalonService, 'service', 'service.id = item.service_id')
+      .where('item.package_id IN (:...ids)', { ids: packages.map((p) => p.id) })
+      .orderBy('item.sort_order', 'ASC')
+      .select([
+        'item.package_id AS "packageId"', 'service.id AS "serviceId"', 'service.name AS "name"',
+        'service.pricing_type AS "pricingType"', 'service.price AS "price"', 'service.duration_min AS "durationMin"',
+      ])
+      .getRawMany<{ packageId: string; serviceId: string; name: string; pricingType: string; price: string | null; durationMin: number }>();
+
+    const itemsByPackage = new Map<string, typeof items>();
+    for (const item of items) {
+      const list = itemsByPackage.get(item.packageId) ?? [];
+      list.push(item);
+      itemsByPackage.set(item.packageId, list);
+    }
+
+    return packages.map((pkg) => ({
+      ...pkg,
+      items: (itemsByPackage.get(pkg.id) ?? []).map((i) => ({
+        serviceId: i.serviceId,
+        name: i.name,
+        pricingType: i.pricingType,
+        price: i.price === null ? null : Number(i.price),
+        durationMin: i.durationMin,
+      })),
+    }));
   }
 
   @Get('hours')

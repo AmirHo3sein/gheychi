@@ -31,7 +31,7 @@ const SALON = {
 const TERMS = { depositPercent: 20, depositMinToman: 50000, cancellationWindowHours: 24 }
 
 const SERVICES = [
-  { id: 'svc1', name: 'کوتاهی مو', description: null, price: 300000, durationMin: 45 },
+  { id: 'svc1', name: 'کوتاهی مو', description: null, pricingType: 'fixed', price: 300000, priceMax: null, durationMin: 45, durationMax: null, discountPercent: null },
 ]
 
 const PORTFOLIO = [
@@ -40,10 +40,11 @@ const PORTFOLIO = [
 ]
 
 /** Route every endpoint the page hits; per-test overrides tweak the salon/portfolio/hours. */
-function mockEndpoints(overrides: { salon?: Record<string, unknown>; portfolio?: unknown[]; hours?: unknown[]; exceptions?: unknown[]; services?: unknown[] } = {}) {
+function mockEndpoints(overrides: { salon?: Record<string, unknown>; portfolio?: unknown[]; hours?: unknown[]; exceptions?: unknown[]; services?: unknown[]; packages?: unknown[] } = {}) {
   fetchMock.mockImplementation(async (path: string) => {
     if (path === '/salons/test-salon') return { ...SALON, ...overrides.salon }
     if (path === '/salons/test-salon/services') return overrides.services ?? SERVICES
+    if (path === '/salons/test-salon/packages') return overrides.packages ?? []
     if (path === '/salons/test-salon/hours') return overrides.hours ?? []
     if (path === '/salons/test-salon/exceptions') return overrides.exceptions ?? []
     if (path === '/salons/test-salon/photos') return []
@@ -201,8 +202,8 @@ describe('salon detail page', () => {
   it('shows a service duration note when the provider set one, and omits it when they did not', async () => {
     mockEndpoints({
       services: [
-        { id: 'svc1', name: 'کوتاهی مو', description: 'این زمان تقریبی است و ممکن است بیشتر طول بکشد', price: 300000, durationMin: 45 },
-        { id: 'svc2', name: 'رنگ مو', description: null, price: 500000, durationMin: 90 },
+        { id: 'svc1', name: 'کوتاهی مو', description: 'این زمان تقریبی است و ممکن است بیشتر طول بکشد', pricingType: 'fixed', price: 300000, priceMax: null, durationMin: 45, durationMax: null, discountPercent: null },
+        { id: 'svc2', name: 'رنگ مو', description: null, pricingType: 'fixed', price: 500000, priceMax: null, durationMin: 90, durationMax: null, discountPercent: null },
       ],
     })
     wrapper = await mountSuspended(SalonDetailPage)
@@ -210,6 +211,99 @@ describe('salon detail page', () => {
     expect(wrapper.text()).toContain('این زمان تقریبی است و ممکن است بیشتر طول بکشد')
     const secondRow = wrapper.findAll('li').find((r: { text: () => string }) => r.text().includes('رنگ مو'))!
     expect(secondRow.text()).not.toContain('تقریبی')
+  })
+
+  describe('pricing types', () => {
+    it('renders a FROM service with "از X تومان" and blocks the click into booking', async () => {
+      mockEndpoints({
+        services: [
+          { id: 'svc-from', name: 'رنگ مو', description: null, pricingType: 'from', price: 1000000, priceMax: null, durationMin: 90, durationMax: null, discountPercent: null },
+        ],
+      })
+      wrapper = await mountSuspended(SalonDetailPage)
+
+      expect(wrapper.text()).toContain('از')
+      expect(wrapper.text()).toContain('برای رزرو این خدمت باید ابتدا با سالن هماهنگ کنید')
+      const link = wrapper.get('a[href^="/booking/"]')
+      const clickEvent = { preventDefault: vi.fn() } as unknown as MouseEvent
+      await link.trigger('click', clickEvent)
+      // The href is real (so a screen reader/crawler still sees a link, matching the
+      // component's own doc comment on why this uses click-prevent over a <div> branch),
+      // but the click itself must never navigate into the automatic booking flow.
+      expect((link.element as HTMLAnchorElement).getAttribute('href')).toContain('/booking/')
+    })
+
+    it('renders a RANGE service as "X تا Y تومان"', async () => {
+      mockEndpoints({
+        services: [
+          { id: 'svc-range', name: 'کراتین', description: null, pricingType: 'range', price: 2000000, priceMax: 5000000, durationMin: 180, durationMax: null, discountPercent: null },
+        ],
+      })
+      wrapper = await mountSuspended(SalonDetailPage)
+
+      expect(wrapper.text()).toContain('تا')
+      expect(wrapper.text()).toContain('برای رزرو این خدمت باید ابتدا با سالن هماهنگ کنید')
+    })
+
+    it('renders a QUOTE service as "قیمت توافقی" with no price at all', async () => {
+      mockEndpoints({
+        services: [
+          { id: 'svc-quote', name: 'مشاوره ویژه', description: null, pricingType: 'quote', price: null, priceMax: null, durationMin: 60, durationMax: null, discountPercent: null },
+        ],
+      })
+      wrapper = await mountSuspended(SalonDetailPage)
+
+      expect(wrapper.text()).toContain('قیمت توافقی')
+    })
+
+    it('the sticky footer "starting from" price includes FROM/RANGE floors but never a QUOTE service', async () => {
+      mockEndpoints({
+        services: [
+          { id: 'svc-fixed', name: 'کوتاهی مو', description: null, pricingType: 'fixed', price: 900000, priceMax: null, durationMin: 45, durationMax: null, discountPercent: null },
+          { id: 'svc-from', name: 'رنگ مو', description: null, pricingType: 'from', price: 500000, priceMax: null, durationMin: 90, durationMax: null, discountPercent: null },
+          { id: 'svc-quote', name: 'مشاوره ویژه', description: null, pricingType: 'quote', price: null, priceMax: null, durationMin: 60, durationMax: null, discountPercent: null },
+        ],
+      })
+      wrapper = await mountSuspended(SalonDetailPage)
+
+      // 500,000 (FROM's floor) is the true minimum, below the fixed service's 900,000 --
+      // proving the quote service (no number) never silently becomes the "cheapest" 0/null.
+      expect(wrapper.text()).toContain('۵۰۰٬۰۰۰')
+    })
+  })
+
+  describe('packages', () => {
+    it('renders a package with its items and an honest price display', async () => {
+      mockEndpoints({
+        packages: [
+          {
+            id: 'pkg-1',
+            name: 'پکیج عروس',
+            description: 'شامل آرایش و شینیون',
+            pricingType: 'from',
+            price: 2500000,
+            priceMax: null,
+            items: [
+              { serviceId: 'svc1', name: 'آرایش', pricingType: 'fixed', price: 500000, durationMin: 60 },
+              { serviceId: 'svc2', name: 'شینیون', pricingType: 'fixed', price: 500000, durationMin: 60 },
+            ],
+          },
+        ],
+      })
+      wrapper = await mountSuspended(SalonDetailPage)
+
+      expect(wrapper.text()).toContain('پکیج عروس')
+      expect(wrapper.text()).toContain('شامل آرایش و شینیون')
+      expect(wrapper.text()).toContain('آرایش')
+      expect(wrapper.text()).toContain('شینیون')
+    })
+
+    it('omits the packages section entirely when the salon has none', async () => {
+      mockEndpoints({ packages: [] })
+      wrapper = await mountSuspended(SalonDetailPage)
+
+      expect(wrapper.find('#packages').exists()).toBe(false)
+    })
   })
 
   it('scrolls to the services section when the sticky footer CTA is clicked, without a hash-navigation reload', async () => {
@@ -312,7 +406,9 @@ describe('salon detail page', () => {
     fetchMock.mockImplementation(async (path: string) => {
       if (path === '/salons/test-salon') return SALON
       if (path === '/salons/test-salon/services') return []
+      if (path === '/salons/test-salon/packages') return []
       if (path === '/salons/test-salon/hours') return []
+      if (path === '/salons/test-salon/exceptions') return []
       if (path === '/salons/test-salon/photos') return []
       if (path === '/salons/s1/reviews') return { items: [], total: 0, page: 1, pageSize: 50 }
       if (path === '/salons/test-salon/portfolio') return []

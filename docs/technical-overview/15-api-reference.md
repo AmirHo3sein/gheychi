@@ -39,7 +39,9 @@ Guard shorthand: **Auth** = the global `AuthGuard` only (valid session). **Admin
 |---|---|
 | `salon-photos.controller.ts` | `GET/POST /salons/mine/photos`, `PATCH/DELETE /salons/mine/photos/:id` |
 | `salon-portfolio.controller.ts` | `GET/POST /salons/mine/portfolio`, `PATCH/DELETE /salons/mine/portfolio/:id` |
-| `salon-services.controller.ts` | `POST/GET /salons/mine/services`, `PATCH/DELETE /salons/mine/services/:id` |
+| `salon-services.controller.ts` | `POST/GET /salons/mine/services`, `PATCH/DELETE /salons/mine/services/:id` (`pricingType`/`price`/`priceMax`/`categoryId`/`customCategoryId` — [36](./36-service-pricing-and-packages.md)) |
+| `salon-custom-categories.controller.ts` | `POST/GET /salons/mine/custom-categories`, `DELETE /salons/mine/custom-categories/:id` (409 on FK-restricted delete) — [36](./36-service-pricing-and-packages.md) |
+| `salon-packages.controller.ts` | `POST/GET /salons/mine/packages`, `PATCH /salons/mine/packages/:id`, `DELETE /salons/mine/packages/:id` (archive, not a hard delete) — [36](./36-service-pricing-and-packages.md) |
 | `salon-stories.controller.ts` | `GET/POST /salons/mine/stories`, `DELETE /salons/mine/stories/:id` |
 | `salon-workers.controller.ts` | `POST/GET /salons/mine/workers`, `PATCH /salons/mine/workers/:id`, `PATCH /salons/mine/workers/:id/services`, `GET /salons/mine/workers/:id/referral-code` |
 | `schedule.controller.ts` | `PUT/GET /salons/mine/hours`, `POST/GET /salons/mine/exceptions` (`GET ?workerId=`; `POST {date, startTime?, endTime?, reason?, workerId?}` — see [10](./10-scheduling.md)), `DELETE /salons/mine/exceptions/:id` |
@@ -57,7 +59,7 @@ Guard shorthand: **Auth** = the global `AuthGuard` only (valid session). **Admin
 
 | Controller | Routes |
 |---|---|
-| `salons/public-salon-content.controller.ts` | `GET /salons/:slug/services`, `/hours`, `/exceptions` (today-onward whole-salon closures only, never per-worker rows), `/photos`, `/stories` (unexpired+published only), `/portfolio` (published only), `/workers?serviceId=` (eligibility-filtered), `/workers/:id/ratings` |
+| `salons/public-salon-content.controller.ts` | `GET /salons/:slug/services`, `/hours`, `/exceptions` (today-onward whole-salon closures only, never per-worker rows), `/photos`, `/stories` (unexpired+published only), `/portfolio` (published only), `/workers?serviceId=` (eligibility-filtered), `/workers/:id/ratings`, `/packages` (catalog/display only, not bookable — [36](./36-service-pricing-and-packages.md)) |
 | `reviews/salon-reviews.controller.ts` | `GET /salons/:salonId/reviews?page=&pageSize=` (`pageSize` 1–100; approved salons only) |
 | `booking/availability.controller.ts` | `GET /salons/:salonId/availability?serviceId=&workerId=` |
 | `salons/sitemap-salons.controller.ts` | `GET /sitemap/salon-slugs?page=` (paginated, 5,000/page) |

@@ -137,6 +137,9 @@ All under `apps/api/src/migrations/`, filename-timestamp-ordered. This list doub
 | `1756400000000-salon-slug-history` | Creates `salon_slug_history(slug PK, salon_id FK ON DELETE CASCADE, released_at)` + `(salon_id)` index. The slug being the PRIMARY KEY is the point: "this handle is spoken for, permanently" becomes a database invariant, not an application check. Source of both the 301 redirect for already-printed QR codes and the reservation that stops another salon claiming a freed handle. No backfill. |
 | `1756500000000-payment-refund-claim` | Adds `payments.refund_claimed_at` — CAS'd from NULL *before* the gateway refund call so only one caller ever reaches Zarinpal, with a TTL so a process dying mid-call cannot strand the refund. |
 | `1756600000000-bookings-salon-created-idx` | Adds `bookings(salon_id, created_at)` for the provider dashboard's period metrics. |
+| `1756700000000-service-pricing-types` | Adds `salon_services.pricing_type` (`fixed\|from\|range\|quote`, default `fixed`), drops `price`'s `NOT NULL`, adds `price_max`, plus the pricing-shape and fixed-only-discount CHECKs. Adds `duration_max` (informational, never read by the booking engine). See [36](./36-service-pricing-and-packages.md). |
+| `1756800000000-salon-custom-categories` | Creates `salon_custom_categories`. Drops `salon_services.category_id`'s `NOT NULL`, adds `custom_category_id`, and the mutually-exclusive-pair CHECK. |
+| `1756900000000-salon-packages` | Creates `salon_packages` and `salon_package_items` — catalog/display only, never itself booked. |
 
 ## Table-by-table reference
 
@@ -150,10 +153,16 @@ All under `apps/api/src/migrations/`, filename-timestamp-ordered. This list doub
 `slug` (**PRIMARY KEY**, not a surrogate uuid — the point: "this handle is spoken for, permanently" is a database invariant, not an application check), `salon_id (FK, ON DELETE CASCADE)`, `released_at`, plus a `(salon_id)` index. One row per handle a salon has ever released via a rename; recorded in the same transaction as the rename itself. Source of both the `GET /salons/:slug/canonical` 301-redirect (an already-printed QR/shared link keeps working) and the reservation that stops a different salon claiming the freed handle and inheriting its traffic. No backfill — see [31-public-handle-and-attribution.md](./31-public-handle-and-attribution.md).
 
 ### `salon_services`
-`id`, `salon_id (cascade)`, `category_id (restrict)`, `name`, `description?`, `price bigint`, `duration_min`, `is_active (default true)`, `discount_percent? (1–100)`, `created_at`.
+`id`, `salon_id (cascade)`, `category_id? (restrict)`, `custom_category_id? (restrict, FK → salon_custom_categories)` — exactly one of the two category columns is set (`salon_services_category_shape_chk`), `name`, `description?`, `pricing_type (fixed|from|range|quote, default fixed)`, `price? bigint`, `price_max? bigint`, `duration_min`, `duration_max?`, `is_active (default true)`, `discount_percent? (1–100, fixed-only via `salon_services_discount_fixed_only_chk`)`, `created_at`. See [36-service-pricing-and-packages.md](./36-service-pricing-and-packages.md) for the full pricing-shape rules and every CHECK constraint.
+
+### `salon_custom_categories`
+`id`, `salon_id (cascade)`, `name`, `created_at`, `UNIQUE(salon_id, name)`. A salon-private counterpart to `service_categories` — see [36](./36-service-pricing-and-packages.md).
 
 ### `salon_categories` — join table
 Composite PK `(salon_id, category_id)`. `salon_id` cascades; `category_id` restricts (mirrors `salon_services.category_id`). Owner-curated tags, independent of which services the salon currently offers — see [07-salon-panel.md](./07-salon-panel.md).
+
+### `salon_packages` / `salon_package_items`
+`salon_packages`: `id`, `salon_id (cascade)`, `name`, `description?`, `is_active (default true)`, same `pricing_type`/`price`/`price_max` shape as `salon_services` (informational only — never charged), optional `duration_min`/`duration_max`, `created_at`. `salon_package_items`: composite PK `(package_id, service_id)`, `package_id` cascades, `service_id` restricts, `sort_order`. Catalog/display only — never itself booked; see [36](./36-service-pricing-and-packages.md).
 
 ### `workers`
 `id`, `salon_id (cascade)`, `user_id (restrict)`, `name (≤120)`, `active (default true, soft-deactivate only)`, `rating_avg` / `rating_count`, `created_at`. Unique `(salon_id, user_id)`.
