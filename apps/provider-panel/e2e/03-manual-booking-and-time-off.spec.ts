@@ -25,13 +25,12 @@ async function loginAsOwner(page: Page) {
 // first. Always well into the future regardless of what day this suite happens to run on,
 // avoiding any today/end-of-month boundary flakiness a "tomorrow" pick would risk.
 //
-// `navigateForward` must be false on a SECOND call against the same still-mounted page:
-// JalaliDatePicker's own viewMonth/viewYear are internal component state that is NOT reset
-// when the external v-model clears (only re-synced from a truthy modelValue) -- so a picker
-// reopened after BookingsView.vue resets manualForm.date to '' still shows whatever month it
-// was last left on. Clicking "next month" again here would silently land a further month out
-// instead of repeating the same date, which is exactly what the double-booking scenario below
-// needs to be able to do on purpose (submit the identical slot twice).
+// `navigateForward` is false only if the picker is reopened while still mounted: its own
+// viewMonth/viewYear are internal state, so it would still be on the month it was last left on and
+// clicking "next month" again would land a further month out. BookingsView's manual form now
+// re-collapses after every save (unmounting the picker), so in practice both picks navigate forward
+// from the current month -- which is what lets the double-booking scenario below submit the
+// identical slot twice on purpose.
 async function pickFirstDayOfMonth(page: Page, trigger: ReturnType<Page['getByTestId']>, navigateForward: boolean) {
   await trigger.click()
   const popover = page.getByTestId('date-popover')
@@ -50,6 +49,8 @@ test('manual bookings, double-booking prevention, and per-worker time off', asyn
   await page.waitForLoadState('networkidle')
 
   const walkInPhone = '09120000305'
+  // The manual-booking form is collapsed by default (and re-collapses after each save).
+  await page.getByTestId('toggle-manual-booking').click()
   await page.getByTestId('manual-booking-phone').fill(walkInPhone)
   await page.getByTestId('manual-booking-name').fill('مشتری واک‌این')
   // AppSelect wraps vue-multiselect (same idiom as 01-onboarding.spec.ts): open it, then
@@ -68,13 +69,13 @@ test('manual bookings, double-booking prevention, and per-worker time off', asyn
 
   // -- A second manual booking for the exact same slot is a genuine conflict, not a
   // silent double-book (the seeded salon's capacity defaults to 1) --
+  await page.getByTestId('toggle-manual-booking').click()
   await page.getByTestId('manual-booking-phone').fill('09120000308')
   await page.getByTestId('manual-booking-service').click()
   await page.locator('.multiselect__option').first().click()
-  // navigateForward: false -- see pickFirstDayOfMonth's own comment. The picker is still
-  // showing "next month" from the pick above (manualForm.date reset to '' does not reset
-  // JalaliDatePicker's own view state), so this repeats the identical slot on purpose.
-  await pickFirstDayOfMonth(page, page.getByTestId('manual-booking-date'), false)
+  // The form re-collapses after each save, which unmounts the date picker -- so it reopens on the
+  // current month again and has to navigate forward to hit the identical slot on purpose.
+  await pickFirstDayOfMonth(page, page.getByTestId('manual-booking-date'), true)
   await page.getByTestId('manual-booking-time').fill('14:00')
   await page.getByTestId('submit-manual-booking').click()
 
@@ -104,8 +105,8 @@ test('manual bookings, double-booking prevention, and per-worker time off', asyn
   await expect(offDayItem).toHaveCount(1)
   await expect(page.getByText('این عضو مرخصی ثبت‌شده‌ای ندارد.')).not.toBeVisible()
 
-  page.on('dialog', (dialog) => dialog.accept())
   await page.locator('li [data-testid^="remove-worker-off-"]').click()
+  await page.getByTestId('confirm-accept').click()
 
   await expect(offDayItem).toHaveCount(0)
   await expect(page.getByText('این عضو مرخصی ثبت‌شده‌ای ندارد.')).toBeVisible()

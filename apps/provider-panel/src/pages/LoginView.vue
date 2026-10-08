@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
@@ -8,8 +8,10 @@ import { useApi } from '@/composables/useApi'
 import { useSessionStore, type SessionUser } from '@/stores/session'
 import { CODE_EXPIRED_MESSAGE, CODE_REJECTED_MESSAGE, describeAuthError, formatCountdown } from '@/utils/auth-errors'
 import { toEnglishDigits, toPersianDigits } from '@/utils/digits'
+import { sanitizeRedirect } from '@/utils/safe-redirect'
 
 const router = useRouter()
+const route = useRoute()
 const { apiFetch } = useApi()
 const session = useSessionStore()
 
@@ -82,7 +84,8 @@ async function verifyOtp() {
   }
 
   session.setUser(data.user)
-  await router.push('/')
+  // Back to where a session expiry interrupted the owner -- only ever an in-app path.
+  await router.push(sanitizeRedirect(route.query.redirect) ?? '/')
 }
 </script>
 

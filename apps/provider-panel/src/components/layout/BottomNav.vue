@@ -22,17 +22,19 @@ function isActive(to: string) {
     own bottom padding adds the same inset so page content still clears the bar.
   -->
   <nav
+    aria-label="ناوبری اصلی"
     class="fixed inset-x-0 bottom-0 z-30 flex border-t border-(--color-border) bg-(--color-surface-card)/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
   >
     <RouterLink
       v-for="tab in NAV_TABS"
       :key="tab.to"
       :to="tab.to"
-      class="flex min-w-0 flex-1 flex-col items-center gap-1 px-1 py-2.5 text-[11px] font-medium text-(--color-text-muted) transition-colors"
+      class="flex min-h-11 min-w-0 flex-1 flex-col items-center gap-1 px-1 py-2.5 text-[11px] font-medium text-(--color-text-muted) transition-colors"
+      :aria-current="isActive(tab.to) ? 'page' : undefined"
       :class="isActive(tab.to) && 'text-(--color-accent-text)'"
     >
       <AppIcon :name="tab.icon" :size="20" />
-      <!-- 320px / 5 tabs = 64px a piece; truncate rather than let a label force the bar wider. -->
+      <!-- 320px / 6 tabs = 53px a piece (see nav-tabs.ts); truncate rather than let a label force the bar wider. -->
       <span class="max-w-full truncate">{{ tab.label }}</span>
       <span
         class="h-0.5 w-5 shrink-0 rounded-full transition-opacity"

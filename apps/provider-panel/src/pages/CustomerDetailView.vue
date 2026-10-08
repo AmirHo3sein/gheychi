@@ -78,12 +78,12 @@ async function sendSms() {
   if (data) {
     quota.value = data
     smsMessage.value = ''
-    pushToast('پیامک ارسال شد')
+    pushToast('پیامک ارسال شد', 'success')
   }
 }
 
 function formatDate(iso: string): string {
-  return new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
+  return new Intl.DateTimeFormat('fa-IR', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
 }
 
 const newNote = ref('')

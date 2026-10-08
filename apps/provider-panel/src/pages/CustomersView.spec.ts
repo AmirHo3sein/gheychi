@@ -99,6 +99,20 @@ describe('CustomersView', () => {
     expect(rows[1]!.text()).toContain('مشتری وفادار')
   })
 
+  // Phones: the same row markup stacks into a labelled block instead of side-scrolling.
+  it('stacks each customer row below md, keeping the name link and labelling the other cells', async () => {
+    stubFetchByUrl()
+    const wrapper = await mountView()
+
+    const row = wrapper.get('[data-testid="customer-row"]')
+    expect(row.classes()).toContain('block')
+    expect(row.classes()).toContain('md:table-row')
+    expect(row.find('a').exists()).toBe(true)
+    const labels = row.findAll('[role="cell"]').map((c) => c.attributes('data-label'))
+    expect(labels).toEqual([undefined, 'کل نوبت‌ها', 'مراجعه‌های انجام‌شده', 'اولین مراجعه', 'آخرین مراجعه', 'ارزش کل', 'وضعیت'])
+    expect(wrapper.get('table').classes()).toContain('md:table')
+  })
+
   it('separates total bookings from visits that actually happened', async () => {
     stubFetchByUrl()
     const wrapper = await mountView()

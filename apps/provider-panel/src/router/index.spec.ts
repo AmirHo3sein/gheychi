@@ -18,6 +18,7 @@ vi.mock('@/pages/PhotosView.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/pages/ReviewsView.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/pages/EarningsView.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/pages/SalonSettingsView.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('@/pages/MoreView.vue', () => ({ default: { template: '<div />' } }))
 
 describe('router guard', () => {
   beforeEach(() => {
@@ -107,6 +108,15 @@ describe('router guard', () => {
     await router.push('/bookings')
     await router.isReady()
     expect(router.currentRoute.value.name).toBe('bookings')
+  })
+
+  it('serves the «بیشتر» page at /more to a provider with an approved salon', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: 's1', status: 'approved' }) }))
+    useSessionStore().setUser({ id: 'u1', phone: '0912', name: 'Sara', gender: 'female', role: 'provider' })
+    const router = createAppRouter(createMemoryHistory())
+    await router.push('/more')
+    await router.isReady()
+    expect(router.currentRoute.value.name).toBe('more')
   })
 
   it('keeps an unauthenticated visitor already navigating to /login on /login', async () => {

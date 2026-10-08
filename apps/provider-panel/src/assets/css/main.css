@@ -292,6 +292,10 @@ button:disabled {
    in the app -- the login screen's own <main> included. */
 .route-outlet {
   display: grid;
+  /* Let the single column shrink to the viewport (grid blowout guard): an implicit `auto`
+     column sizes to the page's max-content, so one wide child makes the whole page wider than
+     a phone. */
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
 }
 .route-outlet > * {
@@ -358,5 +362,74 @@ button:disabled {
   .mesh-a,
   .mesh-b {
     animation: none;
+  }
+}
+
+/* ConfirmSheet (components/ui): backdrop fades, the panel slides up as a bottom sheet on
+   phones and scales in as a dialog from sm up. 180ms, and no motion at all under
+   prefers-reduced-motion (see the block below). */
+.confirm-enter-active,
+.confirm-leave-active {
+  transition: opacity 0.18s ease;
+}
+.confirm-enter-active .confirm-panel,
+.confirm-leave-active .confirm-panel {
+  transition: transform 0.18s ease;
+}
+.confirm-enter-from,
+.confirm-leave-to {
+  opacity: 0;
+}
+.confirm-enter-from .confirm-panel,
+.confirm-leave-to .confirm-panel {
+  transform: translateY(100%);
+}
+@media (min-width: 640px) {
+  .confirm-enter-from .confirm-panel,
+  .confirm-leave-to .confirm-panel {
+    transform: scale(0.96);
+  }
+}
+
+/* Keyboard focus indicator for everything that isn't a text field (inputs keep their own
+   border + ring above). accent-text, not the pastel accent, so it clears 3:1 on the light
+   surfaces (WCAG 1.4.11). :focus-visible only, so a tap never leaves a ring behind. */
+a:focus-visible,
+button:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--color-accent-text);
+  outline-offset: 2px;
+}
+
+/* Motion off for anyone who asked the OS for less: spinners, pulses, route/sheet transitions
+   and the press/hover scale nudges. State changes still happen, just without movement. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-spin,
+  .animate-pulse {
+    animation: none !important;
+  }
+  .page-fade-enter-from {
+    transform: none;
+  }
+  .confirm-enter-from .confirm-panel,
+  .confirm-leave-to .confirm-panel {
+    transform: none !important;
+  }
+  [class*="active:scale"],
+  [class*="hover:scale"],
+  [class*="hover:-translate"],
+  [class*="hover:rotate"] {
+    scale: none !important;
+    translate: none !important;
+    rotate: none !important;
   }
 }

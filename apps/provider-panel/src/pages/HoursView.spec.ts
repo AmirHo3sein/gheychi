@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import HoursView from './HoursView.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
+import { autoConfirm } from '@/test-utils/auto-confirm'
 
 describe('HoursView', () => {
   afterEach(() => {
@@ -218,7 +219,7 @@ describe('HoursView', () => {
         json: async () => ([{ id: 'ex-1', date: '2026-08-01', isClosed: true, startTime: null, endTime: null, reason: null, workerId: null }]),
       }) // GET exceptions
     vi.stubGlobal('fetch', fetchMock)
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const confirmSpy = autoConfirm(false)
 
     const wrapper = mount(HoursView)
     await new Promise((r) => setTimeout(r, 0))
@@ -226,7 +227,7 @@ describe('HoursView', () => {
     await wrapper.find('[aria-label="حذف تعطیلی"]').trigger('click')
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(confirmSpy).toHaveBeenCalled()
+    expect(confirmSpy.calls).toHaveLength(1)
     // Only the two initial GETs happened -- no DELETE was fired.
     expect(fetchMock.mock.calls.length).toBe(2)
   })
@@ -242,7 +243,7 @@ describe('HoursView', () => {
       .mockResolvedValueOnce({ ok: true, status: 204, json: async () => null }) // DELETE exception
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET exceptions (reload)
     vi.stubGlobal('fetch', fetchMock)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    autoConfirm(true)
 
     const wrapper = mount(HoursView)
     await new Promise((r) => setTimeout(r, 0))

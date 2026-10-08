@@ -57,4 +57,24 @@ describe('BottomNav', () => {
     expect(link.classes()).toContain('min-w-0')
     expect(link.get('span').classes()).toContain('truncate')
   })
+
+  // 6 tabs at the 320px minimum phone width must still clear the 44px touch-target floor.
+  it('keeps every tab at least 44px wide at 320px', () => {
+    expect(NAV_TABS.length).toBe(6)
+    expect(320 / NAV_TABS.length).toBeGreaterThanOrEqual(44)
+    expect(mountNav('/').get('a').classes()).toContain('min-h-11')
+  })
+
+  it('ends with the «بیشتر» tab pointing at /more', () => {
+    const last = NAV_TABS[NAV_TABS.length - 1]
+    expect(last).toMatchObject({ to: '/more', label: 'بیشتر' })
+    expect(isTabActive('/more', '/more')).toBe(true)
+  })
+
+  it('marks only the active tab with aria-current="page"', () => {
+    const links = mountNav('/bookings').findAll('a')
+    const current = links.filter((a) => a.attributes('aria-current') === 'page')
+    expect(current).toHaveLength(1)
+    expect(current[0].text()).toContain('نوبت‌ها')
+  })
 })

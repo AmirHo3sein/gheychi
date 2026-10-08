@@ -5,6 +5,7 @@ import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import RescheduleForm from '@/components/booking/RescheduleForm.vue'
 import { resetToast, useToast } from '@/composables/useToast'
 import BookingsView from './BookingsView.vue'
+import { autoConfirm } from '@/test-utils/auto-confirm'
 
 // A manual-approval request exactly as GET /salons/mine/bookings returns one: nothing is
 // paid yet (paymentExpiresAt is still null) and approvalExpiresAt is the server's own
@@ -57,7 +58,7 @@ describe('BookingsView', () => {
   })
 
   it('only asks for cancel confirmation, then calls the cancel endpoint if confirmed', async () => {
-    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+    const confirmSpy = autoConfirm(true)
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({
         ok: true,
@@ -76,7 +77,89 @@ describe('BookingsView', () => {
     await wrapper.find('[data-testid="cancel-booking"]').trigger('click')
     await new Promise((r) => setTimeout(r, 0))
 
+    // The penalty warning survives the move off window.confirm.
+    expect(confirmSpy.calls).toHaveLength(1)
+    expect(confirmSpy.calls[0].message).toContain('مشمول جریمه')
+    expect(confirmSpy.calls[0].tone).toBe('danger')
     expect(fetchMock.mock.calls[3]![0]).toContain('/bookings/b1/cancel')
+  })
+
+  it('does not call the cancel endpoint when the cancel confirmation is declined', async () => {
+    autoConfirm(false)
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ([{ id: 'b1', serviceId: 's1', serviceName: 'کوتاهی مو', priceSnapshot: 150000, startsAt: '2026-08-01T09:00:00.000Z', status: 'confirmed', workerId: null, workerName: null }]),
+      }) // GET bookings
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET workers
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET services
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(BookingsView)
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.find('[data-testid="cancel-booking"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(fetchMock.mock.calls).toHaveLength(3)
+  })
+
+  it('keeps the manual-booking form collapsed until its button is pressed, and collapses it again after a successful save', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET bookings
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET workers
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([{ id: 's1', name: 'کوتاهی مو' }]) }) // GET services
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: 'new-b', serviceId: 's1', serviceName: 'کوتاهی مو', priceSnapshot: 100000,
+          startsAt: '2026-08-01T05:30:00.000Z', status: 'confirmed', workerId: null, workerName: null,
+          customerName: null, customerPhone: '09120000000', source: 'manual',
+        }),
+      }) // POST manual booking
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(BookingsView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    const toggle = wrapper.get('[data-testid="toggle-manual-booking"]')
+    expect(toggle.text()).toContain('ثبت نوبت حضوری/تلفنی')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.find('[data-testid="manual-booking-phone"]').exists()).toBe(false)
+
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.find('[data-testid="manual-booking-phone"]').exists()).toBe(true)
+
+    await wrapper.find('[data-testid="manual-booking-phone"]').setValue('09120000000')
+    wrapper.findComponent<typeof AppSelect>('[data-testid="manual-booking-service"]').vm.$emit('update:modelValue', 's1')
+    wrapper.findComponent<typeof JalaliDatePicker>('[data-testid="manual-booking-date"]').vm.$emit('update:modelValue', '2026-08-01')
+    await wrapper.find('[data-testid="manual-booking-time"]').setValue('09:00')
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.find('[data-testid="submit-manual-booking"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(wrapper.find('[data-testid="manual-booking-phone"]').exists()).toBe(false)
+  })
+
+  it('gives every booking-card action a 44px touch target', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ([{ id: 'b1', serviceId: 's1', serviceName: 'کوتاهی مو', priceSnapshot: 150000, startsAt: '2026-08-01T09:00:00.000Z', status: 'confirmed', workerId: null, workerName: null }]),
+      })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(BookingsView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    for (const id of ['mark-completed', 'mark-no-show', 'reschedule-booking', 'cancel-booking']) {
+      expect(wrapper.get(`[data-testid="${id}"]`).classes()).toContain('min-h-11')
+    }
   })
 
   it('assigns an active worker to a confirmed booking', async () => {
@@ -223,6 +306,7 @@ describe('BookingsView', () => {
     const wrapper = mount(BookingsView)
     await new Promise((r) => setTimeout(r, 0))
 
+    await wrapper.find('[data-testid="toggle-manual-booking"]').trigger('click')
     await wrapper.find('[data-testid="manual-booking-phone"]').setValue('09120000000')
     wrapper.findComponent<typeof AppSelect>('[data-testid="manual-booking-service"]').vm.$emit('update:modelValue', 's1')
     wrapper.findComponent<typeof JalaliDatePicker>('[data-testid="manual-booking-date"]').vm.$emit('update:modelValue', '2026-08-01')
@@ -266,6 +350,7 @@ describe('BookingsView', () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(wrapper.find('[data-testid="booking-far-off-b"]').exists()).toBe(false)
 
+    await wrapper.find('[data-testid="toggle-manual-booking"]').trigger('click')
     await wrapper.find('[data-testid="manual-booking-phone"]').setValue('09120000000')
     wrapper.findComponent<typeof AppSelect>('[data-testid="manual-booking-service"]').vm.$emit('update:modelValue', 's1')
     wrapper.findComponent<typeof JalaliDatePicker>('[data-testid="manual-booking-date"]').vm.$emit('update:modelValue', '2030-06-15')
@@ -793,5 +878,44 @@ describe('BookingsView live refresh', () => {
     // No extra GET was issued: the mutation's own refetch (once it settles) is a strictly
     // fresher read than any tick fired underneath it.
     expect(fetchMock).toHaveBeenCalledTimes(4)
+  })
+})
+
+// -- Beauty guide: the card mounts only on bookings that carry a beautyGuideId, in both the
+// pending-request queue and the agenda, and fetches nothing until the owner expands it.
+describe('BookingsView beauty guide', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('mounts BeautyGuideCard only on bookings with a beautyGuideId, without fetching it', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ([
+          { ...PENDING_REQUEST, beautyGuideId: 'g1' },
+          {
+            id: 'b1', serviceId: 's1', serviceName: 'کوتاهی مو', priceSnapshot: 150000,
+            startsAt: '2030-06-15T12:00:00.000Z', status: 'confirmed', workerId: null, workerName: null,
+            customerName: null, customerPhone: '', source: 'online', beautyGuideId: 'g2',
+          },
+          {
+            id: 'b2', serviceId: 's1', serviceName: 'کوتاهی مو', priceSnapshot: 150000,
+            startsAt: '2030-06-15T14:00:00.000Z', status: 'confirmed', workerId: null, workerName: null,
+            customerName: null, customerPhone: '', source: 'online', beautyGuideId: null,
+          },
+        ]),
+      })
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ([]) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(BookingsView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(wrapper.get('[data-testid="pending-request-req1"]').find('[data-testid="beauty-guide-card"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="booking-b1"]').find('[data-testid="beauty-guide-card"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="booking-b2"]').find('[data-testid="beauty-guide-card"]').exists()).toBe(false)
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/beauty-guide'))).toBe(false)
   })
 })

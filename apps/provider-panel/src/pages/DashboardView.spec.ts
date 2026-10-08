@@ -125,6 +125,29 @@ describe('DashboardView', () => {
     vi.unstubAllGlobals()
   })
 
+  it('shows a metrics skeleton (not a bare spinner) until the summary arrives', async () => {
+    // Never resolves: the metrics requests stay pending.
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})))
+    const router = makeRouter()
+    await router.push('/')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [router] } })
+    await new Promise((r) => setTimeout(r, 0))
+
+    const skeleton = wrapper.get('[data-testid="metrics-skeleton"]')
+    expect(skeleton.attributes('role')).toBe('status')
+    expect(skeleton.findAll('.animate-pulse')).toHaveLength(8)
+  })
+
+  it('links every secondary section from the quick-link grid', async () => {
+    stubFetch()
+    const wrapper = await mountDashboard()
+    const hrefs = wrapper.findAll('a').map((a) => a.attributes('href'))
+    for (const to of ['/customers', '/packages', '/hours', '/photos', '/stories', '/portfolio', '/coupons', '/team', '/settings', '/plan']) {
+      expect(hrefs).toContain(to)
+    }
+  })
+
   it('does not show a today booking again in the upcoming list', async () => {
     const today = new Date()
     const todayIso = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59).toISOString()

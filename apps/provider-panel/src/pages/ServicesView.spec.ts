@@ -4,6 +4,7 @@ import AppMoneyInput from '@/components/ui/AppMoneyInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import { resetToast, useToast } from '@/composables/useToast'
 import ServicesView from './ServicesView.vue'
+import { autoConfirm } from '@/test-utils/auto-confirm'
 
 // Always handed to a mock as a fresh copy: the component keeps the objects the fetch mock
 // returns and writes back to them on a successful save, so sharing this reference would let
@@ -32,6 +33,12 @@ const SERVICE = {
 const CATEGORY_REQUESTS_EMPTY = { ok: true, status: 200, json: async () => [] }
 const CUSTOM_CATEGORIES_EMPTY = { ok: true, status: 200, json: async () => [] }
 
+// The inline fields are drafts; the row's explicit «ذخیره» button is what persists them.
+async function saveRowEdits(wrapper: ReturnType<typeof mount>) {
+  await wrapper.get('[data-testid="save-service-row"]').trigger('click')
+  await new Promise((r) => setTimeout(r, 0))
+}
+
 describe('ServicesView', () => {
   beforeEach(() => {
     resetToast()
@@ -48,7 +55,7 @@ describe('ServicesView', () => {
       .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
     vi.stubGlobal('fetch', fetchMock)
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const confirmSpy = autoConfirm(false)
 
     const wrapper = mount(ServicesView)
     await new Promise((r) => setTimeout(r, 0))
@@ -57,7 +64,7 @@ describe('ServicesView', () => {
     await wrapper.find('[data-testid="deactivate-service"]').trigger('click')
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(confirmSpy).toHaveBeenCalled()
+    expect(confirmSpy.calls).toHaveLength(1)
     // Only the three initial GETs happened -- no DELETE was fired.
     expect(fetchMock.mock.calls.length).toBe(4)
     // The service row is still rendered -- declining the confirm must not remove it.
@@ -72,7 +79,7 @@ describe('ServicesView', () => {
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
       .mockResolvedValueOnce({ ok: true, status: 204, json: async () => null }) // DELETE service
     vi.stubGlobal('fetch', fetchMock)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    autoConfirm(true)
 
     const wrapper = mount(ServicesView)
     await new Promise((r) => setTimeout(r, 0))
@@ -145,16 +152,15 @@ describe('ServicesView', () => {
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ...SERVICE, price: 150000 }) }) // PATCH price
     vi.stubGlobal('fetch', fetchMock)
-    // A price change is money-facing and commits on blur, so it now goes through a confirm.
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    // A price change is money-facing, so saving it goes through a confirm.
+    autoConfirm(true)
 
     const wrapper = mount(ServicesView)
     await new Promise((r) => setTimeout(r, 0))
 
     const input = wrapper.get('[data-testid="service-price-input"]')
     await input.setValue('150000')
-    await input.trigger('change')
-    await new Promise((r) => setTimeout(r, 0))
+    await saveRowEdits(wrapper)
 
     const patchCall = fetchMock.mock.calls[4]!
     expect(patchCall[0]).toContain('/salons/mine/services/svc-1')
@@ -172,19 +178,18 @@ describe('ServicesView', () => {
         .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
         .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
       vi.stubGlobal('fetch', fetchMock)
-      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const confirmSpy = autoConfirm(true)
 
       const wrapper = mount(ServicesView)
       await new Promise((r) => setTimeout(r, 0))
 
       const input = wrapper.get('[data-testid="service-price-input"]')
       await input.setValue(value)
-      await input.trigger('change')
-      await new Promise((r) => setTimeout(r, 0))
+      await saveRowEdits(wrapper)
 
       // Only the three initial GETs happened -- no PATCH was fired.
       expect(fetchMock.mock.calls.length).toBe(4)
-      expect(confirmSpy).not.toHaveBeenCalled()
+      expect(confirmSpy.calls).toHaveLength(0)
       // AppMoneyInput redraws comma-grouped once it isn't focused (this test never focuses
       // it, matching how the rejection restores the field programmatically, not via a user
       // still typing in it).
@@ -205,15 +210,14 @@ describe('ServicesView', () => {
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ...SERVICE, price: 180000 }) }) // PATCH price
     vi.stubGlobal('fetch', fetchMock)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    autoConfirm(true)
 
     const wrapper = mount(ServicesView)
     await new Promise((r) => setTimeout(r, 0))
 
     const input = wrapper.get('[data-testid="service-price-input"]')
     await input.setValue('۱۸۰۰۰۰')
-    await input.trigger('change')
-    await new Promise((r) => setTimeout(r, 0))
+    await saveRowEdits(wrapper)
 
     const patchCall = fetchMock.mock.calls[4]!
     expect(JSON.parse(patchCall[1].body)).toEqual({ price: 180000 })
@@ -227,15 +231,14 @@ describe('ServicesView', () => {
       .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
     vi.stubGlobal('fetch', fetchMock)
-    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    autoConfirm(false)
 
     const wrapper = mount(ServicesView)
     await new Promise((r) => setTimeout(r, 0))
 
     const input = wrapper.get('[data-testid="service-price-input"]')
     await input.setValue('1')
-    await input.trigger('change')
-    await new Promise((r) => setTimeout(r, 0))
+    await saveRowEdits(wrapper)
 
     expect(fetchMock.mock.calls.length).toBe(4)
     expect((input.element as HTMLInputElement).value).toBe('۱۰۰٬۰۰۰')
@@ -382,8 +385,7 @@ describe('ServicesView', () => {
       // remaining number input on the page.
       const discountInput = wrapper.findAll('input[type="number"]')[0]!
       await discountInput.setValue(value)
-      await discountInput.trigger('change')
-      await new Promise((r) => setTimeout(r, 0))
+      await saveRowEdits(wrapper)
 
       expect(fetchMock.mock.calls.length).toBe(4)
       expect((discountInput.element as HTMLInputElement).value).toBe('20')
@@ -406,16 +408,14 @@ describe('ServicesView', () => {
 
     const discountInput = wrapper.findAll('input[type="number"]')[0]!
     await discountInput.setValue('20')
-    await discountInput.trigger('change')
-    await new Promise((r) => setTimeout(r, 0))
+    await saveRowEdits(wrapper)
 
     expect(JSON.parse(fetchMock.mock.calls[4]![1].body)).toEqual({ discountPercent: 20 })
     expect(useToast().toasts.value.some((t) => t.message === 'تخفیف به‌روزرسانی شد')).toBe(true)
 
     // Emptying the field is the clear path -- null, not 0.
     await discountInput.setValue('')
-    await discountInput.trigger('change')
-    await new Promise((r) => setTimeout(r, 0))
+    await saveRowEdits(wrapper)
 
     expect(JSON.parse(fetchMock.mock.calls[5]![1].body)).toEqual({ discountPercent: null })
   })
@@ -428,17 +428,16 @@ describe('ServicesView', () => {
       .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ...SERVICE, durationMin: 15 }) }) // PATCH
     vi.stubGlobal('fetch', fetchMock)
-    const confirmSpy = vi.spyOn(window, 'confirm')
+    const confirmSpy = autoConfirm(true)
 
     const wrapper = mount(ServicesView)
     await new Promise((r) => setTimeout(r, 0))
 
     const durationInput = wrapper.get('[data-testid="service-duration-input"]')
     await durationInput.setValue('15')
-    await durationInput.trigger('change')
-    await new Promise((r) => setTimeout(r, 0))
+    await saveRowEdits(wrapper)
 
-    expect(confirmSpy).not.toHaveBeenCalled()
+    expect(confirmSpy.calls).toHaveLength(0)
     expect(JSON.parse(fetchMock.mock.calls[4]![1].body)).toEqual({ durationMin: 15 })
     expect(useToast().toasts.value.some((t) => t.message === 'مدت زمان به‌روزرسانی شد')).toBe(true)
   })
@@ -456,15 +455,14 @@ describe('ServicesView', () => {
 
     const durationInput = wrapper.get('[data-testid="service-duration-input"]')
     await durationInput.setValue('900')
-    await durationInput.trigger('change')
-    await new Promise((r) => setTimeout(r, 0))
+    await saveRowEdits(wrapper)
 
     expect(fetchMock.mock.calls.length).toBe(4) // no PATCH fired
     expect((durationInput.element as HTMLInputElement).value).toBe('30')
     expect(useToast().toasts.value.some((t) => t.message === 'مدت زمان باید عددی صحیح بین ۵ تا ۶۰۰ دقیقه باشد.')).toBe(true)
   })
 
-  it('sets duration via a one-tap preset button on an existing service', async () => {
+  it('sets duration via a one-tap preset button on an existing service, saved with the row button', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
@@ -477,7 +475,9 @@ describe('ServicesView', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     await wrapper.get('[data-testid="service-duration-preset-60"]').trigger('click')
-    await new Promise((r) => setTimeout(r, 0))
+    // A preset only fills the draft -- nothing is persisted until «ذخیره».
+    expect(fetchMock.mock.calls.length).toBe(4)
+    await saveRowEdits(wrapper)
 
     expect(JSON.parse(fetchMock.mock.calls[4]![1].body)).toEqual({ durationMin: 60 })
   })
@@ -513,8 +513,7 @@ describe('ServicesView', () => {
 
     const noteField = wrapper.get('[data-testid="service-description"]')
     await noteField.setValue('این زمان تقریبی است و ممکن است بیشتر طول بکشد')
-    await noteField.trigger('change')
-    await new Promise((r) => setTimeout(r, 0))
+    await saveRowEdits(wrapper)
 
     expect(JSON.parse(fetchMock.mock.calls[4]![1].body)).toEqual({
       description: 'این زمان تقریبی است و ممکن است بیشتر طول بکشد',
@@ -523,8 +522,7 @@ describe('ServicesView', () => {
 
     // Emptying the field is the clear path -- null, not ''.
     await noteField.setValue('')
-    await noteField.trigger('change')
-    await new Promise((r) => setTimeout(r, 0))
+    await saveRowEdits(wrapper)
 
     expect(JSON.parse(fetchMock.mock.calls[5]![1].body)).toEqual({ description: null })
   })
@@ -857,6 +855,104 @@ describe('ServicesView', () => {
       expect(JSON.parse((postCall[1] as { body: string }).body)).toEqual({ name: 'خدمات ویژه' })
       // The new category appears in the select immediately -- no reload/approval round-trip.
       expect(wrapper.find('[data-testid="custom-category-name"]').exists()).toBe(false)
+    })
+  })
+
+  describe('explicit per-row editing', () => {
+    function initialFetch() {
+      return vi.fn()
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ ...SERVICE }] }) // GET services
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }) // GET categories
+        .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
+        .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
+    }
+
+    it('shows «ذخیره» / «انصراف» only while a field differs from what is saved', async () => {
+      vi.stubGlobal('fetch', initialFetch())
+      const wrapper = mount(ServicesView)
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(wrapper.find('[data-testid="save-service-row"]').exists()).toBe(false)
+
+      await wrapper.get('[data-testid="service-duration-input"]').setValue('45')
+      expect(wrapper.find('[data-testid="save-service-row"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="cancel-service-row"]').exists()).toBe(true)
+
+      await wrapper.get('[data-testid="service-duration-input"]').setValue('30')
+      expect(wrapper.find('[data-testid="save-service-row"]').exists()).toBe(false)
+    })
+
+    it('does not save or ask for confirmation when a field merely loses focus', async () => {
+      const fetchMock = initialFetch()
+      vi.stubGlobal('fetch', fetchMock)
+      const confirmSpy = autoConfirm(true)
+      const wrapper = mount(ServicesView)
+      await new Promise((r) => setTimeout(r, 0))
+
+      const price = wrapper.get('[data-testid="service-price-input"]')
+      await price.setValue('150000')
+      await price.trigger('change')
+      await price.trigger('blur')
+      await wrapper.get('[data-testid="service-duration-input"]').trigger('change')
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(fetchMock.mock.calls.length).toBe(4)
+      expect(confirmSpy.calls).toHaveLength(0)
+    })
+
+    it('asks about a price change at save time, naming both prices', async () => {
+      const fetchMock = initialFetch()
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ...SERVICE, price: 150000 }) })
+      vi.stubGlobal('fetch', fetchMock)
+      const confirmSpy = autoConfirm(true)
+      const wrapper = mount(ServicesView)
+      await new Promise((r) => setTimeout(r, 0))
+
+      await wrapper.get('[data-testid="service-price-input"]').setValue('150000')
+      expect(confirmSpy.calls).toHaveLength(0)
+      await saveRowEdits(wrapper)
+
+      expect(confirmSpy.calls).toHaveLength(1)
+      expect(confirmSpy.calls[0].title).toContain('کوتاهی مو')
+      expect(JSON.parse(fetchMock.mock.calls[4]![1].body)).toEqual({ price: 150000 })
+    })
+
+    it('«انصراف» puts every draft back without a request', async () => {
+      const fetchMock = initialFetch()
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ServicesView)
+      await new Promise((r) => setTimeout(r, 0))
+
+      const duration = wrapper.get('[data-testid="service-duration-input"]')
+      await duration.setValue('90')
+      await wrapper.get('[data-testid="cancel-service-row"]').trigger('click')
+
+      expect((duration.element as HTMLInputElement).value).toBe('30')
+      expect(wrapper.find('[data-testid="save-service-row"]').exists()).toBe(false)
+      expect(fetchMock.mock.calls.length).toBe(4)
+    })
+
+    it('guards «ذخیره» while the save is in flight (disabled, no second PATCH)', async () => {
+      let resolvePatch!: (value: unknown) => void
+      const fetchMock = initialFetch()
+        .mockImplementationOnce(() => new Promise((resolve) => { resolvePatch = resolve }))
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ServicesView)
+      await new Promise((r) => setTimeout(r, 0))
+
+      await wrapper.get('[data-testid="service-duration-input"]').setValue('45')
+      const save = wrapper.get('[data-testid="save-service-row"]')
+      await save.trigger('click')
+      await save.trigger('click')
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(fetchMock.mock.calls.length).toBe(5)
+      expect(save.attributes('disabled')).toBeDefined()
+      expect(wrapper.get('[data-testid="cancel-service-row"]').attributes('disabled')).toBeDefined()
+
+      resolvePatch({ ok: true, status: 200, json: async () => ({ ...SERVICE, durationMin: 45 }) })
+      await new Promise((r) => setTimeout(r, 0))
+      expect(wrapper.find('[data-testid="save-service-row"]').exists()).toBe(false)
     })
   })
 })

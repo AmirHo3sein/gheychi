@@ -4,6 +4,7 @@ import AppSelect from '@/components/ui/AppSelect.vue'
 import { resetFeatureFlags } from '@/composables/useFeatureFlags'
 import { resetToast } from '@/composables/useToast'
 import PortfolioView from './PortfolioView.vue'
+import { autoConfirm } from '@/test-utils/auto-confirm'
 
 const fetchMock = vi.fn()
 
@@ -147,27 +148,27 @@ describe('PortfolioView', () => {
 
   it('asks for confirmation before deleting an item, and skips the DELETE if declined', async () => {
     const wrapper = await mountView()
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const confirmSpy = autoConfirm(false)
 
     await wrapper.findAll('[data-testid="delete-item"]')[0]!.trigger('click')
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(confirmSpy).toHaveBeenCalledWith('این نمونه کار حذف شود؟')
+    expect(confirmSpy.calls[0].title).toBe('این نمونه کار حذف شود؟')
     expect(fetchMock).not.toHaveBeenCalledWith('/salons/mine/portfolio/pf1', { method: 'DELETE' })
 
-    confirmSpy.mockRestore()
+    confirmSpy.stop()
   })
 
   it('DELETEs and refetches once confirmation is accepted', async () => {
     const wrapper = await mountView()
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const confirmSpy = autoConfirm(true)
 
     await wrapper.findAll('[data-testid="delete-item"]')[0]!.trigger('click')
     await new Promise((r) => setTimeout(r, 0))
 
     expect(fetchMock).toHaveBeenCalledWith('/salons/mine/portfolio/pf1', { method: 'DELETE' })
 
-    confirmSpy.mockRestore()
+    confirmSpy.stop()
   })
 
   it('resyncs the caption draft with the trimmed server value after a successful save', async () => {

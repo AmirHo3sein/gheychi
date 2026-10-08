@@ -7,9 +7,11 @@ import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect, { type SelectOption } from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
+import BeautyGuideCard from '@/components/booking/BeautyGuideCard.vue'
 import RescheduleForm from '@/components/booking/RescheduleForm.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useApi } from '@/composables/useApi'
+import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { useVisiblePolling } from '@/composables/useVisiblePolling'
 import { toEnglishDigits } from '@/utils/digits'
@@ -44,6 +46,9 @@ interface Booking {
   customerName: string | null
   customerPhone: string
   source: 'online' | 'manual'
+  // Set when the customer attached their AI beauty guide at booking time; nulled server-side
+  // if they later delete it. BeautyGuideCard fetches the guide itself, lazily.
+  beautyGuideId: string | null
 }
 interface Worker {
   id: string
@@ -56,6 +61,7 @@ interface Service {
 }
 
 const { apiFetch } = useApi()
+const { confirm } = useConfirm()
 const { push: pushToast } = useToast()
 const bookings = ref<Booking[]>([])
 const workers = ref<Worker[]>([])
@@ -371,7 +377,14 @@ async function submitReschedule(id: string, startsAtIso: string) {
 }
 
 async function cancelBooking(id: string) {
-  if (!confirm('لغو این نوبت ممکن است مشمول جریمه شود. ادامه می‌دهید؟')) return
+  const ok = await confirm({
+    title: 'این نوبت لغو شود؟',
+    message: 'لغو این نوبت ممکن است مشمول جریمه شود. ادامه می‌دهید؟',
+    confirmLabel: 'لغو نوبت',
+    cancelLabel: 'بازگشت',
+    tone: 'danger',
+  })
+  if (!ok) return
   submittingId.value = id
   try {
     await apiFetch(`/bookings/${id}/cancel`, { method: 'POST' })
@@ -454,6 +467,7 @@ const manualForm = reactive({
   time: '09:00',
   notes: '',
 })
+const manualFormOpen = ref(false)
 const manualFormError = ref('')
 const manualSubmitting = ref(false)
 
@@ -510,7 +524,8 @@ async function submitManualBooking() {
   manualForm.date = ''
   manualForm.time = '09:00'
   manualForm.notes = ''
-  pushToast('نوبت با موفقیت ثبت شد')
+  manualFormOpen.value = false
+  pushToast('نوبت با موفقیت ثبت شد', 'success')
 }
 
 // -- Day view: a date-picker + prev/next-day nav over the bookings this page already
@@ -687,6 +702,8 @@ const groupedBookings = computed<BookingGroup[]>(() => {
               </div>
             </div>
 
+            <BeautyGuideCard v-if="b.beautyGuideId" :booking-id="b.id" />
+
             <div v-if="rejectingId === b.id" class="space-y-2 border-t border-(--color-border-soft) pt-3">
               <label :for="`reject-reason-${b.id}`" class="block text-xs font-semibold text-(--color-text-muted)">
                 دلیل رد درخواست (برای مشتری ارسال می‌شود)
@@ -709,6 +726,7 @@ const groupedBookings = computed<BookingGroup[]>(() => {
                   type="button"
                   variant="danger"
                   size="sm"
+                  touch
                   :disabled="submittingId === b.id"
                   :loading="submittingId === b.id"
                   @click="submitReject(b.id)"
@@ -720,6 +738,7 @@ const groupedBookings = computed<BookingGroup[]>(() => {
                   type="button"
                   variant="secondary"
                   size="sm"
+                  touch
                   :disabled="submittingId === b.id"
                   @click="cancelReject"
                 >
@@ -748,6 +767,7 @@ const groupedBookings = computed<BookingGroup[]>(() => {
                 type="button"
                 variant="primary"
                 size="sm"
+                touch
                 :disabled="submittingId === b.id"
                 :loading="submittingId === b.id"
                 @click="approveRequest(b.id)"
@@ -760,6 +780,7 @@ const groupedBookings = computed<BookingGroup[]>(() => {
                 type="button"
                 variant="secondary"
                 size="sm"
+                touch
                 :disabled="submittingId === b.id"
                 @click="openReschedule(b.id)"
               >
@@ -771,6 +792,7 @@ const groupedBookings = computed<BookingGroup[]>(() => {
                 type="button"
                 variant="danger"
                 size="sm"
+                touch
                 :disabled="submittingId === b.id"
                 @click="openReject(b.id)"
               >
@@ -781,9 +803,24 @@ const groupedBookings = computed<BookingGroup[]>(() => {
           </AppCard>
         </section>
 
-        <!-- Always-visible, not a modal -- same shape as HoursView.vue's ad-hoc-closures
-             form. A compact quick-add panel, not a page-dominating wall of fields. -->
-        <AppCard class="space-y-4">
+        <!-- Collapsed by default: the form is ~600px of fields on a phone, which used to push
+             today's appointments below the fold. An inline expander, not a modal -- same shape
+             as HoursView.vue's ad-hoc-closures form. Nothing is remembered between visits. -->
+        <AppButton
+          type="button"
+          variant="secondary"
+          block
+          class="sm:w-auto"
+          data-testid="toggle-manual-booking"
+          :aria-expanded="manualFormOpen"
+          aria-controls="manual-booking-panel"
+          @click="manualFormOpen = !manualFormOpen"
+        >
+          <template #icon><AppIcon :name="manualFormOpen ? 'chevron-up' : 'plus'" :size="16" /></template>
+          ثبت نوبت حضوری/تلفنی
+        </AppButton>
+
+        <AppCard v-if="manualFormOpen" id="manual-booking-panel" class="space-y-4">
           <div class="flex items-center gap-3">
             <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-(--color-accent-soft) text-(--color-accent-text)">
               <AppIcon name="plus" :size="18" />
@@ -946,6 +983,8 @@ const groupedBookings = computed<BookingGroup[]>(() => {
                 </div>
               </div>
 
+              <BeautyGuideCard v-if="b.beautyGuideId" :booking-id="b.id" />
+
               <div v-if="b.status === 'confirmed' && workers.length > 0" class="border-t border-(--color-border-soft) pt-3">
                 <!-- AppSelect's root is vue-multiselect's role="combobox" div, not a labelable
                      native control, so <label for> can no longer reach it; aria-labelledby is
@@ -983,6 +1022,7 @@ const groupedBookings = computed<BookingGroup[]>(() => {
                   type="button"
                   variant="secondary"
                   size="sm"
+                  touch
                   :disabled="submittingId === b.id"
                   :loading="submittingId === b.id"
                   @click="markStatus(b.id, 'completed')"
@@ -995,6 +1035,7 @@ const groupedBookings = computed<BookingGroup[]>(() => {
                   type="button"
                   variant="secondary"
                   size="sm"
+                  touch
                   :disabled="submittingId === b.id"
                   :loading="submittingId === b.id"
                   @click="markStatus(b.id, 'no_show')"
@@ -1007,6 +1048,7 @@ const groupedBookings = computed<BookingGroup[]>(() => {
                   type="button"
                   variant="secondary"
                   size="sm"
+                  touch
                   :disabled="submittingId === b.id"
                   @click="openReschedule(b.id)"
                 >
@@ -1018,6 +1060,7 @@ const groupedBookings = computed<BookingGroup[]>(() => {
                   type="button"
                   variant="danger"
                   size="sm"
+                  touch
                   :disabled="submittingId === b.id"
                   :loading="submittingId === b.id"
                   @click="cancelBooking(b.id)"
@@ -1033,6 +1076,7 @@ const groupedBookings = computed<BookingGroup[]>(() => {
                   type="button"
                   variant="secondary"
                   size="sm"
+                  touch
                   :disabled="submittingId === b.id"
                   @click="openReschedule(b.id)"
                 >

@@ -10,6 +10,7 @@ import AppSelect, { type SelectOption } from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useApi } from '@/composables/useApi'
+import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { formatToman } from '@/utils/format-toman'
 
@@ -74,6 +75,7 @@ function priceDisplay(s: Pick<Service, 'pricingType' | 'price' | 'priceMax'>): s
 }
 
 const { apiFetch } = useApi()
+const { confirm } = useConfirm()
 const { push: pushToast } = useToast()
 const services = ref<Service[]>([])
 const categories = ref<{ id: number; name: string }[]>([])
@@ -190,7 +192,7 @@ async function savePricingEditor(s: Service) {
   const draft = pricingDrafts[s.id]
   const error = validatePricingDraft(draft)
   if (error) {
-    pushToast(error)
+    pushToast(error, 'error')
     return
   }
   const body: Record<string, unknown> = { pricingType: draft.pricingType }
@@ -203,7 +205,7 @@ async function savePricingEditor(s: Service) {
   priceDrafts[s.id] = String(s.price ?? '')
   discountDrafts[s.id] = s.discountPercent === null ? '' : String(s.discountPercent)
   editingPricing[s.id] = false
-  pushToast('قیمت‌گذاری به‌روزرسانی شد')
+  pushToast('قیمت‌گذاری به‌روزرسانی شد', 'success')
 }
 
 function validatePricingDraft(draft: { pricingType: PricingType; price: number; priceMax: number; discountPercent: number | null }): string {
@@ -287,7 +289,7 @@ async function submitCategoryRequest() {
   categoryRequestSubmitting.value = false
   if (error) return
 
-  pushToast('درخواست دسته‌بندی ارسال شد و در انتظار بررسی مدیر است')
+  pushToast('درخواست دسته‌بندی ارسال شد و در انتظار بررسی مدیر است', 'success')
   requestingCategory.value = false
   await loadCategoryRequests()
 }
@@ -316,7 +318,7 @@ async function submitCustomCategory() {
   customCategories.value.push(data)
   newService.categorySelection = `custom:${data.id}`
   creatingCustomCategory.value = false
-  pushToast('دسته‌بندی سفارشی ایجاد شد')
+  pushToast('دسته‌بندی سفارشی ایجاد شد', 'success')
 }
 
 function resetNewService() {
@@ -394,26 +396,35 @@ async function addService() {
 // "deactivate" action, not a bidirectional toggle -- confirm explicitly rather than
 // exposing it as a bare checkbox (mirrors CouponsView.vue's deactivate()).
 async function deactivate(service: Service) {
-  if (!window.confirm(`خدمت «${service.name}» برای همیشه غیرفعال شود؟ این عملیات قابل بازگشت نیست.`)) return
+  const ok = await confirm({
+    title: `خدمت «${service.name}» برای همیشه غیرفعال شود؟`,
+    message: 'این عملیات قابل بازگشت نیست.',
+    confirmLabel: 'غیرفعال کن',
+    tone: 'danger',
+  })
+  if (!ok) return
   const { error } = await apiFetch(`/salons/mine/services/${service.id}`, { method: 'DELETE' })
   if (!error) {
     services.value = services.value.filter((s) => s.id !== service.id)
     delete priceDrafts[service.id]
     delete discountDrafts[service.id]
-    pushToast('خدمت غیرفعال شد')
+    pushToast('خدمت غیرفعال شد', 'success')
   }
 }
 
-// The price field commits on `change` (i.e. on blur), and its value is the salon's public,
-// bookable price -- so it gets both a validity guard and a confirm, unlike the discount
-// field below. Only ever rendered for pricingType === 'fixed' rows (see the template) --
+// The price is committed by the row's explicit «ذخیره» button (saveRow below), never on
+// blur -- a stray tap away from the field must not pop a money confirmation. Its value is
+// the salon's public, bookable price, so it gets both a validity guard and a confirm
+// (asked at save time), unlike the discount field below. Only ever rendered for pricingType === 'fixed' rows (see the template) --
 // FROM/RANGE/QUOTE go through the pricing-type panel above instead. Two reasons the guard
 // is not paranoia: a `type="number"` input silently discards Persian digits, so the natural
 // "select all, retype ۱۸۰۰۰۰" leaves the field empty and fires `change` on blur; and the
 // API's @Min(0) happily accepts the resulting 0, which makes the service free to book with
 // a 0 deposit. On any rejected value the input is put back to the price we last knew about,
 // so the field never shows something that isn't what the salon is actually charging.
-async function updatePrice(service: Service) {
+// Each updateX returns false when the edit was rejected, declined or failed, so saveRow can
+// stop instead of piling more PATCHes onto a row that already needs the owner's attention.
+async function updatePrice(service: Service): Promise<boolean> {
   // Vue casts a v-model on an `<input type="number">` to a real number (and leaves anything
   // unparseable as the raw string), so the draft is only nominally a string -- normalize.
   const raw = String(priceDrafts[service.id] ?? '').trim()
@@ -421,41 +432,43 @@ async function updatePrice(service: Service) {
   // Integer-only mirrors UpdateServiceDto's @IsInt -- a fractional toman would just 400.
   if (raw === '' || !Number.isInteger(price) || price <= 0) {
     priceDrafts[service.id] = String(service.price ?? '')
-    pushToast('قیمت باید یک عدد صحیح بزرگ‌تر از صفر باشد.')
-    return
+    pushToast('قیمت باید یک عدد صحیح بزرگ‌تر از صفر باشد.', 'error')
+    return false
   }
-  if (price === service.price) return
+  if (price === service.price) return true
 
-  const confirmed = window.confirm(
-    `قیمت «${service.name}» از ${formatToman(service.price ?? 0)} به ${formatToman(price)} تومان تغییر کند؟`,
-  )
+  const confirmed = await confirm({
+    title: `قیمت «${service.name}» از ${formatToman(service.price ?? 0)} به ${formatToman(price)} تومان تغییر کند؟`,
+    confirmLabel: 'تغییر قیمت',
+  })
   if (!confirmed) {
     priceDrafts[service.id] = String(service.price ?? '')
-    return
+    return false
   }
 
   const { error } = await apiFetch(`/salons/mine/services/${service.id}`, { method: 'PATCH', body: { price } })
   if (error) {
     priceDrafts[service.id] = String(service.price ?? '')
-    return
+    return false
   }
   service.price = price
-  pushToast('قیمت به‌روزرسانی شد')
+  pushToast('قیمت به‌روزرسانی شد', 'success')
+  return true
 }
 
 // UpdateServiceDto accepts null (clear the discount) or an integer 1-100 -- notably NOT 0,
 // which is what an emptied-then-retyped `0` produces and what the `min="1"` attribute does
 // nothing to stop (it only blocks the spinner, not typing). Guarding here keeps the failure
 // in Persian and next to the field instead of as an English validator array in a toast.
-async function updateDiscount(service: Service) {
+async function updateDiscount(service: Service): Promise<boolean> {
   const raw = String(discountDrafts[service.id] ?? '').trim()
   const discountPercent = raw === '' ? null : Number(raw)
   if (discountPercent !== null && !isValidDiscount(discountPercent)) {
     discountDrafts[service.id] = service.discountPercent === null ? '' : String(service.discountPercent)
-    pushToast(DISCOUNT_RANGE_ERROR)
-    return
+    pushToast(DISCOUNT_RANGE_ERROR, 'error')
+    return false
   }
-  if (discountPercent === service.discountPercent) return
+  if (discountPercent === service.discountPercent) return true
 
   const { error } = await apiFetch(`/salons/mine/services/${service.id}`, {
     method: 'PATCH',
@@ -463,26 +476,27 @@ async function updateDiscount(service: Service) {
   })
   if (error) {
     discountDrafts[service.id] = service.discountPercent === null ? '' : String(service.discountPercent)
-    return
+    return false
   }
   service.discountPercent = discountPercent
   discountDrafts[service.id] = discountPercent === null ? '' : String(discountPercent)
-  pushToast('تخفیف به‌روزرسانی شد')
+  pushToast('تخفیف به‌روزرسانی شد', 'success')
+  return true
 }
 
 // This is the field a provider could previously only set at creation, with no way back --
 // changing it only affects FUTURE availability computation (already-confirmed bookings keep
 // their own snapshotted startsAt/endsAt), so no confirm dialog is needed the way price gets
-// one; same immediate-commit-on-blur shape as updateDiscount/updateDescription above.
-async function updateDuration(service: Service) {
+// one; committed by the row's «ذخیره» button like the other inline fields.
+async function updateDuration(service: Service): Promise<boolean> {
   const raw = String(durationDrafts[service.id] ?? '').trim()
   const durationMin = Number(raw)
   if (raw === '' || !Number.isInteger(durationMin) || durationMin < 5 || durationMin > 600) {
     durationDrafts[service.id] = String(service.durationMin)
-    pushToast('مدت زمان باید عددی صحیح بین ۵ تا ۶۰۰ دقیقه باشد.')
-    return
+    pushToast('مدت زمان باید عددی صحیح بین ۵ تا ۶۰۰ دقیقه باشد.', 'error')
+    return false
   }
-  if (durationMin === service.durationMin) return
+  if (durationMin === service.durationMin) return true
 
   const { error } = await apiFetch(`/salons/mine/services/${service.id}`, {
     method: 'PATCH',
@@ -490,28 +504,29 @@ async function updateDuration(service: Service) {
   })
   if (error) {
     durationDrafts[service.id] = String(service.durationMin)
-    return
+    return false
   }
   service.durationMin = durationMin
   durationDrafts[service.id] = String(durationMin)
-  pushToast('مدت زمان به‌روزرسانی شد')
+  pushToast('مدت زمان به‌روزرسانی شد', 'success')
+  return true
 }
 
+// A preset only fills the draft; like any other edit it is persisted by «ذخیره».
 function setDurationPreset(service: Service, minutes: number) {
   durationDrafts[service.id] = String(minutes)
-  updateDuration(service)
 }
 
 function setNewServiceDurationPreset(minutes: number) {
   newService.durationMin = minutes
 }
 
-// Commits on blur, like price/discount above. An empty draft clears the note (sent as
+// Committed by the row's «ذخیره» button, like price/discount above. An empty draft clears the note (sent as
 // null, mirroring how updateDiscount clears its field) rather than sending ''.
-async function updateDescription(service: Service) {
+async function updateDescription(service: Service): Promise<boolean> {
   const raw = descriptionDrafts[service.id] ?? ''
   const description = raw.trim() === '' ? null : raw.trim()
-  if (description === service.description) return
+  if (description === service.description) return true
 
   const { error } = await apiFetch(`/salons/mine/services/${service.id}`, {
     method: 'PATCH',
@@ -519,11 +534,57 @@ async function updateDescription(service: Service) {
   })
   if (error) {
     descriptionDrafts[service.id] = service.description ?? ''
-    return
+    return false
   }
   service.description = description
   descriptionDrafts[service.id] = description ?? ''
-  pushToast('توضیحات به‌روزرسانی شد')
+  pushToast('توضیحات به‌روزرسانی شد', 'success')
+  return true
+}
+
+// ---- explicit per-row editing -----------------------------------------------------
+// Inline fields used to PATCH on blur, so a stray tap off a field on a phone saved (or
+// popped a confirm for) a half-typed number. Edits now only change the draft; a row is
+// "dirty" while any draft differs from what's persisted, and shows «ذخیره» / «انصراف».
+// Dirtiness is derived (never a flag that can drift from the drafts).
+const savingRows = reactive<Record<string, boolean>>({})
+
+function persistedDiscount(s: Service): string {
+  return s.discountPercent === null ? '' : String(s.discountPercent)
+}
+
+function isDirty(s: Service): boolean {
+  // Price drafts exist only for FIXED rows; the others edit through the pricing panel.
+  const priceDirty = s.pricingType === 'fixed' && String(priceDrafts[s.id] ?? '').trim() !== String(s.price ?? '')
+  const discountDirty = s.pricingType === 'fixed' && String(discountDrafts[s.id] ?? '').trim() !== persistedDiscount(s)
+  const durationDirty = String(durationDrafts[s.id] ?? '').trim() !== String(s.durationMin)
+  const descriptionDirty = (descriptionDrafts[s.id] ?? '').trim() !== (s.description ?? '')
+  return priceDirty || discountDirty || durationDirty || descriptionDirty
+}
+
+function resetDrafts(s: Service) {
+  priceDrafts[s.id] = String(s.price ?? '')
+  discountDrafts[s.id] = persistedDiscount(s)
+  durationDrafts[s.id] = String(s.durationMin)
+  descriptionDrafts[s.id] = s.description ?? ''
+}
+
+// Runs the same per-field validation + PATCH as before, one dirty field at a time, and
+// stops at the first one that is rejected, declined or fails -- it keeps its message and the
+// remaining edits stay in their drafts for another «ذخیره».
+async function saveRow(s: Service) {
+  if (savingRows[s.id]) return
+  savingRows[s.id] = true
+  try {
+    if (s.pricingType === 'fixed') {
+      if (String(priceDrafts[s.id] ?? '').trim() !== String(s.price ?? '') && !(await updatePrice(s))) return
+      if (String(discountDrafts[s.id] ?? '').trim() !== persistedDiscount(s) && !(await updateDiscount(s))) return
+    }
+    if (String(durationDrafts[s.id] ?? '').trim() !== String(s.durationMin) && !(await updateDuration(s))) return
+    if ((descriptionDrafts[s.id] ?? '').trim() !== (s.description ?? '')) await updateDescription(s)
+  } finally {
+    savingRows[s.id] = false
+  }
 }
 </script>
 
@@ -587,7 +648,6 @@ async function updateDescription(service: Service) {
                   v-model="priceDrafts[s.id]"
                   label="قیمت (تومان)"
                   data-testid="service-price-input"
-                  @change="updatePrice(s)"
                 />
                 <AppInput
                   v-model="discountDrafts[s.id]"
@@ -597,7 +657,6 @@ async function updateDescription(service: Service) {
                   max="100"
                   placeholder="٪ تخفیف"
                   class="tnum"
-                  @change="updateDiscount(s)"
                 />
               </div>
               <button
@@ -678,7 +737,6 @@ async function updateDescription(service: Service) {
                 max="600"
                 data-testid="service-duration-input"
                 class="tnum"
-                @change="updateDuration(s)"
               />
               <p class="mt-1 text-xs text-(--color-text-muted)">
                 این عدد فاصله بین نوبت‌های قابل رزرو این خدمت را هم تعیین می‌کند؛ برای مثال یک خدمت
@@ -693,8 +751,8 @@ async function updateDescription(service: Service) {
                   :key="preset"
                   type="button"
                   :data-testid="`service-duration-preset-${preset}`"
-                  class="rounded-full border px-2.5 py-1 text-xs transition-colors"
-                  :class="s.durationMin === preset
+                  class="min-h-9 rounded-full border px-3 py-1.5 text-xs transition-colors"
+                  :class="(Number(durationDrafts[s.id]) || s.durationMin) === preset
                     ? 'border-(--color-accent-text) bg-(--color-accent-soft) text-(--color-text)'
                     : 'border-(--color-border) text-(--color-text-muted) hover:bg-(--color-surface-subtle)'"
                   @click="setDurationPreset(s, preset)"
@@ -712,8 +770,29 @@ async function updateDescription(service: Service) {
                 placeholder="مثلاً: این زمان تقریبی است و ممکن است بیشتر طول بکشد"
                 class="w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-2 text-sm"
                 data-testid="service-description"
-                @change="updateDescription(s)"
               />
+            </div>
+
+            <!-- Appears only while a field differs from what's saved; 44px buttons (the
+                 default size) because this is the primary action on a phone. -->
+            <div v-if="isDirty(s)" class="flex flex-wrap gap-2 border-t border-(--color-border-soft) pt-3" data-testid="service-row-actions">
+              <AppButton
+                type="button"
+                :loading="savingRows[s.id]"
+                data-testid="save-service-row"
+                @click="saveRow(s)"
+              >
+                ذخیره
+              </AppButton>
+              <AppButton
+                type="button"
+                variant="secondary"
+                :disabled="savingRows[s.id]"
+                data-testid="cancel-service-row"
+                @click="resetDrafts(s)"
+              >
+                انصراف
+              </AppButton>
             </div>
           </AppCard>
         </div>

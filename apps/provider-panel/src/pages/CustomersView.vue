@@ -158,7 +158,7 @@ function goToPage(next: number) {
 
 function formatDate(iso: string | null): string {
   if (!iso) return '—'
-  return new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
+  return new Intl.DateTimeFormat('fa-IR', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
 }
 </script>
 
@@ -239,40 +239,45 @@ function formatDate(iso: string | null): string {
 
       <AppCard v-else :padded="false" class="overflow-hidden">
         <div class="overflow-x-auto">
-          <table class="w-full text-right text-sm">
-            <thead>
-              <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
-                <th scope="col" class="px-4 py-3 font-semibold">مشتری</th>
+          <!-- One markup, two layouts: below md each <tr> is a stacked block whose cells print their
+               own column name (data-label); from md up it is the plain table. The explicit
+               ARIA roles keep table semantics for assistive tech while display:block would
+               otherwise drop them. -->
+          <table role="table" class="block w-full text-right text-sm md:table">
+            <thead role="rowgroup" class="hidden md:table-header-group">
+              <tr role="row" class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
+                <th role="columnheader" scope="col" class="px-4 py-3 font-semibold">مشتری</th>
                 <!-- Both counts are shown because they answer different questions and used
                      to be conflated under a bare "تعداد نوبت": the first includes upcoming
                      and cancelled bookings, the second is only appointments that happened. -->
-                <th scope="col" class="px-4 py-3 font-semibold">کل نوبت‌ها</th>
-                <th scope="col" class="px-4 py-3 font-semibold">مراجعه‌های انجام‌شده</th>
-                <th scope="col" class="px-4 py-3 font-semibold">اولین مراجعه</th>
-                <th scope="col" class="px-4 py-3 font-semibold">آخرین مراجعه</th>
-                <th scope="col" class="px-4 py-3 font-semibold">ارزش کل</th>
-                <th scope="col" class="px-4 py-3 font-semibold">وضعیت</th>
+                <th role="columnheader" scope="col" class="px-4 py-3 font-semibold">کل نوبت‌ها</th>
+                <th role="columnheader" scope="col" class="px-4 py-3 font-semibold">مراجعه‌های انجام‌شده</th>
+                <th role="columnheader" scope="col" class="px-4 py-3 font-semibold">اولین مراجعه</th>
+                <th role="columnheader" scope="col" class="px-4 py-3 font-semibold">آخرین مراجعه</th>
+                <th role="columnheader" scope="col" class="px-4 py-3 font-semibold">ارزش کل</th>
+                <th role="columnheader" scope="col" class="px-4 py-3 font-semibold">وضعیت</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody role="rowgroup" class="block md:table-row-group">
               <tr
                 v-for="c in customers"
                 :key="c.userId"
                 data-testid="customer-row"
-                class="border-b border-(--color-border-soft) last:border-0"
+                role="row"
+                class="block border-b border-(--color-border-soft) p-4 last:border-0 md:table-row md:p-0"
               >
-                <td class="px-4 py-3">
+                <td role="cell" class="block py-1 md:table-cell md:px-4 md:py-3">
                   <RouterLink :to="`/customers/${c.userId}`" class="font-semibold text-(--color-accent-text) hover:underline">
                     {{ c.name || 'بدون نام' }}
                   </RouterLink>
                   <p dir="ltr" class="tnum text-xs text-(--color-text-muted)">{{ c.phone }}</p>
                 </td>
-                <td class="tnum px-4 py-3 text-(--color-text-muted)">{{ c.bookingsCount.toLocaleString('fa-IR') }}</td>
-                <td class="tnum px-4 py-3 text-(--color-text-muted)">{{ c.visitsCount.toLocaleString('fa-IR') }}</td>
-                <td class="tnum px-4 py-3 text-(--color-text-muted)">{{ formatDate(c.firstVisitAt) }}</td>
-                <td class="tnum px-4 py-3 text-(--color-text-muted)">{{ formatDate(c.lastVisitAt) }}</td>
-                <td class="px-4 py-3 text-(--color-text-muted)"><span dir="ltr" class="tnum">{{ formatToman(c.grossValue) }}</span> تومان</td>
-                <td class="px-4 py-3">
+                <td role="cell" data-label="کل نوبت‌ها" class="flex items-center justify-between gap-3 py-1 before:text-xs before:text-(--color-text-muted) before:content-[attr(data-label)] md:table-cell md:px-4 md:py-3 md:before:content-none tnum text-(--color-text-muted)">{{ c.bookingsCount.toLocaleString('fa-IR') }}</td>
+                <td role="cell" data-label="مراجعه‌های انجام‌شده" class="flex items-center justify-between gap-3 py-1 before:text-xs before:text-(--color-text-muted) before:content-[attr(data-label)] md:table-cell md:px-4 md:py-3 md:before:content-none tnum text-(--color-text-muted)">{{ c.visitsCount.toLocaleString('fa-IR') }}</td>
+                <td role="cell" data-label="اولین مراجعه" class="flex items-center justify-between gap-3 py-1 before:text-xs before:text-(--color-text-muted) before:content-[attr(data-label)] md:table-cell md:px-4 md:py-3 md:before:content-none tnum text-(--color-text-muted)">{{ formatDate(c.firstVisitAt) }}</td>
+                <td role="cell" data-label="آخرین مراجعه" class="flex items-center justify-between gap-3 py-1 before:text-xs before:text-(--color-text-muted) before:content-[attr(data-label)] md:table-cell md:px-4 md:py-3 md:before:content-none tnum text-(--color-text-muted)">{{ formatDate(c.lastVisitAt) }}</td>
+                <td role="cell" data-label="ارزش کل" class="flex items-center justify-between gap-3 py-1 before:text-xs before:text-(--color-text-muted) before:content-[attr(data-label)] md:table-cell md:px-4 md:py-3 md:before:content-none text-(--color-text-muted)"><span><span dir="ltr" class="tnum">{{ formatToman(c.grossValue) }}</span> تومان</span></td>
+                <td role="cell" data-label="وضعیت" class="flex items-center justify-between gap-3 py-1 before:text-xs before:text-(--color-text-muted) before:content-[attr(data-label)] md:table-cell md:px-4 md:py-3 md:before:content-none">
                   <StatusBadge :label="customerSegmentLabel(c.segment).label" :tone="customerSegmentLabel(c.segment).tone" />
                 </td>
               </tr>

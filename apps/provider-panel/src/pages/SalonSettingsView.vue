@@ -154,7 +154,7 @@ async function save() {
     // name until a hard reload, reading as if the save hadn't worked. Same idiom
     // OnboardingView uses after creating the salon.
     await refetch()
-    pushToast('تغییرات ذخیره شد')
+    pushToast('تغییرات ذخیره شد', 'success')
   }
   saving.value = false
 }

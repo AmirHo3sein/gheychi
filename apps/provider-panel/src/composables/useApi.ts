@@ -19,6 +19,16 @@ interface ApiFetchOptions {
   redirectOn401?: boolean
 }
 
+/**
+ * Called on a 401 instead of a hard `location.href` jump (which reloads the SPA and throws
+ * away whatever the owner had typed). main.ts installs the router-based handler; without
+ * one (unit tests, anything mounted outside the app) the old hard redirect is the fallback.
+ */
+let unauthorizedHandler: (() => void) | null = null
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  unauthorizedHandler = handler
+}
+
 const API_BASE = buildEnv(import.meta.env.VITE_API_BASE, 'http://localhost:3002/api')
 
 /**
@@ -73,11 +83,14 @@ export function useApi() {
         const apiError: ApiError = { status: res.status, message }
 
         if (apiError.status === 401) {
-          if (options.redirectOn401 !== false) window.location.href = '/login'
+          if (options.redirectOn401 !== false) {
+            if (unauthorizedHandler) unauthorizedHandler()
+            else window.location.href = '/login'
+          }
           return { data: null, error: apiError }
         }
 
-        if (!options.silent) useToast().push(message)
+        if (!options.silent) useToast().push(message, 'error')
         return { data: null, error: apiError }
       }
 
@@ -85,7 +98,7 @@ export function useApi() {
       return { data, error: null }
     } catch {
       const apiError: ApiError = { status: 0, message: 'خطا در ارتباط با سرور' }
-      if (!options.silent) useToast().push(apiError.message)
+      if (!options.silent) useToast().push(apiError.message, 'error')
       return { data: null, error: apiError }
     }
   }

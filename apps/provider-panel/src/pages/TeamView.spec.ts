@@ -4,6 +4,7 @@ import AppMultiSelect from '@/components/ui/AppMultiSelect.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import { resetToast, useToast } from '@/composables/useToast'
 import TeamView from './TeamView.vue'
+import { autoConfirm } from '@/test-utils/auto-confirm'
 
 const fetchMock = vi.fn()
 
@@ -316,18 +317,18 @@ describe('TeamView per-worker time off', () => {
   })
 
   it('removes a worker day off only after confirmation', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const confirmSpy = autoConfirm(false)
     const wrapper = await mountView()
     fetchMock.mockClear()
 
     await wrapper.get('[data-testid="remove-worker-off-e-w1"]').trigger('click')
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(confirmSpy).toHaveBeenCalled()
+    expect(confirmSpy.calls).toHaveLength(1)
     expect(fetchMock).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="worker-off-e-w1"]').exists()).toBe(true)
 
-    confirmSpy.mockReturnValue(true)
+    autoConfirm(true)
     await wrapper.get('[data-testid="remove-worker-off-e-w1"]').trigger('click')
     await new Promise((r) => setTimeout(r, 0))
     await wrapper.vm.$nextTick()

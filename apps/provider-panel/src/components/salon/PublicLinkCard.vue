@@ -120,7 +120,7 @@ async function saveHandle() {
   if (error) return
   await refetch()
   editing.value = false
-  pushToast('آدرس عمومی سالن به‌روزرسانی شد')
+  pushToast('آدرس عمومی سالن به‌روزرسانی شد', 'success')
 }
 </script>
 

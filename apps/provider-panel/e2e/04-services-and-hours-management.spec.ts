@@ -41,11 +41,6 @@ async function pickFirstDayOfMonth(page: Page, trigger: ReturnType<Page['getByTe
 // spec ever touches ServicesView.vue or HoursView.vue -- the actual post-onboarding pages an
 // approved owner uses to manage services and working hours day to day -- at all.
 test('services and hours management: edit/add/deactivate a service, weekly hours, and a schedule exception', async ({ page }) => {
-  // Accept every window.confirm() this flow triggers (a price change, deactivating a service,
-  // removing a schedule exception) -- Playwright auto-dismisses an unhandled dialog, which
-  // reads as "cancelled" and would silently no-op each of those actions.
-  page.on('dialog', (dialog) => dialog.accept())
-
   await loginAsOwner(page)
 
   // -- Services: edit the seeded service's price, add a new one, then deactivate it --
@@ -55,7 +50,10 @@ test('services and hours management: edit/add/deactivate a service, weekly hours
   const seededServiceCard = page.locator('[data-testid^="service-card-"]').filter({ hasText: 'کوتاهی مو' })
   await expect(seededServiceCard).toBeVisible()
   await seededServiceCard.getByTestId('service-price-input').fill('350000')
-  await seededServiceCard.getByTestId('service-price-input').dispatchEvent('change')
+  // Inline edits are drafts until the row's explicit «ذخیره»; the price change is then
+  // confirmed in the in-app confirm sheet (not a native dialog).
+  await seededServiceCard.getByTestId('save-service-row').click()
+  await page.getByTestId('confirm-accept').click()
   await expect(page.getByText('قیمت به‌روزرسانی شد')).toBeVisible()
 
   // Persisted, not just an optimistic toast -- reload and confirm the new price survived.
@@ -81,6 +79,7 @@ test('services and hours management: edit/add/deactivate a service, weekly hours
   await expect(seededServiceCard).toBeVisible()
 
   await newServiceCard.getByTestId('deactivate-service').click()
+  await page.getByTestId('confirm-accept').click()
   await expect(newServiceCard).not.toBeVisible()
   await expect(seededServiceCard).toBeVisible()
 
@@ -110,5 +109,6 @@ test('services and hours management: edit/add/deactivate a service, weekly hours
   await expect(page.getByRole('button', { name: 'حذف تعطیلی' })).toHaveCount(1)
 
   await page.getByRole('button', { name: 'حذف تعطیلی' }).click()
+  await page.getByTestId('confirm-accept').click()
   await expect(page.getByText('تعطیلی موردی ثبت نشده است.')).toBeVisible()
 })

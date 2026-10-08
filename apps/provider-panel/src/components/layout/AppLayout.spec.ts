@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { resetConfirm, useConfirm } from '@/composables/useConfirm'
 import { resetSalon, useSalon } from '@/composables/useSalon'
 import { useSessionStore } from '@/stores/session'
 import AppLayout from './AppLayout.vue'
@@ -59,5 +60,24 @@ describe('AppLayout logout', () => {
     expect(salon.value).toBeNull()
     expect(checked.value).toBe(false)
     expect(router.currentRoute.value.name).toBe('login')
+  })
+
+  it('gives the icon-only controls an aria-label, marks the current nav link, and hosts the confirm sheet', async () => {
+    const router = makeRouter()
+    await router.push('/')
+    await router.isReady()
+    const wrapper = mount(AppLayout, { global: { plugins: [router] } })
+
+    expect(wrapper.get('button[title="خروج"]').attributes('aria-label')).toBe('خروج')
+    const theme = wrapper.findAll('header button')[0]!
+    expect(theme.attributes('aria-label')).toBe(theme.attributes('title'))
+    // Same pattern as the bottom bar: the dashboard link of the header nav is the page.
+    expect(wrapper.get('header nav a[aria-current="page"]').text()).toContain('داشبورد')
+    expect(wrapper.findAll('header nav a:not([aria-current])').length).toBeGreaterThan(0)
+
+    useConfirm().confirm({ title: 'آیا مطمئنید؟' })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(true)
+    resetConfirm()
   })
 })

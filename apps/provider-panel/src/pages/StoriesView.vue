@@ -8,6 +8,7 @@ import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect, { type SelectOption } from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useApi } from '@/composables/useApi'
+import { useConfirm } from '@/composables/useConfirm'
 import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import { formatRemainingTime } from '@/utils/remaining-time'
 
@@ -26,6 +27,7 @@ interface Service {
 }
 
 const { apiFetch } = useApi()
+const { confirm } = useConfirm()
 const { flags: featureFlags } = useFeatureFlags()
 const stories = ref<SalonStory[]>([])
 const services = ref<Service[]>([])
@@ -91,7 +93,7 @@ function onUploaded(story: SalonStory) {
 
 async function removeStory(id: string) {
   if (deletingId.value) return
-  if (!window.confirm('این استوری حذف شود؟')) return
+  if (!(await confirm({ title: 'این استوری حذف شود؟', confirmLabel: 'حذف', tone: 'danger' }))) return
   deletingId.value = id
   const { error } = await apiFetch(`/salons/mine/stories/${id}`, { method: 'DELETE' })
   deletingId.value = null

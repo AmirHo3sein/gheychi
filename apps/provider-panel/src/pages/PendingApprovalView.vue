@@ -23,7 +23,7 @@ async function checkStatus() {
   refreshing.value = true
   const { error } = await refetch()
   refreshing.value = false
-  if (error) pushToast('بررسی وضعیت با خطا مواجه شد. دوباره تلاش کنید.')
+  if (error) pushToast('بررسی وضعیت با خطا مواجه شد. دوباره تلاش کنید.', 'error')
 }
 </script>
 

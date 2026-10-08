@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetToast } from '@/composables/useToast'
 import PackagesView from './PackagesView.vue'
+import { autoConfirm } from '@/test-utils/auto-confirm'
 
 const SERVICES = [
   { id: 'svc-1', name: 'آرایش', isActive: true },
@@ -107,7 +108,7 @@ describe('PackagesView', () => {
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => SERVICES })
       .mockResolvedValueOnce({ ok: true, status: 204, json: async () => null })
     vi.stubGlobal('fetch', fetchMock)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    autoConfirm(true)
 
     const wrapper = mount(PackagesView)
     await new Promise((r) => setTimeout(r, 0))

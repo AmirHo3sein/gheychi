@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import PhotosView from './PhotosView.vue'
+import { autoConfirm } from '@/test-utils/auto-confirm'
 
 const PHOTO_COVER = { id: 'p-cover', url: 'http://localhost:3002/uploads/salons/s1/photos/a.jpg', isCover: true, sortOrder: 0 }
 const PHOTO_OTHER = { id: 'p-other', url: 'http://localhost:3002/uploads/salons/s1/photos/b.jpg', isCover: false, sortOrder: 1 }
@@ -53,13 +54,13 @@ describe('PhotosView', () => {
   it('does not delete a photo without confirmation, and the row stays untouched', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, status: 200, json: async () => [PHOTO_OTHER] })
     vi.stubGlobal('fetch', fetchMock)
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const confirmSpy = autoConfirm(false)
 
     const wrapper = await mountPhotos()
     await wrapper.find('[data-testid="delete-photo"]').trigger('click')
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(confirmSpy).toHaveBeenCalled()
+    expect(confirmSpy.calls).toHaveLength(1)
     // Only the initial GET happened -- no DELETE was fired.
     expect(fetchMock.mock.calls.length).toBe(1)
   })
@@ -67,23 +68,23 @@ describe('PhotosView', () => {
   it('uses generic confirm copy for a non-cover photo delete', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, status: 200, json: async () => [PHOTO_OTHER] })
     vi.stubGlobal('fetch', fetchMock)
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const confirmSpy = autoConfirm(false)
 
     const wrapper = await mountPhotos()
     await wrapper.find('[data-testid="delete-photo"]').trigger('click')
 
-    expect(confirmSpy).toHaveBeenCalledWith('این تصویر حذف شود؟')
+    expect(confirmSpy.calls[0].title).toBe('این تصویر حذف شود؟')
   })
 
   it('warns distinctly when deleting the current cover photo', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, status: 200, json: async () => [PHOTO_COVER] })
     vi.stubGlobal('fetch', fetchMock)
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const confirmSpy = autoConfirm(false)
 
     const wrapper = await mountPhotos()
     await wrapper.find('[data-testid="delete-photo"]').trigger('click')
 
-    expect(confirmSpy).toHaveBeenCalledWith('این عکس، عکس اصلی شماست. حذف شود؟')
+    expect(confirmSpy.calls[0].title).toBe('این عکس، عکس اصلی شماست. حذف شود؟')
   })
 
   it('deletes a photo after confirmation, removing the row only on success', async () => {
@@ -91,7 +92,7 @@ describe('PhotosView', () => {
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [PHOTO_OTHER] }) // GET photos
       .mockResolvedValueOnce({ ok: true, status: 204, json: async () => null }) // DELETE photo
     vi.stubGlobal('fetch', fetchMock)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    autoConfirm(true)
 
     const wrapper = await mountPhotos()
     await wrapper.find('[data-testid="delete-photo"]').trigger('click')
@@ -108,7 +109,7 @@ describe('PhotosView', () => {
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [PHOTO_OTHER] }) // GET photos
       .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({ message: 'boom' }) }) // DELETE fails
     vi.stubGlobal('fetch', fetchMock)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    autoConfirm(true)
 
     const wrapper = await mountPhotos()
     await wrapper.find('[data-testid="delete-photo"]').trigger('click')

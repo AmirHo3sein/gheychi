@@ -8,6 +8,7 @@ import AppInput from '@/components/ui/AppInput.vue'
 import AppMoneyInput from '@/components/ui/AppMoneyInput.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useApi } from '@/composables/useApi'
+import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { formatToman } from '@/utils/format-toman'
 
@@ -50,6 +51,7 @@ function priceDisplay(p: Pick<Package, 'pricingType' | 'price' | 'priceMax'>): s
 }
 
 const { apiFetch } = useApi()
+const { confirm } = useConfirm()
 const { push: pushToast } = useToast()
 const packages = ref<Package[]>([])
 const services = ref<Service[]>([])
@@ -138,15 +140,21 @@ async function createPackage() {
 
   resetForm()
   await load()
-  pushToast('پکیج ایجاد شد')
+  pushToast('پکیج ایجاد شد', 'success')
 }
 
 async function archive(pkg: Package) {
-  if (!window.confirm(`پکیج «${pkg.name}» برای همیشه غیرفعال شود؟ این عملیات قابل بازگشت نیست.`)) return
+  const ok = await confirm({
+    title: `پکیج «${pkg.name}» برای همیشه غیرفعال شود؟`,
+    message: 'این عملیات قابل بازگشت نیست.',
+    confirmLabel: 'غیرفعال کن',
+    tone: 'danger',
+  })
+  if (!ok) return
   const { error } = await apiFetch(`/salons/mine/packages/${pkg.id}`, { method: 'DELETE' })
   if (!error) {
     packages.value = packages.value.filter((p) => p.id !== pkg.id)
-    pushToast('پکیج غیرفعال شد')
+    pushToast('پکیج غیرفعال شد', 'success')
   }
 }
 </script>

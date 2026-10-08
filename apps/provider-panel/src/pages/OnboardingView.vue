@@ -233,6 +233,7 @@ async function submit() {
       <button
         type="button"
         title="خروج"
+        aria-label="خروج"
         data-testid="onboarding-logout"
         class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-(--color-text-muted) transition-colors hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text)"
         @click="logout"

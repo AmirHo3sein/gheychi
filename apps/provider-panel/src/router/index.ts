@@ -28,6 +28,7 @@ const routes = [
       { path: 'settings', name: 'settings', component: () => import('@/pages/SalonSettingsView.vue') },
       { path: 'reviews', name: 'reviews', component: () => import('@/pages/ReviewsView.vue') },
       { path: 'earnings', name: 'earnings', component: () => import('@/pages/EarningsView.vue') },
+      { path: 'more', name: 'more', component: () => import('@/pages/MoreView.vue') },
       { path: 'plan', name: 'plan', component: () => import('@/pages/PlanView.vue') },
       // Deliberately NOT guarded on `referralsEnabled`. The flag only stops new rewards
       // being granted server-side; the page still holds the owner's referral history and
@@ -83,7 +84,7 @@ export function createAppRouter(history: RouterHistory): Router {
       // salon would be invited to create a second one). Cancel this navigation and say so;
       // the next navigation (or a reload) probes again since `checked` never flipped.
       if (error && !salon.value) {
-        useToast().push('اطلاعات آرایشگاه بارگذاری نشد. دوباره تلاش کنید.')
+        useToast().push('اطلاعات آرایشگاه بارگذاری نشد. دوباره تلاش کنید.', 'error')
         return false
       }
     }

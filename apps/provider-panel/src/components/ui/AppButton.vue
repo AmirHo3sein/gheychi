@@ -9,8 +9,10 @@ withDefaults(
     disabled?: boolean
     type?: 'button' | 'submit'
     block?: boolean
+    /** Raises the compact `sm` size to the 44px touch-target minimum (phone action rows). */
+    touch?: boolean
   }>(),
-  { variant: 'primary', size: 'md', loading: false, disabled: false, type: 'button', block: false },
+  { variant: 'primary', size: 'md', loading: false, disabled: false, type: 'button', block: false, touch: false },
 )
 </script>
 
@@ -23,10 +25,10 @@ withDefaults(
     :class="[
       block ? 'w-full' : '',
       // sm intentionally drops below the 44px touch-target min the other two sizes keep --
-      // only used for a row of several compact secondary actions (e.g. a booking card's
-      // status buttons) where 44px each would dominate the card; never the sole/primary
-      // action on a screen.
-      size === 'lg' ? 'min-h-11 px-5 py-3.5 text-base' : size === 'sm' ? 'min-h-9 px-3 py-1.5 text-xs' : 'min-h-11 px-4 py-2.5 text-sm',
+      // only used for a row of several compact secondary actions where 44px each would
+      // dominate the card; never the sole/primary action on a screen. Rows tapped on a phone
+      // (a booking card's status buttons) pass `touch` to get the 44px floor back.
+      size === 'lg' ? 'min-h-11 px-5 py-3.5 text-base' : size === 'sm' ? (touch ? 'min-h-11 px-3.5 py-2 text-xs' : 'min-h-9 px-3 py-1.5 text-xs') : 'min-h-11 px-4 py-2.5 text-sm',
       variant === 'primary' && 'bg-(--color-accent-strong) text-(--color-fill-text) shadow-(--shadow-sm) hover:bg-(--color-accent-deep) hover:shadow-(--shadow-md) active:bg-(--color-accent-pressed)',
       variant === 'secondary' && 'border border-(--color-border) bg-(--color-border-soft) text-(--color-text) hover:bg-(--color-border)',
       variant === 'ghost' && 'bg-transparent text-(--color-text-muted) hover:bg-(--color-border-soft) hover:text-(--color-text)',

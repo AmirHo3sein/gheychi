@@ -6,6 +6,7 @@ import { useApi } from '@/composables/useApi'
 import { resetSalon, useSalon } from '@/composables/useSalon'
 import { useTheme } from '@/composables/useTheme'
 import { useSessionStore } from '@/stores/session'
+import ConfirmSheet from '@/components/ui/ConfirmSheet.vue'
 import BottomNav from './BottomNav.vue'
 import { NAV_TABS, isTabActive } from './nav-tabs'
 
@@ -61,7 +62,7 @@ async function logout() {
       </div>
 
       <!--
-        Desktop/laptop navigation. The same five destinations the bottom bar carries, moved
+        Desktop/laptop navigation. The same destinations the bottom bar carries, moved
         inline from lg up so a wide screen isn't left with a phone bar spanning 1920px. The
         bar and this row are mutually exclusive (lg:hidden / hidden lg:flex), never both.
       -->
@@ -70,6 +71,7 @@ async function logout() {
           v-for="tab in NAV_TABS"
           :key="tab.to"
           :to="tab.to"
+          :aria-current="isTabActive(tab.to, route.path) ? 'page' : undefined"
           class="group relative flex min-h-11 items-center gap-2 whitespace-nowrap rounded-xl px-3 text-sm font-medium transition-all duration-200 active:scale-[0.97]"
           :class="
             isTabActive(tab.to, route.path)
@@ -84,9 +86,9 @@ async function logout() {
 
       <div class="flex flex-1 items-center justify-end gap-1">
         <!--
-          The referral/wallet screen's entry point. Not a sixth NAV_TAB: the bottom bar's
-          five destinations are already sized against 320px / 5 = 64px apiece (see
-          BottomNav.vue), and a sixth would shrink every primary destination to make room
+          The referral/wallet screen's entry point. Not a seventh NAV_TAB: the bottom bar's
+          six destinations are already sized against 320px / 6 = 53px apiece (see
+          nav-tabs.ts), and one more would shrink every one to make room
           for a screen an owner visits occasionally. It also cannot live in the dashboard's
           quick-link grid, where the other secondary screens are reached, because it must be
           reachable from the wallet-bearing screens themselves. A header affordance is
@@ -96,6 +98,7 @@ async function logout() {
           to="/referral"
           title="معرفی و پاداش"
           aria-label="معرفی و پاداش"
+          :aria-current="route.path === '/referral' ? 'page' : undefined"
           data-testid="nav-referral"
           class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-all duration-200 hover:bg-(--color-border-soft) active:scale-90"
           :class="route.path === '/referral' ? 'bg-(--color-accent-soft) text-(--color-accent-text)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
@@ -105,6 +108,7 @@ async function logout() {
         <button
           type="button"
           :title="isDark ? 'حالت روشن' : 'حالت تیره'"
+          :aria-label="isDark ? 'حالت روشن' : 'حالت تیره'"
           class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-(--color-text-muted) transition-all duration-200 hover:bg-(--color-border-soft) hover:text-(--color-text) active:scale-90"
           @click="toggleTheme"
         >
@@ -113,6 +117,7 @@ async function logout() {
         <button
           type="button"
           title="خروج"
+          aria-label="خروج"
           class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-(--color-text-muted) transition-all duration-200 hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text) active:scale-90"
           @click="logout"
         >
@@ -145,5 +150,6 @@ async function logout() {
     </main>
 
     <BottomNav />
+    <ConfirmSheet />
   </div>
 </template>

@@ -28,6 +28,7 @@ function todayJalali() {
 }
 
 const root = ref<HTMLElement | null>(null)
+const trigger = ref<HTMLButtonElement | null>(null)
 const open = ref(false)
 
 const selectedJalali = computed(() => {
@@ -94,10 +95,18 @@ function nextMonth() {
   }
 }
 
+// Closing from inside the popover (pick / Escape / footer actions) hands focus back to the
+// trigger so a keyboard user isn't dropped at the top of the page; an outside click closes
+// without stealing focus from whatever was just clicked.
+function close(returnFocus = true) {
+  open.value = false
+  if (returnFocus) trigger.value?.focus()
+}
+
 function pick(day: DayCell) {
   if (!day.inMonth) return
   emit('update:modelValue', day.gregorian)
-  open.value = false
+  close()
 }
 
 function goToday() {
@@ -106,12 +115,12 @@ function goToday() {
   viewMonth.value = t.jm
   const g = toGregorian(t.jy, t.jm, t.jd)
   emit('update:modelValue', `${g.gy}-${String(g.gm).padStart(2, '0')}-${String(g.gd).padStart(2, '0')}`)
-  open.value = false
+  close()
 }
 
 function clear() {
   emit('update:modelValue', '')
-  open.value = false
+  close()
 }
 
 const popover = ref<HTMLElement | null>(null)
@@ -145,15 +154,31 @@ function toggle() {
   }
   open.value = !open.value
   keepPopoverOnScreen()
+  if (open.value) focusIntoPopover()
+}
+
+// Selected day, else today, else the first day of the month -- the cell a keyboard user
+// most likely wants to start from.
+async function focusIntoPopover() {
+  await nextTick()
+  const el = popover.value
+  if (!el) return
+  const target =
+    el.querySelector<HTMLElement>('[data-selected="true"]') ??
+    el.querySelector<HTMLElement>('[data-today="true"]') ??
+    el.querySelector<HTMLElement>('button.tnum:not([disabled])')
+  target?.focus()
 }
 
 function onDocumentClick(e: MouseEvent) {
-  if (root.value && !root.value.contains(e.target as Node)) open.value = false
+  if (root.value && !root.value.contains(e.target as Node)) close(false)
 }
 
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape' && open.value) {
-    open.value = false
+    // Don't let an enclosing dialog/handler also react to the same keypress.
+    e.stopPropagation()
+    close()
   }
 }
 
@@ -170,6 +195,7 @@ onBeforeUnmount(() => {
 <template>
   <div ref="root" class="relative" @keydown="onKeydown">
     <button
+      ref="trigger"
       type="button"
       class="flex w-full items-center gap-2 rounded-xl border border-(--color-border) bg-(--color-surface-card) p-2 text-sm"
       :aria-label="ariaLabel"
@@ -190,27 +216,34 @@ onBeforeUnmount(() => {
       v-if="open"
       ref="popover"
       data-testid="date-popover"
-      class="absolute z-50 mt-1.5 w-64 max-w-[calc(100vw-1rem)] rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-3 shadow-(--shadow-md)"
+      role="dialog"
+      aria-label="انتخاب تاریخ"
+      class="absolute z-50 mt-1.5 w-[21rem] max-w-[calc(100vw-1rem)] rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-2 shadow-(--shadow-md)"
       :style="popoverShiftX === 0 ? undefined : { transform: `translateX(${popoverShiftX}px)` }"
     >
+      <!-- RTL: the first DOM child sits at the physical right, so "previous" is there with a
+           rotated chevron pointing right, and "next" is at the left pointing left -- the same
+           convention as BookingsView's day stepper and ReviewsView's pagination. 44px targets. -->
       <div class="mb-2 flex items-center justify-between">
-        <button type="button" aria-label="ماه بعد" class="rounded-lg p-1.5 hover:bg-(--color-border-soft)" @click="nextMonth">
-          <AppIcon name="chevron-left" :size="16" class="rotate-180 text-(--color-text-muted)" />
+        <button type="button" aria-label="ماه قبل" class="flex h-11 w-11 items-center justify-center rounded-lg hover:bg-(--color-border-soft)" @click="prevMonth">
+          <AppIcon name="chevron-left" :size="18" class="rotate-180 text-(--color-text-muted)" />
         </button>
         <p class="text-sm font-bold text-(--color-text)">{{ MONTHS[viewMonth - 1] }} {{ toPersianDigits(viewYear) }}</p>
-        <button type="button" aria-label="ماه قبل" class="rounded-lg p-1.5 hover:bg-(--color-border-soft)" @click="prevMonth">
-          <AppIcon name="chevron-left" :size="16" class="text-(--color-text-muted)" />
+        <button type="button" aria-label="ماه بعد" class="flex h-11 w-11 items-center justify-center rounded-lg hover:bg-(--color-border-soft)" @click="nextMonth">
+          <AppIcon name="chevron-left" :size="18" class="text-(--color-text-muted)" />
         </button>
       </div>
 
-      <div class="grid grid-cols-7 gap-1 text-center">
+      <div class="grid grid-cols-7 gap-px text-center">
         <span v-for="w in WEEKDAYS" :key="w" class="py-1 text-xs font-semibold text-(--color-text-muted)">{{ w }}</span>
         <button
           v-for="(day, i) in days"
           :key="i"
           type="button"
           :disabled="!day.inMonth"
-          class="tnum flex h-8 items-center justify-center rounded-lg text-sm transition-colors disabled:cursor-default"
+          :data-selected="day.isSelected || undefined"
+          :data-today="day.isToday || undefined"
+          class="tnum flex h-10 min-w-0 items-center justify-center rounded-lg text-sm transition-colors disabled:cursor-default"
           :class="[
             !day.inMonth && 'invisible',
             day.isSelected ? 'bg-(--color-accent) font-bold text-(--color-fill-text)' : 'hover:bg-(--color-border-soft)',
@@ -223,8 +256,8 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="mt-2 flex justify-between border-t border-(--color-border-soft) pt-2">
-        <button type="button" class="text-xs font-semibold text-(--color-accent-text)" @click="goToday">امروز</button>
-        <button type="button" class="text-xs font-semibold text-(--color-text-muted)" @click="clear">پاک کردن</button>
+        <button type="button" class="min-h-11 px-3 text-xs font-semibold text-(--color-accent-text)" @click="goToday">امروز</button>
+        <button type="button" class="min-h-11 px-3 text-xs font-semibold text-(--color-text-muted)" @click="clear">پاک کردن</button>
       </div>
     </div>
   </div>

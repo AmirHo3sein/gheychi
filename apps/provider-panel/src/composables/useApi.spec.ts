@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { normalizeApiMessage, useApi } from './useApi'
+import { normalizeApiMessage, setUnauthorizedHandler, useApi } from './useApi'
 import { useToast } from './useToast'
 
 describe('useApi', () => {
@@ -9,6 +9,7 @@ describe('useApi', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    setUnauthorizedHandler(null)
   })
 
   it('returns parsed JSON data on success', async () => {
@@ -36,6 +37,19 @@ describe('useApi', () => {
     await apiFetch('/salons/mine')
 
     expect(window.location.href).toBe('/login')
+  })
+
+  it('delegates a 401 to the installed handler instead of a hard reload', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({}) }))
+    const handler = vi.fn()
+    setUnauthorizedHandler(handler)
+
+    const { apiFetch } = useApi()
+    const { error } = await apiFetch('/salons/mine')
+
+    expect(handler).toHaveBeenCalledTimes(1)
+    expect(window.location.href).toBe('')
+    expect(error?.status).toBe(401)
   })
 
   it('does not redirect on 401 when redirectOn401 is false', async () => {

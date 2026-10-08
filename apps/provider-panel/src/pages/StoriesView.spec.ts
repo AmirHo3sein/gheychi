@@ -5,6 +5,7 @@ import AppSelect from '@/components/ui/AppSelect.vue'
 import { resetFeatureFlags } from '@/composables/useFeatureFlags'
 import { resetToast } from '@/composables/useToast'
 import StoriesView from './StoriesView.vue'
+import { autoConfirm } from '@/test-utils/auto-confirm'
 
 const fetchMock = vi.fn()
 
@@ -113,12 +114,14 @@ describe('StoriesView', () => {
   it('deletes a story only after confirmation, then refetches the list', async () => {
     const wrapper = await mountView()
 
-    vi.stubGlobal('confirm', vi.fn().mockReturnValue(false))
+    autoConfirm(false)
     await wrapper.findAll('[data-testid="delete-story"]')[0]!.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
     expect(fetchMock).not.toHaveBeenCalledWith('/salons/mine/stories/st1', { method: 'DELETE' })
 
-    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+    autoConfirm(true)
     await wrapper.findAll('[data-testid="delete-story"]')[0]!.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
     expect(fetchMock).toHaveBeenCalledWith('/salons/mine/stories/st1', { method: 'DELETE' })
 
     vi.unstubAllGlobals()

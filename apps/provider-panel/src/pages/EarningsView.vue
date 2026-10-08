@@ -166,26 +166,31 @@ function isValidAmount(amount: number | null | undefined): boolean {
       />
       <AppCard v-else :padded="false" class="overflow-hidden">
         <div class="overflow-x-auto">
-          <table class="w-full text-right text-sm">
-            <thead>
-              <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
-                <th scope="col" class="px-4 py-3 font-semibold">دوره</th>
-                <th scope="col" class="px-4 py-3 font-semibold">خالص قابل‌پرداخت</th>
-                <th scope="col" class="px-4 py-3 font-semibold">پرداخت‌شده</th>
-                <th scope="col" class="px-4 py-3 font-semibold">وضعیت</th>
+          <!-- One markup, two layouts: below md each <tr> is a stacked block whose cells print their
+               own column name (data-label); from md up it is the plain table. The explicit
+               ARIA roles keep table semantics for assistive tech while display:block would
+               otherwise drop them. -->
+          <table role="table" class="block w-full text-right text-sm md:table">
+            <thead role="rowgroup" class="hidden md:table-header-group">
+              <tr role="row" class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
+                <th role="columnheader" scope="col" class="px-4 py-3 font-semibold">دوره</th>
+                <th role="columnheader" scope="col" class="px-4 py-3 font-semibold">خالص قابل‌پرداخت</th>
+                <th role="columnheader" scope="col" class="px-4 py-3 font-semibold">پرداخت‌شده</th>
+                <th role="columnheader" scope="col" class="px-4 py-3 font-semibold">وضعیت</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody role="rowgroup" class="block md:table-row-group">
               <tr
                 v-for="invoice in invoices"
                 :key="invoice.id"
                 data-testid="invoice-row"
-                class="border-b border-(--color-border-soft) last:border-0"
+                role="row"
+                class="block border-b border-(--color-border-soft) p-4 last:border-0 md:table-row md:p-0"
               >
-                <td class="tnum px-4 py-3 text-(--color-text)">{{ jalaliMonthLabel(invoice.jalaliYear, invoice.jalaliMonth) }}</td>
-                <td class="px-4 py-3 font-semibold text-(--color-text)"><span dir="ltr" class="tnum">{{ formattedAmount(invoice.totalNetPayable) }}</span><span v-if="isValidAmount(invoice.totalNetPayable)"> تومان</span></td>
-                <td class="px-4 py-3 text-(--color-text-muted)"><span dir="ltr" class="tnum">{{ formattedAmount(invoice.paidTotal) }}</span><span v-if="isValidAmount(invoice.paidTotal)"> تومان</span></td>
-                <td class="px-4 py-3">
+                <td role="cell" data-label="دوره" class="flex items-center justify-between gap-3 py-1 before:text-xs before:text-(--color-text-muted) before:content-[attr(data-label)] md:table-cell md:px-4 md:py-3 md:before:content-none tnum text-(--color-text)">{{ jalaliMonthLabel(invoice.jalaliYear, invoice.jalaliMonth) }}</td>
+                <td role="cell" data-label="خالص قابل‌پرداخت" class="flex items-center justify-between gap-3 py-1 before:text-xs before:text-(--color-text-muted) before:content-[attr(data-label)] md:table-cell md:px-4 md:py-3 md:before:content-none font-semibold text-(--color-text)"><span><span dir="ltr" class="tnum">{{ formattedAmount(invoice.totalNetPayable) }}</span><span v-if="isValidAmount(invoice.totalNetPayable)"> تومان</span></span></td>
+                <td role="cell" data-label="پرداخت‌شده" class="flex items-center justify-between gap-3 py-1 before:text-xs before:text-(--color-text-muted) before:content-[attr(data-label)] md:table-cell md:px-4 md:py-3 md:before:content-none text-(--color-text-muted)"><span><span dir="ltr" class="tnum">{{ formattedAmount(invoice.paidTotal) }}</span><span v-if="isValidAmount(invoice.paidTotal)"> تومان</span></span></td>
+                <td role="cell" data-label="وضعیت" class="flex items-center justify-between gap-3 py-1 before:text-xs before:text-(--color-text-muted) before:content-[attr(data-label)] md:table-cell md:px-4 md:py-3 md:before:content-none">
                   <StatusBadge :label="invoiceStatusLabel(invoice.status).label" :tone="invoiceStatusLabel(invoice.status).tone" />
                 </td>
               </tr>

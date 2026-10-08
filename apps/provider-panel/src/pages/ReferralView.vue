@@ -275,7 +275,7 @@ async function copyText(text: string, successMessage: string) {
     // Clipboard access is refused outright in a non-secure context and on a page that
     // isn't focused, so this is a real path, not a theoretical one -- and the code stays
     // selectable on screen either way.
-    pushToast('کپی ناموفق بود. کد را دستی انتخاب کنید.')
+    pushToast('کپی ناموفق بود. کد را دستی انتخاب کنید.', 'error')
   }
 }
 </script>

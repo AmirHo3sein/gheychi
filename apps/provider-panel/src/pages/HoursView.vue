@@ -9,6 +9,7 @@ import AppInput from '@/components/ui/AppInput.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import { useApi } from '@/composables/useApi'
+import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { toPersianDigits } from '@/utils/digits'
 import { validateWorkingHours } from '@/utils/working-hours'
@@ -37,6 +38,7 @@ interface ScheduleException {
 }
 
 const { apiFetch } = useApi()
+const { confirm } = useConfirm()
 const { push: pushToast } = useToast()
 const hours = ref(
   Array.from({ length: 7 }, (_, weekday) => ({ weekday, enabled: false, ranges: [{ openTime: '09:00', closeTime: '20:00' }] as TimeRange[] })),
@@ -107,7 +109,7 @@ async function saveHours() {
     .flatMap((h) => h.ranges.map((r) => ({ weekday: h.weekday, openTime: r.openTime, closeTime: r.closeTime })))
   const { error } = await apiFetch('/salons/mine/hours', { method: 'PUT', body: { hours: enabled } })
   saving.value = false
-  if (!error) pushToast('ساعات کاری ذخیره شد')
+  if (!error) pushToast('ساعات کاری ذخیره شد', 'success')
 }
 
 async function addException() {
@@ -137,13 +139,13 @@ async function addException() {
 }
 
 async function removeException(id: string) {
-  if (!window.confirm('این تعطیلی حذف شود؟')) return
+  if (!(await confirm({ title: 'این تعطیلی حذف شود؟', confirmLabel: 'حذف', tone: 'danger' }))) return
   await apiFetch(`/salons/mine/exceptions/${id}`, { method: 'DELETE' })
   await loadExceptions()
 }
 
 function exceptionDateLabel(e: ScheduleException): string {
-  return new Date(e.date).toLocaleDateString('fa-IR')
+  return new Date(e.date).toLocaleDateString('fa-IR', { timeZone: 'Asia/Tehran' })
 }
 
 // Postgres `time` columns round-trip through pg as HH:MM:SS -- same truncation loadHours()

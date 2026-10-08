@@ -10,6 +10,7 @@ import type { SelectOption } from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import { useApi } from '@/composables/useApi'
+import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { toEnglishDigits } from '@/utils/digits'
 
@@ -46,6 +47,7 @@ interface ScheduleException {
 }
 
 const { apiFetch } = useApi()
+const { confirm } = useConfirm()
 const { push: pushToast } = useToast()
 const workers = ref<Worker[]>([])
 const loading = ref(true)
@@ -114,7 +116,7 @@ function workerOffDays(workerId: string): ScheduleException[] {
 }
 
 function offDayLabel(e: ScheduleException): string {
-  return new Date(`${e.date}T12:00:00Z`).toLocaleDateString('fa-IR')
+  return new Date(`${e.date}T12:00:00Z`).toLocaleDateString('fa-IR', { timeZone: 'Asia/Tehran' })
 }
 
 async function addWorkerOffDay(worker: Worker) {
@@ -132,7 +134,7 @@ async function addWorkerOffDay(worker: Worker) {
 }
 
 async function removeWorkerOffDay(id: string) {
-  if (!window.confirm('این روز مرخصی حذف شود؟')) return
+  if (!(await confirm({ title: 'این روز مرخصی حذف شود؟', confirmLabel: 'حذف', tone: 'danger' }))) return
   const { error } = await apiFetch(`/salons/mine/exceptions/${id}`, { method: 'DELETE' })
   if (error) return
   exceptions.value = exceptions.value.filter((e) => e.id !== id)
@@ -236,9 +238,9 @@ async function toggleReferralCode(worker: Worker) {
 async function copyReferralCode(code: string) {
   try {
     await navigator.clipboard.writeText(code)
-    pushToast('کد در کلیپ‌بورد کپی شد.')
+    pushToast('کد در کلیپ‌بورد کپی شد.', 'success')
   } catch {
-    pushToast('کپی کد ناموفق بود.')
+    pushToast('کپی کد ناموفق بود.', 'error')
   }
 }
 </script>

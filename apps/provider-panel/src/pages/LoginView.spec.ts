@@ -172,4 +172,42 @@ describe('LoginView', () => {
     expect(errorEl.text()).not.toContain('نادرست یا منقضی شده است')
     expect(useSessionStore().isLoggedIn).toBe(false)
   })
+
+  async function loginWithRedirect(redirect: string) {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({}) })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({ user: { id: 'u1', phone: '09120000000', name: 'Sara', gender: 'female', role: 'provider' } }),
+      }))
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/login', name: 'login', component: LoginView },
+        { path: '/', name: 'dashboard', component: { template: '<div />' } },
+        { path: '/bookings', name: 'bookings', component: { template: '<div />' } },
+      ],
+    })
+    await router.push({ path: '/login', query: { redirect } })
+    await router.isReady()
+    const wrapper = mount(LoginView, { global: { plugins: [router] } })
+    await wrapper.find('[data-testid="phone-input"]').setValue('09120000000')
+    await wrapper.find('[data-testid="phone-form"]').trigger('submit')
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.find('[data-testid="code-input"]').setValue('1234')
+    await wrapper.find('[data-testid="code-form"]').trigger('submit')
+    await new Promise((r) => setTimeout(r, 0))
+    return router
+  }
+
+  it('returns to the ?redirect= path after a successful login', async () => {
+    const router = await loginWithRedirect('/bookings')
+    expect(router.currentRoute.value.path).toBe('/bookings')
+  })
+
+  it('ignores an off-site ?redirect= and lands on the dashboard', async () => {
+    const router = await loginWithRedirect('//evil.com')
+    expect(router.currentRoute.value.name).toBe('dashboard')
+  })
 })

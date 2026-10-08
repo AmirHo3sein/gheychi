@@ -33,4 +33,38 @@ describe('ToastContainer', () => {
     expect(wrapper.text()).toContain('اولین خطا')
     expect(wrapper.text()).toContain('دومین خطا')
   })
+
+  it('renders an error toast as an alert with the danger tone', async () => {
+    const { push } = useToast()
+    const wrapper = mount(ToastContainer)
+
+    push('خطا', 'error')
+    push('ذخیره شد', 'success')
+    await wrapper.vm.$nextTick()
+
+    const [error, success] = wrapper.findAll('[data-testid="toast"]')
+    expect(error.attributes('role')).toBe('alert')
+    expect(error.attributes('data-tone')).toBe('error')
+    expect(error.classes().join(' ')).toContain('--tone-danger-bg')
+    expect(success.attributes('role')).toBeUndefined()
+    // A single polite live region wraps the whole stack.
+    expect(wrapper.attributes('role')).toBe('status')
+  })
+
+  it('dismisses a toast from its close button', async () => {
+    const { push } = useToast()
+    const wrapper = mount(ToastContainer)
+
+    push('یک')
+    push('دو')
+    await wrapper.vm.$nextTick()
+
+    const close = wrapper.findAll('[data-testid="toast-dismiss"]')[0]
+    expect(close.attributes('aria-label')).toBe('بستن')
+    await close.trigger('click')
+
+    const left = wrapper.findAll('[data-testid="toast"]')
+    expect(left).toHaveLength(1)
+    expect(left[0].text()).toContain('دو')
+  })
 })

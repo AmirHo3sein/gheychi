@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CouponsView from './CouponsView.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import { resetFeatureFlags, useFeatureFlags } from '@/composables/useFeatureFlags'
+import { autoConfirm } from '@/test-utils/auto-confirm'
 
 async function mountCoupons() {
   const wrapper = mount(CouponsView)
@@ -144,7 +145,7 @@ describe('CouponsView', () => {
       }) // GET coupons
       .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({ message: 'boom' }) }) // DELETE fails
     vi.stubGlobal('fetch', fetchMock)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    autoConfirm(true)
 
     const wrapper = await mountCoupons()
 
@@ -177,7 +178,7 @@ describe('CouponsView', () => {
       }) // GET coupons
       .mockResolvedValueOnce({ ok: true, status: 204, json: async () => null }) // DELETE succeeds
     vi.stubGlobal('fetch', fetchMock)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    autoConfirm(true)
 
     const wrapper = await mountCoupons()
     const deactivateButton = wrapper.findAll('button').find((b) => b.text().includes('غیرفعال‌سازی'))!

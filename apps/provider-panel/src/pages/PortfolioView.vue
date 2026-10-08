@@ -8,6 +8,7 @@ import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect, { type SelectOption } from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useApi } from '@/composables/useApi'
+import { useConfirm } from '@/composables/useConfirm'
 import { useFeatureFlags } from '@/composables/useFeatureFlags'
 
 interface PortfolioItem {
@@ -25,6 +26,7 @@ interface Service {
 }
 
 const { apiFetch } = useApi()
+const { confirm } = useConfirm()
 const { flags: featureFlags } = useFeatureFlags()
 const items = ref<PortfolioItem[]>([])
 const services = ref<Service[]>([])
@@ -74,7 +76,7 @@ function onUploaded(item: PortfolioItem) {
 }
 
 async function removeItem(id: string) {
-  if (!window.confirm('این نمونه کار حذف شود؟')) return
+  if (!(await confirm({ title: 'این نمونه کار حذف شود؟', confirmLabel: 'حذف', tone: 'danger' }))) return
   await apiFetch(`/salons/mine/portfolio/${id}`, { method: 'DELETE' })
   await load()
 }

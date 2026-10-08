@@ -9,6 +9,7 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useApi } from '@/composables/useApi'
+import { useConfirm } from '@/composables/useConfirm'
 import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import type { Tone } from '@/utils/labels'
 
@@ -28,6 +29,7 @@ interface Coupon {
 }
 
 const { apiFetch } = useApi()
+const { confirm } = useConfirm()
 const { flags: featureFlags } = useFeatureFlags()
 const coupons = ref<Coupon[]>([])
 const loading = ref(true)
@@ -74,7 +76,7 @@ const maxRedemptionsInput = computed<string>({
 onMounted(load)
 
 function expiryLabel(c: Coupon): string {
-  return c.expiresAt ? new Date(c.expiresAt).toLocaleDateString('fa-IR') : 'بدون انقضا'
+  return c.expiresAt ? new Date(c.expiresAt).toLocaleDateString('fa-IR', { timeZone: 'Asia/Tehran' }) : 'بدون انقضا'
 }
 
 function usageLabel(c: Coupon): string {
@@ -157,7 +159,7 @@ async function createCoupon() {
 
 async function deactivate(coupon: Coupon) {
   if (deactivatingId.value) return
-  if (!window.confirm('این کد تخفیف غیرفعال شود؟')) return
+  if (!(await confirm({ title: 'این کد تخفیف غیرفعال شود؟', confirmLabel: 'غیرفعال کن', tone: 'danger' }))) return
   deactivatingId.value = coupon.id
   const { error } = await apiFetch(`/salons/mine/coupons/${coupon.id}`, { method: 'DELETE' })
   deactivatingId.value = null

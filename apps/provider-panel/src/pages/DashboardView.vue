@@ -12,10 +12,13 @@
 import { computed, onMounted, ref } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
-import AppIcon, { type IconName } from '@/components/ui/AppIcon.vue'
+import MetricCard from '@/components/dashboard/MetricCard.vue'
+import RankedListCard from '@/components/dashboard/RankedListCard.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useApi } from '@/composables/useApi'
 import { formatToman } from '@/utils/format-toman'
+import { SECTION_LINKS } from '@/utils/section-links'
 
 interface Booking {
   id: string
@@ -280,18 +283,7 @@ function funnelLabel(stage: string): string {
 }
 const funnelHasData = computed(() => (funnel.value?.stages ?? []).some((s) => s.count > 0))
 
-const QUICK_LINKS: Array<{ to: string; label: string; icon: IconName }> = [
-  { to: '/customers', label: 'مشتریان', icon: 'customers' },
-  { to: '/packages', label: 'پکیج‌ها', icon: 'packages' },
-  { to: '/hours', label: 'ساعات کاری', icon: 'hours' },
-  { to: '/photos', label: 'تصاویر', icon: 'photos' },
-  { to: '/stories', label: 'استوری‌ها', icon: 'stories' },
-  { to: '/portfolio', label: 'نمونه کارها', icon: 'portfolio' },
-  { to: '/coupons', label: 'کدهای تخفیف', icon: 'coupons' },
-  { to: '/team', label: 'تیم', icon: 'team' },
-  { to: '/settings', label: 'تنظیمات', icon: 'settings' },
-  { to: '/plan', label: 'پلن من', icon: 'plan' },
-]
+const QUICK_LINKS = SECTION_LINKS
 // Pinned to the salon's timezone, not the browser's -- see BookingsView's equivalent.
 function formatBookingTime(iso: string): string {
   return new Intl.DateTimeFormat('fa-IR', { timeStyle: 'short', timeZone: 'Asia/Tehran' }).format(
@@ -321,8 +313,14 @@ function formatBookingTime(iso: string): string {
     </div>
 
     <section class="space-y-3">
-      <div v-if="metricsLoading" class="flex items-center justify-center py-10 text-(--color-text-muted)">
-        <AppIcon name="spinner" :size="20" class="animate-spin" />
+      <!-- Same grid as the loaded tiles, so the page doesn't jump when the numbers land.
+           animate-pulse is switched off under prefers-reduced-motion (main.css). -->
+      <div v-if="metricsLoading" data-testid="metrics-skeleton" role="status" aria-label="در حال بارگذاری آمار" class="grid grid-cols-2 gap-2 lg:grid-cols-4 lg:gap-3">
+        <div v-for="n in 8" :key="n" class="animate-pulse space-y-2 rounded-2xl border border-(--color-border) bg-(--color-surface-subtle) p-4">
+          <div class="h-3 w-1/2 rounded bg-(--color-border)" />
+          <div class="h-5 w-3/4 rounded bg-(--color-border)" />
+          <div class="h-3 w-2/3 rounded bg-(--color-border-soft)" />
+        </div>
       </div>
 
       <div v-else-if="metricsError" class="space-y-3 rounded-xl border border-dashed border-(--color-border) p-4 text-center">
@@ -332,40 +330,34 @@ function formatBookingTime(iso: string): string {
 
       <template v-else-if="summary">
         <div class="grid grid-cols-2 gap-2 lg:grid-cols-4 lg:gap-3">
-          <AppCard v-for="tile in tiles" :key="tile.key" :data-testid="`metric-${tile.key}`" class="bg-(--color-surface-subtle)">
-            <p class="text-xs text-(--color-text-muted)">{{ tile.label }}</p>
-            <p class="mt-1 break-words text-lg font-bold text-(--color-text)"><span dir="ltr" class="tnum">{{ tile.value }}</span></p>
-            <p v-if="tile.hint" class="mt-0.5 text-xs text-(--color-text-muted)">{{ tile.hint }}</p>
-            <p class="mt-1 text-xs" :class="deltaTone(tile)">{{ deltaText(tile) }}</p>
-          </AppCard>
+          <MetricCard
+            v-for="tile in tiles"
+            :key="tile.key"
+            :data-testid="`metric-${tile.key}`"
+            :label="tile.label"
+            :value="tile.value"
+            :hint="tile.hint"
+            :delta-text="deltaText(tile)"
+            :delta-class="deltaTone(tile)"
+          />
         </div>
 
         <div class="grid gap-3 lg:grid-cols-3 lg:items-start">
-          <AppCard>
-            <h2 class="mb-2 text-sm font-bold text-(--color-text)">پرمراجعه‌ترین خدمات</h2>
-            <p v-if="summary.topServices.length === 0" class="text-xs text-(--color-text-muted)">در این دوره نوبتی ثبت نشده است.</p>
-            <ul v-else class="space-y-1.5">
-              <li v-for="s in summary.topServices" :key="s.serviceId" data-testid="top-service" class="flex items-center justify-between gap-2 text-sm">
-                <span class="min-w-0 break-words text-(--color-text)">{{ s.name || 'خدمت حذف‌شده' }}</span>
-                <span class="tnum shrink-0 text-(--color-text-muted)">{{ s.bookingsCount.toLocaleString('fa-IR') }} نوبت</span>
-              </li>
-            </ul>
-          </AppCard>
+          <RankedListCard
+            title="پرمراجعه‌ترین خدمات"
+            empty-text="در این دوره نوبتی ثبت نشده است."
+            row-test-id="top-service"
+            :rows="summary.topServices.map((x) => ({ key: x.serviceId, name: x.name || 'خدمت حذف‌شده', count: x.bookingsCount }))"
+          />
 
-          <AppCard>
-            <h2 class="mb-2 text-sm font-bold text-(--color-text)">پرکارترین کارمندان</h2>
-            <!-- Bookings with no worker assigned are excluded server-side rather than
-                 bucketed as "unassigned", which would top this list at most salons. -->
-            <p v-if="summary.topWorkers.length === 0" class="text-xs text-(--color-text-muted)">
-              نوبتی با کارمند مشخص در این دوره ثبت نشده است.
-            </p>
-            <ul v-else class="space-y-1.5">
-              <li v-for="w in summary.topWorkers" :key="w.workerId" data-testid="top-worker" class="flex items-center justify-between gap-2 text-sm">
-                <span class="min-w-0 break-words text-(--color-text)">{{ w.name || 'کارمند حذف‌شده' }}</span>
-                <span class="tnum shrink-0 text-(--color-text-muted)">{{ w.bookingsCount.toLocaleString('fa-IR') }} نوبت</span>
-              </li>
-            </ul>
-          </AppCard>
+          <!-- Bookings with no worker assigned are excluded server-side rather than
+               bucketed as "unassigned", which would top this list at most salons. -->
+          <RankedListCard
+            title="پرکارترین کارمندان"
+            empty-text="نوبتی با کارمند مشخص در این دوره ثبت نشده است."
+            row-test-id="top-worker"
+            :rows="summary.topWorkers.map((x) => ({ key: x.workerId, name: x.name || 'کارمند حذف‌شده', count: x.bookingsCount }))"
+          />
 
           <AppCard>
             <h2 class="mb-2 text-sm font-bold text-(--color-text)">شلوغ‌ترین زمان</h2>
@@ -403,11 +395,11 @@ function formatBookingTime(iso: string): string {
       </template>
     </section>
 
-    <!-- These nine tiles are the only route to the screens the nav bar doesn't carry, so
+    <!-- These ten tiles are a second route to the screens the nav bar doesn't carry, so
          they matter at every width: 3-up on a phone (90px tiles at 320px, enough for a
          two-line label), then more columns rather than taller tiles as the viewport grows,
-         landing on a single 9-across row on a laptop. -->
-    <div class="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-9 lg:gap-3">
+         landing on a single 10-across row on a laptop. -->
+    <div class="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-10 lg:gap-3">
       <RouterLink
         v-for="link in QUICK_LINKS"
         :key="link.to"
@@ -463,7 +455,7 @@ function formatBookingTime(iso: string): string {
           <AppCard v-for="b in upcomingBookings" :key="b.id" :padded="false" class="p-3">
             <div class="flex items-center justify-between gap-2">
               <p class="min-w-0 break-words text-sm font-semibold text-(--color-text)">{{ serviceName(b.serviceId) }}</p>
-              <p class="tnum shrink-0 text-sm text-(--color-text-muted)">{{ new Date(b.startsAt).toLocaleDateString('fa-IR') }}</p>
+              <p class="tnum shrink-0 text-sm text-(--color-text-muted)">{{ new Date(b.startsAt).toLocaleDateString('fa-IR', { timeZone: 'Asia/Tehran' }) }}</p>
             </div>
           </AppCard>
         </div>

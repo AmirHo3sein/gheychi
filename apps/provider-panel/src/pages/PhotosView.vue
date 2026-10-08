@@ -6,6 +6,7 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useApi } from '@/composables/useApi'
+import { useConfirm } from '@/composables/useConfirm'
 
 interface SalonPhoto {
   id: string
@@ -15,6 +16,7 @@ interface SalonPhoto {
 }
 
 const { apiFetch } = useApi()
+const { confirm } = useConfirm()
 const photos = ref<SalonPhoto[]>([])
 const loading = ref(true)
 const loadError = ref(false)
@@ -63,7 +65,7 @@ async function removePhoto(photo: SalonPhoto) {
   const message = photo.isCover
     ? 'این عکس، عکس اصلی شماست. حذف شود؟'
     : 'این تصویر حذف شود؟'
-  if (!window.confirm(message)) return
+  if (!(await confirm({ title: message, confirmLabel: 'حذف', tone: 'danger' }))) return
 
   busyId.value = photo.id
   const { error } = await apiFetch(`/salons/mine/photos/${photo.id}`, { method: 'DELETE' })

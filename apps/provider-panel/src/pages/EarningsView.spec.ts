@@ -158,6 +158,23 @@ describe('EarningsView', () => {
     expect(rows[1]!.text()).toContain('صادرشده')
   })
 
+  // Phones: the same row markup stacks into a labelled block instead of side-scrolling.
+  it('stacks each invoice row below md, labelling every cell with its column name', async () => {
+    stubFetchByUrl({
+      invoices: [{ id: 'inv-1', jalaliYear: 1403, jalaliMonth: 5, totalNetPayable: 300_000, paidTotal: 0, status: 'issued' }],
+    })
+
+    const wrapper = await mountEarnings()
+
+    const row = wrapper.get('[data-testid="invoice-row"]')
+    expect(row.classes()).toContain('block')
+    expect(row.classes()).toContain('md:table-row')
+    const labels = row.findAll('[role="cell"]').map((c) => c.attributes('data-label'))
+    expect(labels).toEqual(['دوره', 'خالص قابل‌پرداخت', 'پرداخت‌شده', 'وضعیت'])
+    expect(wrapper.get('table').classes()).toContain('md:table')
+    expect(wrapper.get('thead').classes()).toContain('hidden')
+  })
+
   it('shows an inline error for the invoice history without blanking the earnings figures', async () => {
     const fetchMock = vi.fn((url: string) => {
       if (url.includes('/salons/mine/invoices')) return Promise.resolve({ ok: false, status: 500, json: async () => ({}) })
