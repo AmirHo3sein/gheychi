@@ -18,6 +18,7 @@ interface FeatureFlags {
   referralsEnabled: boolean
   couponsEnabled: boolean
   onlinePaymentEnabled: boolean
+  beautyGuideEnabled: boolean
 }
 
 const FLAG_META: Record<keyof FeatureFlags, { label: string; hint: string; icon: IconName }> = {
@@ -50,6 +51,11 @@ const FLAG_META: Record<keyof FeatureFlags, { label: string; hint: string; icon:
     label: 'پرداخت آنلاین',
     hint: 'فعال‌سازی، دریافت پیش‌پرداخت آنلاین (زرین‌پال) را برای نوبت‌های جدید فعال می‌کند؛ در حالت غیرفعال هر نوبت (خودکار یا با تایید دستی) بدون پرداخت آنلاین تایید می‌شود و کل مبلغ نقدی در سالن دریافت می‌شود.',
     icon: 'wallet',
+  },
+  beautyGuideEnabled: {
+    label: 'راهنمای زیبایی (هوش مصنوعی)',
+    hint: 'این ویژگی برای هر تحلیل، یک سرویس هوش مصنوعی خارجی و پولی را فراخوانی می‌کند؛ فقط زمانی فعال شود که آدرس سرویس هوش مصنوعی پیکربندی شده و از سرور در دسترس باشد. در حالت غیرفعال، مشتریان این ویژگی را نمی‌بینند و نوبت‌های ثبت‌شده تغییری نمی‌کنند.',
+    icon: 'sparkles',
   },
 }
 const FLAG_KEYS = Object.keys(FLAG_META) as (keyof FeatureFlags)[]
@@ -119,7 +125,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="mx-auto max-w-2xl space-y-5 p-4 sm:p-8">
+  <div class="mx-auto max-w-2xl space-y-5 p-4 sm:p-6 lg:p-8">
     <div v-if="loading" data-testid="feature-flags-loading" class="flex items-center justify-center gap-2 py-16 text-sm text-(--color-text-muted)">
       <AppIcon name="spinner" :size="20" class="animate-spin" />
       در حال بارگذاری ویژگی‌ها…

@@ -28,6 +28,7 @@ const router = useRouter()
 const { apiFetch } = useApi()
 
 const root = ref<HTMLElement | null>(null)
+const bellButton = ref<HTMLButtonElement | null>(null)
 const open = ref(false)
 const count = ref(0)
 const notifications = ref<AdminNotification[]>([])
@@ -109,6 +110,7 @@ async function markAllRead() {
 
 function formatTime(iso: string): string {
   return new Intl.DateTimeFormat('fa-IR', {
+    timeZone: 'Asia/Tehran',
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
@@ -120,26 +122,47 @@ function onDocumentClick(e: MouseEvent) {
   if (root.value && !root.value.contains(e.target as Node)) open.value = false
 }
 
+// Escape closes and hands focus back to the bell, so a keyboard user keeps their place.
+function onKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Escape' || !open.value) return
+  e.stopPropagation()
+  open.value = false
+  bellButton.value?.focus()
+}
+
+// The badge poll is pure waste in a background tab: skip it while hidden, and catch up the
+// moment the tab is shown again rather than waiting out up to a full interval of stale count.
+function pollIfVisible() {
+  if (document.visibilityState === 'visible') loadCount()
+}
+
 onMounted(() => {
   loadCount()
-  pollTimer = setInterval(loadCount, POLL_INTERVAL_MS)
+  pollTimer = setInterval(pollIfVisible, POLL_INTERVAL_MS)
+  document.addEventListener('visibilitychange', pollIfVisible)
   document.addEventListener('mousedown', onDocumentClick)
   window.addEventListener('resize', keepPanelOnScreen)
 })
 
 onUnmounted(() => {
   if (pollTimer !== undefined) clearInterval(pollTimer)
+  document.removeEventListener('visibilitychange', pollIfVisible)
   document.removeEventListener('mousedown', onDocumentClick)
   window.removeEventListener('resize', keepPanelOnScreen)
 })
 </script>
 
 <template>
-  <div ref="root" class="relative">
+  <div ref="root" class="relative" @keydown="onKeydown">
     <button
+      ref="bellButton"
       data-testid="notification-bell"
       type="button"
       title="اعلان‌ها"
+      :aria-label="count > 0 ? `اعلان‌ها، ${count.toLocaleString('fa-IR')} خوانده‌نشده` : 'اعلان‌ها'"
+      aria-haspopup="true"
+      :aria-expanded="open"
+      aria-controls="notification-panel"
       class="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text)"
       @click="toggle"
     >
@@ -157,6 +180,7 @@ onUnmounted(() => {
          measured `panelShiftX` above keeps it from being *positioned* outside it. -->
     <div
       v-if="open"
+      id="notification-panel"
       ref="panel"
       data-testid="notification-dropdown"
       class="absolute end-0 z-50 mt-1.5 w-80 max-w-[calc(100vw-1rem)] rounded-2xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-md)"
@@ -183,7 +207,7 @@ onUnmounted(() => {
           <button
             type="button"
             data-testid="notification-item"
-            class="flex w-full flex-col gap-0.5 px-4 py-2.5 text-right transition-colors hover:bg-(--color-border-soft)"
+            class="flex w-full flex-col gap-0.5 px-4 py-2.5 text-start transition-colors hover:bg-(--color-border-soft)"
             @click="openNotification(notification)"
           >
             <!-- Titles/bodies are server-composed strings that can carry a salon name or an

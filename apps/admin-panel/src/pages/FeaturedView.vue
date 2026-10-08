@@ -7,6 +7,7 @@ import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
+import ScrollTable from '@/components/ui/ScrollTable.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 
@@ -91,7 +92,7 @@ watch(page, load)
 </script>
 
 <template>
-  <div class="space-y-5 p-8">
+  <div class="space-y-5 p-4 sm:p-6 lg:p-8">
     <!-- Says out loud why a pending salon is missing from the list: nothing but an approved
          salon can appear in search, featured or not. -->
     <p class="text-sm text-(--color-text-muted)">
@@ -134,15 +135,15 @@ watch(page, load)
         >
           <AppIcon name="spinner" :size="22" class="animate-spin text-(--color-text-muted)" />
         </div>
-        <div class="overflow-x-auto">
-          <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
+        <ScrollTable label="سالن‌های ویژه">
+          <table class="w-full text-start text-sm transition-opacity" :class="{ 'opacity-50': loading }">
             <thead>
               <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
-                <th class="px-5 py-3 font-semibold">نام</th>
-                <th class="px-5 py-3 font-semibold">شهر</th>
-                <th class="px-5 py-3 font-semibold">ویژه</th>
-                <th class="px-5 py-3 font-semibold">تا تاریخ</th>
-                <th class="px-5 py-3"></th>
+                <th scope="col" class="px-5 py-3 font-semibold">نام</th>
+                <th scope="col" class="px-5 py-3 font-semibold">شهر</th>
+                <th scope="col" class="px-5 py-3 font-semibold">ویژه</th>
+                <th scope="col" class="px-5 py-3 font-semibold">تا تاریخ</th>
+                <th scope="col" class="px-5 py-3"></th>
               </tr>
             </thead>
             <tbody>
@@ -184,7 +185,7 @@ watch(page, load)
               </tr>
             </tbody>
           </table>
-        </div>
+        </ScrollTable>
       </div>
 
       <!-- Only the endpoint's own page-size cap (100) makes a pager possible here at all --

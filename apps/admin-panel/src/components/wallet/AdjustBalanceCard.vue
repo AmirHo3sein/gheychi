@@ -181,11 +181,11 @@ async function submit() {
               v-for="user in matches"
               :key="user.id"
               type="button"
-              class="block w-full px-3 py-2 text-right text-sm transition-colors hover:bg-(--color-border-soft)"
+              class="block w-full px-3 py-2 text-start text-sm transition-colors hover:bg-(--color-border-soft)"
               @click="selectUser(user)"
             >
               <span class="font-semibold text-(--color-text)">{{ user.name ?? 'بدون نام' }}</span>
-              <span class="tnum mr-1 text-xs text-(--color-text-muted)">{{ user.phone }}</span>
+              <span class="tnum me-1 text-xs text-(--color-text-muted)">{{ user.phone }}</span>
             </button>
             <p v-if="noResults" class="px-3 py-2 text-sm text-(--color-text-muted)">کاربری یافت نشد</p>
           </div>

@@ -13,6 +13,7 @@ import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
+import ScrollTable from '@/components/ui/ScrollTable.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import InvoiceStatusActions from '@/components/invoices/InvoiceStatusActions.vue'
@@ -148,12 +149,12 @@ async function onPaymentRecorded(invoiceId: string) {
 }
 
 function formatDateTime(iso: string): string {
-  return new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
+  return new Intl.DateTimeFormat('fa-IR', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
 }
 </script>
 
 <template>
-  <div class="space-y-5 p-8">
+  <div class="space-y-5 p-4 sm:p-6 lg:p-8">
     <AppCard>
       <div class="flex flex-wrap items-end gap-3">
         <AppSelect v-model="statusFilter" label="وضعیت" :options="STATUS_OPTIONS" width="10rem" />
@@ -188,8 +189,8 @@ function formatDateTime(iso: string): string {
         >
           <AppIcon name="spinner" :size="22" class="animate-spin text-(--color-text-muted)" />
         </div>
-        <div class="overflow-x-auto">
-          <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
+        <ScrollTable label="فهرست صورتحساب‌ها">
+          <table class="w-full text-start text-sm transition-opacity" :class="{ 'opacity-50': loading }">
             <thead>
               <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
                 <th scope="col" class="px-5 py-3 font-semibold">سالن</th>
@@ -224,7 +225,7 @@ function formatDateTime(iso: string): string {
                       @click="toggleExpand(invoice)"
                     >
                       <template #icon>
-                        <AppIcon :name="expandedId === invoice.id ? 'chevron-left' : 'chevron-right'" :size="15" />
+                        <AppIcon :name="expandedId === invoice.id ? 'chevron-down' : 'chevron-left'" :size="15" />
                       </template>
                     </AppButton>
                   </td>
@@ -268,7 +269,7 @@ function formatDateTime(iso: string): string {
               </template>
             </tbody>
           </table>
-        </div>
+        </ScrollTable>
         <Pagination :page="page" :page-size="pageSize" :total="total" @update:page="(p) => (page = p)" />
       </div>
     </AppCard>

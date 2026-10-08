@@ -21,6 +21,7 @@ import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
+import ScrollTable from '@/components/ui/ScrollTable.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { currencyLabel, walletTransactionTypeLabel } from '@/utils/labels'
@@ -122,6 +123,7 @@ function onAdjusted(result: { userId: string; balanceAfter: number }) {
 
 function formatDateTime(iso: string): string {
   return new Intl.DateTimeFormat('fa-IR', {
+    timeZone: 'Asia/Tehran',
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -155,7 +157,7 @@ watch(page, load)
 </script>
 
 <template>
-  <div class="space-y-5 p-8">
+  <div class="space-y-5 p-4 sm:p-6 lg:p-8">
     <AdjustBalanceCard @adjusted="onAdjusted" />
 
     <AppCard :padded="false" class="p-4">
@@ -199,11 +201,11 @@ watch(page, load)
               v-for="user in matches"
               :key="user.id"
               type="button"
-              class="block w-full px-3 py-2 text-right text-sm transition-colors hover:bg-(--color-border-soft)"
+              class="block w-full px-3 py-2 text-start text-sm transition-colors hover:bg-(--color-border-soft)"
               @click="selectUser(user)"
             >
               <span class="font-semibold text-(--color-text)">{{ user.name ?? 'بدون نام' }}</span>
-              <span class="tnum mr-1 text-xs text-(--color-text-muted)">{{ user.phone }}</span>
+              <span class="tnum me-1 text-xs text-(--color-text-muted)">{{ user.phone }}</span>
             </button>
             <p v-if="noResults" class="px-3 py-2 text-sm text-(--color-text-muted)">کاربری یافت نشد</p>
           </div>
@@ -254,8 +256,8 @@ watch(page, load)
     <EmptyState v-else-if="!loading && transactions.length === 0" icon="wallet" message="تراکنشی با این فیلترها یافت نشد." />
 
     <AppCard v-else :padded="false" class="overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="w-full text-right text-sm">
+      <ScrollTable label="تراکنش‌های کیف پول">
+        <table class="w-full text-start text-sm">
           <thead>
             <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
               <th scope="col" class="px-5 py-3 font-semibold">تاریخ</th>
@@ -294,7 +296,7 @@ watch(page, load)
             </tr>
           </tbody>
         </table>
-      </div>
+      </ScrollTable>
       <Pagination :page="page" :page-size="pageSize" :total="total" @update:page="(p) => (page = p)" />
     </AppCard>
   </div>

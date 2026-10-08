@@ -56,7 +56,7 @@ describe('auditActionLabel', () => {
     // slipped through undetected in the first place.
     // This length guard is deliberate: adding a backend @AuditAction without a Farsi label
     // must fail here.
-    expect(AUDIT_ACTION_KEYS).toHaveLength(48)
+    expect(AUDIT_ACTION_KEYS).toHaveLength(50)
     for (const action of AUDIT_ACTION_KEYS) {
       const entry = auditActionLabel(action)
       // A mapped entry never falls back to the raw dotted action name.
@@ -280,6 +280,15 @@ describe('configKeyMeta', () => {
     expect(meta.label).toBe('مهلت تایید درخواست رزرو')
     expect(meta.unit).toBe('دقیقه')
     expect(meta.hint.length).toBeGreaterThan(0)
+  })
+
+  it('gives each beauty-guide config key a Farsi label and hint', () => {
+    for (const key of ['beauty_guide_daily_limit_per_user', 'beauty_guide_daily_limit_global', 'beauty_guide_retention_days']) {
+      const meta = configKeyMeta(key)
+      expect(meta.label).not.toBe(key)
+      expect(meta.hint.length).toBeGreaterThan(0)
+    }
+    expect(configKeyMeta('beauty_guide_retention_days').unit).toBe('روز')
   })
 
   it('falls back to the raw key for an unknown config key', () => {

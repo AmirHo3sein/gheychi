@@ -77,7 +77,7 @@ export function useApi() {
           return { data: null, error: apiError }
         }
 
-        if (!options.silent) useToast().push(message)
+        if (!options.silent) useToast().push(message, 'error')
         return { data: null, error: apiError }
       }
 
@@ -85,7 +85,7 @@ export function useApi() {
       return { data, error: null }
     } catch {
       const apiError: ApiError = { status: 0, message: 'خطا در ارتباط با سرور' }
-      if (!options.silent) useToast().push(apiError.message)
+      if (!options.silent) useToast().push(apiError.message, 'error')
       return { data: null, error: apiError }
     }
   }

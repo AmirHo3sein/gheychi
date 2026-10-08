@@ -24,8 +24,17 @@ interface ConfigRow {
 // money-moving stakes as AdjustBalanceCard.vue -- an out-of-range value must never reach
 // the confirm screen, let alone the PATCH.
 const PERCENT_KEYS = new Set(['deposit_percent', 'commission_percent'])
-function boundsFor(key: string): { min: number; max: number | null } {
-  return PERCENT_KEYS.has(key) ? { min: 0, max: 100 } : { min: 0, max: null }
+// Keys whose server-side DTO bounds are tighter than ">= 0" -- mirrored exactly here
+// (admin-config.dto.ts) so an out-of-range value is caught before the confirm screen
+// rather than as a generic 400 toast. All of these are integers server-side.
+const EXPLICIT_BOUNDS: Record<string, { min: number; max: number }> = {
+  beauty_guide_daily_limit_per_user: { min: 0, max: 1000 },
+  beauty_guide_daily_limit_global: { min: 0, max: 1000000 },
+  beauty_guide_retention_days: { min: 1, max: 3650 },
+}
+function boundsFor(key: string): { min: number; max: number | null; integer: boolean } {
+  if (EXPLICIT_BOUNDS[key]) return { ...EXPLICIT_BOUNDS[key], integer: true }
+  return PERCENT_KEYS.has(key) ? { min: 0, max: 100, integer: false } : { min: 0, max: null, integer: false }
 }
 
 const { apiFetch } = useApi()
@@ -76,12 +85,18 @@ function onRowInput(row: ConfigRow, raw: string | number) {
   const text = String(raw)
   rowText.value[row.key] = text
   const trimmed = text.trim()
-  const { min, max } = boundsFor(row.key)
+  const { min, max, integer } = boundsFor(row.key)
   const parsed = Number(trimmed)
   // Number('') === 0 -- an explicit emptiness check keeps a select-all-delete mid-edit from
   // silently coercing to a valid-looking "0". Same branch also catches a non-numeric paste
   // and a value outside this key's sane bounds; none of these ever touch `row.value`.
-  if (trimmed === '' || Number.isNaN(parsed) || parsed < min || (max !== null && parsed > max)) {
+  if (
+    trimmed === '' ||
+    Number.isNaN(parsed) ||
+    (integer && !Number.isInteger(parsed)) ||
+    parsed < min ||
+    (max !== null && parsed > max)
+  ) {
     rowInvalid.value[row.key] = true
     return
   }
@@ -92,9 +107,10 @@ function onRowInput(row: ConfigRow, raw: string | number) {
 function rowError(key: string): string | undefined {
   if (!rowInvalid.value[key]) return undefined
   const text = (rowText.value[key] ?? '').trim()
-  const { min, max } = boundsFor(key)
+  const { min, max, integer } = boundsFor(key)
   if (text === '') return 'این مقدار نمی‌تواند خالی باشد'
   if (Number.isNaN(Number(text))) return 'یک عدد معتبر وارد کنید'
+  if (integer && !Number.isInteger(Number(text))) return 'یک عدد صحیح وارد کنید'
   return max !== null ? `باید بین ${min} تا ${max} باشد` : `باید حداقل ${min} باشد`
 }
 
@@ -153,10 +169,10 @@ watch(confirming, async (isConfirming) => {
 onMounted(load)
 </script>
 
-<!-- p-8 from `sm` up (unchanged); 32px of gutter on each side of a 320px screen is a
+<!-- p-4 -> sm:p-6 -> lg:p-8 scale; 32px of gutter on each side of a 320px screen is a
      quarter of the usable width, so it relaxes to p-4 below that. -->
 <template>
-  <div class="mx-auto max-w-2xl space-y-5 p-4 sm:p-8">
+  <div class="mx-auto max-w-2xl space-y-5 p-4 sm:p-6 lg:p-8">
     <div v-if="loading" data-testid="config-loading" class="flex items-center justify-center gap-2 py-16 text-sm text-(--color-text-muted)">
       <AppIcon name="spinner" :size="20" class="animate-spin" />
       در حال بارگذاری تنظیمات…

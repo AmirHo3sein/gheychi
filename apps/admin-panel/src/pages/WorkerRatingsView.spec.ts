@@ -159,4 +159,22 @@ describe('WorkerRatingsView', () => {
 
     expect(wrapper.get('table').element.parentElement?.className).toContain('overflow-x-auto')
   })
+
+  it('shows an error card with a retry control when the fetch fails, instead of a false empty state', async () => {
+    fetchMock.mockResolvedValueOnce({ data: null, error: { status: 500, message: 'خطا' } })
+    const wrapper = mount(WorkerRatingsView, mountOptions)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="load-error"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('امتیازی با این فیلترها یافت نشد')
+    expect(wrapper.find('table').exists()).toBe(false)
+
+    fetchMock.mockResolvedValueOnce({ data: { items: [rating], total: 1, page: 1, pageSize: 10 }, error: null })
+    await wrapper.get('[data-testid="retry-load"]').trigger('click')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-testid="load-error"]').exists()).toBe(false)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+  })
 })

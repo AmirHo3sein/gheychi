@@ -170,7 +170,7 @@ async function loadBillingPeriods() {
 }
 
 function formatBillingDate(iso: string): string {
-  return new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
+  return new Intl.DateTimeFormat('fa-IR', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
 }
 const BILLING_STATUS_LABEL: Record<BillingPeriod['status'], { label: string; tone: 'neutral' | 'success' | 'info' | 'warning' }> = {
   pending: { label: 'در انتظار', tone: 'warning' },

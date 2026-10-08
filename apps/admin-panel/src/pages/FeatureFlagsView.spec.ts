@@ -14,6 +14,8 @@ const FLAGS = {
   portfolioEnabled: true,
   referralsEnabled: true,
   couponsEnabled: true,
+  onlinePaymentEnabled: false,
+  beautyGuideEnabled: false,
 }
 
 async function mountView() {
@@ -61,6 +63,26 @@ describe('FeatureFlagsView', () => {
       body: { storiesEnabled: false },
     })
     expect(wrapper.find('[data-testid="feature-flags-confirm-summary"]').exists()).toBe(false)
+  })
+
+  it('offers the beauty-guide flag with its cost warning and PATCHes only that key', async () => {
+    const wrapper = await mountView()
+
+    expect(wrapper.text()).toContain('راهنمای زیبایی (هوش مصنوعی)')
+    expect(wrapper.text()).toContain('سرویس هوش مصنوعی خارجی و پولی')
+    const toggle = wrapper.get('[data-testid="flag-toggle-beautyGuideEnabled"]')
+    expect(toggle.attributes('aria-checked')).toBe('false')
+
+    await toggle.trigger('click')
+    await wrapper.get('[data-testid="feature-flags-save-button"]').trigger('click')
+    fetchMock.mockResolvedValueOnce({ data: null, error: null })
+    await wrapper.get('[data-testid="feature-flags-confirm-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith('/admin/feature-flags', {
+      method: 'PATCH',
+      body: { beautyGuideEnabled: true },
+    })
   })
 
   it('discards unsaved toggles on cancel', async () => {

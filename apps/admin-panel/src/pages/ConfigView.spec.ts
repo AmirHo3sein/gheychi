@@ -207,4 +207,56 @@ describe('ConfigView', () => {
 
     wrapper.unmount()
   })
+
+  describe('beauty guide keys', () => {
+    const BEAUTY_ROWS = [
+      { key: 'beauty_guide_daily_limit_per_user', value: 3 },
+      { key: 'beauty_guide_daily_limit_global', value: 300 },
+      { key: 'beauty_guide_retention_days', value: 90 },
+    ]
+
+    async function mountBeauty() {
+      fetchMock.mockResolvedValueOnce({ data: BEAUTY_ROWS.map((r) => ({ ...r })), error: null })
+      const wrapper = mount(ConfigView)
+      await flushPromises()
+      return wrapper
+    }
+
+    it('renders Farsi labels for the three beauty-guide keys', async () => {
+      const wrapper = await mountBeauty()
+      expect(wrapper.text()).toContain('سقف روزانه راهنمای زیبایی برای هر کاربر')
+      expect(wrapper.text()).toContain('سقف روزانه کل راهنماهای زیبایی (کنترل هزینه)')
+      expect(wrapper.text()).toContain('مدت نگهداری تصاویر راهنمای زیبایی (روز)')
+    })
+
+    it('mirrors the server bounds: per-user cap above 1000 is blocked', async () => {
+      const wrapper = await mountBeauty()
+      await wrapper.findAll('input[type="number"]')[0].setValue(1001)
+      expect(wrapper.get('[data-testid="config-save-button"]').attributes('disabled')).toBeDefined()
+      expect(wrapper.text()).toContain('باید بین 0 تا 1000')
+    })
+
+    it('mirrors the server bounds: global cap accepts 1000000 but not more', async () => {
+      const wrapper = await mountBeauty()
+      const input = wrapper.findAll('input[type="number"]')[1]
+      await input.setValue(1000000)
+      expect(wrapper.get('[data-testid="config-save-button"]').attributes('disabled')).toBeUndefined()
+      await input.setValue(1000001)
+      expect(wrapper.get('[data-testid="config-save-button"]').attributes('disabled')).toBeDefined()
+    })
+
+    it('mirrors the server bounds: retention below 1 day is blocked', async () => {
+      const wrapper = await mountBeauty()
+      await wrapper.findAll('input[type="number"]')[2].setValue(0)
+      expect(wrapper.get('[data-testid="config-save-button"]').attributes('disabled')).toBeDefined()
+      expect(wrapper.text()).toContain('باید بین 1 تا 3650')
+    })
+
+    it('rejects a fractional value for these integer-only keys', async () => {
+      const wrapper = await mountBeauty()
+      await wrapper.findAll('input[type="number"]')[0].setValue(2.5)
+      expect(wrapper.get('[data-testid="config-save-button"]').attributes('disabled')).toBeDefined()
+      expect(wrapper.text()).toContain('یک عدد صحیح وارد کنید')
+    })
+  })
 })

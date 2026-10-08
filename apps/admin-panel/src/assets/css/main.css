@@ -332,6 +332,11 @@ button:disabled {
    in the app -- the login screen's own <main> included. */
 .route-outlet {
   display: grid;
+  /* One column that is allowed to shrink to the viewport. The implicit `auto` column this used
+     to have sizes to the page's max-content instead: a filter row of fixed-width selects (512px)
+     then never wrapped, the page became wider than a phone, and the <main> scroller clipped the
+     card's left edge. minmax(0, 1fr) is the standard grid-blowout fix. */
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
 }
 .route-outlet > * {
@@ -349,4 +354,58 @@ button:disabled {
 }
 .page-fade-leave-to {
   opacity: 0;
+}
+
+/* Phone navigation drawer (MobileNavDrawer.vue). The app is RTL-only, so the inline-start
+   edge it slides in from is the RIGHT: closed = translated a full width to the right. */
+.drawer-slide-enter-active,
+.drawer-slide-leave-active {
+  transition: transform 0.2s ease;
+}
+.drawer-slide-enter-from,
+.drawer-slide-leave-to {
+  transform: translateX(100%);
+}
+.drawer-fade-enter-active,
+.drawer-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.drawer-fade-enter-from,
+.drawer-fade-leave-to {
+  opacity: 0;
+}
+
+/* Keyboard focus indicator. Inputs already get their own border+ring above; this covers
+   everything else that can take focus. accent-text (not the pastel accent) so the ring
+   clears 3:1 against both light and dark surfaces (WCAG 1.4.11). */
+a:focus-visible,
+button:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:not([tabindex="-1"]):focus-visible {
+  outline: 2px solid var(--color-accent-text);
+  outline-offset: 2px;
+}
+
+/* Honour the OS "reduce motion" setting for every decorative motion in the panel:
+   spinners, route/drawer transitions and press/hover transforms. Durations go to ~0 rather
+   than `none` so transitionend/animationend still fire for anything waiting on them. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin,
+  .animate-pulse {
+    animation: none;
+  }
+  .page-fade-enter-active,
+  .page-fade-leave-active,
+  .drawer-slide-enter-active,
+  .drawer-slide-leave-active,
+  .drawer-fade-enter-active,
+  .drawer-fade-leave-active {
+    transition-duration: 0.01ms;
+  }
+  .page-fade-enter-from {
+    transform: none;
+  }
+  .active\:scale-\[0\.98\]:active {
+    transform: none;
+  }
 }

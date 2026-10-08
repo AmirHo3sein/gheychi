@@ -1,6 +1,6 @@
 <!-- apps/admin-panel/src/pages/SalonDetailView.vue -->
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { nextTick, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import SalonBookingSettingsCard from '@/components/salons/SalonBookingSettingsCard.vue'
@@ -126,6 +126,22 @@ async function loadPortfolio() {
   }
 }
 
+const tablist = ref<HTMLElement | null>(null)
+
+// Roving-tabindex keyboard model (WAI-ARIA tabs). The app is RTL-only, so the first tab sits on
+// the RIGHT: ArrowRight moves toward it (previous), ArrowLeft toward the last (next).
+function onTabKeydown(e: KeyboardEvent, index: number) {
+  let next: number
+  if (e.key === 'ArrowRight') next = (index - 1 + TABS.length) % TABS.length
+  else if (e.key === 'ArrowLeft') next = (index + 1) % TABS.length
+  else if (e.key === 'Home') next = 0
+  else if (e.key === 'End') next = TABS.length - 1
+  else return
+  e.preventDefault()
+  selectTab(TABS[next]!.key)
+  nextTick(() => tablist.value?.querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus())
+}
+
 function selectTab(tab: Tab) {
   activeTab.value = tab
   if (tab === 'stories' && storiesStatus.value === 'idle') loadStories()
@@ -144,15 +160,15 @@ function isExpired(story: StoryRow): boolean {
 }
 
 function formatDate(iso: string): string {
-  return new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
+  return new Intl.DateTimeFormat('fa-IR', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
 }
 
 onMounted(load)
 </script>
 
-<!-- p-8 from `sm` up (unchanged); below that 64px of gutter is a fifth of a 320px screen. -->
+<!-- p-4 -> sm:p-6 -> lg:p-8 scale; below that 64px of gutter is a fifth of a 320px screen. -->
 <template>
-  <div class="mx-auto space-y-5 p-4 sm:p-8" :class="activeTab === 'info' ? 'max-w-2xl' : 'max-w-6xl'">
+  <div class="mx-auto space-y-5 p-4 sm:p-6 lg:p-8" :class="activeTab === 'info' ? 'max-w-2xl' : 'max-w-6xl'">
     <div v-if="loading && !salon" data-testid="salon-loading" class="flex justify-center py-20">
       <AppIcon name="spinner" :size="28" class="animate-spin text-(--color-accent-text)" />
     </div>
@@ -174,14 +190,17 @@ onMounted(load)
 
     <template v-else-if="salon">
       <AppCard :padded="false" class="p-2">
-        <div role="tablist" class="flex flex-wrap gap-1.5">
+        <div ref="tablist" role="tablist" aria-label="بخش‌های آرایشگاه" class="flex flex-wrap gap-1.5">
           <AppButton
-            v-for="tab in TABS"
+            v-for="(tab, index) in TABS"
+            :id="`salon-tab-${tab.key}`"
             :key="tab.key"
             :data-testid="`tab-${tab.key}`"
             type="button"
             role="tab"
             :aria-selected="activeTab === tab.key"
+            :aria-controls="`salon-panel-${tab.key}`"
+            :tabindex="activeTab === tab.key ? 0 : -1"
             variant="ghost"
             :class="
               activeTab === tab.key
@@ -189,13 +208,14 @@ onMounted(load)
                 : ''
             "
             @click="selectTab(tab.key)"
+            @keydown="onTabKeydown($event, index)"
           >
             {{ tab.label }}
           </AppButton>
         </div>
       </AppCard>
 
-      <template v-if="activeTab === 'info'">
+      <div v-if="activeTab === 'info'" id="salon-panel-info" role="tabpanel" aria-labelledby="salon-tab-info" tabindex="0" class="space-y-5">
         <AppCard>
           <!-- Salon name and address are provider-supplied free text: `min-w-0` down the
                chain plus `break-words` so a long name (or an address with no break
@@ -272,9 +292,9 @@ onMounted(load)
             @updated="onUpdated"
           />
         </AppCard>
-      </template>
+      </div>
 
-      <template v-else-if="activeTab === 'stories'">
+      <div v-else-if="activeTab === 'stories'" id="salon-panel-stories" role="tabpanel" aria-labelledby="salon-tab-stories" tabindex="0" class="space-y-5">
         <div v-if="storiesStatus === 'loading'" data-testid="stories-loading" class="flex justify-center py-16">
           <AppIcon name="spinner" :size="24" class="animate-spin text-(--color-accent-text)" />
         </div>
@@ -318,9 +338,9 @@ onMounted(load)
             </div>
           </AppCard>
         </div>
-      </template>
+      </div>
 
-      <template v-else-if="activeTab === 'portfolio'">
+      <div v-else-if="activeTab === 'portfolio'" id="salon-panel-portfolio" role="tabpanel" aria-labelledby="salon-tab-portfolio" tabindex="0" class="space-y-5">
         <div v-if="portfolioStatus === 'loading'" data-testid="portfolio-loading" class="flex justify-center py-16">
           <AppIcon name="spinner" :size="24" class="animate-spin text-(--color-accent-text)" />
         </div>
@@ -363,7 +383,7 @@ onMounted(load)
             </div>
           </AppCard>
         </div>
-      </template>
+      </div>
     </template>
   </div>
 </template>

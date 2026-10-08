@@ -19,6 +19,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
+import ScrollTable from '@/components/ui/ScrollTable.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { debounce } from '@/utils/debounce'
@@ -58,6 +59,9 @@ interface WorkerRatingListResponse {
 const { apiFetch } = useApi()
 const ratings = ref<WorkerRatingRow[]>([])
 const loading = ref(true)
+// True when the last fetch failed -- distinguishes "request failed" from a genuinely empty
+// result, which would otherwise both paint as "no ratings found" (ReferralsView's pattern).
+const loadError = ref(false)
 const page = ref(1)
 const total = ref(0)
 const pageSize = 10
@@ -67,6 +71,7 @@ const statusFilter = ref<'' | 'published' | 'rejected'>('')
 
 async function load() {
   loading.value = true
+  loadError.value = false
   const params = new URLSearchParams({ page: String(page.value), pageSize: String(pageSize) })
   if (salonIdFilter.value) params.set('salonId', salonIdFilter.value)
   if (statusFilter.value) params.set('status', statusFilter.value)
@@ -74,7 +79,9 @@ async function load() {
   // Deliberately NOT silent: salonId is free-text here but validated server-side with
   // @IsUUID() (400 on anything else). Swallowing that error would repaint as a false "no
   // ratings found" empty state instead of telling the operator their input was rejected.
-  const { data } = await apiFetch<WorkerRatingListResponse>(`/admin/worker-ratings?${params.toString()}`)
+  // The toast carries the reason; the error card below carries the retry.
+  const { data, error } = await apiFetch<WorkerRatingListResponse>(`/admin/worker-ratings?${params.toString()}`)
+  if (error) loadError.value = true
   ratings.value = data?.items ?? []
   total.value = data?.total ?? 0
   loading.value = false
@@ -110,7 +117,7 @@ watch(page, load)
 </script>
 
 <template>
-  <div class="space-y-5 p-8">
+  <div class="space-y-5 p-4 sm:p-6 lg:p-8">
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
         <!-- Labeled and formatted as a UUID lookup, not free-text search: the backend DTO
@@ -134,7 +141,20 @@ watch(page, load)
       </div>
     </AppCard>
 
-    <EmptyState v-if="!loading && ratings.length === 0" icon="worker-ratings" message="امتیازی با این فیلترها یافت نشد." />
+    <AppCard
+      v-if="loadError"
+      :padded="false"
+      data-testid="load-error"
+      class="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center"
+    >
+      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)">
+        <AppIcon name="warning" :size="22" />
+      </div>
+      <p class="text-sm text-(--color-text-muted)">خطا در دریافت امتیازها.</p>
+      <AppButton type="button" variant="secondary" data-testid="retry-load" @click="load">تلاش دوباره</AppButton>
+    </AppCard>
+
+    <EmptyState v-else-if="!loading && ratings.length === 0" icon="worker-ratings" message="امتیازی با این فیلترها یافت نشد." />
 
     <AppCard v-else :padded="false" class="overflow-hidden">
       <div class="relative">
@@ -153,15 +173,15 @@ watch(page, load)
              trailing columns. Here that trailing column is the moderation action, so the
              clipping made a real action unreachable. Desktop is untouched: no scrollbar exists
              while the table fits, which is the ≥1280px case this app optimizes for. -->
-        <div class="overflow-x-auto">
-          <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
+        <ScrollTable label="فهرست امتیاز کارمندان">
+          <table class="w-full text-start text-sm transition-opacity" :class="{ 'opacity-50': loading }">
             <thead>
               <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
-                <th class="px-5 py-3 font-semibold">کارمند</th>
-                <th class="px-5 py-3 font-semibold">آرایشگاه</th>
-                <th class="px-5 py-3 font-semibold">امتیاز</th>
-                <th class="px-5 py-3 font-semibold">وضعیت</th>
-                <th class="px-5 py-3 font-semibold">اقدام</th>
+                <th scope="col" class="px-5 py-3 font-semibold">کارمند</th>
+                <th scope="col" class="px-5 py-3 font-semibold">آرایشگاه</th>
+                <th scope="col" class="px-5 py-3 font-semibold">امتیاز</th>
+                <th scope="col" class="px-5 py-3 font-semibold">وضعیت</th>
+                <th scope="col" class="px-5 py-3 font-semibold">اقدام</th>
               </tr>
             </thead>
             <tbody>
@@ -188,7 +208,7 @@ watch(page, load)
                       :fill="n <= rating.rating ? 'currentColor' : 'none'"
                       :class="n > rating.rating && 'text-(--color-border)'"
                     />
-                    <span class="tnum mr-1 text-sm font-bold text-(--color-text)">{{
+                    <span class="tnum me-1 text-sm font-bold text-(--color-text)">{{
                       Number(rating.rating).toLocaleString('fa-IR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
                     }}</span>
                   </div>
@@ -210,7 +230,7 @@ watch(page, load)
               </tr>
             </tbody>
           </table>
-        </div>
+        </ScrollTable>
       </div>
       <Pagination :page="page" :page-size="pageSize" :total="total" @update:page="(p) => (page = p)" />
     </AppCard>

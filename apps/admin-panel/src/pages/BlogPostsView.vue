@@ -9,6 +9,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
+import ScrollTable from '@/components/ui/ScrollTable.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { debounce } from '@/utils/debounce'
@@ -93,7 +94,7 @@ function formatDate(iso: string | null): string {
   if (!iso) return '—'
   const parsed = new Date(iso)
   if (isNaN(parsed.getTime())) return '—'
-  return new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' }).format(parsed)
+  return new Intl.DateTimeFormat('fa-IR', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'short', day: 'numeric' }).format(parsed)
 }
 
 function openPost(post: BlogPostRow) {
@@ -213,7 +214,7 @@ watch(page, load)
 </script>
 
 <template>
-  <div class="flex flex-col gap-5 p-8 xl:flex-row xl:items-start">
+  <div class="flex flex-col gap-5 p-4 sm:p-6 lg:p-8 xl:flex-row xl:items-start">
     <div class="min-w-0 flex-1 space-y-5">
       <AppCard :padded="false" class="p-4">
         <div class="flex flex-wrap items-end gap-3">
@@ -272,14 +273,14 @@ watch(page, load)
                trailing columns. Squeezed hardest on this page, since the categories side card
                takes a fixed 20rem out of the row from xl up. Desktop is untouched: no scrollbar
                exists while the table fits, which is the ≥1280px case this app optimizes for. -->
-          <div class="overflow-x-auto">
-            <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
+          <ScrollTable label="فهرست مطالب بلاگ">
+            <table class="w-full text-start text-sm transition-opacity" :class="{ 'opacity-50': loading }">
               <thead>
                 <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
-                  <th class="px-5 py-3 font-semibold">عنوان</th>
-                  <th class="px-5 py-3 font-semibold">دسته‌بندی</th>
-                  <th class="px-5 py-3 font-semibold">وضعیت</th>
-                  <th class="px-5 py-3 font-semibold">تاریخ انتشار</th>
+                  <th scope="col" class="px-5 py-3 font-semibold">عنوان</th>
+                  <th scope="col" class="px-5 py-3 font-semibold">دسته‌بندی</th>
+                  <th scope="col" class="px-5 py-3 font-semibold">وضعیت</th>
+                  <th scope="col" class="px-5 py-3 font-semibold">تاریخ انتشار</th>
                 </tr>
               </thead>
               <tbody>
@@ -301,7 +302,7 @@ watch(page, load)
                 </tr>
               </tbody>
             </table>
-          </div>
+          </ScrollTable>
         </div>
         <Pagination :page="page" :page-size="pageSize" :total="total" @update:page="(p) => (page = p)" />
       </AppCard>

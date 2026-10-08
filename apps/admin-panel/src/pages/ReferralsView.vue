@@ -26,6 +26,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
+import ScrollTable from '@/components/ui/ScrollTable.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { debounce } from '@/utils/debounce'
@@ -176,6 +177,7 @@ function onCancelled(id: string, result: { status: string; cancelledReason: stri
 
 function formatDateTime(iso: string): string {
   return new Intl.DateTimeFormat('fa-IR', {
+    timeZone: 'Asia/Tehran',
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -222,7 +224,7 @@ watch(page, load)
 </script>
 
 <template>
-  <div class="space-y-5 p-8">
+  <div class="space-y-5 p-4 sm:p-6 lg:p-8">
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
         <div>
@@ -274,7 +276,7 @@ watch(page, load)
     <EmptyState v-else-if="!loading && referrals.length === 0" icon="user-plus" message="معرفی‌ای با این فیلترها یافت نشد." />
 
     <AppCard v-else :padded="false" class="overflow-hidden">
-      <div class="overflow-x-auto">
+      <ScrollTable label="فهرست معرفی‌ها">
         <div class="relative">
           <div
             v-if="loading"
@@ -283,7 +285,7 @@ watch(page, load)
           >
             <AppIcon name="spinner" :size="22" class="animate-spin text-(--color-text-muted)" />
           </div>
-          <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
+          <table class="w-full text-start text-sm transition-opacity" :class="{ 'opacity-50': loading }">
             <thead>
               <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
                 <th scope="col" class="px-5 py-3 font-semibold">تاریخ ثبت</th>
@@ -371,7 +373,7 @@ watch(page, load)
                                 ({{ formatResolvedRewardValue(rewardForRole(referral.id, role)!.rewardKind, rewardForRole(referral.id, role)!.rewardValue) }})
                               </span>
                               <StatusBadge
-                                class="mr-1"
+                                class="me-1"
                                 :label="rewardForRole(referral.id, role)!.couponIsActive ? 'فعال' : 'غیرفعال'"
                                 :tone="rewardForRole(referral.id, role)!.couponIsActive ? 'success' : 'neutral'"
                               />
@@ -421,7 +423,7 @@ watch(page, load)
           </tbody>
         </table>
         </div>
-      </div>
+      </ScrollTable>
       <Pagination :page="page" :page-size="pageSize" :total="total" @update:page="(p) => (page = p)" />
     </AppCard>
   </div>

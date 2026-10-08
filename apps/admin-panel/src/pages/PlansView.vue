@@ -238,7 +238,7 @@ async function toggleSalonsList(plan: Plan) {
 </script>
 
 <template>
-  <div class="mx-auto max-w-4xl space-y-5 p-4 sm:p-8">
+  <div class="mx-auto max-w-4xl space-y-5 p-4 sm:p-6 lg:p-8">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h1 class="text-lg font-bold text-(--color-text)">پلن‌های اشتراک</h1>

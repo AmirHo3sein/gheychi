@@ -13,6 +13,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
 import AppButton from '@/components/ui/AppButton.vue'
+import ScrollTable from '@/components/ui/ScrollTable.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
@@ -96,7 +97,7 @@ const hasActiveFilters = computed(() => !!fromDate.value || !!toDate.value)
 const isEmpty = computed(() => !loading.value && !loadError.value && totals.value.length === 0 && funnel.value.length === 0)
 
 const dayFormatter = new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })
-const rangeFormatter = new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' })
+const rangeFormatter = new Intl.DateTimeFormat('fa-IR', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'short', day: 'numeric' })
 
 // funnelByDay's `date` is a plain "YYYY-MM-DD" day bucket (see pivotFunnel), not a
 // timestamp -- formatted in UTC so the displayed day never shifts off the bucket the
@@ -123,7 +124,7 @@ watch([fromDate, toDate], load)
 </script>
 
 <template>
-  <div class="space-y-5 p-8" data-testid="analytics-page">
+  <div class="space-y-5 p-4 sm:p-6 lg:p-8" data-testid="analytics-page">
     <AppCard>
       <div class="flex flex-wrap items-end gap-3">
         <div class="min-w-0">
@@ -172,8 +173,8 @@ watch([fromDate, toDate], load)
           <p class="text-sm font-bold text-(--color-text)">رویدادها به تفکیک نوع</p>
           <p class="mb-2 text-xs text-(--color-text-muted)">تعداد کل هر رویداد در بازه انتخاب‌شده</p>
         </div>
-        <div class="overflow-x-auto">
-          <table class="w-full text-right text-sm">
+        <ScrollTable label="رویدادها به تفکیک نوع">
+          <table class="w-full text-start text-sm">
             <thead>
               <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
                 <th scope="col" class="px-5 py-3 font-semibold">رویداد</th>
@@ -195,7 +196,7 @@ watch([fromDate, toDate], load)
               </tr>
             </tbody>
           </table>
-        </div>
+        </ScrollTable>
       </AppCard>
 
       <AppCard :padded="false">
@@ -203,8 +204,8 @@ watch([fromDate, toDate], load)
           <p class="text-sm font-bold text-(--color-text)">قیف رزرو به تفکیک روز</p>
           <p class="mb-2 text-xs text-(--color-text-muted)">شروع، تایید و پرداخت رزرو به همراه نرخ تبدیل هر مرحله</p>
         </div>
-        <div class="overflow-x-auto">
-          <table class="w-full text-right text-sm">
+        <ScrollTable label="قیف رزرو به تفکیک روز">
+          <table class="w-full text-start text-sm">
             <thead>
               <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
                 <th scope="col" class="px-5 py-3 font-semibold">تاریخ</th>
@@ -234,7 +235,7 @@ watch([fromDate, toDate], load)
               </tr>
             </tbody>
           </table>
-        </div>
+        </ScrollTable>
       </AppCard>
     </template>
   </div>

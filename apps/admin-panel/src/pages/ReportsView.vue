@@ -105,7 +105,7 @@ function onActionFinished() {
 }
 
 function formatDate(iso: string): string {
-  return new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
+  return new Intl.DateTimeFormat('fa-IR', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
 }
 
 onMounted(load)
@@ -114,7 +114,7 @@ watch(page, load)
 </script>
 
 <template>
-  <div class="space-y-5 p-8">
+  <div class="space-y-5 p-4 sm:p-6 lg:p-8">
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
         <div data-testid="status-filter">

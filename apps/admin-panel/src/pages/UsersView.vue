@@ -10,6 +10,7 @@ import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
+import ScrollTable from '@/components/ui/ScrollTable.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useSessionStore } from '@/stores/session'
@@ -109,7 +110,7 @@ function onUpdated(userId: string, status: string) {
 }
 
 function formatDate(iso: string): string {
-  return new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
+  return new Intl.DateTimeFormat('fa-IR', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
 }
 
 function clearFilters() {
@@ -131,7 +132,7 @@ watch(page, load)
 </script>
 
 <template>
-  <div class="space-y-5 p-8">
+  <div class="space-y-5 p-4 sm:p-6 lg:p-8">
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
         <div class="w-48">
@@ -193,16 +194,16 @@ watch(page, load)
              trailing columns. Here that trailing column is the suspend/reactivate control, so
              the clipping made a real action unreachable. Desktop is untouched: no scrollbar
              exists while the table fits, which is the ≥1280px case this app optimizes for. -->
-        <div class="overflow-x-auto">
-          <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
+        <ScrollTable label="فهرست کاربران">
+          <table class="w-full text-start text-sm transition-opacity" :class="{ 'opacity-50': loading }">
             <thead>
               <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
-                <th class="px-5 py-3 font-semibold">نام</th>
-                <th class="px-5 py-3 font-semibold">موبایل</th>
-                <th class="px-5 py-3 font-semibold">نقش</th>
-                <th class="px-5 py-3 font-semibold">تاریخ عضویت</th>
-                <th class="px-5 py-3 font-semibold">وضعیت</th>
-                <th class="px-5 py-3"></th>
+                <th scope="col" class="px-5 py-3 font-semibold">نام</th>
+                <th scope="col" class="px-5 py-3 font-semibold">موبایل</th>
+                <th scope="col" class="px-5 py-3 font-semibold">نقش</th>
+                <th scope="col" class="px-5 py-3 font-semibold">تاریخ عضویت</th>
+                <th scope="col" class="px-5 py-3 font-semibold">وضعیت</th>
+                <th scope="col" class="px-5 py-3"></th>
               </tr>
             </thead>
             <tbody>
@@ -233,7 +234,7 @@ watch(page, load)
               </tr>
             </tbody>
           </table>
-        </div>
+        </ScrollTable>
       </div>
       <Pagination :page="page" :page-size="pageSize" :total="total" @update:page="(p) => (page = p)" />
     </AppCard>

@@ -325,6 +325,8 @@ const AUDIT_ACTION: Record<string, LabelEntry> = {
   'category.delete': { label: 'حذف دسته‌بندی', tone: 'danger' },
   'category-request.approve': { label: 'تایید درخواست دسته‌بندی', tone: 'success' },
   'category-request.reject': { label: 'رد درخواست دسته‌بندی', tone: 'danger' },
+  'beauty_concept.create': { label: 'ایجاد مفهوم راهنمای زیبایی', tone: 'success' },
+  'beauty_concept.update': { label: 'ویرایش مفهوم راهنمای زیبایی', tone: 'info' },
   'config.update': { label: 'به‌روزرسانی تنظیمات', tone: 'info' },
   'report.resolve': { label: 'رسیدگی به گزارش', tone: 'success' },
   'post.create': { label: 'ایجاد مطلب بلاگ', tone: 'success' },
@@ -376,6 +378,7 @@ const AUDIT_TARGET_TYPE: Record<string, string> = {
   story: 'استوری',
   portfolioitem: 'نمونه کار',
   category: 'دسته‌بندی',
+  beauty_concept: 'مفهوم راهنمای زیبایی',
   booking: 'نوبت',
   'category-request': 'درخواست دسته‌بندی',
   config: 'تنظیمات',
@@ -446,6 +449,11 @@ const CONFIG_META: Record<string, ConfigMeta> = {
   // booking_payment_timeout_minutes key -- the payment window's global default is
   // booking_hold_ttl_minutes above (platform-config.service.ts).
   booking_approval_timeout_minutes: { label: 'مهلت تایید درخواست رزرو', hint: 'فرصت سالن برای تایید یا رد درخواست رزرو', unit: 'دقیقه', icon: 'history' },
+  // Beauty guide: each analysis is a paid external AI call, so the two daily caps are the
+  // cost breaker. 0 blocks new analyses entirely (per user / platform-wide).
+  beauty_guide_daily_limit_per_user: { label: 'سقف روزانه راهنمای زیبایی برای هر کاربر', hint: 'حداکثر تعداد تحلیل تصویر هر کاربر در یک روز (۰ = مسدود)', unit: 'تحلیل', icon: 'sparkles' },
+  beauty_guide_daily_limit_global: { label: 'سقف روزانه کل راهنماهای زیبایی (کنترل هزینه)', hint: 'حداکثر تعداد کل تحلیل‌های پلتفرم در یک روز؛ هر تحلیل یک فراخوانی پولی سرویس هوش مصنوعی است', unit: 'تحلیل', icon: 'sparkles' },
+  beauty_guide_retention_days: { label: 'مدت نگهداری تصاویر راهنمای زیبایی (روز)', hint: 'پس از این مدت، راهنما و تصویر مشتری حذف می‌شود (مگر به نوبت آینده‌ای متصل باشد)', unit: 'روز', icon: 'history' },
 }
 
 /** Falls back to the raw key as its own label -- new config keys stay editable, just less pretty. */

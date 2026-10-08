@@ -35,6 +35,12 @@ const routes = [
         component: () => import('@/pages/CategoryRequestsView.vue'),
         meta: { title: 'درخواست‌های دسته‌بندی' },
       },
+      {
+        path: 'beauty-concepts',
+        name: 'beauty-concepts',
+        component: () => import('@/pages/BeautyConceptsView.vue'),
+        meta: { title: 'مفاهیم راهنمای زیبایی' },
+      },
       { path: 'coupons', name: 'coupons', component: () => import('@/pages/CouponsView.vue'), meta: { title: 'کدهای تخفیف' } },
       { path: 'plans', name: 'plans', component: () => import('@/pages/PlansView.vue'), meta: { title: 'پلن‌های اشتراک' } },
       {

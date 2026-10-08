@@ -3,6 +3,7 @@
 import { onMounted, ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import AppButton from '@/components/ui/AppButton.vue'
+import ScrollTable from '@/components/ui/ScrollTable.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon, { type IconName } from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
@@ -111,9 +112,9 @@ async function confirmDelete() {
 onMounted(load)
 </script>
 
-<!-- p-8 from `sm` up (unchanged); below that 64px of gutter is a fifth of a 320px screen. -->
+<!-- p-4 -> sm:p-6 -> lg:p-8 scale; below that 64px of gutter is a fifth of a 320px screen. -->
 <template>
-  <div class="mx-auto max-w-3xl space-y-5 p-4 sm:p-8">
+  <div class="mx-auto max-w-3xl space-y-5 p-4 sm:p-6 lg:p-8">
     <AppCard>
       <p class="mb-3 flex items-center gap-2 text-sm font-semibold text-(--color-text)">
         <AppIcon name="plus" :size="16" class="text-(--color-accent-text)" />
@@ -171,13 +172,13 @@ onMounted(load)
     />
 
     <AppCard v-else :padded="false" class="overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="w-full text-right text-sm">
+      <ScrollTable label="فهرست دسته‌بندی‌ها">
+        <table class="w-full text-start text-sm">
           <thead>
             <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
-              <th class="px-5 py-3 font-semibold">آیکون</th>
-              <th class="px-5 py-3 font-semibold">نام دسته‌بندی</th>
-              <th class="px-5 py-3"></th>
+              <th scope="col" class="px-5 py-3 font-semibold">آیکون</th>
+              <th scope="col" class="px-5 py-3 font-semibold">نام دسته‌بندی</th>
+              <th scope="col" class="px-5 py-3"></th>
             </tr>
           </thead>
           <tbody>
@@ -244,7 +245,7 @@ onMounted(load)
             </tr>
           </tbody>
         </table>
-      </div>
+      </ScrollTable>
     </AppCard>
   </div>
 </template>

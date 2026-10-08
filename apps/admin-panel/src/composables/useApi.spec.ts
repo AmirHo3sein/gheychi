@@ -55,6 +55,7 @@ describe('useApi', () => {
     expect(data).toBeNull()
     expect(error).toEqual({ status: 400, message: 'bad request' })
     expect(useToast().toasts.value).toHaveLength(1)
+    expect(useToast().toasts.value[0]!.tone).toBe('error')
   })
 
   it('suppresses the toast when silent is true', async () => {

@@ -341,9 +341,9 @@ async function confirmRemoveCover() {
 }
 </script>
 
-<!-- p-8 from `sm` up (unchanged); below that 64px of gutter is a fifth of a 320px screen. -->
+<!-- p-4 -> sm:p-6 -> lg:p-8 scale; below that 64px of gutter is a fifth of a 320px screen. -->
 <template>
-  <div class="mx-auto max-w-6xl space-y-5 p-4 sm:p-8">
+  <div class="mx-auto max-w-6xl space-y-5 p-4 sm:p-6 lg:p-8">
     <EmptyState v-if="notFound" icon="warning" message="مطلب یافت نشد." />
 
     <AppCard

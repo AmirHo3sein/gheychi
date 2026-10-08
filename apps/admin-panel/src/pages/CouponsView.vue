@@ -3,6 +3,7 @@
 import { nextTick, onMounted, ref, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
 import AppButton from '@/components/ui/AppButton.vue'
+import ScrollTable from '@/components/ui/ScrollTable.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
@@ -127,7 +128,7 @@ async function load() {
 
 function formatDate(iso: string | null): string {
   if (!iso) return 'بدون انقضا'
-  return new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
+  return new Intl.DateTimeFormat('fa-IR', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
 }
 
 // Defense-in-depth (see the Coupon interface comment above) -- this screen should never
@@ -287,7 +288,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="space-y-5 p-8">
+  <div class="space-y-5 p-4 sm:p-6 lg:p-8">
     <AppCard>
       <p class="mb-3 flex items-center gap-2 text-sm font-semibold text-(--color-text)">
         <AppIcon name="plus" :size="16" class="text-(--color-accent-text)" />
@@ -356,8 +357,8 @@ onMounted(load)
         >
           <AppIcon name="spinner" :size="22" class="animate-spin text-(--color-text-muted)" />
         </div>
-        <div class="overflow-x-auto">
-          <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
+        <ScrollTable label="فهرست کدهای تخفیف">
+          <table class="w-full text-start text-sm transition-opacity" :class="{ 'opacity-50': loading }">
             <thead>
               <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
                 <th scope="col" class="px-5 py-3 font-semibold">کد</th>
@@ -399,7 +400,7 @@ onMounted(load)
                       <AppButton
                         data-testid="cancel-edit-confirm"
                         variant="ghost"
-                        class="mr-3"
+                        class="me-3"
                         :disabled="submitting"
                         @click="confirmingEditId = null"
                       >
@@ -444,7 +445,7 @@ onMounted(load)
                       >
                         ذخیره
                       </AppButton>
-                      <AppButton variant="ghost" class="mr-3" :disabled="submitting" @click="editingId = null">
+                      <AppButton variant="ghost" class="me-3" :disabled="submitting" @click="editingId = null">
                         انصراف
                       </AppButton>
                     </td>
@@ -507,7 +508,7 @@ onMounted(load)
               </tr>
             </tbody>
           </table>
-        </div>
+        </ScrollTable>
       </div>
     </AppCard>
   </div>

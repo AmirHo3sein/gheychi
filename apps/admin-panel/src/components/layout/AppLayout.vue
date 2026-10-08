@@ -1,12 +1,13 @@
 <!-- apps/admin-panel/src/components/layout/AppLayout.vue -->
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { useApi } from '@/composables/useApi'
 import { useTheme } from '@/composables/useTheme'
 import { useSessionStore } from '@/stores/session'
 import { userRoleLabel } from '@/utils/labels'
+import MobileNavDrawer from './MobileNavDrawer.vue'
 import NotificationBell from './NotificationBell.vue'
 import SidebarNav from './SidebarNav.vue'
 
@@ -20,6 +21,17 @@ function toggleTheme() {
   setPreference(isDark.value ? 'light' : 'dark')
 }
 
+// Phone navigation drawer. Focus goes back to the hamburger that opened it, so a keyboard
+// user isn't dropped at the top of the page every time they dismiss the menu.
+const navOpen = ref(false)
+const menuButton = ref<HTMLButtonElement | null>(null)
+watch(navOpen, async (isOpen, wasOpen) => {
+  if (!isOpen && wasOpen) {
+    await nextTick()
+    menuButton.value?.focus()
+  }
+})
+
 const initial = computed(() => (session.user?.name?.trim()?.[0] ?? session.user?.phone?.slice(-2) ?? '؟'))
 
 async function logout() {
@@ -31,7 +43,13 @@ async function logout() {
 
 <template>
   <div class="flex h-screen overflow-hidden bg-(--color-surface)">
-    <SidebarNav />
+    <!-- From `md` up: the permanent 16rem sidebar. Below it, the same nav lives in the
+         off-canvas drawer opened from the header's hamburger, so a phone gets the full width
+         for content instead of a 64px icon rail. -->
+    <aside class="hidden h-screen w-64 shrink-0 overflow-y-auto border-e border-(--color-border) bg-(--color-surface-card) px-3 py-4 md:block">
+      <SidebarNav />
+    </aside>
+    <MobileNavDrawer v-model="navOpen" />
     <!-- `min-w-0` is load-bearing, not decoration: a flex child defaults to
          `min-width: auto`, so this column would refuse to shrink below its widest page and
          push the sidebar off-screen. `overflow-hidden` already implies a 0 automatic minimum
@@ -43,6 +61,19 @@ async function logout() {
            the logout button out through the parent's `overflow-hidden`, where it would be
            both clipped and unreachable (no scroll to recover it). -->
       <header class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-(--color-border) bg-(--color-surface-card) px-4 py-3.5 sm:px-6">
+        <button
+          ref="menuButton"
+          type="button"
+          aria-label="منو"
+          aria-controls="mobile-nav-drawer"
+          :aria-expanded="navOpen"
+          aria-haspopup="dialog"
+          class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text) md:hidden"
+          @click="navOpen = true"
+        >
+          <AppIcon name="menu" :size="20" />
+        </button>
+
         <!-- Decorative: the panel name is already the adjacent <h1>, so an alt here would
              just be read out twice. The artwork carries its own peach field, hence no
              bg-* utility -- rounded-xl clips it to the same silhouette the mark had. -->
@@ -58,6 +89,7 @@ async function logout() {
           <button
             type="button"
             :title="isDark ? 'حالت روشن' : 'حالت تیره'"
+            :aria-label="isDark ? 'حالت روشن' : 'حالت تیره'"
             class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text)"
             @click="toggleTheme"
           >
@@ -72,7 +104,7 @@ async function logout() {
                keeps its content-based minimum width and a long account name widens the whole
                header instead of being ellipsised. -->
           <div class="flex min-w-0 items-center gap-2.5 rounded-xl py-1 pe-1 ps-2">
-            <div class="min-w-0 text-right leading-tight">
+            <div class="min-w-0 text-start leading-tight">
               <p class="truncate text-sm font-semibold text-(--color-text)">{{ session.user?.name || session.user?.phone }}</p>
               <p class="text-[11px] text-(--color-text-muted)">{{ userRoleLabel(session.user?.role ?? '') }}</p>
             </div>
@@ -84,6 +116,7 @@ async function logout() {
           <button
             type="button"
             title="خروج"
+            aria-label="خروج"
             class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-(--color-text-muted) transition-colors hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text)"
             @click="logout"
           >

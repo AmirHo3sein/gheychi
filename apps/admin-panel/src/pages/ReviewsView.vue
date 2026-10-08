@@ -138,7 +138,7 @@ function clearFilters() {
 }
 
 function formatDate(iso: string): string {
-  return new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
+  return new Intl.DateTimeFormat('fa-IR', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
 }
 
 const hasActiveFilters = computed(
@@ -164,7 +164,7 @@ watch(page, load)
 </script>
 
 <template>
-  <div class="space-y-5 p-8">
+  <div class="space-y-5 p-4 sm:p-6 lg:p-8">
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
         <div>
@@ -255,7 +255,7 @@ watch(page, load)
                 :fill="n <= review.rating ? 'currentColor' : 'none'"
                 :class="n > review.rating && 'text-(--color-border)'"
               />
-              <span class="tnum mr-1 text-sm font-bold text-(--color-text)">{{
+              <span class="tnum me-1 text-sm font-bold text-(--color-text)">{{
                 Number(review.rating).toLocaleString('fa-IR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
               }}</span>
             </div>

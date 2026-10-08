@@ -59,4 +59,78 @@ describe('JalaliDatePicker', () => {
     expect(trigger.attributes('title')).toBe(trigger.text())
     expect(wrapper.find('button span').classes()).toContain('truncate')
   })
+
+  describe('dialog behaviour', () => {
+    it('is a labelled dialog and moves focus to a day when opened', async () => {
+      const wrapper = mount(JalaliDatePicker, { props: { modelValue: '' }, attachTo: document.body })
+      await wrapper.find('button').trigger('click')
+      await flushPromises()
+      const dialog = wrapper.get('[data-testid="date-popover"]')
+      expect(dialog.attributes('role')).toBe('dialog')
+      expect(dialog.attributes('aria-label')).toBe('انتخاب تاریخ')
+      expect(dialog.element.contains(document.activeElement)).toBe(true)
+      wrapper.unmount()
+    })
+
+    it('focuses the selected day when there is one', async () => {
+      const wrapper = mount(JalaliDatePicker, { props: { modelValue: '2025-05-05' }, attachTo: document.body })
+      await wrapper.find('button').trigger('click')
+      await flushPromises()
+      expect(document.activeElement?.getAttribute('aria-pressed')).toBe('true')
+      wrapper.unmount()
+    })
+
+    it('closes on Escape and returns focus to the trigger', async () => {
+      const wrapper = mount(JalaliDatePicker, { props: { modelValue: '' }, attachTo: document.body })
+      const trigger = wrapper.find('button')
+      await trigger.trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-testid="date-popover"]').trigger('keydown', { key: 'Escape' })
+      await flushPromises()
+      expect(wrapper.find('[data-testid="date-popover"]').exists()).toBe(false)
+      expect(document.activeElement).toBe(trigger.element)
+      wrapper.unmount()
+    })
+
+    it('returns focus to the trigger after picking a day', async () => {
+      const wrapper = mount(JalaliDatePicker, { props: { modelValue: '' }, attachTo: document.body })
+      const trigger = wrapper.find('button')
+      await trigger.trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-day]:not(:disabled)').trigger('click')
+      await flushPromises()
+      expect(wrapper.emitted('update:modelValue')).toHaveLength(1)
+      expect(document.activeElement).toBe(trigger.element)
+      wrapper.unmount()
+    })
+  })
+
+  describe('layout', () => {
+    it('puts "previous" on the right with a right-pointing chevron, matching Pagination', async () => {
+      const wrapper = await openPicker()
+      const [first, last] = wrapper.get('[data-testid="date-popover"]').findAll('button').slice(0, 2)
+      expect(first!.attributes('aria-label')).toBe('ماه قبل')
+      expect(first!.findComponent({ name: 'AppIcon' }).props('name')).toBe('chevron-right')
+      expect(last!.attributes('aria-label')).toBe('ماه بعد')
+      expect(last!.findComponent({ name: 'AppIcon' }).props('name')).toBe('chevron-left')
+    })
+
+    it('keeps month buttons at 44px and day cells at 40px', async () => {
+      const wrapper = await openPicker()
+      const popover = wrapper.get('[data-testid="date-popover"]')
+      for (const nav of popover.findAll('button').slice(0, 2)) expect(nav.classes()).toEqual(expect.arrayContaining(['h-11', 'w-11']))
+      expect(popover.get('[data-day]:not(:disabled)').classes()).toContain('h-10')
+    })
+
+    it('steps the month in the direction its label says', async () => {
+      const wrapper = mount(JalaliDatePicker, { props: { modelValue: '2025-05-05' } })
+      await wrapper.find('button').trigger('click')
+      const title = () => wrapper.get('[data-testid="date-popover"] p').text()
+      const before = title()
+      await wrapper.get('[aria-label="ماه بعد"]').trigger('click')
+      expect(title()).not.toBe(before)
+      await wrapper.get('[aria-label="ماه قبل"]').trigger('click')
+      expect(title()).toBe(before)
+    })
+  })
 })

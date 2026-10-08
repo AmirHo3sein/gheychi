@@ -27,6 +27,7 @@ function todayJalali() {
 
 const root = ref<HTMLElement | null>(null)
 const open = ref(false)
+const trigger = ref<HTMLButtonElement | null>(null)
 
 const selectedJalali = computed(() => {
   if (!props.modelValue) return null
@@ -92,10 +93,18 @@ function nextMonth() {
   }
 }
 
+// The popover unmounts, so focus would otherwise fall back to <body> and a keyboard user
+// would lose their place in the form. Outside-click closes deliberately do NOT do this:
+// the click already moved focus to wherever the user chose.
+function closeAndRestoreFocus() {
+  open.value = false
+  nextTick(() => trigger.value?.focus())
+}
+
 function pick(day: DayCell) {
   if (!day.inMonth) return
   emit('update:modelValue', day.gregorian)
-  open.value = false
+  closeAndRestoreFocus()
 }
 
 function goToday() {
@@ -104,16 +113,16 @@ function goToday() {
   viewMonth.value = t.jm
   const g = toGregorian(t.jy, t.jm, t.jd)
   emit('update:modelValue', `${g.gy}-${String(g.gm).padStart(2, '0')}-${String(g.gd).padStart(2, '0')}`)
-  open.value = false
+  closeAndRestoreFocus()
 }
 
 function clear() {
   emit('update:modelValue', '')
-  open.value = false
+  closeAndRestoreFocus()
 }
 
 const popover = ref<HTMLElement | null>(null)
-// The popover is 16rem wide but its triggers are as narrow as w-32, and they sit inside
+// The popover is 20rem wide but its triggers are as narrow as w-32, and they sit inside
 // filter rows that can end up anywhere along the row. Anchored at its trigger's inline-start
 // edge it grows toward the inline-END, which in RTL is to the LEFT -- so on a narrow viewport
 // it escapes off the left edge, and the calendar grid ends up half unreachable. Measure the
@@ -143,6 +152,19 @@ function toggle() {
   }
   open.value = !open.value
   keepPopoverOnScreen()
+  if (open.value) focusIntoPopover()
+}
+
+// Move focus into the dialog: the selected day, else today, else the first day of the month.
+async function focusIntoPopover() {
+  await nextTick()
+  const el = popover.value
+  if (!el) return
+  const target =
+    el.querySelector<HTMLElement>('[data-day][aria-pressed="true"]') ??
+    el.querySelector<HTMLElement>('[data-day][data-today]') ??
+    el.querySelector<HTMLElement>('[data-day]:not(:disabled)')
+  target?.focus()
 }
 
 function onDocumentClick(e: MouseEvent) {
@@ -151,7 +173,8 @@ function onDocumentClick(e: MouseEvent) {
 
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape' && open.value) {
-    open.value = false
+    e.stopPropagation()
+    closeAndRestoreFocus()
   }
 }
 
@@ -168,6 +191,7 @@ onBeforeUnmount(() => {
 <template>
   <div ref="root" class="relative" @keydown="onKeydown">
     <button
+      ref="trigger"
       type="button"
       class="flex h-11 w-full items-center gap-2 rounded-xl border border-(--color-border) px-3 text-sm"
       :aria-label="ariaLabel"
@@ -196,27 +220,44 @@ onBeforeUnmount(() => {
       v-if="open"
       ref="popover"
       data-testid="date-popover"
-      class="absolute z-50 mt-1.5 w-64 max-w-[calc(100vw-1rem)] rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-3 shadow-(--shadow-md)"
+      role="dialog"
+      aria-label="انتخاب تاریخ"
+      class="absolute z-50 mt-1.5 w-80 max-w-[calc(100vw-1rem)] rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-3 shadow-(--shadow-md)"
       :style="popoverShiftX === 0 ? undefined : { transform: `translateX(${popoverShiftX}px)` }"
     >
+      <!-- Same convention as Pagination.vue: in RTL "previous" sits on the RIGHT with a
+           right-pointing chevron, "next" on the LEFT with a left-pointing one. -->
       <div class="mb-2 flex items-center justify-between">
-        <button type="button" aria-label="ماه بعد" class="rounded-lg p-1.5 hover:bg-(--color-border-soft)" @click="nextMonth">
-          <AppIcon name="chevron-left" :size="16" class="rotate-180 text-(--color-text-muted)" />
+        <button
+          type="button"
+          aria-label="ماه قبل"
+          class="flex h-11 w-11 items-center justify-center rounded-lg hover:bg-(--color-border-soft)"
+          @click="prevMonth"
+        >
+          <AppIcon name="chevron-right" :size="16" class="text-(--color-text-muted)" />
         </button>
         <p class="text-sm font-bold text-(--color-text)">{{ MONTHS[viewMonth - 1] }} {{ toPersianDigits(viewYear) }}</p>
-        <button type="button" aria-label="ماه قبل" class="rounded-lg p-1.5 hover:bg-(--color-border-soft)" @click="prevMonth">
+        <button
+          type="button"
+          aria-label="ماه بعد"
+          class="flex h-11 w-11 items-center justify-center rounded-lg hover:bg-(--color-border-soft)"
+          @click="nextMonth"
+        >
           <AppIcon name="chevron-left" :size="16" class="text-(--color-text-muted)" />
         </button>
       </div>
 
-      <div class="grid grid-cols-7 gap-1 text-center">
+      <div class="grid grid-cols-7 gap-0.5 text-center">
         <span v-for="w in WEEKDAYS" :key="w" class="py-1 text-xs font-semibold text-(--color-text-muted)">{{ w }}</span>
         <button
           v-for="(day, i) in days"
           :key="i"
           type="button"
+          data-day
+          :data-today="day.isToday || undefined"
+          :aria-pressed="day.inMonth ? day.isSelected : undefined"
           :disabled="!day.inMonth"
-          class="tnum flex h-8 items-center justify-center rounded-lg text-sm transition-colors disabled:cursor-default"
+          class="tnum flex h-10 items-center justify-center rounded-lg text-sm transition-colors disabled:cursor-default"
           :class="[
             !day.inMonth && 'invisible',
             day.isSelected ? 'bg-(--color-accent) font-bold text-(--color-fill-text)' : 'hover:bg-(--color-border-soft)',
@@ -229,8 +270,8 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="mt-2 flex justify-between border-t border-(--color-border-soft) pt-2">
-        <button type="button" class="text-xs font-semibold text-(--color-accent-text)" @click="goToday">امروز</button>
-        <button type="button" class="text-xs font-semibold text-(--color-text-muted)" @click="clear">پاک کردن</button>
+        <button type="button" class="min-h-11 px-2 text-xs font-semibold text-(--color-accent-text)" @click="goToday">امروز</button>
+        <button type="button" class="min-h-11 px-2 text-xs font-semibold text-(--color-text-muted)" @click="clear">پاک کردن</button>
       </div>
     </div>
   </div>

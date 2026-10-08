@@ -8,6 +8,7 @@ import { TitleComponent, TooltipComponent, LegendComponent, GridComponent } from
 import VChart from 'vue-echarts'
 import { useApi } from '@/composables/useApi'
 import { useTheme } from '@/composables/useTheme'
+import ChartCard from '@/components/dashboard/ChartCard.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon, { type IconName } from '@/components/ui/AppIcon.vue'
 import { genderTargetLabel, salonStatusLabel, userRoleLabel } from '@/utils/labels'
@@ -265,7 +266,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="space-y-6 p-4">
+  <div class="space-y-6 p-4 sm:p-6 lg:p-8">
     <!-- Visually hidden -- announces load completion/failure for screen-reader users,
          since the stat cards/charts themselves only convey it visually. -->
     <div class="sr-only" role="status" aria-live="polite">{{ loadStatusAnnouncement }}</div>
@@ -301,50 +302,22 @@ onMounted(async () => {
     </div>
 
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
-      <AppCard>
-        <p class="mb-1 text-sm font-bold text-(--color-text)">وضعیت آرایشگاه‌ها</p>
-        <p class="mb-2 text-xs text-(--color-text-muted)">توزیع آرایشگاه‌ها بر اساس وضعیت بررسی</p>
-        <div v-if="loading" class="flex h-64 items-center justify-center" role="status" aria-label="در حال بارگذاری" data-testid="chart-loading">
-          <AppIcon name="spinner" :size="24" class="animate-spin text-(--color-text-muted)" />
-        </div>
-        <p v-else-if="loadError" class="py-16 text-center text-sm text-(--tone-danger-text)" data-testid="chart-error">بارگذاری داده‌ها با خطا مواجه شد.</p>
-        <VChart v-else-if="hasSalonData" :option="salonStatusChart" autoresize class="!h-64" />
-        <p v-else class="py-16 text-center text-sm text-(--color-text-muted)">داده‌ای برای نمایش موجود نیست.</p>
-      </AppCard>
+      <ChartCard title="وضعیت آرایشگاه‌ها" subtitle="توزیع آرایشگاه‌ها بر اساس وضعیت بررسی" :loading="loading" :error="loadError" :empty="!hasSalonData">
+        <VChart :option="salonStatusChart" autoresize class="!h-64" />
+      </ChartCard>
 
-      <AppCard>
-        <p class="mb-1 text-sm font-bold text-(--color-text)">مخاطب آرایشگاه‌ها</p>
-        <p class="mb-2 text-xs text-(--color-text-muted)">سهم آرایشگاه‌های بانوان و آقایان</p>
-        <div v-if="loading" class="flex h-64 items-center justify-center" role="status" aria-label="در حال بارگذاری" data-testid="chart-loading">
-          <AppIcon name="spinner" :size="24" class="animate-spin text-(--color-text-muted)" />
-        </div>
-        <p v-else-if="loadError" class="py-16 text-center text-sm text-(--tone-danger-text)" data-testid="chart-error">بارگذاری داده‌ها با خطا مواجه شد.</p>
-        <VChart v-else-if="hasSalonData" :option="genderChart" autoresize class="!h-64" />
-        <p v-else class="py-16 text-center text-sm text-(--color-text-muted)">داده‌ای برای نمایش موجود نیست.</p>
-      </AppCard>
+      <ChartCard title="مخاطب آرایشگاه‌ها" subtitle="سهم آرایشگاه‌های بانوان و آقایان" :loading="loading" :error="loadError" :empty="!hasSalonData">
+        <VChart :option="genderChart" autoresize class="!h-64" />
+      </ChartCard>
 
-      <AppCard>
-        <p class="mb-1 text-sm font-bold text-(--color-text)">نقش کاربران</p>
-        <p class="mb-2 text-xs text-(--color-text-muted)">توزیع کاربران بر اساس نقش</p>
-        <div v-if="loading" class="flex h-64 items-center justify-center" role="status" aria-label="در حال بارگذاری" data-testid="chart-loading">
-          <AppIcon name="spinner" :size="24" class="animate-spin text-(--color-text-muted)" />
-        </div>
-        <p v-else-if="loadError" class="py-16 text-center text-sm text-(--tone-danger-text)" data-testid="chart-error">بارگذاری داده‌ها با خطا مواجه شد.</p>
-        <VChart v-else-if="hasUserData" :option="userRoleChart" autoresize class="!h-64" />
-        <p v-else class="py-16 text-center text-sm text-(--color-text-muted)">داده‌ای برای نمایش موجود نیست.</p>
-      </AppCard>
+      <ChartCard title="نقش کاربران" subtitle="توزیع کاربران بر اساس نقش" :loading="loading" :error="loadError" :empty="!hasUserData">
+        <VChart :option="userRoleChart" autoresize class="!h-64" />
+      </ChartCard>
     </div>
 
-    <AppCard>
-      <p class="mb-1 text-sm font-bold text-(--color-text)">توزیع امتیاز نظرات</p>
-      <p class="mb-2 text-xs text-(--color-text-muted)">تعداد نظرات ثبت‌شده به تفکیک امتیاز</p>
-      <div v-if="loading" class="flex h-64 items-center justify-center" role="status" aria-label="در حال بارگذاری" data-testid="chart-loading">
-        <AppIcon name="spinner" :size="24" class="animate-spin text-(--color-text-muted)" />
-      </div>
-      <p v-else-if="loadError" class="py-16 text-center text-sm text-(--tone-danger-text)" data-testid="chart-error">بارگذاری داده‌ها با خطا مواجه شد.</p>
-      <VChart v-else-if="hasReviewData" :option="ratingChart" autoresize class="!h-64" />
-      <p v-else class="py-16 text-center text-sm text-(--color-text-muted)">هنوز نظری ثبت نشده است.</p>
-    </AppCard>
+    <ChartCard title="توزیع امتیاز نظرات" subtitle="تعداد نظرات ثبت‌شده به تفکیک امتیاز" :loading="loading" :error="loadError" :empty="!hasReviewData" empty-message="هنوز نظری ثبت نشده است.">
+      <VChart :option="ratingChart" autoresize class="!h-64" />
+    </ChartCard>
 
     <div>
       <h2 class="mb-3 text-sm font-bold text-(--color-text-muted)">دسترسی سریع</h2>

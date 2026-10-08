@@ -9,6 +9,7 @@ import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
+import ScrollTable from '@/components/ui/ScrollTable.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { debounce } from '@/utils/debounce'
@@ -118,6 +119,7 @@ function loadFromFilterChange() {
 
 function formatDateTime(iso: string): string {
   return new Intl.DateTimeFormat('fa-IR', {
+    timeZone: 'Asia/Tehran',
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -156,7 +158,7 @@ watch(page, load)
 </script>
 
 <template>
-  <div class="space-y-5 p-8">
+  <div class="space-y-5 p-4 sm:p-6 lg:p-8">
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
         <div data-testid="action-filter">
@@ -226,16 +228,16 @@ watch(page, load)
              payload block), so it is the first to need the scroller. Desktop is untouched: no
              scrollbar exists while the table fits, which is the ≥1280px case this app
              optimizes for. -->
-        <div class="overflow-x-auto">
-          <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
+        <ScrollTable label="تاریخچه اقدامات">
+          <table class="w-full text-start text-sm transition-opacity" :class="{ 'opacity-50': loading }">
             <thead>
               <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
-                <th class="px-5 py-3 font-semibold">زمان</th>
-                <th class="px-5 py-3 font-semibold">مدیر</th>
-                <th class="px-5 py-3 font-semibold">اقدام</th>
-                <th class="px-5 py-3 font-semibold">هدف</th>
-                <th class="px-5 py-3 font-semibold">جزئیات</th>
-                <th class="px-5 py-3 font-semibold">نتیجه</th>
+                <th scope="col" class="px-5 py-3 font-semibold">زمان</th>
+                <th scope="col" class="px-5 py-3 font-semibold">مدیر</th>
+                <th scope="col" class="px-5 py-3 font-semibold">اقدام</th>
+                <th scope="col" class="px-5 py-3 font-semibold">هدف</th>
+                <th scope="col" class="px-5 py-3 font-semibold">جزئیات</th>
+                <th scope="col" class="px-5 py-3 font-semibold">نتیجه</th>
               </tr>
             </thead>
             <tbody>
@@ -291,7 +293,7 @@ watch(page, load)
               </tr>
             </tbody>
           </table>
-        </div>
+        </ScrollTable>
       </div>
       <Pagination :page="page" :page-size="pageSize" :total="total" @update:page="(p) => (page = p)" />
     </AppCard>

@@ -105,6 +105,7 @@ function eventIcon(eventType: string): IconName {
 // their order look arbitrary.
 function formatDateTime(iso: string): string {
   return new Intl.DateTimeFormat('fa-IR', {
+    timeZone: 'Asia/Tehran',
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -156,9 +157,9 @@ function metadataEntries(metadata: Record<string, unknown> | null): { key: strin
 onMounted(load)
 </script>
 
-<!-- p-8 from `sm` up; below that 64px of gutter is a fifth of a 320px screen. -->
+<!-- p-4 -> sm:p-6 -> lg:p-8 scale; below that 64px of gutter is a fifth of a 320px screen. -->
 <template>
-  <div class="mx-auto max-w-3xl space-y-5 p-4 sm:p-8">
+  <div class="mx-auto max-w-3xl space-y-5 p-4 sm:p-6 lg:p-8">
     <AppCard>
       <div class="flex min-w-0 items-start gap-3">
         <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-(--color-border-soft) text-(--color-accent-text)">

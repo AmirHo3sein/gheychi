@@ -9,6 +9,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
+import ScrollTable from '@/components/ui/ScrollTable.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { debounce } from '@/utils/debounce'
@@ -99,7 +100,7 @@ function loadFromFilterChange() {
 }
 
 function formatDate(iso: string): string {
-  return new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
+  return new Intl.DateTimeFormat('fa-IR', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
 }
 
 // Mirrors SearchService's public boost predicate exactly:
@@ -146,7 +147,7 @@ watch(page, load)
 </script>
 
 <template>
-  <div class="space-y-5 p-8">
+  <div class="space-y-5 p-4 sm:p-6 lg:p-8">
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
         <AppInput v-model="nameFilter" icon="search" label="جست‌وجو" placeholder="نام آرایشگاه" class="w-52" />
@@ -210,15 +211,15 @@ watch(page, load)
              trailing columns rather than letting the operator reach them. Desktop is untouched:
              no scrollbar exists while the table fits, which is the ≥1280px case this app
              optimizes for. -->
-        <div class="overflow-x-auto">
-          <table class="w-full text-right text-sm transition-opacity" :class="{ 'opacity-50': loading }">
+        <ScrollTable label="فهرست آرایشگاه‌ها">
+          <table class="w-full text-start text-sm transition-opacity" :class="{ 'opacity-50': loading }">
             <thead>
               <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
-                <th class="px-5 py-3 font-semibold">نام</th>
-                <th class="px-5 py-3 font-semibold">شهر</th>
-                <th class="px-5 py-3 font-semibold">مخاطب</th>
-                <th class="px-5 py-3 font-semibold">وضعیت</th>
-                <th class="px-5 py-3 font-semibold">تاریخ ثبت</th>
+                <th scope="col" class="px-5 py-3 font-semibold">نام</th>
+                <th scope="col" class="px-5 py-3 font-semibold">شهر</th>
+                <th scope="col" class="px-5 py-3 font-semibold">مخاطب</th>
+                <th scope="col" class="px-5 py-3 font-semibold">وضعیت</th>
+                <th scope="col" class="px-5 py-3 font-semibold">تاریخ ثبت</th>
               </tr>
             </thead>
             <tbody>
@@ -261,7 +262,7 @@ watch(page, load)
               </tr>
             </tbody>
           </table>
-        </div>
+        </ScrollTable>
       </div>
       <Pagination :page="page" :page-size="pageSize" :total="total" @update:page="(p) => (page = p)" />
     </AppCard>

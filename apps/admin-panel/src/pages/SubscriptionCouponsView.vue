@@ -49,7 +49,7 @@ onMounted(load)
 
 function formatDate(iso: string | null): string {
   if (!iso) return 'بدون انقضا'
-  return new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
+  return new Intl.DateTimeFormat('fa-IR', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso))
 }
 
 const newCode = ref('')
@@ -114,7 +114,7 @@ async function reactivate(coupon: SubscriptionCoupon) {
 </script>
 
 <template>
-  <div class="mx-auto max-w-3xl space-y-5 p-4 sm:p-8">
+  <div class="mx-auto max-w-3xl space-y-5 p-4 sm:p-6 lg:p-8">
     <div>
       <h1 class="text-lg font-bold text-(--color-text)">کدهای تخفیف اشتراک</h1>
       <p class="mt-1 text-sm text-(--color-text-muted)">
@@ -206,7 +206,7 @@ async function reactivate(coupon: SubscriptionCoupon) {
 
           <div v-if="coupon.isActive" class="shrink-0">
             <template v-if="confirmingDeactivateId === coupon.id">
-              <span class="ml-2 text-xs font-semibold text-(--tone-danger-text)">غیرفعال شود؟</span>
+              <span class="ms-2 text-xs font-semibold text-(--tone-danger-text)">غیرفعال شود؟</span>
               <AppButton type="button" variant="danger" :disabled="submitting" :data-testid="`confirm-deactivate-${coupon.code}`" @click="deactivate(coupon)">
                 تأیید
               </AppButton>

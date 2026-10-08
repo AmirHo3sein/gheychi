@@ -346,4 +346,36 @@ describe('SalonDetailView', () => {
     expect(infoTab.attributes('aria-selected')).toBe('true')
     expect(wrapper.get('[data-testid="tab-stories"]').attributes('aria-selected')).toBe('false')
   })
+
+  it('wires tabs to their panel and uses a roving tabindex', async () => {
+    fetchMock.mockResolvedValueOnce({ data: salon, error: null })
+    const wrapper = await mountWithRouter()
+
+    const infoTab = wrapper.get('[data-testid="tab-info"]')
+    const storiesTab = wrapper.get('[data-testid="tab-stories"]')
+    expect(infoTab.attributes('tabindex')).toBe('0')
+    expect(storiesTab.attributes('tabindex')).toBe('-1')
+    const panel = wrapper.get('[role="tabpanel"]')
+    expect(panel.attributes('id')).toBe(infoTab.attributes('aria-controls'))
+    expect(panel.attributes('aria-labelledby')).toBe(infoTab.attributes('id'))
+  })
+
+  it('moves between tabs with the arrow keys following the RTL visual order', async () => {
+    fetchMock.mockResolvedValueOnce({ data: salon, error: null })
+    fetchMock.mockResolvedValue({ data: [], error: null })
+    const wrapper = await mountWithRouter()
+
+    // First tab is on the right in RTL: ArrowLeft goes to the next one, ArrowRight back.
+    await wrapper.get('[data-testid="tab-info"]').trigger('keydown', { key: 'ArrowLeft' })
+    expect(wrapper.get('[data-testid="tab-stories"]').attributes('aria-selected')).toBe('true')
+    await wrapper.get('[data-testid="tab-stories"]').trigger('keydown', { key: 'ArrowRight' })
+    expect(wrapper.get('[data-testid="tab-info"]').attributes('aria-selected')).toBe('true')
+    // Wraps from the first tab to the last.
+    await wrapper.get('[data-testid="tab-info"]').trigger('keydown', { key: 'ArrowRight' })
+    expect(wrapper.get('[data-testid="tab-portfolio"]').attributes('aria-selected')).toBe('true')
+    await wrapper.get('[data-testid="tab-portfolio"]').trigger('keydown', { key: 'Home' })
+    expect(wrapper.get('[data-testid="tab-info"]').attributes('aria-selected')).toBe('true')
+    await wrapper.get('[data-testid="tab-info"]').trigger('keydown', { key: 'End' })
+    expect(wrapper.get('[data-testid="tab-portfolio"]').attributes('aria-selected')).toBe('true')
+  })
 })
