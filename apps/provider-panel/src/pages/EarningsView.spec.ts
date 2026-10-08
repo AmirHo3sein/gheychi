@@ -62,6 +62,8 @@ describe('EarningsView', () => {
     expect(wrapper.text()).toContain('مجموع بیعانه')
     expect(wrapper.text()).not.toContain('مجموع دریافتی')
     expect(wrapper.get('[data-testid="earnings-deposit-note"]').text()).toContain('بیعانهٔ آنلاین')
+    // Commission is a percentage of the deposit actually captured, not of every booking.
+    expect(wrapper.get('[data-testid="earnings-deposit-note"]').text()).toContain('درصدی از همین بیعانهٔ دریافت‌شده')
   })
 
   it('renders a retry-capable error state (not a blank page) when the fetch fails', async () => {

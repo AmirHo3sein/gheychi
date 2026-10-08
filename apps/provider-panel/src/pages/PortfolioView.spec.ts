@@ -206,4 +206,11 @@ describe('PortfolioView', () => {
     expect(wrapper.find('[data-testid="retry-portfolio"]').exists()).toBe(false)
     expect(wrapper.findAll('[data-testid="item-caption"]')).toHaveLength(2)
   })
+
+  it('gives every portfolio image alt text: caption, else the linked service, else a generic label', async () => {
+    const wrapper = await mountView()
+    const alts = wrapper.findAll('img').map((i) => i.attributes('alt'))
+    expect(alts).toEqual(['قبل و بعد رنگ', 'کوتاهی مو'])
+    wrapper.unmount()
+  })
 })

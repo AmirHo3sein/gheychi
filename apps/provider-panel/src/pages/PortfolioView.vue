@@ -96,6 +96,11 @@ async function saveCaption(item: PortfolioItem) {
   }
 }
 
+// Saved caption first, then the linked service's name; the generic label is the last resort.
+function itemAlt(item: PortfolioItem) {
+  return item.caption || services.value.find((x) => x.id === item.serviceId)?.name || 'نمونه‌کار'
+}
+
 // AppSelect hands over the picked option's raw value, not a DOM Event.
 async function setService(item: PortfolioItem, value: string | number | null) {
   // '' (the «بدون خدمت مرتبط» option) clears the service link -- the API accepts
@@ -180,7 +185,7 @@ async function move(index: number, direction: -1 | 1) {
             class="flex gap-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-3 shadow-(--shadow-sm)"
           >
             <div class="relative h-24 w-24 shrink-0">
-              <img :src="p.url" class="h-full w-full rounded-xl object-cover" />
+              <img :src="p.url" :alt="itemAlt(p)" class="h-full w-full rounded-xl object-cover" />
               <span
                 v-if="p.status === 'removed'"
                 data-testid="removed-badge"

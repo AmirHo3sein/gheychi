@@ -115,4 +115,22 @@ describe('ScheduleStep', () => {
     const wrapper = mountStep({ 1: { enabled: false, ranges: [{ openTime: '09:00', closeTime: '20:00' }] } })
     expect(wrapper.get('[data-testid="day-1"]').find('[data-testid="add-range"]').exists()).toBe(false)
   })
+
+  // axe `label`: every time input needs a name that says which day it belongs to, disabled or not.
+  it('names every time input with its weekday, numbering split-shift ranges', () => {
+    const wrapper = mountStep({
+      6: { enabled: false, ranges: [{ openTime: '09:00', closeTime: '13:00' }] },
+      1: { enabled: true, ranges: [{ openTime: '09:00', closeTime: '13:00' }, { openTime: '15:00', closeTime: '20:00' }] },
+    })
+    const disabled = wrapper.get('[data-testid="day-6"]').findAll('input[type="time"]')
+    expect(disabled[0]!.attributes('aria-label')).toBe('ساعت شروع شنبه')
+    expect(disabled[1]!.attributes('aria-label')).toBe('ساعت پایان شنبه')
+    const split = wrapper.get('[data-testid="day-1"]').findAll('input[type="time"]')
+    expect(split.map((i) => i.attributes('aria-label'))).toEqual([
+      'ساعت شروع دوشنبه (بازه ۱)',
+      'ساعت پایان دوشنبه (بازه ۱)',
+      'ساعت شروع دوشنبه (بازه ۲)',
+      'ساعت پایان دوشنبه (بازه ۲)',
+    ])
+  })
 })

@@ -81,8 +81,10 @@ async function main() {
     `INSERT INTO users (phone, role) VALUES ('09120000301', 'customer') RETURNING id`,
   )
   const { rows: [{ id: bookingId }] } = await seed.query(
+    // Starts in the PAST on purpose: the API refuses to mark a booking completed before its start time
+    // (trust-and-launch-readiness rule), and this seeded booking exists to be completed by 02-bookings-status.
     `INSERT INTO bookings (user_id, salon_id, service_id, starts_at, ends_at, price_snapshot, deposit_amount, status)
-     VALUES ($1, $2, $3, now() + interval '1 day', now() + interval '1 day 30 minutes', 300000, 60000, 'confirmed')
+     VALUES ($1, $2, $3, now() - interval '2 hours', now() - interval '90 minutes', 300000, 60000, 'confirmed')
      RETURNING id`,
     [customerId, salonId, serviceId],
   )

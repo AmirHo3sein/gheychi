@@ -153,7 +153,7 @@ function isValidAmount(amount: number | null | undefined): boolean {
     <p v-if="!loading && !loadError && earnings" data-testid="earnings-deposit-note" class="text-xs leading-6 text-(--color-text-muted)">
       این سه رقم فقط مربوط به <strong class="font-semibold">بیعانهٔ آنلاین</strong> است — مبلغی که مشتری هنگام رزرو در سایت پرداخت می‌کند و
       پلتفرم کارمزد خود را از همان کسر می‌کند. باقیِ مبلغ خدمت را مشتری مستقیماً در سالن به شما می‌پردازد و در این ارقام دیده نمی‌شود.
-      کارمزد فقط برای نوبت‌های انجام‌شده یا عدم‌حضور محاسبه می‌شود.
+      کارمزد درصدی از همین بیعانهٔ دریافت‌شده است و فقط برای نوبت‌های انجام‌شده یا عدم‌حضور محاسبه می‌شود؛ برای نوبتی که بیعانه‌ای از آن دریافت نشده کارمزدی ثبت نمی‌شود.
     </p>
 
     <div v-if="!loading && !loadError" class="space-y-3">

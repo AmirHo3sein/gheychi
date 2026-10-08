@@ -9,6 +9,10 @@ describe('bookingStatusLabel', () => {
     expect(bookingStatusLabel('rejected_by_salon')).toEqual({ label: 'رد شده توسط شما', tone: 'danger' })
   })
 
+  it('maps the platform-cancel status to its own label and warning tone', () => {
+    expect(bookingStatusLabel('cancelled_by_admin')).toEqual({ label: 'لغو توسط پشتیبانی قیچی', tone: 'warning' })
+  })
+
   it('falls back to the raw value for an unknown status', () => {
     expect(bookingStatusLabel('weird')).toEqual({ label: 'weird', tone: 'neutral' })
   })

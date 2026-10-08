@@ -38,7 +38,7 @@ async function checkStatus() {
     <p v-if="salon.rejectionReason" class="w-full break-words rounded-xl bg-(--tone-danger-bg) px-4 py-3 text-sm text-(--tone-danger-text)">
       {{ salon.rejectionReason }}
     </p>
-    <RouterLink to="/settings" class="text-sm font-semibold text-(--color-accent-text) hover:underline">ویرایش اطلاعات آرایشگاه</RouterLink>
+    <RouterLink to="/settings" class="text-sm font-semibold text-(--color-accent-text) hover:underline">ویرایش اطلاعات سالن</RouterLink>
     <AppButton data-testid="resubmit-button" type="button" block :disabled="submitting" :loading="submitting" @click="resubmit">
       {{ submitting ? 'در حال ارسال…' : 'ارسال مجدد برای بررسی' }}
     </AppButton>
@@ -52,7 +52,7 @@ async function checkStatus() {
       <AppIcon :name="salon?.status === 'suspended' ? 'warning' : 'hours'" :size="26" />
     </div>
     <h1 class="text-lg font-bold text-(--color-text)">
-      {{ salon?.status === 'suspended' ? 'آرایشگاه شما معلق شده است' : 'آرایشگاه شما در حال بررسی است' }}
+      {{ salon?.status === 'suspended' ? 'سالن شما معلق شده است' : 'سالن شما در حال بررسی است' }}
     </h1>
     <p class="text-sm text-(--color-text-muted)">
       {{

@@ -24,6 +24,11 @@ ENV VITE_CUSTOMER_APP_BASE=$VITE_CUSTOMER_APP_BASE
 # initialized at all, so a build with no DSN behaves exactly as it did before this existed.
 ARG VITE_SENTRY_DSN=
 ENV VITE_SENTRY_DSN=$VITE_SENTRY_DSN
+# Map tile provider for the location picker (build time, like the rest). Empty = OpenStreetMap.
+ARG VITE_MAP_TILE_URL=
+ENV VITE_MAP_TILE_URL=$VITE_MAP_TILE_URL
+ARG VITE_MAP_TILE_ATTRIBUTION=
+ENV VITE_MAP_TILE_ATTRIBUTION=$VITE_MAP_TILE_ATTRIBUTION
 RUN pnpm turbo run build --filter=@gheychi/provider-panel
 
 FROM nginx:1.27-alpine AS runner

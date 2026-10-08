@@ -28,6 +28,13 @@ function addRange(day: WorkingHourRow) {
   day.ranges.push({ openTime, closeTime: '20:00' })
 }
 
+// A day with a split shift has several start/end pairs, so the 2nd+ range is numbered to keep
+// every time input's accessible name unique.
+function rangeLabel(kind: string, day: WorkingHourRow, index: number) {
+  const base = `${kind} ${WEEKDAY_LABELS[day.weekday]}`
+  return day.ranges.length > 1 ? `${base} (بازه ${(index + 1).toLocaleString('fa-IR')})` : base
+}
+
 function removeRange(day: WorkingHourRow, index: number) {
   day.ranges.splice(index, 1)
 }
@@ -58,6 +65,7 @@ function removeRange(day: WorkingHourRow, index: number) {
         <div v-for="(dayRange, i) in day.ranges" :key="i" class="flex min-w-0 items-center gap-2 sm:gap-3">
           <input
             v-model="dayRange.openTime"
+            :aria-label="rangeLabel('ساعت شروع', day, i)"
             :disabled="!day.enabled"
             :aria-invalid="invalidWeekdays.includes(day.weekday) || undefined"
             type="time"
@@ -66,6 +74,7 @@ function removeRange(day: WorkingHourRow, index: number) {
           <span class="shrink-0 text-xs text-(--color-text-muted)">تا</span>
           <input
             v-model="dayRange.closeTime"
+            :aria-label="rangeLabel('ساعت پایان', day, i)"
             :disabled="!day.enabled"
             :aria-invalid="invalidWeekdays.includes(day.weekday) || undefined"
             type="time"

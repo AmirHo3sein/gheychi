@@ -8,6 +8,7 @@ withDefaults(
     label?: string
     icon?: IconName
     error?: string
+    hint?: string
     type?: string
     inputmode?: 'text' | 'tel' | 'numeric' | 'email'
     maxlength?: number
@@ -24,6 +25,7 @@ defineOptions({ inheritAttrs: false })
 
 const model = defineModel<string>({ default: '' })
 const inputId = useId()
+const descId = useId()
 </script>
 
 <template>
@@ -55,6 +57,8 @@ const inputId = useId()
         :required="required"
         :disabled="disabled"
         :autofocus="autofocus"
+        :aria-invalid="error ? 'true' : undefined"
+        :aria-describedby="error || hint ? descId : undefined"
         v-bind="$attrs"
         class="h-11 w-full rounded-xl border bg-(--color-surface-card) text-(--color-text) transition-colors placeholder:text-(--color-text-muted) focus:outline-none focus:ring-2 focus:ring-(--color-accent)/30 disabled:cursor-not-allowed disabled:opacity-60"
         :class="[
@@ -64,9 +68,10 @@ const inputId = useId()
         ]"
       />
     </div>
-    <p v-if="error" class="mt-1.5 flex items-start gap-1 text-xs text-(--color-danger)">
+    <p v-if="error" :id="descId" class="mt-1.5 flex items-start gap-1 text-xs text-(--color-danger)">
       <AppIcon name="warning" :size="14" class="mt-0.5 shrink-0" />
       {{ error }}
     </p>
+    <p v-else-if="hint" :id="descId" class="mt-1.5 text-xs text-(--color-text-muted)">{{ hint }}</p>
   </div>
 </template>

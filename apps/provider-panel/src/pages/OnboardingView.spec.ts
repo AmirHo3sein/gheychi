@@ -23,7 +23,7 @@ async function selectSalonCategory(wrapper: VueWrapper) {
 // AppSelect wraps vue-multiselect, so none of these pickers are native <select>s any more --
 // .setValue() can't drive them; emitting the raw value the model expects is the established
 // interaction pattern. SalonInfoStep (step 1) renders two AppSelects, in template order:
-// [0] مخاطب آرایشگاه (gender-target), [1] شهر (city).
+// [0] مخاطب سالن (gender-target), [1] شهر (city).
 async function selectGenderTarget(wrapper: VueWrapper, genderTarget = 'women') {
   await wrapper.findAllComponents(AppSelect)[0]!.vm.$emit('update:modelValue', genderTarget)
 }
@@ -488,5 +488,75 @@ describe('OnboardingView', () => {
     await closeInput!.setValue('23:00')
     expect((next.element as HTMLButtonElement).disabled).toBe(false)
     expect(wrapper.find('[data-testid="disabled-hint"]').exists()).toBe(false)
+  })
+
+  describe('contact phone', () => {
+    async function fillStepOne(wrapper: VueWrapper) {
+      await wrapper.find('[data-testid="salon-name"]').setValue('سالن سارا')
+      await selectGenderTarget(wrapper)
+      await selectSalonCity(wrapper)
+      await wrapper.find('[data-testid="address"]').setValue('خیابان ولیعصر، پلاک ۱')
+      await setPinViaFallbackInputs(wrapper)
+      await selectSalonCategory(wrapper)
+    }
+
+    it('is optional, labelled, explained, and blocks next with an inline error when invalid', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ([]) }))
+      const router = makeRouter()
+      await router.push('/onboarding')
+      await router.isReady()
+      const wrapper = mount(OnboardingView, { global: { plugins: [router] } })
+      await fillStepOne(wrapper)
+
+      const input = wrapper.get('[data-testid="contact-phone"]')
+      expect(wrapper.text()).toContain('شماره تماس سالن (اختیاری)')
+      expect(wrapper.text()).toContain('شماره حساب کاربری شما نمایش داده نمی‌شود')
+      expect(input.attributes('type')).toBe('tel')
+      expect(input.attributes('dir')).toBe('ltr')
+      const next = wrapper.get('[data-testid="wizard-next"]').element as HTMLButtonElement
+      expect(next.disabled).toBe(false) // empty is fine
+
+      await input.setValue('0912')
+      expect(next.disabled).toBe(true)
+      expect(wrapper.text()).toContain('شماره تماس معتبر نیست')
+      expect(input.attributes('aria-invalid')).toBe('true')
+      expect(input.attributes('aria-describedby')).toBeTruthy()
+
+      await input.setValue('۰۲۱-۱۲۳۴۵۶۷۸')
+      expect(next.disabled).toBe(false)
+      expect(wrapper.text()).not.toContain('شماره تماس معتبر نیست')
+    })
+
+    it('POSTs the normalised number, and omits the key when left empty', async () => {
+      for (const [typed, expected] of [['۰۹۱۲ ۳۴۵ ۶۷۸۹', '09123456789'], ['', undefined]] as const) {
+        const fetchMock = vi.fn()
+          .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([{ id: 1, name: 'رنگ مو' }]) })
+          .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([{ name: 'تهران', lat: 35.6892, lng: 51.389 }]) })
+          .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([{ id: 1, name: 'رنگ مو' }]) })
+          .mockResolvedValue({ ok: true, status: 201, json: async () => ({ id: 's1', status: 'pending' }) })
+        vi.stubGlobal('fetch', fetchMock)
+        const router = makeRouter()
+        await router.push('/onboarding')
+        await router.isReady()
+        const wrapper = mount(OnboardingView, { global: { plugins: [router] } })
+        await fillStepOne(wrapper)
+        if (typed) await wrapper.get('[data-testid="contact-phone"]').setValue(typed)
+        await wrapper.find('[data-testid="wizard-next"]').trigger('click')
+        await wrapper.find('[data-testid="day-0"] input[type=checkbox]').setValue(true)
+        await wrapper.find('[data-testid="wizard-next"]').trigger('click')
+        await new Promise((r) => setTimeout(r, 0))
+        await selectServiceCategory(wrapper)
+        await wrapper.find('[data-testid="service-name"]').setValue('رنگ مو')
+        await wrapper.find('[data-testid="service-price"]').setValue('500000')
+        await wrapper.find('[data-testid="service-duration"]').setValue('60')
+        await wrapper.find('[data-testid="wizard-submit"]').trigger('click')
+        await new Promise((r) => setTimeout(r, 0))
+
+        const post = fetchMock.mock.calls[3]!
+        const body = JSON.parse(post[1].body as string)
+        expect(body.contactPhone).toBe(expected)
+        wrapper.unmount()
+      }
+    })
   })
 })

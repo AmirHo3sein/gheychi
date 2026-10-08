@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import RescheduleForm from '@/components/booking/RescheduleForm.vue'
+import { resetSalon, useSalon } from '@/composables/useSalon'
 import { resetToast, useToast } from '@/composables/useToast'
 import BookingsView from './BookingsView.vue'
 import { autoConfirm } from '@/test-utils/auto-confirm'
@@ -28,6 +29,24 @@ enableAutoUnmount(afterEach)
 describe('BookingsView', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  // axe heading-order: the page title is the only h1, so day groups must be h2, never h3.
+  it('renders day-group headings as h2 directly under the page h1', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ([{ id: 'b1', serviceId: 's1', serviceName: 'کوتاهی مو', priceSnapshot: 150000, startsAt: '2026-08-01T09:00:00.000Z', status: 'confirmed', workerId: null, workerName: null }]),
+      })
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ([]) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(BookingsView)
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(wrapper.findAll('h3')).toHaveLength(0)
+    expect(wrapper.findAll('h2').length).toBeGreaterThan(0)
   })
 
   it('marks a confirmed booking completed and reloads the list', async () => {
@@ -917,5 +936,131 @@ describe('BookingsView beauty guide', () => {
     expect(wrapper.get('[data-testid="booking-b1"]').find('[data-testid="beauty-guide-card"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="booking-b2"]').find('[data-testid="beauty-guide-card"]').exists()).toBe(false)
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/beauty-guide'))).toBe(false)
+  })
+})
+
+describe('BookingsView trust & launch readiness', () => {
+  const base = {
+    serviceId: 's1', serviceName: 'کوتاهی مو', priceSnapshot: 150000, endsAt: '2099-01-01T10:00:00.000Z',
+    createdAt: '2026-01-01T09:00:00.000Z', confirmationMode: 'automatic', approvalExpiresAt: null,
+    paymentExpiresAt: null, workerId: null, workerName: null, customerName: 'مریم', customerPhone: '09120000000',
+    source: 'online', beautyGuideId: null,
+  }
+  const PAST = '2020-01-01T09:00:00.000Z'
+  const FUTURE = '2099-01-01T09:00:00.000Z'
+
+  async function mountWith(list: Record<string, unknown>[]) {
+    resetSalon()
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => list })
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ([]) }))
+    const wrapper = mount(BookingsView)
+    await new Promise((r) => setTimeout(r, 0))
+    return wrapper
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    resetSalon()
+  })
+
+  it('shows the prepaid and amount-due lines from the API fields', async () => {
+    const wrapper = await mountWith([{ ...base, id: 'b1', startsAt: FUTURE, status: 'confirmed', depositPaid: true, prepaidAmount: 50000, amountDue: 100000 }])
+    expect(wrapper.get('[data-testid="money-prepaid-b1"]').text()).toBe(`بیعانه دریافت‌شده: ${(50000).toLocaleString('fa-IR')} تومان`)
+    expect(wrapper.get('[data-testid="money-amount-due-b1"]').text()).toBe(`مبلغ قابل دریافت در سالن: ${(100000).toLocaleString('fa-IR')} تومان`)
+  })
+
+  it('shows no prepaid line when nothing was captured, and nothing at all for non-fixed pricing', async () => {
+    const wrapper = await mountWith([
+      { ...base, id: 'b1', startsAt: FUTURE, status: 'confirmed', prepaidAmount: 0, amountDue: 150000 },
+      { ...base, id: 'b2', startsAt: FUTURE, status: 'confirmed', prepaidAmount: 0, amountDue: null },
+    ])
+    expect(wrapper.find('[data-testid="money-prepaid-b1"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="money-amount-due-b1"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="money-b2"]').exists()).toBe(false)
+  })
+
+  it('disables «انجام شد» before the start time with an accessible reason, but still offers no-show', async () => {
+    const wrapper = await mountWith([{ ...base, id: 'b1', startsAt: FUTURE, status: 'confirmed' }])
+    const btn = wrapper.get('[data-testid="mark-completed"]')
+    expect((btn.element as HTMLButtonElement).disabled).toBe(true)
+    const reason = wrapper.get('[data-testid="complete-reason-b1"]')
+    expect(reason.text()).toBe('بعد از زمان شروع نوبت قابل ثبت است')
+    expect(btn.attributes('aria-describedby')).toBe(reason.attributes('id'))
+  })
+
+  it('enables «انجام شد» once the start time has passed and shows no reason', async () => {
+    const wrapper = await mountWith([{ ...base, id: 'b1', startsAt: PAST, status: 'confirmed' }])
+    expect((wrapper.get('[data-testid="mark-completed"]').element as HTMLButtonElement).disabled).toBe(false)
+    expect(wrapper.find('[data-testid="complete-reason-b1"]').exists()).toBe(false)
+  })
+
+  it('does not offer complete / no-show while the salon is not approved', async () => {
+    resetSalon()
+    useSalon().salon.value = { id: 's', name: 'x', slug: 'x', status: 'pending', genderTarget: 'women', address: 'a', city: 'c', capacity: 1, rejectionReason: null }
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([{ ...base, id: 'b1', startsAt: PAST, status: 'confirmed' }]) })
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ([]) }))
+    const wrapper = mount(BookingsView)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(wrapper.find('[data-testid="mark-completed"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="mark-no-show"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="cancel-booking"]').exists()).toBe(true)
+  })
+
+  it('surfaces the API refusal message through the toast path when completion is refused', async () => {
+    resetToast()
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([{ ...base, id: 'b1', startsAt: PAST, status: 'confirmed' }]) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) })
+      .mockResolvedValueOnce({ ok: false, status: 400, json: async () => ({ message: 'هنوز زمان نوبت فرا نرسیده است.' }) })
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ([]) })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(BookingsView)
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.get('[data-testid="mark-completed"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(useToast().toasts.value.some((t) => t.message === 'هنوز زمان نوبت فرا نرسیده است.')).toBe(true)
+  })
+
+  it('renders cancelled_by_admin with its label and an explanatory line', async () => {
+    const wrapper = await mountWith([{ ...base, id: 'b1', startsAt: FUTURE, status: 'cancelled_by_admin' }])
+    const card = wrapper.get('[data-testid="booking-b1"]')
+    expect(card.text()).toContain('لغو توسط پشتیبانی قیچی')
+    expect(wrapper.get('[data-testid="admin-cancel-note-b1"]').text()).toContain('پشتیبانی قیچی لغو شده')
+    expect(card.find('[data-testid="cancel-booking"]').exists()).toBe(false)
+  })
+
+  it('tells the owner a manual booking cannot be reviewed, on the card and in the form', async () => {
+    const wrapper = await mountWith([{ ...base, id: 'b1', startsAt: FUTURE, status: 'confirmed', source: 'manual' }])
+    expect(wrapper.get('[data-testid="manual-review-note-b1"]').text()).toBe('نظر مشتری برای نوبت‌های ثبت‌دستی ثبت نمی‌شود.')
+    await wrapper.get('[data-testid="toggle-manual-booking"]').trigger('click')
+    expect(wrapper.get('[data-testid="manual-review-note"]').text()).toBe('نظر مشتری برای نوبت‌های ثبت‌دستی ثبت نمی‌شود.')
+  })
+
+  it('does not show the manual-review note on an online booking card', async () => {
+    const wrapper = await mountWith([{ ...base, id: 'b1', startsAt: FUTURE, status: 'confirmed' }])
+    expect(wrapper.find('[data-testid="manual-review-note-b1"]').exists()).toBe(false)
+  })
+
+  it('keeps the manual-booking form filled and shows the API refusal for self-booking', async () => {
+    resetToast()
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([{ id: 's1', name: 'رنگ' }]) })
+      .mockResolvedValue({ ok: false, status: 400, json: async () => ({ message: 'ثبت نوبت برای صاحب یا همکار سالن ممکن نیست.' }) })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(BookingsView)
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.get('[data-testid="toggle-manual-booking"]').trigger('click')
+    await wrapper.get('[data-testid="manual-booking-phone"]').setValue('09120000000')
+    await wrapper.findAllComponents(AppSelect)[0]!.vm.$emit('update:modelValue', 's1')
+    await wrapper.findComponent(JalaliDatePicker).vm.$emit('update:modelValue', '2099-01-01')
+    await wrapper.get('[data-testid="submit-manual-booking"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(useToast().toasts.value.some((t) => t.message === 'ثبت نوبت برای صاحب یا همکار سالن ممکن نیست.')).toBe(true)
+    expect((wrapper.get('[data-testid="manual-booking-phone"]').element as HTMLInputElement).value).toBe('09120000000')
   })
 })

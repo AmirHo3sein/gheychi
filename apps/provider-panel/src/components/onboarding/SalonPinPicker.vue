@@ -3,6 +3,7 @@
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { onBeforeUnmount, onMounted, ref, useId, useTemplateRef } from 'vue'
+import { resolveMapTiles } from '@/utils/map-tiles'
 
 const props = defineProps<{
   modelValue: { lat: number; lng: number } | null
@@ -56,16 +57,11 @@ onMounted(() => {
   const start = props.modelValue ?? props.center
   mapInstance = L.map(mapEl.value, { zoomControl: true }).setView([start.lat, start.lng], 13)
 
-  // OpenStreetMap's standard tiles. CARTO's free Voyager raster endpoint used here before now
-  // answers EVERY request with an "API KEY REQUIRED" placeholder tile (verified 2026-10-08;
-  // all rastertiles/light_all variants are key-gated), which silently broke every map.
-  // OSM's tile policy (operations.osmfoundation.org/policies/tiles) allows light use with
-  // attribution but forbids heavy/commercial-scale load -- before launch at scale, move to a
-  // paid/self-hosted provider (change this one URL + the Caddyfile img-src).
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    maxZoom: 19,
-  }).addTo(mapInstance)
+  // OpenStreetMap's standard tiles by default (CARTO's free Voyager endpoint is key-gated since
+  // 2026-10-08). The provider is configurable via VITE_MAP_TILE_URL / VITE_MAP_TILE_ATTRIBUTION
+  // (see utils/map-tiles.ts and .env.example); a different host also needs a Caddyfile img-src line.
+  const tiles = resolveMapTiles(import.meta.env)
+  L.tileLayer(tiles.url, { attribution: tiles.attribution, maxZoom: 19 }).addTo(mapInstance)
 
   marker = L.marker([start.lat, start.lng], { draggable: true }).addTo(mapInstance)
   marker.on('dragend', () => {

@@ -300,6 +300,12 @@ button:disabled {
 }
 .route-outlet > * {
   grid-area: 1 / 1;
+  /* Fill the cell and be allowed to shrink. A grid item with auto margins (every page root that is
+     `mx-auto max-w-*`) does NOT stretch -- it sizes to its content, so one wide table made the whole
+     page wider than a phone even though the table has its own scroller. width:100% + max-w-* still
+     centres; min-width:0 lets it go below its content's minimum. */
+  min-width: 0;
+  width: 100%;
 }
 .page-fade-enter-active {
   transition: opacity 0.18s ease, transform 0.18s ease;

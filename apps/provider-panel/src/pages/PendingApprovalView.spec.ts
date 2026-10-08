@@ -50,7 +50,7 @@ describe('PendingApprovalView', () => {
     expect(wrapper.text()).toContain('بررسی')
     // The approver is the platform, not the salon's own team.
     expect(wrapper.text()).toContain('تایید توسط تیم قیچی')
-    expect(wrapper.text()).not.toContain('تیم آرایشگاه')
+    expect(wrapper.text()).not.toContain('تیم سالن')
   })
 
   it('re-fetches the salon when the refresh button is clicked', async () => {
@@ -236,7 +236,7 @@ describe('PendingApprovalView', () => {
       expect((resubmitButton.element as HTMLButtonElement).disabled).toBe(false)
     })
 
-    it('the "ویرایش اطلاعات آرایشگاه" link is a real, clickable navigation to /settings (not dead text)', async () => {
+    it('the "ویرایش اطلاعات سالن" link is a real, clickable navigation to /settings (not dead text)', async () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
@@ -261,7 +261,7 @@ describe('PendingApprovalView', () => {
       const wrapper = mount(PendingApprovalView, { global: { plugins: [router] } })
 
       const settingsLink = wrapper.get('a')
-      expect(settingsLink.text()).toBe('ویرایش اطلاعات آرایشگاه')
+      expect(settingsLink.text()).toBe('ویرایش اطلاعات سالن')
       await settingsLink.trigger('click')
       // router.push() from a RouterLink click resolves asynchronously -- router.isReady()
       // only tracks the router's *initial* navigation, not this follow-up one, so wait for

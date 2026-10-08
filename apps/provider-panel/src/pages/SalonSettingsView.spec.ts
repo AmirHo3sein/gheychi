@@ -427,4 +427,43 @@ describe('SalonSettingsView', () => {
     const prefix = input.element.parentElement!.querySelector('span')!
     expect(prefix.className).toContain('shrink-0')
   })
+
+  describe('contact phone', () => {
+    async function mountLoaded(salon: Record<string, unknown>) {
+      fetchMock.mockResolvedValueOnce({ data: salon, error: null })
+      fetchMock.mockResolvedValueOnce(CATEGORIES_RESPONSE)
+      fetchMock.mockResolvedValueOnce(CITIES_RESPONSE)
+      const wrapper = mount(SalonSettingsView)
+      await wrapper.vm.$nextTick()
+      await wrapper.vm.$nextTick()
+      return wrapper
+    }
+
+    it('is pre-filled from GET /salons/mine, and a null value renders empty', async () => {
+      const filled = await mountLoaded({ ...validSalon, contactPhone: '02112345678' })
+      expect((filled.get('[data-testid="contact-phone"]').element as HTMLInputElement).value).toBe('02112345678')
+      const empty = await mountLoaded({ ...validSalon, contactPhone: null })
+      expect((empty.get('[data-testid="contact-phone"]').element as HTMLInputElement).value).toBe('')
+    })
+
+    it('disables save with an inline error for an invalid number', async () => {
+      const wrapper = await mountLoaded({ ...validSalon, contactPhone: null })
+      await wrapper.get('[data-testid="contact-phone"]').setValue('12345')
+      expect(wrapper.text()).toContain('شماره تماس معتبر نیست')
+      expect((wrapper.get('[data-testid="save-button"]').element as HTMLButtonElement).disabled).toBe(true)
+    })
+
+    it('PATCHes the normalised number, and an emptied field sends "" so it clears', async () => {
+      const wrapper = await mountLoaded({ ...validSalon, contactPhone: '02112345678' })
+      fetchMock.mockResolvedValue({ data: { id: 's1' }, error: null })
+      await wrapper.get('[data-testid="contact-phone"]').setValue('۰۹۱۲-۳۴۵-۶۷۸۹')
+      await wrapper.get('[data-testid="save-button"]').trigger('click')
+      expect(fetchMock).toHaveBeenCalledWith('/salons/mine', { method: 'PATCH', body: expect.objectContaining({ contactPhone: '09123456789' }) })
+
+      fetchMock.mockClear()
+      await wrapper.get('[data-testid="contact-phone"]').setValue('')
+      await wrapper.get('[data-testid="save-button"]').trigger('click')
+      expect(fetchMock).toHaveBeenCalledWith('/salons/mine', { method: 'PATCH', body: expect.objectContaining({ contactPhone: '' }) })
+    })
+  })
 })

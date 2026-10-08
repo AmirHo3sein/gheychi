@@ -81,7 +81,7 @@ async function removePhoto(photo: SalonPhoto) {
     <!-- text-center, not just start-aligned: the uploader below is independently centered
          (mx-auto) within this wide container, not stretched to fill it -- a start-aligned
          heading above a centered form read as visibly offset from it. -->
-    <h1 class="text-center text-lg font-bold text-(--color-text)">تصاویر آرایشگاه</h1>
+    <h1 class="text-center text-lg font-bold text-(--color-text)">تصاویر سالن</h1>
     <PhotoUploader class="mx-auto max-w-2xl" @uploaded="onUploaded" />
 
     <div v-if="loadError" class="space-y-3 rounded-xl border border-dashed border-(--color-border) p-4 text-center">
@@ -102,7 +102,7 @@ async function removePhoto(photo: SalonPhoto) {
         <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
           <div v-for="p in photos" :key="p.id" class="overflow-hidden rounded-2xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-sm)">
             <div class="relative aspect-square w-full">
-              <img :src="p.url" :alt="p.isCover ? 'عکس اصلی آرایشگاه' : 'تصویر آرایشگاه'" class="h-full w-full object-cover" />
+              <img :src="p.url" :alt="p.isCover ? 'عکس اصلی سالن' : 'تصویر سالن'" class="h-full w-full object-cover" />
               <span
                 v-if="p.isCover"
                 class="absolute end-2 top-2 rounded-full bg-(--color-accent-strong) px-2 py-0.5 text-xs font-bold text-(--color-fill-text) shadow-(--shadow-sm)"

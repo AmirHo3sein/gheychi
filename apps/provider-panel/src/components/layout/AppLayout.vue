@@ -58,7 +58,7 @@ async function logout() {
           alt=""
           class="h-9 w-9 shrink-0 rounded-xl shadow-(--shadow-sm) transition-transform duration-200 hover:scale-105 hover:rotate-3"
         />
-        <p class="min-w-0 truncate text-sm font-bold text-(--color-text)">{{ salon?.name ?? 'پنل مدیریت آرایشگاه' }}</p>
+        <p class="min-w-0 truncate text-sm font-bold text-(--color-text)">{{ salon?.name ?? 'پنل مدیریت سالن' }}</p>
       </div>
 
       <!--

@@ -118,12 +118,12 @@ async function verifyOtp() {
       >
         <div class="flex items-center justify-center gap-2.5">
           <img src="/brand-icon.png" alt="" class="h-9 w-9 shrink-0 rounded-xl" />
-          <span class="text-base font-bold text-(--color-text)">پنل آرایشگاه قیچی</span>
+          <span class="text-base font-bold text-(--color-text)">پنل سالن قیچی</span>
         </div>
 
         <div class="mt-5 text-center">
           <h1 class="text-2xl font-bold text-(--color-text)">خوش آمدید</h1>
-          <p class="mt-1.5 text-sm text-(--color-text-muted)">برای ورود به پنل آرایشگاه، شماره موبایل خود را وارد کنید.</p>
+          <p class="mt-1.5 text-sm text-(--color-text-muted)">برای ورود به پنل سالن، شماره موبایل خود را وارد کنید.</p>
         </div>
 
         <div class="mt-6">

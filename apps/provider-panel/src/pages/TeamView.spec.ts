@@ -197,6 +197,13 @@ describe('TeamView per-worker service restriction', () => {
     })
   })
 
+  it('names the icon-only add-day-off button', async () => {
+    const wrapper = await mountView()
+    const add = wrapper.get('[data-testid="add-worker-off-w1"]')
+    expect(add.attributes('aria-label')).toBe('افزودن روز مرخصی')
+    wrapper.unmount()
+  })
+
   it('shows the unrestricted hint for a worker with no serviceIds, and the restricted hint for one with some', async () => {
     const wrapper = await mountView()
 

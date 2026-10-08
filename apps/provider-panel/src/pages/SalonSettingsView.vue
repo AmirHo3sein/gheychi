@@ -11,6 +11,7 @@ import PublicLinkCard from '@/components/salon/PublicLinkCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
+import { contactPhoneError, normalizeContactPhone } from '@/utils/contact-phone'
 
 const { apiFetch } = useApi()
 const { refetch } = useSalon()
@@ -31,6 +32,7 @@ const form = reactive({
   description: '',
   genderTarget: '' as 'women' | 'men' | '',
   address: '',
+  contactPhone: '',
   city: '',
   capacity: 1,
   lat: null as number | null,
@@ -66,6 +68,7 @@ const isFormValid = computed(
     form.lat !== null &&
     form.lng !== null &&
     form.categoryIds.length >= 1 &&
+    contactPhoneError(form.contactPhone) === '' &&
     form.tagline.length <= 120 &&
     form.about.length <= 2000 &&
     instagramHandleValid.value,
@@ -86,9 +89,10 @@ const aboutExcerpt = computed(() => {
 // geography column, `location: { type: 'Point', coordinates: [lng, lat] }` -- there is
 // no top-level lat/lng field. Note the coordinate order (lng first), matching
 // apps/user-app's geoJsonToLatLng (app/utils/geo.ts).
-interface SalonResponse extends Omit<typeof form, 'lat' | 'lng' | 'description' | 'tagline' | 'about' | 'instagramHandle' | 'categoryIds'> {
+interface SalonResponse extends Omit<typeof form, 'lat' | 'lng' | 'contactPhone' | 'description' | 'tagline' | 'about' | 'instagramHandle' | 'categoryIds'> {
   location: { type: 'Point'; coordinates: [number, number] }
   description: string | null
+  contactPhone: string | null
   tagline: string | null
   about: string | null
   instagramHandle: string | null
@@ -108,6 +112,7 @@ async function load() {
   Object.assign(form, rest)
   // The column is nullable; the textarea (and save() below) work on a string.
   form.description = data.description ?? ''
+  form.contactPhone = data.contactPhone ?? ''
   form.lng = location.coordinates[0]
   form.lat = location.coordinates[1]
   form.tagline = tagline ?? ''
@@ -130,6 +135,8 @@ async function save() {
       description: form.description.trim(),
       genderTarget: form.genderTarget || undefined,
       address: form.address,
+      // '' clears the number server-side, so it is sent as-is (never `|| undefined`).
+      contactPhone: normalizeContactPhone(form.contactPhone),
       city: form.city,
       capacity: form.capacity,
       lat: form.lat ?? undefined,
@@ -168,10 +175,10 @@ onMounted(loadCities)
   <!-- A single-column form all the way down (map picker, textareas, prefixed input), so it
        is capped narrower than the list screens rather than stretched across a monitor. -->
   <div class="mx-auto w-full max-w-3xl space-y-4 p-4 lg:p-6">
-    <h1 class="text-lg font-bold text-(--color-text)">تنظیمات آرایشگاه</h1>
+    <h1 class="text-lg font-bold text-(--color-text)">تنظیمات سالن</h1>
 
     <div v-if="loadError" class="space-y-3 rounded-xl border border-dashed border-(--color-border) p-4 text-center">
-      <p class="text-sm text-(--tone-danger-text)">اطلاعات آرایشگاه بارگذاری نشد.</p>
+      <p class="text-sm text-(--tone-danger-text)">اطلاعات سالن بارگذاری نشد.</p>
       <AppButton variant="secondary" data-testid="retry-settings" @click="load">
         تلاش دوباره
       </AppButton>

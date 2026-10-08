@@ -84,7 +84,7 @@ export function createAppRouter(history: RouterHistory): Router {
       // salon would be invited to create a second one). Cancel this navigation and say so;
       // the next navigation (or a reload) probes again since `checked` never flipped.
       if (error && !salon.value) {
-        useToast().push('اطلاعات آرایشگاه بارگذاری نشد. دوباره تلاش کنید.', 'error')
+        useToast().push('اطلاعات سالن بارگذاری نشد. دوباره تلاش کنید.', 'error')
         return false
       }
     }
@@ -95,7 +95,7 @@ export function createAppRouter(history: RouterHistory): Router {
 
     if (salon.value.status !== 'approved') {
       // A rejected salon owner needs a real path to fix what got them rejected before
-      // resubmitting -- PendingApprovalView's "ویرایش اطلاعات آرایشگاه" link goes to
+      // resubmitting -- PendingApprovalView's "ویرایش اطلاعات سالن" link goes to
       // /settings, so that route must stay reachable specifically in the rejected state.
       // pending/suspended salons have no such editable-before-resubmit path, so they still
       // get bounced straight back to pending-approval.

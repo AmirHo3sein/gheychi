@@ -12,9 +12,10 @@ import { useCities } from '@/composables/useCities'
 import { resetSalon, useSalon } from '@/composables/useSalon'
 import { useServiceCategories } from '@/composables/useServiceCategories'
 import { useSessionStore } from '@/stores/session'
+import { contactPhoneError, normalizeContactPhone } from '@/utils/contact-phone'
 import { validateWorkingHours } from '@/utils/working-hours'
 
-const STEP_LABELS = ['اطلاعات آرایشگاه', 'ساعات کاری', 'اولین خدمت']
+const STEP_LABELS = ['اطلاعات سالن', 'ساعات کاری', 'اولین خدمت']
 
 const router = useRouter()
 const { apiFetch } = useApi()
@@ -54,6 +55,7 @@ const form = reactive({
     description: '',
     genderTarget: '' as 'women' | 'men' | '',
     address: '',
+    contactPhone: '',
     city: '',
     capacity: 1,
     lat: null as number | null,
@@ -87,7 +89,8 @@ const isSalonInfoValid = computed(
     form.salonInfo.capacity <= 50 &&
     form.salonInfo.lat !== null &&
     form.salonInfo.lng !== null &&
-    form.salonInfo.categoryIds.length >= 1,
+    form.salonInfo.categoryIds.length >= 1 &&
+    contactPhoneError(form.salonInfo.contactPhone) === '',
 )
 
 // Same rule HoursView.vue saves against (utils/working-hours.ts). Step 2 has to enforce it
@@ -130,10 +133,10 @@ const canGoNext = computed(() => {
 // dead end.
 const disabledHint = computed(() => {
   if (step.value === 1 && !isSalonInfoValid.value) {
-    return 'برای ادامه، نام (حداقل ۲ حرف)، مخاطب، شهر (حداقل ۲ حرف)، آدرس (حداقل ۵ حرف)، ظرفیت (۱ تا ۵۰)، حداقل یک دسته‌بندی و موقعیت روی نقشه را کامل کنید.'
+    return 'برای ادامه، نام (حداقل ۲ حرف)، مخاطب، شهر (حداقل ۲ حرف)، آدرس (حداقل ۵ حرف)، ظرفیت (۱ تا ۵۰)، حداقل یک دسته‌بندی و موقعیت روی نقشه را کامل کنید (شماره تماس اگر وارد شده باید معتبر باشد).'
   }
   if (step.value === 2 && !isHoursValid.value) {
-    return hoursValidation.value.message || 'حداقل یک روز کاری را فعال کنید تا آرایشگاه قابل رزرو باشد.'
+    return hoursValidation.value.message || 'حداقل یک روز کاری را فعال کنید تا سالن قابل رزرو باشد.'
   }
   if (step.value === 3 && !isServiceValid.value) {
     // When the price is the only thing left, say exactly what's wrong with it rather than
@@ -173,6 +176,8 @@ async function submit() {
         description: form.salonInfo.description || undefined,
         genderTarget: form.salonInfo.genderTarget,
         address: form.salonInfo.address,
+        // Optional: omitted when empty (nothing to clear on create); normalised like the API does.
+        contactPhone: normalizeContactPhone(form.salonInfo.contactPhone) || undefined,
         city: form.salonInfo.city,
         capacity: form.salonInfo.capacity,
         lat: form.salonInfo.lat,
@@ -182,7 +187,7 @@ async function submit() {
       silent: true,
     })
     if (salonError || !salon) {
-      submitError.value = 'ثبت اطلاعات آرایشگاه ناموفق بود. دوباره تلاش کنید.'
+      submitError.value = 'ثبت اطلاعات سالن ناموفق بود. دوباره تلاش کنید.'
       submitting.value = false
       return
     }
@@ -228,7 +233,7 @@ async function submit() {
       <div class="w-11 shrink-0" />
       <div class="flex min-w-0 flex-col items-center text-center">
         <img src="/brand-icon.png" alt="" class="mb-2 h-11 w-11 shrink-0 rounded-2xl shadow-(--shadow-sm)" />
-        <h1 class="text-lg font-bold text-(--color-text)">ثبت‌نام آرایشگاه</h1>
+        <h1 class="text-lg font-bold text-(--color-text)">ثبت‌نام سالن</h1>
       </div>
       <button
         type="button"

@@ -13,13 +13,19 @@ const BOOKING_STATUS: Record<string, LabelMeta> = {
   confirmed: { label: 'تایید شده', tone: 'info' },
   completed: { label: 'انجام شد', tone: 'success' },
   cancelled_by_user: { label: 'لغو شده (مشتری)', tone: 'neutral' },
-  cancelled_by_salon: { label: 'لغو شده (آرایشگاه)', tone: 'neutral' },
+  cancelled_by_salon: { label: 'لغو شده (سالن)', tone: 'neutral' },
+  // Platform support cancelled it (POST /admin/bookings/:id/cancel). Not the salon's own act,
+  // so it must read distinctly from cancelled_by_salon -- warning, since it needs an explanation.
+  cancelled_by_admin: { label: 'لغو توسط پشتیبانی قیچی', tone: 'warning' },
   // Distinct from cancelled_by_salon: the salon declined the REQUEST before it was ever
   // confirmed (and before any payment), rather than cancelling a live booking.
   rejected_by_salon: { label: 'رد شده توسط شما', tone: 'danger' },
   expired: { label: 'منقضی شده', tone: 'neutral' },
   no_show: { label: 'عدم حضور', tone: 'danger' },
 }
+
+export const CANCELLED_BY_ADMIN_NOTE =
+  'این نوبت توسط پشتیبانی قیچی لغو شده است. در صورت پرداخت بیعانه، بازپرداخت آن به مشتری انجام می‌شود.'
 
 export function bookingStatusLabel(status: string): LabelMeta {
   return BOOKING_STATUS[status] ?? { label: status, tone: 'neutral' }

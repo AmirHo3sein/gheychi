@@ -7,6 +7,7 @@ import AppMultiSelect from '../ui/AppMultiSelect.vue'
 import AppSelect from '../ui/AppSelect.vue'
 import AppButton from '../ui/AppButton.vue'
 import AppIcon from '../ui/AppIcon.vue'
+import { contactPhoneError } from '@/utils/contact-phone'
 import type { SelectOption } from '../ui/AppSelect.vue'
 
 const descriptionId = useId()
@@ -24,6 +25,7 @@ const model = defineModel<{
   description: string
   genderTarget: 'women' | 'men' | ''
   address: string
+  contactPhone: string
   city: string
   capacity: number
   lat: number | null
@@ -52,8 +54,9 @@ const emit = defineEmits<{ retryCategories: []; retryCities: [] }>()
 // disabled-save/hint concern, not an error to shout about while the form is still blank.
 // The upper bounds are enforced by each input's maxlength rather than a message.
 const nameError = computed(() =>
-  model.value.name.trim() !== '' && model.value.name.trim().length < 2 ? 'نام آرایشگاه باید حداقل ۲ حرف باشد.' : '',
+  model.value.name.trim() !== '' && model.value.name.trim().length < 2 ? 'نام سالن باید حداقل ۲ حرف باشد.' : '',
 )
+const contactPhoneMessage = computed(() => contactPhoneError(model.value.contactPhone))
 const addressError = computed(() =>
   model.value.address.trim() !== '' && model.value.address.trim().length < 5 ? 'آدرس باید حداقل ۵ حرف باشد.' : '',
 )
@@ -68,7 +71,7 @@ function onPin(pos: { lat: number; lng: number }) {
   <div class="space-y-4">
     <AppInput
       v-model="model.name"
-      label="نام آرایشگاه"
+      label="نام سالن"
       data-testid="salon-name"
       placeholder="مثلاً سالن زیبایی ستاره"
       :maxlength="150"
@@ -81,7 +84,7 @@ function onPin(pos: { lat: number; lng: number }) {
         :id="descriptionId"
         v-model="model.description"
         rows="3"
-        placeholder="چند جمله درباره آرایشگاه شما"
+        placeholder="چند جمله درباره سالن شما"
         class="w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-3 text-sm"
       />
     </div>
@@ -90,11 +93,11 @@ function onPin(pos: { lat: number; lng: number }) {
       <!-- AppSelect's root is vue-multiselect's combobox <div>, which a native <label for>
            can't target -- so the visible label is a plain <label> (same as the city and
            categories fields below) and the accessible name comes from aria-label. -->
-      <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">مخاطب آرایشگاه</label>
+      <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">مخاطب سالن</label>
       <AppSelect
         :model-value="model.genderTarget || null"
         data-testid="gender-target"
-        aria-label="مخاطب آرایشگاه"
+        aria-label="مخاطب سالن"
         :options="GENDER_TARGET_OPTIONS"
         :searchable="false"
         @update:model-value="model.genderTarget = ($event ?? '') as 'women' | 'men' | ''"
@@ -102,7 +105,7 @@ function onPin(pos: { lat: number; lng: number }) {
     </div>
 
     <div>
-      <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">دسته‌بندی‌های آرایشگاه</label>
+      <label class="mb-1.5 block text-sm font-semibold text-(--color-text)">دسته‌بندی‌های سالن</label>
       <p v-if="categoriesError" class="flex items-center gap-2 text-sm text-(--tone-danger-text)">
         <AppIcon name="warning" :size="14" class="shrink-0" />
         دسته‌بندی‌ها بارگذاری نشد.
@@ -120,7 +123,7 @@ function onPin(pos: { lat: number; lng: number }) {
         placeholder="یک یا چند دسته‌بندی انتخاب کنید"
       />
       <p class="mt-1.5 text-xs text-(--color-text-muted)">
-        مشتریان بر اساس این دسته‌بندی‌ها آرایشگاه شما را پیدا می‌کنند؛ می‌توانید بیش از یکی انتخاب کنید.
+        مشتریان بر اساس این دسته‌بندی‌ها سالن شما را پیدا می‌کنند؛ می‌توانید بیش از یکی انتخاب کنید.
       </p>
     </div>
 
@@ -160,6 +163,20 @@ function onPin(pos: { lat: number; lng: number }) {
       placeholder="آدرس کامل"
       :maxlength="500"
       :error="addressError"
+    />
+
+    <AppInput
+      v-model="model.contactPhone"
+      label="شماره تماس سالن (اختیاری)"
+      data-testid="contact-phone"
+      type="tel"
+      inputmode="tel"
+      dir="ltr"
+      class="tnum"
+      placeholder="09xxxxxxxxx"
+      :maxlength="20"
+      hint="این شماره روی صفحه عمومی سالن نمایش داده می‌شود تا مشتریان بتوانند تماس بگیرند. شماره حساب کاربری شما نمایش داده نمی‌شود."
+      :error="contactPhoneMessage"
     />
 
     <fieldset class="m-0 min-w-0 border-0 p-0">

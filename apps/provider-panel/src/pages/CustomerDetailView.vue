@@ -200,7 +200,7 @@ async function removeNote(noteId: string) {
                 <p class="break-words text-sm text-(--color-text)">{{ n.note }}</p>
                 <p class="tnum mt-1 text-xs text-(--color-text-muted)">{{ formatDate(n.createdAt) }}</p>
               </div>
-              <AppButton type="button" variant="ghost" :data-testid="`delete-note-${n.id}`" @click="removeNote(n.id)">
+              <AppButton type="button" variant="ghost" aria-label="حذف یادداشت" :data-testid="`delete-note-${n.id}`" @click="removeNote(n.id)">
                 <template #icon><AppIcon name="trash" :size="15" /></template>
               </AppButton>
             </div>

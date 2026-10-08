@@ -12,10 +12,12 @@ import RescheduleForm from '@/components/booking/RescheduleForm.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useApi } from '@/composables/useApi'
 import { useConfirm } from '@/composables/useConfirm'
+import { useSalon } from '@/composables/useSalon'
 import { useToast } from '@/composables/useToast'
 import { useVisiblePolling } from '@/composables/useVisiblePolling'
 import { toEnglishDigits } from '@/utils/digits'
-import { bookingStatusLabel } from '@/utils/labels'
+import { bookingMoneyLines, canMarkCompleted, COMPLETE_BLOCKED_REASON } from '@/utils/booking-money'
+import { bookingStatusLabel, CANCELLED_BY_ADMIN_NOTE } from '@/utils/labels'
 import { formatToman } from '@/utils/format-toman'
 import { formatRemainingTime } from '@/utils/remaining-time'
 import { tehranDateString } from '@/utils/tehran-date'
@@ -49,6 +51,10 @@ interface Booking {
   // Set when the customer attached their AI beauty guide at booking time; nulled server-side
   // if they later delete it. BeautyGuideCard fetches the guide itself, lazily.
   beautyGuideId: string | null
+  // Money actually captured online (0 when none) and what the salon still collects
+  // (null for non-fixed pricing). Server truth -- never inferred from the deposit/price.
+  prepaidAmount?: number
+  amountDue?: number | null
 }
 interface Worker {
   id: string
@@ -63,6 +69,10 @@ interface Service {
 const { apiFetch } = useApi()
 const { confirm } = useConfirm()
 const { push: pushToast } = useToast()
+const { salon } = useSalon()
+// The API refuses completed/no_show while the salon isn't approved; mirror that by not
+// offering them. An unknown salon (not loaded yet) is not treated as unapproved.
+const canMarkOutcome = computed(() => !salon.value || salon.value.status === 'approved')
 const bookings = ref<Booking[]>([])
 const workers = ref<Worker[]>([])
 const services = ref<Service[]>([])
@@ -287,6 +297,8 @@ const serviceOptions = computed<SelectOption[]>(() => services.value.map((s) => 
 // placeholder, and a selectable '' value would submit workerId: '' and fail the DTO's
 // @IsUUID check (which only skips empty/undefined, not an empty string).
 const manualWorkerOptions = computed<SelectOption[]>(() => workers.value.map((w) => ({ value: w.id, label: w.name })))
+
+const MANUAL_REVIEW_NOTE = 'نظر مشتری برای نوبت‌های ثبت‌دستی ثبت نمی‌شود.'
 
 async function markStatus(id: string, status: 'completed' | 'no_show') {
   submittingId.value = id
@@ -887,6 +899,8 @@ const groupedBookings = computed<BookingGroup[]>(() => {
 
           <AppInput v-model="manualForm.notes" label="یادداشت (اختیاری)" icon="pencil" placeholder="مثلاً تماس تلفنی" data-testid="manual-booking-notes" />
 
+          <p data-testid="manual-review-note" class="text-xs text-(--color-text-muted)">{{ MANUAL_REVIEW_NOTE }}</p>
+
           <p v-if="manualFormError" class="flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)">
             <AppIcon name="warning" :size="15" class="shrink-0" />
             {{ manualFormError }}
@@ -955,7 +969,7 @@ const groupedBookings = computed<BookingGroup[]>(() => {
         <div v-else class="space-y-6">
           <div v-for="group in groupedBookings" :key="group.date" class="space-y-3">
             <div v-if="showAllBookings" class="flex items-center gap-2 px-1">
-              <h3 class="text-sm font-bold text-(--color-text)">{{ group.label }}</h3>
+              <h2 class="text-sm font-bold text-(--color-text)">{{ group.label }}</h2>
               <StatusBadge v-if="group.isToday" label="امروز" tone="info" />
               <span class="tnum text-xs text-(--color-text-muted)">({{ group.bookings.length.toLocaleString('fa-IR') }})</span>
             </div>
@@ -975,6 +989,14 @@ const groupedBookings = computed<BookingGroup[]>(() => {
                       <span v-if="b.customerPhone" dir="ltr" class="tnum"> — {{ b.customerPhone }}</span>
                     </p>
                     <p class="text-xs text-(--color-text-muted)"><span dir="ltr" class="tnum">{{ formatToman(b.priceSnapshot) }}</span> تومان</p>
+                    <div v-if="bookingMoneyLines(b).length > 0" :data-testid="`money-${b.id}`" class="space-y-0.5 text-xs text-(--color-text-muted)">
+                      <p v-for="line in bookingMoneyLines(b)" :key="line.testid" :data-testid="`money-${line.testid}-${b.id}`">
+                        {{ line.label }}: <span class="tnum font-semibold text-(--color-text)">{{ line.amount }}</span> تومان
+                      </p>
+                    </div>
+                    <p v-if="b.source === 'manual'" :data-testid="`manual-review-note-${b.id}`" class="text-xs text-(--color-text-muted)">
+                      {{ MANUAL_REVIEW_NOTE }}
+                    </p>
                   </div>
                 </div>
                 <div class="flex shrink-0 flex-col items-end gap-1.5">
@@ -984,6 +1006,14 @@ const groupedBookings = computed<BookingGroup[]>(() => {
               </div>
 
               <BeautyGuideCard v-if="b.beautyGuideId" :booking-id="b.id" />
+
+              <p
+                v-if="b.status === 'cancelled_by_admin'"
+                :data-testid="`admin-cancel-note-${b.id}`"
+                class="rounded-xl bg-(--tone-warning-bg) p-3 text-xs text-(--tone-warning-text)"
+              >
+                {{ CANCELLED_BY_ADMIN_NOTE }}
+              </p>
 
               <div v-if="b.status === 'confirmed' && workers.length > 0" class="border-t border-(--color-border-soft) pt-3">
                 <!-- AppSelect's root is vue-multiselect's role="combobox" div, not a labelable
@@ -1017,13 +1047,23 @@ const groupedBookings = computed<BookingGroup[]>(() => {
                 />
               </div>
               <div v-else-if="b.status === 'confirmed'" class="flex flex-wrap justify-end gap-2 border-t border-(--color-border-soft) pt-3">
+                <p
+                  v-if="canMarkOutcome && !canMarkCompleted(b.startsAt, now)"
+                  :id="`complete-reason-${b.id}`"
+                  :data-testid="`complete-reason-${b.id}`"
+                  class="me-auto self-center text-xs text-(--color-text-muted)"
+                >
+                  {{ COMPLETE_BLOCKED_REASON }}
+                </p>
                 <AppButton
+                  v-if="canMarkOutcome"
                   data-testid="mark-completed"
                   type="button"
                   variant="secondary"
                   size="sm"
                   touch
-                  :disabled="submittingId === b.id"
+                  :disabled="submittingId === b.id || !canMarkCompleted(b.startsAt, now)"
+                  :aria-describedby="canMarkCompleted(b.startsAt, now) ? undefined : `complete-reason-${b.id}`"
                   :loading="submittingId === b.id"
                   @click="markStatus(b.id, 'completed')"
                 >
@@ -1031,6 +1071,7 @@ const groupedBookings = computed<BookingGroup[]>(() => {
                   انجام شد
                 </AppButton>
                 <AppButton
+                  v-if="canMarkOutcome"
                   data-testid="mark-no-show"
                   type="button"
                   variant="secondary"

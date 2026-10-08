@@ -344,6 +344,7 @@ async function copyReferralCode(code: string) {
               type="button"
               variant="secondary"
               class="shrink-0"
+              aria-label="افزودن روز مرخصی"
               :data-testid="`add-worker-off-${w.id}`"
               :disabled="!workerOffDraft[w.id] || workerOffSaving[w.id]"
               :loading="workerOffSaving[w.id]"
