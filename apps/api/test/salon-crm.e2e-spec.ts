@@ -5,6 +5,7 @@ import { loginAs, loginAsAdmin } from './utils/auth-helper';
 import { enableOnlinePayments, resetDatabase } from './utils/db';
 import { createApprovedSalonWithService } from './factories/salon.factory';
 import { createTestApp } from './utils/test-app';
+import { startBookingInThePast } from './utils/booking-time';
 
 /**
  * Salon-scoped CRM (Phase 5 of the monetization initiative -- see
@@ -55,11 +56,20 @@ describe('Salon CRM (e2e)', () => {
     const authority = new URL(created.body.paymentUrl).searchParams.get('Authority')!;
     await request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'OK' }).expect(302);
 
+    // Completion is refused before the appointment starts, so move it into the past just
+    // long enough to complete it, then put it back: the suite below deliberately needs a
+    // `completed` booking whose appointment is still in the future (see the "never reports
+    // a future appointment as a past visit" test) -- a state the API itself can no longer
+    // produce, only legacy data can.
+    const [{ starts_at: originalStartsAt }] = await ds.query(`SELECT starts_at FROM bookings WHERE id = $1`, [bookingId]);
+    await ds.query(`UPDATE bookings SET starts_at = now() - interval '2 hours' WHERE id = $1`, [bookingId]);
+    await startBookingInThePast(app.get(DataSource), bookingId);
     await request(app.getHttpServer())
       .patch(`/api/salons/mine/bookings/${bookingId}`)
       .set('Cookie', ownerCookie)
       .send({ status: 'completed' })
       .expect(200);
+    await ds.query(`UPDATE bookings SET starts_at = $2 WHERE id = $1`, [bookingId, originalStartsAt]);
   });
 
   afterAll(async () => {
@@ -471,14 +481,16 @@ describe('Salon CRM (e2e)', () => {
 
     it('sorts by total value on request, independently of the default recency order', async () => {
       // Default (recency) order puts the past-visit customer first; by value the
-      // 1,000,000 customer outranks their 2 x 300,000, so this really is a different order.
+      // 1,000,000 customer outranks the past-visit customer's one COMPLETED 300,000 booking
+      // (their other, merely confirmed, booking is not revenue yet), so this really is a
+      // different order.
       const byValue = await request(app.getHttpServer())
         .get('/api/salons/mine/customers')
         .query({ sort: 'value' })
         .set('Cookie', ownerCookie)
         .expect(200);
 
-      expect(byValue.body.items.map((c: { grossValue: number }) => c.grossValue)).toEqual([1_000_000, 600_000]);
+      expect(byValue.body.items.map((c: { grossValue: number }) => c.grossValue)).toEqual([1_000_000, 300_000]);
 
       const byRecency = await request(app.getHttpServer()).get('/api/salons/mine/customers').set('Cookie', ownerCookie).expect(200);
       expect(byRecency.body.items[0].userId).toBe(pastCustomerId);

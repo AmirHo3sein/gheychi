@@ -31,6 +31,8 @@ describe('Admin platform config (e2e)', () => {
       'beauty_guide_retention_days',
       'booking_approval_timeout_minutes',
       'booking_hold_ttl_minutes',
+      'booking_max_active_per_salon_per_user',
+      'booking_max_active_per_user',
       'cancellation_window_hours',
       'commission_percent',
       'deposit_min_toman',

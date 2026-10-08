@@ -5,6 +5,7 @@ import { createApprovedSalonWithService } from './factories/salon.factory';
 import { loginAs, loginAsAdmin } from './utils/auth-helper';
 import { enableOnlinePayments, resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
+import { startBookingInThePast } from './utils/booking-time';
 
 interface AdminBookingRowBody {
   id: string;
@@ -99,6 +100,7 @@ describe('Admin booking list (e2e)', () => {
       .get('/api/payments/callback')
       .query({ Authority: authority, Status: 'OK' })
       .expect(302);
+    await startBookingInThePast(app.get(DataSource), paidBookingId);
     await request(app.getHttpServer())
       .patch(`/api/salons/mine/bookings/${paidBookingId}`)
       .set('Cookie', ownerACookie)

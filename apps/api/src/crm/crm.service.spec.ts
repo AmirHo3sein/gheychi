@@ -146,6 +146,13 @@ describe('CrmService', () => {
       expect(sql).toContain('phone ILIKE $2');
     });
 
+    it("sums a customer's grossValue over completed bookings only", async () => {
+      dataSourceQuery.mockResolvedValueOnce([]);
+      await service.listCustomers('salon-1');
+
+      expect(dataSourceQuery.mock.calls[0]![0]).toMatch(/SUM\(b\.price_snapshot\) FILTER \(WHERE b\.status = 'completed'\)/);
+    });
+
     it('only accepts a whitelisted sort key, never raw caller text', async () => {
       dataSourceQuery.mockResolvedValueOnce([]);
       await service.listCustomers('salon-1', { sort: 'value' });
@@ -342,6 +349,26 @@ describe('CrmService', () => {
       const result = await service.getDashboardSummary('salon-1', FROM, TO);
 
       expect(result).toMatchObject({ distinctCustomers: 8, newCustomers: 3, returningCustomers: 5, repeatRatePercent: 63 });
+    });
+
+    // Trust audit: a confirmed (not yet happened) booking must not inflate revenue figures.
+    it('sums list price over COMPLETED bookings only, in the dashboard, top services and customer list', async () => {
+      stubDashboard({});
+      await service.getDashboardSummary('salon-1', FROM, TO);
+
+      const sqls = dataSourceQuery.mock.calls.map(([sql]) => String(sql));
+      const gross = sqls.find((q) => q.includes('no_show_count'))!;
+      expect(gross).toMatch(/SUM\(price_snapshot\) FILTER \(WHERE status = 'completed'\)/);
+      const topServices = sqls.find((q) => q.includes('salon_services'))!;
+      expect(topServices).toMatch(/SUM\(b\.price_snapshot\) FILTER \(WHERE b\.status = 'completed'\)/);
+    });
+
+    it('averages the list price over the completed bookings that produced it', async () => {
+      stubDashboard({ gross: '3000000', bookings_count: '10', completed_count: '3' });
+
+      const result = await service.getDashboardSummary('salon-1', FROM, TO);
+
+      expect(result.averageBookingValue).toBe(1_000_000);
     });
 
     it('reports zero (not NaN) for the averages when nothing happened in the window', async () => {

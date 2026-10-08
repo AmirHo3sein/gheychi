@@ -12,6 +12,12 @@ export type BookingStatus =
   | 'completed'
   | 'cancelled_by_user'
   | 'cancelled_by_salon'
+  // Platform cancellation (POST /admin/bookings/:id/cancel): an admin called the
+  // appointment off -- suspension clean-up, a dispute, a salon that vanished. Terminal and
+  // always a full refund, like cancelled_by_salon, but kept distinct so reporting and a
+  // salon's own cancellation record never confuse "the salon walked away" with "the
+  // platform stepped in".
+  | 'cancelled_by_admin'
   // Manual-approval mode only: the salon actively declined the request. Deliberately
   // distinct from cancelled_by_salon (which always means "a real, already-confirmed
   // appointment was called off, refund the customer") so the two can never be confused
@@ -49,6 +55,7 @@ export const SLOT_BLOCKING_STATUSES: BookingStatus[] = ['pending_approval', 'pen
 export const DEAD_BOOKING_STATUSES: BookingStatus[] = [
   'cancelled_by_user',
   'cancelled_by_salon',
+  'cancelled_by_admin',
   'rejected_by_salon',
   'expired',
 ];
@@ -81,6 +88,13 @@ export class Booking {
 
   @Column({ type: 'varchar', default: 'pending_payment' })
   status: BookingStatus;
+
+  // The cancellation window (hours before start) in force when this booking was created,
+  // frozen so a later platform-config change can never rewrite the terms of a booking the
+  // customer already holds (and may have paid a deposit for). NULL only on a row that
+  // somehow predates the backfill; readers fall back to the live config for it.
+  @Column({ name: 'cancellation_window_hours', type: 'int', nullable: true })
+  cancellationWindowHours: number | null;
 
   @Column({ name: 'reminded_at', type: 'timestamptz', nullable: true })
   remindedAt: Date | null;

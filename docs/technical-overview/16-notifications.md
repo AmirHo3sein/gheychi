@@ -60,11 +60,12 @@ sequenceDiagram
 
 Not a push channel — an in-app, polled (60s cadence per the admin panel) queue of `admin_notifications` rows. `AdminNotificationsService.emit(type, title, body, link, manager?)` — **throws on failure by contract**, so each caller decides whether to swallow it.
 
-Four emit points exist:
+Five emit points exist:
 1. **`report_created`** (`ReportsService.create`) — called **with** the enclosing transaction's `EntityManager`, so the report and its notification commit or roll back together (a strict guarantee).
 2. **`salon_resubmitted`** (`SalonsService.resubmitMine`) — called **without** a transaction, wrapped in try/catch that only logs on failure ("a fire-safe side effect... a lost notification must never fail the owner's resubmission"). This is a genuinely lossy delivery path — no retry, no dead-letter.
 3. **`category_requested`** (`catalog/category-requests.service.ts`) — a provider asking for a new service category; same fire-and-forget `.catch(() => {})` posture as `salon_resubmitted`, linking to `/category-requests`.
-4. **`alert`** (`AlertsService.raise`, below) — every operator alert, regardless of severity.
+4. **`salon_material_edit`** (`SalonsService.updateMine` → `reportMaterialEdit`) — an **approved** salon changed `name`, `genderTarget`, location (`lat`/`lng`) or `address`/`city`. The salon stays live; the notification (link `/salons/:id`) and a `salon.material_edit` audit row (actor = the owner, payload `{fields: [...]}`) carry the changed field **names** only, never values (the address is PII-adjacent). Same fire-safe posture as `salon_resubmitted`: a lost notification never fails the owner's save.
+5. **`alert`** (`AlertsService.raise`, below) — every operator alert, regardless of severity.
 
 **Read state is per admin**: `admin_notification_reads` (join table, `PRIMARY KEY (notification_id, admin_id)`) records who read what; list/unread-count queries `LEFT JOIN` it on the caller's `admin_id`, and `markRead` is an idempotent `INSERT ... ON CONFLICT (notification_id, admin_id) DO UPDATE` with a harmless self-set (so `RETURNING read_at` always yields the original read time). One admin marking a notification read never affects any other admin. (The legacy `admin_notifications.read_at` column still exists on the entity but is not what the service reads.)
 

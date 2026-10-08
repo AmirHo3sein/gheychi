@@ -1,16 +1,38 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Req } from '@nestjs/common';
+import {
+  Body, Controller, Get, HttpCode, HttpException, HttpStatus, Inject, Param, ParseUUIDPipe, Post, Req,
+} from '@nestjs/common';
 import { Request } from 'express';
+import Redis from 'ioredis';
+import { REDIS } from '../redis/redis.module';
 import { User } from '../users/user.entity';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto, RescheduleBookingDto } from './dto/booking.dto';
 
+// Per-customer ceiling on booking-creation ATTEMPTS (successful or not), same Redis
+// INCR+EXPIRE idiom as OtpService.issue and ReferralsController.validate. Generous for a
+// real person -- the active-booking caps are the real limit -- but stops a script from
+// hammering the slot lock and the payment gateway.
+export const BOOKING_CREATE_RATE_LIMIT_MAX = 15;
+export const BOOKING_CREATE_RATE_WINDOW_SEC = 600;
+
 @Controller('bookings')
 export class BookingsController {
-  constructor(private readonly bookings: BookingsService) {}
+  constructor(
+    private readonly bookings: BookingsService,
+    @Inject(REDIS) private readonly redis: Redis,
+  ) {}
 
   @Post()
-  create(@Req() req: Request, @Body() dto: CreateBookingDto) {
-    return this.bookings.createHold((req.user as User).id, dto);
+  async create(@Req() req: Request, @Body() dto: CreateBookingDto) {
+    const userId = (req.user as User).id;
+    const rlKey = `booking:create:rl:${userId}`;
+    const count = await this.redis.incr(rlKey);
+    // Also repairs a key that lost its TTL (crash between INCR and EXPIRE): without this the user would stay rate-limited forever.
+    if (count === 1 || (await this.redis.ttl(rlKey)) === -1) await this.redis.expire(rlKey, BOOKING_CREATE_RATE_WINDOW_SEC);
+    if (count > BOOKING_CREATE_RATE_LIMIT_MAX) {
+      throw new HttpException('تعداد درخواست‌های ثبت نوبت بیش از حد است؛ کمی بعد دوباره تلاش کنید', HttpStatus.TOO_MANY_REQUESTS);
+    }
+    return this.bookings.createHold(userId, dto);
   }
 
   @Get('mine')

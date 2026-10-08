@@ -5,6 +5,7 @@ import { MonthlyInvoiceGenerationJob } from '../src/invoicing/monthly-invoice-ge
 import { loginAs, loginAsAdmin } from './utils/auth-helper';
 import { enableOnlinePayments, resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
+import { startBookingInThePast } from './utils/booking-time';
 
 describe('Commission ledger + monthly invoicing (e2e)', () => {
   let app: INestApplication;
@@ -80,6 +81,7 @@ describe('Commission ledger + monthly invoicing (e2e)', () => {
   });
 
   it('accrues a commission_accrued ledger row, at the frozen live rate, when the booking is marked completed', async () => {
+    await startBookingInThePast(app.get(DataSource), bookingId);
     await request(app.getHttpServer())
       .patch(`/api/salons/mine/bookings/${bookingId}`)
       .set('Cookie', ownerCookie)
@@ -100,6 +102,7 @@ describe('Commission ledger + monthly invoicing (e2e)', () => {
   });
 
   it('does not accrue a second row if updateStatus is somehow called again (CAS-guarded, 400 on a non-confirmed booking)', async () => {
+    await startBookingInThePast(app.get(DataSource), bookingId);
     await request(app.getHttpServer())
       .patch(`/api/salons/mine/bookings/${bookingId}`)
       .set('Cookie', ownerCookie)

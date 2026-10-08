@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import Redis from 'ioredis'
+import { Client } from 'pg'
 
 async function otpCode(phone: string): Promise<string> {
   const redis = new Redis({ host: process.env.REDIS_HOST ?? 'localhost', port: Number(process.env.REDIS_PORT ?? 6381) })
@@ -7,6 +8,30 @@ async function otpCode(phone: string): Promise<string> {
   await redis.quit()
   if (!code) throw new Error(`OTP was not found in Redis for ${phone} -- did SMS_PROVIDER/OtpService change?`)
   return code
+}
+
+// The API only lets a booking be marked completed once its start time has passed, but a customer can
+// only book a FUTURE slot -- so between the two halves of this test the booking is moved into the past
+// directly in the database (the same technique the API's own e2e helpers use).
+async function moveBookingIntoThePast(customerPhone: string) {
+  const db = new Client({
+    host: process.env.DB_HOST ?? 'localhost',
+    port: Number(process.env.DB_PORT ?? 5544),
+    user: process.env.DB_USER ?? 'gheychi',
+    password: process.env.DB_PASS ?? 'gheychi',
+    database: process.env.DB_NAME ?? 'gheychi_e2e',
+  })
+  await db.connect()
+  try {
+    const res = await db.query(
+      `UPDATE bookings SET starts_at = now() - interval '2 hours', ends_at = now() - interval '90 minutes'
+       WHERE user_id = (SELECT id FROM users WHERE phone = $1)`,
+      [customerPhone],
+    )
+    if (res.rowCount !== 1) throw new Error(`expected to move exactly one booking for ${customerPhone}, moved ${res.rowCount}`)
+  } finally {
+    await db.end()
+  }
 }
 
 // Root cause of a documented, previously-intermittent CI failure in user-app's OWN e2e
@@ -81,6 +106,7 @@ test('a booking created by a customer in user-app is visible and actionable by t
   await expect(customerPage.getByText('پرداخت با موفقیت انجام شد')).toBeVisible()
 
   await customerContext.close()
+  await moveBookingIntoThePast(customerPhone)
 
   // -- Owner half: log into provider-panel (:3004) as the salon's real owner, find the
   // SAME booking -- matched by the customer's own phone number, proving this is genuinely

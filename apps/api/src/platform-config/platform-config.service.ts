@@ -1,4 +1,4 @@
-import { Inject, Injectable, InternalServerErrorException, NotFoundException, OnApplicationBootstrap } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, InternalServerErrorException, Logger, NotFoundException, OnApplicationBootstrap } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import Redis from 'ioredis';
 import { DataSource, In, Repository } from 'typeorm';
@@ -28,6 +28,9 @@ export const REQUIRED_PLATFORM_CONFIG_KEYS = [
   'reminder_lead_hours',
   'review_edit_window_hours',
   'no_show_grace_minutes',
+  // Abuse caps on one customer's active future bookings (overall / at a single salon).
+  'booking_max_active_per_user',
+  'booking_max_active_per_salon_per_user',
   // Beauty Guide cost controls (docs/superpowers/specs/2026-10-07-beauty-guide-design.md §7).
   // Customers have no subscription plan (entitlements are salon-scoped), so per-customer
   // AI usage limits live here rather than in the entitlement engine.
@@ -101,6 +104,12 @@ const MINUTE_TIMEOUT_KEYS = new Set<string>(['booking_approval_timeout_minutes',
 // MINUTE_TIMEOUT_KEY -- but it is capped at a day, past which the booking-completion
 // window is long over anyway.
 const GRACE_MINUTE_KEYS = new Set<string>(['no_show_grace_minutes']);
+// Keys whose bad stored value DEGRADES instead of failing closed (boot or read). A grace
+// period is a convenience window, not money: an out-of-range value must never be able to
+// stop booking creation or prevent the API from booting, so it is clamped (a finite number)
+// or replaced by the seeded default (anything else), and logged loudly. Money-shaped keys
+// (deposit/commission/...) deliberately stay fail-closed.
+const DEGRADABLE_KEY_FALLBACKS: Record<string, number> = { no_show_grace_minutes: 30 };
 // Beauty Guide limits. Explicit ceilings (rather than the default unbounded >= 0) so a
 // typo can't silently remove the cost breaker; 0 is legal and means "nobody can analyze".
 // MUST stay identical to BEAUTY_GUIDE_CONFIG_BOUNDS in dto/admin-config.dto.ts -- a value
@@ -110,12 +119,32 @@ export const BEAUTY_GUIDE_KEY_BOUNDS: Record<string, ConfigBounds> = {
   beauty_guide_daily_limit_global: { min: 0, max: 1_000_000 },
   beauty_guide_retention_days: { min: 1, max: 3650 },
 };
+// Booking abuse caps. MUST stay identical to BOOKING_LIMIT_CONFIG_BOUNDS in
+// dto/admin-config.dto.ts -- a value the write path accepts but this read path rejects
+// would brick the next boot. Minimum 1: a 0 cap would silently stop every online booking.
+export const BOOKING_LIMIT_KEY_BOUNDS: Record<string, ConfigBounds> = {
+  booking_max_active_per_user: { min: 1, max: 50 },
+  booking_max_active_per_salon_per_user: { min: 1, max: 20 },
+};
 function boundsFor(key: string): ConfigBounds {
   if (BEAUTY_GUIDE_KEY_BOUNDS[key]) return BEAUTY_GUIDE_KEY_BOUNDS[key];
+  if (BOOKING_LIMIT_KEY_BOUNDS[key]) return BOOKING_LIMIT_KEY_BOUNDS[key];
   if (PERCENT_KEYS.has(key)) return { min: 0, max: 100 };
   if (MINUTE_TIMEOUT_KEYS.has(key)) return { min: 1, max: 1440 };
   if (GRACE_MINUTE_KEYS.has(key)) return { min: 0, max: 1440 };
   return { min: 0, max: null };
+}
+
+// The value a degradable key resolves to when its stored value is invalid; null for a
+// key that must fail closed instead.
+function degradedValue(key: string, rawValue: unknown): number | null {
+  if (!(key in DEGRADABLE_KEY_FALLBACKS)) return null;
+  const numeric = Number(rawValue);
+  const { min, max } = boundsFor(key);
+  if (rawValue === null || rawValue === undefined || rawValue === '' || !Number.isFinite(numeric)) {
+    return DEGRADABLE_KEY_FALLBACKS[key];
+  }
+  return Math.min(Math.max(Math.trunc(numeric), min), max ?? numeric);
 }
 
 // Returns a human-readable problem description if `rawValue` isn't a finite number within
@@ -135,6 +164,8 @@ function describeInvalidConfigValue(key: string, rawValue: unknown): string | nu
 
 @Injectable()
 export class PlatformConfigService implements OnApplicationBootstrap {
+  private readonly logger = new Logger(PlatformConfigService.name);
+
   constructor(
     @InjectRepository(PlatformConfig) private readonly repo: Repository<PlatformConfig>,
     private readonly dataSource: DataSource,
@@ -155,14 +186,24 @@ export class PlatformConfigService implements OnApplicationBootstrap {
     const byKey = new Map(rows.map((row) => [row.key, row.value]));
 
     const missing = REQUIRED_PLATFORM_CONFIG_KEYS.filter((key) => !byKey.has(key));
-    const invalid = REQUIRED_PLATFORM_CONFIG_KEYS.filter((key) => byKey.has(key))
-      .map((key) => describeInvalidConfigValue(key, byKey.get(key)))
-      .filter((problem): problem is string => problem !== null);
+    const invalid: string[] = [];
+    for (const key of REQUIRED_PLATFORM_CONFIG_KEYS.filter((k) => byKey.has(k))) {
+      const problem = describeInvalidConfigValue(key, byKey.get(key));
+      if (problem === null) continue;
+      if (degradedValue(key, byKey.get(key)) !== null) {
+        this.logger.error(`platform_config ${problem}; running with ${degradedValue(key, byKey.get(key))} until an admin fixes it.`);
+      } else {
+        invalid.push(problem);
+      }
+    }
 
     const missingFlags = FEATURE_FLAG_KEYS.filter((key) => !byKey.has(key));
-    const invalidFlags = FEATURE_FLAG_KEYS.filter((key) => byKey.has(key) && typeof byKey.get(key) !== 'boolean');
+    // A non-boolean flag row degrades to OFF (see getBoolean) rather than blocking boot.
+    for (const key of FEATURE_FLAG_KEYS.filter((k) => byKey.has(k) && typeof byKey.get(k) !== 'boolean')) {
+      this.logger.error(`platform_config ${key}=${JSON.stringify(byKey.get(key))} is not boolean; treating it as off until an admin fixes it.`);
+    }
 
-    if (missing.length === 0 && invalid.length === 0 && missingFlags.length === 0 && invalidFlags.length === 0) {
+    if (missing.length === 0 && invalid.length === 0 && missingFlags.length === 0) {
       return;
     }
 
@@ -170,9 +211,6 @@ export class PlatformConfigService implements OnApplicationBootstrap {
       ...(missing.length > 0 ? [`Missing required platform_config row(s): ${missing.join(', ')}.`] : []),
       ...(invalid.length > 0 ? [`Invalid platform_config value(s): ${invalid.join('; ')}.`] : []),
       ...(missingFlags.length > 0 ? [`Missing required feature flag row(s): ${missingFlags.join(', ')}.`] : []),
-      ...(invalidFlags.length > 0
-        ? [`Feature flag value(s) must be boolean: ${invalidFlags.join(', ')}.`]
-        : []),
     ];
     throw new Error(
       `${problems.join(' ')} ` +
@@ -202,7 +240,15 @@ export class PlatformConfigService implements OnApplicationBootstrap {
     // value) turning into an opaque or subtly-incorrect 500.
     if (!row) throw new InternalServerErrorException(`Missing platform_config key: ${key}`);
     const problem = describeInvalidConfigValue(key, row.value);
-    if (problem) throw new InternalServerErrorException(`Invalid platform_config value: ${problem}`);
+    if (problem) {
+      const degraded = degradedValue(key, row.value);
+      if (degraded !== null) {
+        this.logger.error(`platform_config ${problem}; using ${degraded} until an admin fixes it.`);
+        await this.redis.set(cacheKey, String(degraded), 'EX', CACHE_TTL_SEC);
+        return degraded;
+      }
+      throw new InternalServerErrorException(`Invalid platform_config value: ${problem}`);
+    }
     await this.redis.set(cacheKey, String(row.value), 'EX', CACHE_TTL_SEC);
     return Number(row.value);
   }
@@ -258,6 +304,16 @@ export class PlatformConfigService implements OnApplicationBootstrap {
     return this.getNumber('no_show_grace_minutes');
   }
 
+  /** Most active (pending_approval/pending_payment/confirmed) future bookings one customer may hold. */
+  getBookingMaxActivePerUser(): Promise<number> {
+    return this.getNumber('booking_max_active_per_user');
+  }
+
+  /** Same, counted within a single salon. */
+  getBookingMaxActivePerSalonPerUser(): Promise<number> {
+    return this.getNumber('booking_max_active_per_salon_per_user');
+  }
+
   getBeautyGuideDailyLimitPerUser(): Promise<number> {
     return this.getNumber('beauty_guide_daily_limit_per_user');
   }
@@ -282,8 +338,11 @@ export class PlatformConfigService implements OnApplicationBootstrap {
     // branch below means a row was deleted/corrupted directly against the database after a
     // successful boot.
     if (!row) throw new InternalServerErrorException(`Missing platform_config key: ${key}`);
+    // A corrupted flag fails CLOSED (off) with a loud log, never a 500 on every request that
+    // reads flags. Not cached, so fixing the row takes effect immediately.
     if (typeof row.value !== 'boolean') {
-      throw new InternalServerErrorException(`Invalid platform_config value: ${key} must be boolean`);
+      this.logger.error(`platform_config ${key}=${JSON.stringify(row.value)} is not boolean; treating it as off.`);
+      return false;
     }
     await this.redis.set(cacheKey, row.value ? '1' : '0', 'EX', CACHE_TTL_SEC);
     return row.value;
@@ -328,6 +387,18 @@ export class PlatformConfigService implements OnApplicationBootstrap {
    */
   async setMany(entries: { key: string; value: number | string | boolean }[]): Promise<void> {
     const keys = entries.map((entry) => entry.key);
+    // Type must match the row's kind: a number written into a flag row (or a boolean into
+    // a numeric one) is exactly what used to brick the next boot.
+    const flagKeys = new Set<string>(FEATURE_FLAG_KEYS);
+    for (const entry of entries) {
+      const isFlag = flagKeys.has(entry.key);
+      if (isFlag && typeof entry.value !== 'boolean') {
+        throw new BadRequestException(`"${entry.key}" is a feature flag and must be true or false`);
+      }
+      if (!isFlag && typeof entry.value === 'boolean') {
+        throw new BadRequestException(`"${entry.key}" is numeric and cannot be set to a boolean`);
+      }
+    }
     const existingRows = await this.repo.find({ where: { key: In(keys) }, select: ['key'] });
     const existingKeys = new Set(existingRows.map((row) => row.key));
     const missingKeys = keys.filter((key) => !existingKeys.has(key));

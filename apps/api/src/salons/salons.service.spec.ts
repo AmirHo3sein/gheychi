@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, QueryFailedError } from 'typeorm';
 import { AdminNotificationsService } from '../admin-notifications/admin-notifications.service';
+import { AuditService } from '../audit/audit.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { ServiceCategory } from '../catalog/service-category.entity';
 import { CitiesService } from '../cities/cities.service';
@@ -21,12 +22,14 @@ describe('SalonsService', () => {
   let serviceCategoriesRepo: { count: jest.Mock };
   let slugHistoryRepo: { findOneBy: jest.Mock };
   let dataSourceTransaction: jest.Mock;
+  let dataSourceQuery: jest.Mock;
   let notifications: { emit: jest.Mock };
   let usersService: { promoteToProvider: jest.Mock; findById: jest.Mock };
   let citiesService: { findIdByName: jest.Mock };
   let analytics: { track: jest.Mock };
   let subscriptions: { createDefaultSubscription: jest.Mock };
   let entitlements: { requireFeature: jest.Mock };
+  let audit: { record: jest.Mock };
   let emSave: jest.Mock;
   let emCreate: jest.Mock;
   let emInsert: jest.Mock;
@@ -67,7 +70,9 @@ describe('SalonsService', () => {
     dataSourceTransaction = jest.fn((cb: (em: unknown) => unknown) =>
       cb({ save: emSave, create: emCreate, insert: emInsert, delete: emDelete, update: emUpdate, findOneBy: emFindOneBy }),
     );
+    dataSourceQuery = jest.fn().mockResolvedValue([]);
     notifications = { emit: jest.fn().mockResolvedValue(undefined) };
+    audit = { record: jest.fn().mockResolvedValue(undefined) };
     usersService = {
       promoteToProvider: jest.fn().mockResolvedValue(undefined),
       findById: jest.fn().mockResolvedValue({ id: 'owner-1', status: 'active' }),
@@ -90,7 +95,7 @@ describe('SalonsService', () => {
         { provide: getRepositoryToken(Salon), useValue: repo },
         { provide: getRepositoryToken(SalonCategory), useValue: salonCategoriesRepo },
         { provide: getRepositoryToken(ServiceCategory), useValue: serviceCategoriesRepo },
-        { provide: DataSource, useValue: { transaction: dataSourceTransaction } },
+        { provide: DataSource, useValue: { transaction: dataSourceTransaction, query: dataSourceQuery } },
         { provide: UsersService, useValue: usersService },
         { provide: AdminNotificationsService, useValue: notifications },
         { provide: CitiesService, useValue: citiesService },
@@ -98,6 +103,7 @@ describe('SalonsService', () => {
         { provide: SubscriptionsService, useValue: subscriptions },
         { provide: getRepositoryToken(SalonSlugHistory), useValue: slugHistoryRepo },
         { provide: EntitlementsService, useValue: entitlements },
+        { provide: AuditService, useValue: audit },
       ],
     }).compile();
     service = moduleRef.get(SalonsService);
@@ -202,10 +208,150 @@ describe('SalonsService', () => {
     });
   });
 
+  describe('updateMine -- material post-approval edits', () => {
+    const approved = (overrides: Partial<Salon> = {}) =>
+      ({
+        id: 's1', ownerId: 'u1', status: 'approved', name: 'قدیم', genderTarget: 'women',
+        address: 'آدرس قدیمی ۱۲۳', city: 'تهران', location: { type: 'Point', coordinates: [51, 35] },
+        ...overrides,
+      }) as unknown as Salon;
+
+    it('notifies admins and audits field NAMES only when an approved salon edits vetted fields', async () => {
+      repo.findOneBy.mockResolvedValue(approved());
+
+      await service.updateMine('s1', { name: 'جدید', address: 'آدرس تازه ۴۵۶', lat: 36, lng: 52 }, 'owner-1');
+
+      expect(notifications.emit).toHaveBeenCalledTimes(1);
+      const [type, title, body, link] = notifications.emit.mock.calls[0];
+      expect(type).toBe('salon_material_edit');
+      expect(body).toContain('نام');
+      expect(body).toContain('آدرس');
+      expect(body).toContain('موقعیت');
+      expect(`${title}${body}`).not.toContain('آدرس تازه');
+      expect(link).toBe('/salons/s1');
+      expect(audit.record).toHaveBeenCalledWith({
+        actorId: 'owner-1', action: 'salon.material_edit', targetType: 'salon', targetId: 's1',
+        payload: { fields: ['name', 'location', 'address'] }, success: true,
+      });
+    });
+
+    it('does nothing for non-material edits or values that did not actually change', async () => {
+      repo.findOneBy.mockResolvedValue(approved());
+
+      await service.updateMine('s1', { tagline: 'شعار', name: 'قدیم', lat: 35, lng: 51 }, 'owner-1');
+
+      expect(notifications.emit).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    // PostGIS returns coordinates rounded; a pin re-sent unchanged but with extra decimals is not an edit.
+    it('treats a sub-metre coordinate difference as an unchanged location', async () => {
+      repo.findOneBy.mockResolvedValue(approved());
+
+      await service.updateMine('s1', { lat: 35.0000000004, lng: 51.0000000003 }, 'owner-1');
+
+      expect(notifications.emit).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('does not fire for a salon that is not approved (pending salons are still being reviewed)', async () => {
+      repo.findOneBy.mockResolvedValue(approved({ status: 'pending' }));
+
+      await service.updateMine('s1', { name: 'جدید' }, 'owner-1');
+
+      expect(notifications.emit).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('a failed notification never fails the owner save, and the audit row is still written', async () => {
+      repo.findOneBy.mockResolvedValue(approved());
+      notifications.emit.mockRejectedValue(new Error('db down'));
+
+      await expect(service.updateMine('s1', { genderTarget: 'men' }, 'owner-1')).resolves.toBeTruthy();
+      expect(audit.record).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('getAdminDetail', () => {
+    const salonRow = {
+      id: 's1', ownerId: 'u1', name: 'سالن', status: 'pending', contactPhone: null,
+      location: { type: 'Point', coordinates: [51.4, 35.7] },
+    };
+    const answer = (sql: string): unknown[] => {
+      if (sql.includes('FROM users')) return [{ id: 'u1', name: 'مالک', phone: '09120000000', status: 'active' }];
+      if (sql.includes('FROM salon_photos')) return [{ id: 'p1', url: '/u/1.jpg', sort_order: 0 }];
+      if (sql.includes('FROM salon_services')) {
+        return [{ id: 'sv1', name: 'کوتاهی', pricing_type: 'range', price: '100000', price_max: '200000', duration_min: 45, is_active: true }];
+      }
+      if (sql.includes('FROM working_hours')) return [{ weekday: 1, open_time: '09:00:00', close_time: '17:00:00' }];
+      if (sql.includes('FROM bookings')) {
+        return [{ total: 9, online: 6, manual: 3, cancelled_by_salon: 2, rejected_by_salon: 1, no_show: 1 }];
+      }
+      if (sql.includes('FROM reports')) return [{ open: 2 }];
+      return [];
+    };
+
+    it('keeps every salon column and adds owner, lat/lng location, photos, services, hours and riskSummary', async () => {
+      repo.findOneBy.mockResolvedValue(salonRow as unknown as Salon);
+      dataSourceQuery.mockImplementation((sql: string) => Promise.resolve(answer(sql)));
+
+      const detail = await service.getAdminDetail('s1');
+
+      expect(detail).toMatchObject({ id: 's1', name: 'سالن', status: 'pending', ownerId: 'u1', contactPhone: null });
+      expect(detail.owner).toEqual({ id: 'u1', name: 'مالک', phone: '09120000000', status: 'active' });
+      expect(detail.location).toEqual({ lat: 35.7, lng: 51.4 });
+      expect(detail.photos).toEqual([{ id: 'p1', url: '/u/1.jpg', sortOrder: 0 }]);
+      expect(detail.services).toEqual([
+        { id: 'sv1', name: 'کوتاهی', pricingType: 'range', price: 100000, priceMax: 200000, durationMinutes: 45, isActive: true },
+      ]);
+      expect(detail.hours).toHaveLength(7);
+      expect(detail.hours.find((h) => h.dayOfWeek === 1)).toEqual({ dayOfWeek: 1, openTime: '09:00:00', closeTime: '17:00:00', isClosed: false });
+      expect(detail.hours.find((h) => h.dayOfWeek === 2)).toEqual({ dayOfWeek: 2, openTime: null, closeTime: null, isClosed: true });
+      expect(detail.riskSummary).toEqual({
+        bookingsTotal: 9, onlineBookings: 6, manualBookings: 3, cancelledBySalon: 2, rejectedBySalon: 1, noShowMarked: 1, openReports: 2,
+      });
+    });
+
+    it('runs a fixed number of queries and scopes the risk query to this salon and the last 90 days', async () => {
+      repo.findOneBy.mockResolvedValue(salonRow as unknown as Salon);
+      dataSourceQuery.mockImplementation((sql: string) => Promise.resolve(answer(sql)));
+
+      await service.getAdminDetail('s1');
+
+      expect(dataSourceQuery).toHaveBeenCalledTimes(6);
+      const riskCall = dataSourceQuery.mock.calls.find(([sql]) => String(sql).includes('FROM bookings'))!;
+      expect(riskCall[0]).toContain("interval '90 days'");
+      expect(riskCall[0]).toContain("status = 'cancelled_by_salon'");
+      expect(riskCall[1]).toEqual(['s1']);
+    });
+
+    it('404s an unknown salon without running the enrichment queries', async () => {
+      repo.findOneBy.mockResolvedValue(null);
+
+      await expect(service.getAdminDetail('nope')).rejects.toBeInstanceOf(NotFoundException);
+      expect(dataSourceQuery).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('findPublicBySlug', () => {
+    it('exposes contactPhone and an ISO memberSince, but never the admin-only timeout columns', async () => {
+      repo.findOneBy.mockResolvedValue({
+        id: 's1', ownerId: 'u1', contactPhone: '02188887777', createdAt: new Date('2026-03-04T10:00:00Z'),
+        approvalTimeoutMinutes: 5, paymentTimeoutMinutes: 6,
+      } as unknown as Salon);
+
+      const result = await service.findPublicBySlug('x');
+
+      expect(result).toMatchObject({ contactPhone: '02188887777', memberSince: '2026-03-04T10:00:00.000Z' });
+      expect(result).not.toHaveProperty('approvalTimeoutMinutes');
+      expect(result).not.toHaveProperty('paymentTimeoutMinutes');
+    });
+  });
+
   describe('updateMine', () => {
     it('applies a genderTarget change', async () => {
       repo.findOneBy.mockResolvedValue({ id: 's1', ownerId: 'u1', genderTarget: 'women' } as Salon);
-      const result = await service.updateMine('u1', { genderTarget: 'men' });
+      const result = await service.updateMine('u1', { genderTarget: 'men' }, 'owner-1');
       expect(result.genderTarget).toBe('men');
     });
 
@@ -214,7 +360,7 @@ describe('SalonsService', () => {
       citiesService.findIdByName.mockResolvedValue(9);
       const warnSpy = jest.spyOn(service['logger'], 'warn');
 
-      const result = await service.updateMine('u1', { city: 'مشهد' });
+      const result = await service.updateMine('u1', { city: 'مشهد' }, 'owner-1');
 
       expect(citiesService.findIdByName).toHaveBeenCalledWith('مشهد');
       expect(result.cityId).toBe(9);
@@ -226,7 +372,7 @@ describe('SalonsService', () => {
       citiesService.findIdByName.mockResolvedValue(null);
       const warnSpy = jest.spyOn(service['logger'], 'warn').mockImplementation();
 
-      const result = await service.updateMine('u1', { city: 'یک شهر نامعتبر' });
+      const result = await service.updateMine('u1', { city: 'یک شهر نامعتبر' }, 'owner-1');
 
       expect(result.cityId).toBeNull();
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('یک شهر نامعتبر'));
@@ -236,7 +382,7 @@ describe('SalonsService', () => {
     it('never touches cityId when city is omitted from the update', async () => {
       repo.findOneBy.mockResolvedValue({ id: 's1', ownerId: 'u1', city: 'اصفهان', cityId: 3 } as unknown as Salon);
 
-      const result = await service.updateMine('u1', { name: 'اسم جدید' });
+      const result = await service.updateMine('u1', { name: 'اسم جدید' }, 'owner-1');
 
       expect(citiesService.findIdByName).not.toHaveBeenCalled();
       expect(result.cityId).toBe(3);
@@ -245,7 +391,7 @@ describe('SalonsService', () => {
     it('leaves categories untouched when categoryIds is omitted from the update', async () => {
       repo.findOneBy.mockResolvedValue({ id: 's1', ownerId: 'u1' } as Salon);
 
-      await service.updateMine('u1', { name: 'اسم جدید' });
+      await service.updateMine('u1', { name: 'اسم جدید' }, 'owner-1');
 
       expect(emDelete).not.toHaveBeenCalled();
       expect(emInsert).not.toHaveBeenCalled();
@@ -254,7 +400,7 @@ describe('SalonsService', () => {
     it('replaces categories wholesale (delete-all-then-reinsert) when categoryIds is provided', async () => {
       repo.findOneBy.mockResolvedValue({ id: 's1', ownerId: 'u1' } as Salon);
 
-      await service.updateMine('u1', { categoryIds: [3, 4] });
+      await service.updateMine('u1', { categoryIds: [3, 4] }, 'owner-1');
 
       expect(emDelete).toHaveBeenCalledWith(SalonCategory, { salonId: 's1' });
       expect(emInsert).toHaveBeenCalledWith(
@@ -270,7 +416,7 @@ describe('SalonsService', () => {
       repo.findOneBy.mockResolvedValue({ id: 's1', ownerId: 'u1' } as Salon);
       serviceCategoriesRepo.count.mockResolvedValue(1); // 2 submitted, only 1 real
 
-      await expect(service.updateMine('u1', { categoryIds: [3, 4] })).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.updateMine('u1', { categoryIds: [3, 4] }, 'owner-1')).rejects.toBeInstanceOf(BadRequestException);
       expect(dataSourceTransaction).not.toHaveBeenCalled();
     });
 
@@ -279,7 +425,7 @@ describe('SalonsService', () => {
       serviceCategoriesRepo.count.mockResolvedValue(1); // matches the single id submitted below
       categoryRows = [{ salon_id: 's1', id: 3, name: 'کوتاهی مو', icon: 'scissors' }];
 
-      const result = await service.updateMine('u1', { categoryIds: [3] });
+      const result = await service.updateMine('u1', { categoryIds: [3] }, 'owner-1');
 
       expect(result.categories).toEqual([{ id: 3, name: 'کوتاهی مو', icon: 'scissors' }]);
     });
@@ -296,7 +442,7 @@ describe('SalonsService', () => {
     });
 
     it('findPublicBySlug attaches every tagged category', async () => {
-      repo.findOneBy.mockResolvedValue({ id: 's1', slug: 'test-salon', status: 'approved' } as Salon);
+      repo.findOneBy.mockResolvedValue({ id: 's1', slug: 'test-salon', status: 'approved', createdAt: new Date('2026-01-01T00:00:00Z') } as Salon);
       categoryRows = [
         { salon_id: 's1', id: 1, name: 'کوتاهی مو', icon: 'scissors' },
         { salon_id: 's1', id: 2, name: 'رنگ مو', icon: 'palette' },

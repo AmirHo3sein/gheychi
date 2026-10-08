@@ -1,8 +1,10 @@
+import { DataSource } from 'typeorm';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { loginAs, loginAsAdmin } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
+import { startBookingInThePast } from './utils/booking-time';
 
 const MINIMAL_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
@@ -56,17 +58,18 @@ describe('Feature flags: enforcement (e2e)', () => {
       .expect(201);
     serviceId = serviceRes.body.id;
 
-    // A manually-inserted 'confirmed' + past-tense booking would need direct DB access;
-    // instead reuse the offline/manual booking endpoint (source: 'manual') which inserts
-    // straight to 'confirmed' with no payment involved, then flip it to 'completed' via the
-    // salon-side status endpoint -- both are real, already-tested endpoints, not a DB hack.
+    // A completed booking for the customer to review. Owner-entered (manual) bookings can
+    // never be reviewed, so this is the customer's own online booking (free mode: it is
+    // confirmed outright with no payment), moved into the past and closed out by the salon
+    // through the real status endpoint.
     const bookingRes = await request(app.getHttpServer())
-      .post('/api/salons/mine/bookings')
-      .set('Cookie', ownerCookie)
-      .send({ phone: '09166700002', serviceId, startsAt: new Date(Date.now() + 3600_000).toISOString() })
+      .post('/api/bookings')
+      .set('Cookie', customerCookie)
+      .send({ salonId, serviceId, startsAt: new Date(Date.now() + 24 * 3600_000).toISOString() })
       .expect(201);
-    bookingId = bookingRes.body.id;
+    bookingId = bookingRes.body.booking.id;
 
+    await startBookingInThePast(app.get(DataSource), bookingId);
     await request(app.getHttpServer())
       .patch(`/api/salons/mine/bookings/${bookingId}`)
       .set('Cookie', ownerCookie)

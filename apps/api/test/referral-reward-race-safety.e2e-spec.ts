@@ -8,6 +8,7 @@ import { WalletService } from '../src/wallet/wallet.service';
 import { clearOtpIpRateLimit, loginAs, loginAsAdmin, verifyOtpAndLogin } from './utils/auth-helper';
 import { enableOnlinePayments, resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
+import { startBookingInThePast } from './utils/booking-time';
 
 // Race-safety and reversal-shortfall coverage for slice 4 (reward granting) that the
 // happy-path/partial-grant/single-reversal scenarios in referral-reward-granting.e2e-spec.ts
@@ -124,6 +125,7 @@ describe('Referral reward granting -- race-safety and reversal-shortfall (e2e)',
 
       const created = await bookAndConfirm(referredCookie);
       bookingId = created.bookingId;
+      await startBookingInThePast(app.get(DataSource), bookingId);
       await request(app.getHttpServer())
         .patch(`/api/salons/mine/bookings/${bookingId}`)
         .set('Cookie', ownerCookie)
@@ -309,6 +311,7 @@ describe('Referral reward granting -- race-safety and reversal-shortfall (e2e)',
 
       const created = await bookAndConfirm(cookie);
       bookingId = created.bookingId;
+      await startBookingInThePast(app.get(DataSource), bookingId);
       await request(app.getHttpServer())
         .patch(`/api/salons/mine/bookings/${bookingId}`)
         .set('Cookie', ownerCookie)
@@ -367,6 +370,7 @@ describe('Referral reward granting -- race-safety and reversal-shortfall (e2e)',
 
       const created = await bookAndConfirm(cookie);
       bookingId = created.bookingId;
+      await startBookingInThePast(app.get(DataSource), bookingId);
       await request(app.getHttpServer())
         .patch(`/api/salons/mine/bookings/${bookingId}`)
         .set('Cookie', ownerCookie)
@@ -442,6 +446,7 @@ describe('Referral reward granting -- race-safety and reversal-shortfall (e2e)',
       expect(body.referralStatus).toBe('applied');
 
       const created = await bookAndConfirm(cookie);
+      await startBookingInThePast(app.get(DataSource), created.bookingId);
       await request(app.getHttpServer())
         .patch(`/api/salons/mine/bookings/${created.bookingId}`)
         .set('Cookie', ownerCookie)

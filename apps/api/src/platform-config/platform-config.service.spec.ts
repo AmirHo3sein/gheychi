@@ -1,4 +1,4 @@
-import { InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
@@ -135,6 +135,8 @@ const VALID_CONFIG_VALUES: Record<string, number> = {
   beauty_guide_daily_limit_per_user: 3,
   beauty_guide_daily_limit_global: 300,
   beauty_guide_retention_days: 90,
+  booking_max_active_per_user: 5,
+  booking_max_active_per_salon_per_user: 2,
 };
 
 describe('PlatformConfigService -- getter failure handling', () => {
@@ -331,10 +333,21 @@ describe('PlatformConfigService -- feature flags', () => {
     await expect(service.getFeatureFlags()).rejects.toBeInstanceOf(InternalServerErrorException);
   });
 
-  it('throws InternalServerErrorException when a flag value is not boolean', async () => {
-    repo.findOneBy.mockResolvedValue({ key: 'feature_reviews_enabled', value: 'true' });
+  // Audit finding 10: a number written into a flag row used to make every flag read 500.
+  // It now fails closed (off) so the rest of the platform keeps serving.
+  it('treats a non-boolean flag value as OFF instead of throwing, and does not cache it', async () => {
+    repo.findOneBy.mockResolvedValue({ key: 'feature_reviews_enabled', value: 1 });
 
-    await expect(service.getFeatureFlags()).rejects.toThrow(/must be boolean/);
+    const flags = await service.getFeatureFlags();
+
+    expect(flags.reviewsEnabled).toBe(false);
+    expect(redis.set).not.toHaveBeenCalled();
+  });
+
+  it('setMany refuses a number for a feature-flag key and a boolean for a numeric key, writing nothing', async () => {
+    await expect(service.setMany([{ key: 'feature_reviews_enabled', value: 1 }])).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.setMany([{ key: 'deposit_percent', value: true }])).rejects.toBeInstanceOf(BadRequestException);
+    expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 
   it('setFeatureFlags writes only the provided fields, mapped back to their keys', async () => {
@@ -408,7 +421,7 @@ describe('PlatformConfigService.onApplicationBootstrap -- startup validation', (
     );
   });
 
-  it('fails boot with a clear message when a present feature flag value is not boolean', async () => {
+  it('boots (flag treated as off) when a present feature flag value is not boolean', async () => {
     repoFind.mockResolvedValue([
       ...REQUIRED_PLATFORM_CONFIG_KEYS.map((key) => ({ key, value: VALID_CONFIG_VALUES[key] })),
       ...FEATURE_FLAG_KEYS.map((key) => ({
@@ -417,9 +430,7 @@ describe('PlatformConfigService.onApplicationBootstrap -- startup validation', (
       })),
     ]);
 
-    await expect(service.onApplicationBootstrap()).rejects.toThrow(
-      /Feature flag value\(s\) must be boolean: feature_coupons_enabled/,
-    );
+    await expect(service.onApplicationBootstrap()).resolves.toBeUndefined();
   });
 
   it('fails boot with a clear message naming every missing key when some are absent', async () => {
@@ -503,5 +514,46 @@ describe('PlatformConfigService.onApplicationBootstrap -- startup validation', (
     const attempt = service.onApplicationBootstrap();
     await expect(attempt).rejects.toThrow(/Missing required platform_config row\(s\): .*deposit_min_toman/);
     await expect(attempt).rejects.toThrow(/Invalid platform_config value\(s\): commission_percent="garbage"/);
+  });
+});
+
+describe('PlatformConfigService -- no_show_grace_minutes degrades instead of bricking', () => {
+  let service: PlatformConfigService;
+  let repo: { findOneBy: jest.Mock; find: jest.Mock };
+
+  beforeEach(async () => {
+    repo = { findOneBy: jest.fn(), find: jest.fn() };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PlatformConfigService,
+        { provide: getRepositoryToken(PlatformConfig), useValue: repo },
+        { provide: DataSource, useValue: {} },
+        { provide: REDIS, useValue: { get: jest.fn().mockResolvedValue(null), set: jest.fn(), del: jest.fn() } },
+      ],
+    }).compile();
+    service = moduleRef.get(PlatformConfigService);
+  });
+
+  it.each([
+    [5000, 1440],
+    [-5, 0],
+    ['garbage', 30],
+    [null, 30],
+  ])('a stored value of %p resolves to %p rather than throwing', async (stored, expected) => {
+    repo.findOneBy.mockResolvedValue({ key: 'no_show_grace_minutes', value: stored });
+
+    await expect(service.getNoShowGraceMinutes()).resolves.toBe(expected);
+  });
+
+  it('boots with an out-of-range grace value that used to fail boot', async () => {
+    repo.find.mockResolvedValue([
+      ...REQUIRED_PLATFORM_CONFIG_KEYS.map((key) => ({
+        key,
+        value: key === 'no_show_grace_minutes' ? 99999 : VALID_CONFIG_VALUES[key],
+      })),
+      ...FEATURE_FLAG_KEYS.map((key) => ({ key, value: true })),
+    ]);
+
+    await expect(service.onApplicationBootstrap()).resolves.toBeUndefined();
   });
 });

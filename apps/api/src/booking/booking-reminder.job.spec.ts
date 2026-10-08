@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { And, IsNull, MoreThan } from 'typeorm';
+import { And, FindOperator, IsNull, MoreThan } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { CronJobRunner } from '../common/cron-job-runner.service';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
@@ -18,7 +18,7 @@ const BOOKING = {
   userId: 'user-1',
   startsAt: new Date('2026-08-01T12:00:00.000Z'),
 };
-const SALON = { id: 'salon-1', name: 'Test Salon', address: 'Addr' };
+const SALON = { id: 'salon-1', name: 'Test Salon', address: 'Addr', status: 'approved' };
 const CUSTOMER = { id: 'user-1', phone: '09120000000' };
 
 describe('BookingReminderJob', () => {
@@ -171,6 +171,38 @@ describe('BookingReminderJob', () => {
     expect(count).toBe(0);
     expect(smsSend).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('booking-1'));
+  });
+
+  it('selects only bookings of salons that are still approved, in the query itself (a suspended salon must not starve real reminders)', async () => {
+    await job.run();
+
+    const [args] = bookingsFind.mock.calls[0];
+    expect(args.where.salonId).toBeInstanceOf(FindOperator);
+    expect(args.where.salonId.getSql('b.salon_id')).toBe(`b.salon_id IN (SELECT id FROM salons WHERE status = 'approved')`);
+  });
+
+  it('hands the claim back and sends nothing when the salon was suspended between the query and the send', async () => {
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        BookingReminderJob,
+        { provide: getRepositoryToken(Booking), useValue: { find: bookingsFind, update: bookingsUpdate } },
+        { provide: PlatformConfigService, useValue: { getReminderLeadHours: jest.fn().mockResolvedValue(3) } },
+        { provide: SalonsService, useValue: { findById: jest.fn().mockResolvedValue({ ...SALON, status: 'suspended' }) } },
+        { provide: UsersService, useValue: { findById: jest.fn().mockResolvedValue(CUSTOMER) } },
+        { provide: SMS_PROVIDER, useValue: { send: smsSend } },
+        { provide: PushService, useValue: { sendToUser: pushSendToUser } },
+        { provide: AlertsService, useValue: { raise: alertsRaise } },
+        { provide: CronJobRunner, useValue: { run: jest.fn((_name: string, fn: () => Promise<void>) => fn()) } },
+      ],
+    }).compile();
+
+    const count = await moduleRef.get(BookingReminderJob).run();
+
+    expect(count).toBe(0);
+    expect(smsSend).not.toHaveBeenCalled();
+    expect(pushSendToUser).not.toHaveBeenCalled();
+    expect(bookingsUpdate).toHaveBeenCalledWith({ id: 'booking-1', remindedAt: NOW }, { remindedAt: null });
+    expect(alertsRaise).not.toHaveBeenCalled();
   });
 
   it('handleCron delegates to run() through the job runner', async () => {

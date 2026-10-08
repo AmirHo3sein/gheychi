@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, Logger, NotFoundExc
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { AdminNotificationsService } from '../admin-notifications/admin-notifications.service';
+import { AuditService } from '../audit/audit.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { ServiceCategory } from '../catalog/service-category.entity';
 import { CitiesService } from '../cities/cities.service';
@@ -17,6 +18,16 @@ import { SalonCategory } from './salon-category.entity';
 import { SalonSlugHistory } from './salon-slug-history.entity';
 import { Salon } from './salon.entity';
 import { makeSlug } from '../common/slug.util';
+
+// Edits to these on an already-approved salon change what an admin vetted, so they are
+// surfaced (never blocked -- the salon stays live). Labels are for the admin notification.
+const MATERIAL_FIELD_LABELS = {
+  name: 'نام',
+  genderTarget: 'جنسیت مشتریان',
+  location: 'موقعیت مکانی',
+  address: 'آدرس',
+} as const;
+type MaterialField = keyof typeof MATERIAL_FIELD_LABELS;
 
 export interface SalonCategoryTag {
   id: number;
@@ -47,6 +58,7 @@ export class SalonsService {
     // Gates updateHandle's owner path against entitlements.customHandle -- see that method's
     // own doc comment for why the admin-override path is never gated by it.
     private readonly entitlements: EntitlementsService,
+    private readonly audit: AuditService,
   ) {}
 
   /** Throws BadRequestException (not a raw FK-violation 500) for an id that doesn't exist. */
@@ -97,6 +109,7 @@ export class SalonsService {
           slug: makeSlug(dto.name),
           description: dto.description ?? null,
           genderTarget: dto.genderTarget,
+          contactPhone: dto.contactPhone ?? null,
           address: dto.address,
           city: dto.city,
           cityId,
@@ -145,9 +158,17 @@ export class SalonsService {
     return withCategories;
   }
 
-  async updateMine(salonId: string, dto: UpdateSalonDto): Promise<Salon & { categories: SalonCategoryTag[] }> {
+  async updateMine(salonId: string, dto: UpdateSalonDto, actorId: string): Promise<Salon & { categories: SalonCategoryTag[] }> {
     const salon = await this.repo.findOneBy({ id: salonId });
     if (!salon) throw new NotFoundException('No salon for this account');
+    const wasApproved = salon.status === 'approved';
+    const before = {
+      name: salon.name,
+      genderTarget: salon.genderTarget,
+      address: salon.address,
+      city: salon.city,
+      location: salon.location ? [...salon.location.coordinates] : null,
+    };
     if (dto.categoryIds) await this.requireValidCategoryIds(dto.categoryIds);
 
     const { lat, lng, categoryIds, ...rest } = dto;
@@ -182,8 +203,61 @@ export class SalonsService {
       }
     });
 
+    if (wasApproved) await this.reportMaterialEdit(salon, before, actorId);
+
     const [withCategories] = await this.attachCategories([salon]);
     return withCategories;
+  }
+
+  /**
+   * An approved salon changed something an admin vetted (name, target gender, location,
+   * address/city): raise an admin notification and write an audit row. Both carry field
+   * NAMES only -- never the old/new values, which include the salon's address. Best-effort
+   * by design: the edit has already committed and the salon stays live, so a lost
+   * notification must never fail the owner's save.
+   */
+  private async reportMaterialEdit(
+    salon: Salon,
+    before: { name: string; genderTarget: string; address: string; city: string; location: number[] | null },
+    actorId: string,
+  ): Promise<void> {
+    const changed: MaterialField[] = [];
+    if (salon.name !== before.name) changed.push('name');
+    if (salon.genderTarget !== before.genderTarget) changed.push('genderTarget');
+    if (
+      !before.location ||
+      // PostGIS hands coordinates back rounded; compare at ~0.1 m so an unchanged pin re-sent with more
+      // decimals doesn't raise a "location changed" notification on every save.
+      Math.abs(salon.location.coordinates[0] - before.location[0]) > 1e-6 ||
+      Math.abs(salon.location.coordinates[1] - before.location[1]) > 1e-6
+    ) {
+      changed.push('location');
+    }
+    if (salon.address !== before.address || salon.city !== before.city) changed.push('address');
+    if (changed.length === 0) return;
+
+    try {
+      await this.adminNotifications.emit(
+        'salon_material_edit',
+        `سالن «${salon.name}» اطلاعات تاییدشده را ویرایش کرد`,
+        `موارد تغییرکرده: ${changed.map((field) => MATERIAL_FIELD_LABELS[field]).join('، ')}`,
+        `/salons/${salon.id}`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to emit salon_material_edit notification for salon ${salon.id}`,
+        err instanceof Error ? err.stack : String(err),
+      );
+    }
+    // AuditService.record never throws.
+    await this.audit.record({
+      actorId,
+      action: 'salon.material_edit',
+      targetType: 'salon',
+      targetId: salon.id,
+      payload: { fields: changed },
+      success: true,
+    });
   }
 
   /**
@@ -342,7 +416,7 @@ export class SalonsService {
     return updated;
   }
 
-  async findPublicBySlug(slug: string): Promise<Salon & { categories: SalonCategoryTag[] }> {
+  async findPublicBySlug(slug: string): Promise<Salon & { categories: SalonCategoryTag[]; memberSince: string }> {
     const salon = await this.repo.findOneBy({ slug, status: 'approved' });
     if (!salon) throw new NotFoundException();
     const [withCategories] = await this.attachCategories([salon]);
@@ -353,7 +427,84 @@ export class SalonsService {
     // excluded at the query, because the same entity read backs the authenticated
     // provider/admin paths that legitimately need them.
     const { approvalTimeoutMinutes: _a, paymentTimeoutMinutes: _p, ...publicFields } = withCategories;
-    return publicFields as Salon & { categories: SalonCategoryTag[] };
+    // `contactPhone` is the salon's own public number (never the owner's account phone) and
+    // `memberSince` replaces the old "verified" claim with the one fact we can stand behind.
+    return { ...publicFields, memberSince: salon.createdAt.toISOString() } as Salon & {
+      categories: SalonCategoryTag[];
+      memberSince: string;
+    };
+  }
+
+  /**
+   * GET /admin/salons/:id -- the full salon row (every existing top-level field, unchanged)
+   * enriched with what an admin needs to run the listing checklist: owner, a plain
+   * {lat,lng} location, photos, services, weekly hours and a salon-only risk summary.
+   * Fixed number of queries (salon + 6 independent reads in parallel), no per-row lookups.
+   *
+   * `riskSummary` is keyed on status STRINGS in SQL, so a status that does not exist (yet)
+   * simply counts as zero. Window: bookings created in the last 90 days. `openReports` is
+   * every currently-open report against the salon regardless of age -- an unresolved report
+   * must not age out of view.
+   */
+  async getAdminDetail(id: string) {
+    const salon = await this.repo.findOneBy({ id });
+    if (!salon) throw new NotFoundException();
+
+    const [owner, photos, services, hours, risk, reports] = await Promise.all([
+      this.dataSource.query(`SELECT id, name, phone, status FROM users WHERE id = $1`, [salon.ownerId]),
+      this.dataSource.query(`SELECT id, url, sort_order FROM salon_photos WHERE salon_id = $1 ORDER BY sort_order ASC, id ASC`, [id]),
+      this.dataSource.query(
+        `SELECT id, name, pricing_type, price, price_max, duration_min, is_active
+           FROM salon_services WHERE salon_id = $1 ORDER BY created_at ASC, id ASC`,
+        [id],
+      ),
+      this.dataSource.query(`SELECT weekday, open_time, close_time FROM working_hours WHERE salon_id = $1 ORDER BY weekday ASC, open_time ASC`, [id]),
+      this.dataSource.query(
+        `SELECT count(*)::int AS total,
+                count(*) FILTER (WHERE source = 'online')::int AS online,
+                count(*) FILTER (WHERE source = 'manual')::int AS manual,
+                count(*) FILTER (WHERE status = 'cancelled_by_salon')::int AS cancelled_by_salon,
+                count(*) FILTER (WHERE status = 'rejected_by_salon')::int AS rejected_by_salon,
+                count(*) FILTER (WHERE status = 'no_show')::int AS no_show
+           FROM bookings WHERE salon_id = $1 AND created_at >= now() - interval '90 days'`,
+        [id],
+      ),
+      this.dataSource.query(`SELECT count(*)::int AS open FROM reports WHERE salon_id = $1 AND status = 'open'`, [id]),
+    ]);
+
+    const openDays = new Set<number>(hours.map((h: { weekday: number }) => h.weekday));
+    const closedDays = [0, 1, 2, 3, 4, 5, 6]
+      .filter((day) => !openDays.has(day))
+      .map((dayOfWeek) => ({ dayOfWeek, openTime: null, closeTime: null, isClosed: true }));
+    const toNumber = (v: string | number | null) => (v === null ? null : Number(v));
+
+    return {
+      ...salon,
+      owner: owner[0] ?? null,
+      location: salon.location ? { lat: salon.location.coordinates[1], lng: salon.location.coordinates[0] } : null,
+      photos: photos.map((p: { id: string; url: string; sort_order: number }) => ({ id: p.id, url: p.url, sortOrder: p.sort_order })),
+      services: services.map(
+        (r: { id: string; name: string; pricing_type: string; price: string | null; price_max: string | null; duration_min: number; is_active: boolean }) => ({
+          id: r.id, name: r.name, pricingType: r.pricing_type, price: toNumber(r.price), priceMax: toNumber(r.price_max),
+          durationMinutes: r.duration_min, isActive: r.is_active,
+        }),
+      ),
+      hours: [
+        ...hours.map((h: { weekday: number; open_time: string; close_time: string }) => ({
+          dayOfWeek: h.weekday, openTime: h.open_time, closeTime: h.close_time, isClosed: false,
+        })),
+        ...closedDays,
+      ].sort((a, b) => a.dayOfWeek - b.dayOfWeek),
+      riskSummary: {
+        bookingsTotal: risk[0].total,
+        onlineBookings: risk[0].online,
+        manualBookings: risk[0].manual,
+        cancelledBySalon: risk[0].cancelled_by_salon,
+        rejectedBySalon: risk[0].rejected_by_salon,
+        noShowMarked: risk[0].no_show,
+        openReports: reports[0].open,
+      },
+    };
   }
 
   findById(id: string): Promise<Salon | null> {

@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import { loginAs, loginAsAdmin } from './utils/auth-helper';
 import { enableOnlinePayments, resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
+import { startBookingInThePast } from './utils/booking-time';
 
 describe('Salon earnings (e2e)', () => {
   let app: INestApplication;
@@ -89,6 +90,7 @@ describe('Salon earnings (e2e)', () => {
     expect(res.body).toEqual({ totalCollected: 0, commissionPercent: 10, commissionAmount: 0, netPayout: 0 });
 
     // Completing it is what finally accrues the ledger row and the earnings reported here.
+    await startBookingInThePast(app.get(DataSource), created.body.booking.id);
     await request(app.getHttpServer())
       .patch(`/api/salons/mine/bookings/${created.body.booking.id}`)
       .set('Cookie', cookie)

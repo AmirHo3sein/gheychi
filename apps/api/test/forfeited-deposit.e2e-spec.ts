@@ -137,9 +137,20 @@ describe('Forfeited deposits: no-show eligibility + commission consistency (e2e)
         .expect(200);
     });
 
-    it('never time-guards a completion -- a salon may close out a booking early', async () => {
+    it('refuses to complete a booking that has not started (it would claim the deposit early), and allows it once it has', async () => {
       const bookingId = await paidBooking(120);
 
+      await request(app.getHttpServer())
+        .patch(`/api/salons/mine/bookings/${bookingId}`)
+        .set('Cookie', ownerCookie)
+        .send({ status: 'completed' })
+        .expect(400);
+      const [stillConfirmed] = await ds.query(`SELECT status FROM bookings WHERE id = $1`, [bookingId]);
+      expect(stillConfirmed.status).toBe('confirmed');
+      expect(await ledgerRowsFor(bookingId)).toHaveLength(0);
+
+      // No grace for a completion -- just "the appointment has started".
+      await backdate(bookingId, 5);
       await request(app.getHttpServer())
         .patch(`/api/salons/mine/bookings/${bookingId}`)
         .set('Cookie', ownerCookie)

@@ -128,8 +128,10 @@ describe('Booking cancellation policy (e2e)', () => {
       .expect(403);
   });
 
+  // A customer cannot hold two overlapping bookings, and the stranger test above leaves its
+  // +48h booking confirmed -- so the tests below each book their own distinct hour.
   it('rejects cancelling an already-cancelled booking', async () => {
-    const { bookingId } = await bookAndConfirm(48);
+    const { bookingId } = await bookAndConfirm(46);
     await request(app.getHttpServer()).post(`/api/bookings/${bookingId}/cancel`).set('Cookie', customerCookie).expect(200);
     await request(app.getHttpServer()).post(`/api/bookings/${bookingId}/cancel`).set('Cookie', customerCookie).expect(400);
   });
@@ -152,7 +154,7 @@ describe('Booking cancellation policy (e2e)', () => {
   });
 
   it('leaves the payment refund_pending when the gateway refuses the refund, without failing the cancel', async () => {
-    const { bookingId, paymentId } = await bookAndConfirm(48);
+    const { bookingId, paymentId } = await bookAndConfirm(50);
     const ds = app.get(DataSource);
     // Force MockPaymentGateway.refundPayment to refuse by rewriting the authority
     // to contain the sentinel it checks for.
@@ -175,7 +177,7 @@ describe('Booking cancellation policy (e2e)', () => {
   });
 
   it('RefundRetryJob completes a refund the inline attempt could not', async () => {
-    const { bookingId, paymentId } = await bookAndConfirm(48);
+    const { bookingId, paymentId } = await bookAndConfirm(52);
     const ds = app.get(DataSource);
     // First make the refund fail inline...
     await ds.query(`UPDATE payments SET authority = 'MOCK-REFUND-FAIL-' || authority WHERE id = $1`, [paymentId]);

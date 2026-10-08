@@ -30,5 +30,16 @@
 export const BOOKING_UNAVAILABLE = 'BOOKING_UNAVAILABLE';
 export const WORKER_UNAVAILABLE = 'WORKER_UNAVAILABLE';
 export const PAYMENT_FAILED = 'PAYMENT_FAILED';
+// Abuse guards on online booking creation: the customer already holds the maximum number
+// of active future bookings (overall or at this salon), or already has a booking that
+// overlaps the requested time. Distinct from BOOKING_UNAVAILABLE -- the slot itself is
+// free; it is this customer who may not take it.
+export const BOOKING_LIMIT_REACHED = 'BOOKING_LIMIT_REACHED';
+export const CUSTOMER_DOUBLE_BOOKED = 'CUSTOMER_DOUBLE_BOOKED';
 
-export type BookingErrorCode = typeof BOOKING_UNAVAILABLE | typeof WORKER_UNAVAILABLE | typeof PAYMENT_FAILED;
+export type BookingErrorCode =
+  | typeof BOOKING_UNAVAILABLE
+  | typeof WORKER_UNAVAILABLE
+  | typeof PAYMENT_FAILED
+  | typeof BOOKING_LIMIT_REACHED
+  | typeof CUSTOMER_DOUBLE_BOOKED;

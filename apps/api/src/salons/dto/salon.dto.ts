@@ -3,9 +3,12 @@ import {
   ArrayMinSize, ArrayUnique, IsIn, IsInt, IsLatitude, IsLongitude, IsOptional, IsString, Length, Matches, Max,
   MaxLength, Min,
 } from 'class-validator';
+import { CONTACT_PHONE_PATTERN, normalizeContactPhone } from '../contact-phone.util';
 
 // Sending '' clears the field (stored as NULL); @IsOptional skips the remaining
 // validators for null, so an empty string never has to pass the length/format checks.
+const CONTACT_PHONE_MESSAGE = 'شماره تماس سالن معتبر نیست؛ شماره موبایل (۰۹…) یا تلفن ثابت همراه با کد شهر وارد کنید';
+
 const emptyToNull = ({ value }: { value: unknown }) => (value === '' ? null : value);
 
 export class CreateSalonDto {
@@ -20,6 +23,13 @@ export class CreateSalonDto {
 
   @IsIn(['women', 'men'])
   genderTarget: 'women' | 'men';
+
+  // The salon's PUBLIC contact number (shown on its approved profile). Unrelated to the
+  // owner's account phone, which is never exposed.
+  @IsOptional()
+  @Transform(({ value }) => normalizeContactPhone(value))
+  @Matches(CONTACT_PHONE_PATTERN, { message: CONTACT_PHONE_MESSAGE })
+  contactPhone?: string | null;
 
   @IsString()
   @Length(5, 500)
@@ -62,6 +72,11 @@ export class UpdateSalonDto {
   // consumer that checks for null rather than truthiness.
   @IsOptional() @Transform(emptyToNull) @IsString() @MaxLength(2000) description?: string | null;
   @IsOptional() @IsIn(['women', 'men']) genderTarget?: 'women' | 'men';
+  // null (or '') clears it; see CreateSalonDto.contactPhone.
+  @IsOptional()
+  @Transform(({ value }) => normalizeContactPhone(value))
+  @Matches(CONTACT_PHONE_PATTERN, { message: CONTACT_PHONE_MESSAGE })
+  contactPhone?: string | null;
   @IsOptional() @IsString() @Length(5, 500) address?: string;
   @IsOptional() @IsString() @Length(2, 80) city?: string;
   @IsOptional() @Type(() => Number) @IsLatitude() lat?: number;

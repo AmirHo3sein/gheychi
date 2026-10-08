@@ -112,7 +112,7 @@ booking already `expired` by the time reconciliation runs. This is **handled, no
 
 ## What refund does *not* reverse
 
-A refund reverses the referral reward tied to the booking (if any), but **does not** give back a spent coupon redemption or a wallet-balance debit once payment had actually captured — that reversal only happens via `releaseBookingHold()` (and its wallet-only half, `reverseWalletSpend()`), which only run on the "never captured" paths (expired hold, cancel-while-unpaid, failed callback, reconciliation verify-failure, rejected/expired approval request, and `approve()` when the global online-payment flag was turned off after the request staked wallet balance — see [29](./29-global-payment-toggle.md)). This asymmetry is explicit, documented, unbuilt-by-choice — see [24-technical-debt.md](./24-technical-debt.md).
+A refund reverses the referral reward tied to the booking (if any). The spent coupon redemption and wallet-balance debit are given back by `releaseBookingHold()` (and its wallet-only half, `reverseWalletSpend()`) on the "never captured" paths (expired hold, cancel-while-unpaid, failed callback, reconciliation verify-failure, rejected/expired approval request, and `approve()` when the global online-payment flag was turned off after the request staked wallet balance — see [29](./29-global-payment-toggle.md)) **and, since 2026-10-08, at the moment a refund is owed on a captured booking**: the customer cancelling inside the window, the salon cancelling, or an admin platform-cancel (`cancelled_by_admin`) all release both in the same transaction as the `refund_pending` flip. A forfeited late cancellation keeps both. See [09-booking-engine.md](./09-booking-engine.md).
 
 ## When no Payment row exists at all
 

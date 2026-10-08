@@ -20,6 +20,16 @@ export async function resetDatabase(): Promise<void> {
   await ds.initialize();
   await ds.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
   await ds.runMigrations();
+  // The migration seeds the real abuse caps (5 active bookings per customer, 2 per salon).
+  // Most suites predate them and drive many bookings through ONE customer against ONE salon
+  // as plain fixture setup, so they run with the caps relaxed to their maximum; a suite that
+  // tests the caps themselves restores the seeded defaults (see restoreBookingLimitDefaults).
+  await ds.query(
+    `UPDATE platform_config SET value = CASE key
+       WHEN 'booking_max_active_per_user' THEN '50'::jsonb
+       WHEN 'booking_max_active_per_salon_per_user' THEN '20'::jsonb END
+     WHERE key IN ('booking_max_active_per_user', 'booking_max_active_per_salon_per_user')`,
+  );
   await ds.destroy();
 
   // Postgres resets to a genuinely fresh, migration-seeded state above, but Redis is a
@@ -55,5 +65,18 @@ export async function enableOnlinePayments(): Promise<void> {
   const ds = testDataSource();
   await ds.initialize();
   await ds.query(`UPDATE platform_config SET value = 'true' WHERE key = 'feature_online_payment_enabled'`);
+  await ds.destroy();
+}
+
+/** Puts the abuse caps back to what the migration seeds -- for a suite that tests them. */
+export async function restoreBookingLimitDefaults(): Promise<void> {
+  const ds = testDataSource();
+  await ds.initialize();
+  await ds.query(
+    `UPDATE platform_config SET value = CASE key
+       WHEN 'booking_max_active_per_user' THEN '5'::jsonb
+       WHEN 'booking_max_active_per_salon_per_user' THEN '2'::jsonb END
+     WHERE key IN ('booking_max_active_per_user', 'booking_max_active_per_salon_per_user')`,
+  );
   await ds.destroy();
 }

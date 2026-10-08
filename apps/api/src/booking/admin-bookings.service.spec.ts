@@ -5,7 +5,9 @@ import { validate } from 'class-validator';
 import { AdminBookingsController } from './admin-bookings.controller';
 import { AdminBookingsService, MAX_PAGE_SIZE } from './admin-bookings.service';
 import { Booking } from './booking.entity';
+import { BookingsService } from './bookings.service';
 import { AdminBookingQueryDto } from './dto/admin-booking-query.dto';
+import { AdminCancelBookingDto } from './dto/booking.dto';
 
 /**
  * Records every clause the service composes onto the query builder, so the filter tests
@@ -272,6 +274,19 @@ describe('AdminBookingsService', () => {
       expect(items[0].attributionSource).toBeNull();
     });
 
+    it('reports depositPaid from the Payment row, never from the deposit amount that merely WOULD be owed', async () => {
+      const statuses = ['paid', 'refund_pending', 'refunded', 'initiated', 'failed', null] as const;
+      qb.getCount.mockResolvedValueOnce(statuses.length);
+      qb.getRawMany.mockResolvedValueOnce(
+        statuses.map((paymentStatus, i) => rawRow({ id: `b${i}`, paymentStatus, depositAmount: '100000' })),
+      );
+
+      const { items } = await service.list({});
+
+      expect(items.map((i) => i.depositPaid)).toEqual([true, true, true, false, false, false]);
+      expect(items.every((i) => i.depositAmount === 100_000)).toBe(true); // the owed figure is unchanged
+    });
+
     it('returns one row per raw row, in the order the query produced them', async () => {
       // Nothing regroups or dedupes here -- the projection is flat precisely so a page of
       // N rows can never collapse into fewer (the failure mode entity hydration had).
@@ -288,6 +303,23 @@ describe('AdminBookingsService', () => {
       ]);
     });
   });
+});
+
+describe('AdminCancelBookingDto', () => {
+  const validateDto = (payload: Record<string, unknown>) => validate(plainToInstance(AdminCancelBookingDto, payload));
+
+  it('accepts a real reason and trims it', async () => {
+    const dto = plainToInstance(AdminCancelBookingDto, { reason: '  سالن تعلیق شد  ' });
+    expect(await validate(dto)).toHaveLength(0);
+    expect(dto.reason).toBe('سالن تعلیق شد');
+  });
+
+  it.each([{}, { reason: '' }, { reason: '   ' }, { reason: 'ab' }, { reason: 'x'.repeat(501) }, { reason: 5 }])(
+    'rejects %j',
+    async (payload) => {
+      expect((await validateDto(payload)).map((e) => e.property)).toEqual(['reason']);
+    },
+  );
 });
 
 describe('AdminBookingQueryDto', () => {
@@ -320,17 +352,24 @@ describe('AdminBookingQueryDto', () => {
 });
 
 describe('AdminBookingsController', () => {
-  it('delegates straight to the service and exposes no mutation route', () => {
+  it('delegates the list straight to the service and exposes exactly one write: platform cancellation', async () => {
     const list = jest.fn().mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20 });
-    const controller = new AdminBookingsController({ list } as unknown as AdminBookingsService);
+    const adminCancel = jest.fn().mockResolvedValue({ id: 'b1', status: 'cancelled_by_admin' });
+    const controller = new AdminBookingsController(
+      { list } as unknown as AdminBookingsService,
+      { adminCancel } as unknown as BookingsService,
+    );
     const query: AdminBookingQueryDto = { status: 'confirmed' };
     void controller.list(query);
     expect(list).toHaveBeenCalledWith(query);
 
-    // Read-only by construction: booking invariants live in BookingsService's state
-    // machine, and a generic admin write route here would bypass them. This pins that
-    // there is exactly one handler on the class.
+    await controller.cancel({ user: { id: 'admin-1' } } as never, 'b1', { reason: 'salon suspended' });
+    expect(adminCancel).toHaveBeenCalledWith('b1', 'admin-1', 'salon suspended');
+
+    // Booking invariants live in BookingsService's state machine, and a generic admin write
+    // route here would bypass them. The ONLY mutation is the explicitly modelled
+    // cancelled_by_admin transition; this pins that nothing else sneaks onto the class.
     const handlers = Object.getOwnPropertyNames(AdminBookingsController.prototype).filter((n) => n !== 'constructor');
-    expect(handlers).toEqual(['list']);
+    expect(handlers).toEqual(['list', 'cancel']);
   });
 });

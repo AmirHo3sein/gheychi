@@ -751,6 +751,14 @@ export class ReferralsService {
 
         if (referral.expires_at && new Date(referral.expires_at) < new Date()) return; // let a future expiry sweep flip it
 
+        const bookingRows: Array<{ salon_id: string; source: string }> = await em.query(
+          `SELECT salon_id, source FROM bookings WHERE id = $1`,
+          [triggeringBookingId],
+        );
+        // Only a customer's own online checkout can qualify a referral. An owner-entered
+        // (manual) booking is typed in by the salon for any phone number, so letting it
+        // trigger a reward would let a salon farm referral rewards against itself.
+        if (bookingRows[0]?.source !== 'online') return;
         // R6: a salon_owner/worker-type referral only qualifies on a booking AT THE
         // REFERRING SALON (referrals.salon_id). Enforced HERE, not only in the hourly
         // paid-booking sweep's own SQL, because the 'completed' trigger calls in directly
@@ -758,12 +766,7 @@ export class ReferralsService {
         // this check a customer completing a booking at an unrelated salon paid out the
         // referring salon's reward and froze the referral as reward_granted, so their
         // later, genuinely qualifying booking at the referrer could never count.
-        if (referral.salon_id !== null) {
-          const bookingRows: Array<{ salon_id: string }> = await em.query(`SELECT salon_id FROM bookings WHERE id = $1`, [
-            triggeringBookingId,
-          ]);
-          if (bookingRows[0]?.salon_id !== referral.salon_id) return;
-        }
+        if (referral.salon_id !== null && bookingRows[0].salon_id !== referral.salon_id) return;
 
         if (referral.qualifying_event === 'first_paid_booking') {
           const paymentRows: Array<{ status: string; paid_at: string | null }> = await em.query(

@@ -29,7 +29,13 @@ export interface AdminBookingRow {
   source: 'online' | 'manual';
   attributionSource: 'qr' | 'direct' | 'search' | null;
   priceSnapshot: number;
+  // What the booking's deposit WOULD be -- not what was collected. With online payment off
+  // (the seeded default) this stays non-zero on bookings nothing was ever charged for; read
+  // `depositPaid` / `payment` for the truth about money.
   depositAmount: number;
+  // True iff a Payment reached `paid` (including one since moved on to refund_pending or
+  // refunded) -- the same definition the customer and salon responses use.
+  depositPaid: boolean;
   createdAt: Date;
   salonId: string;
   salonName: string | null;
@@ -192,6 +198,7 @@ export class AdminBookingsService {
       // for hydrated entity properties), so pg hands every one of these back as a string.
       priceSnapshot: numberOrZero(raw.priceSnapshot),
       depositAmount: numberOrZero(raw.depositAmount),
+      depositPaid: paymentStatus === 'paid' || paymentStatus === 'refund_pending' || paymentStatus === 'refunded',
       createdAt: dateOrNull(raw.createdAt) as Date,
       salonId: String(raw.salonId),
       salonName: (raw.salonName as string | null) ?? null,

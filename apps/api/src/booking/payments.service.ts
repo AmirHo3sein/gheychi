@@ -675,12 +675,59 @@ export class PaymentsService {
     const customer = await this.usersService.findById(booking.userId);
     if (!customer) return;
     const when = formatIranDateTimeFa(booking.startsAt);
+    // Forfeiture is only true if a deposit was actually captured. With online payment off
+    // (or a zero deposit) nothing was ever paid, and telling the customer "your deposit is
+    // not returned" would be a false claim about money that does not exist.
+    const depositCaptured = (await this.payments.countBy({ bookingId, status: 'paid' })) > 0;
     await this.notifyOne(
       customer,
-      `نوبت شما در ${salon.name} برای ${when} به دلیل عدم حضور ثبت شد و پیش‌پرداخت آن بازگردانده نمی‌شود.`,
+      depositCaptured
+        ? `نوبت شما در ${salon.name} برای ${when} به دلیل عدم حضور ثبت شد و بیعانه آن بازگردانده نمی‌شود.`
+        : `نوبت شما در ${salon.name} برای ${when} به دلیل عدم حضور ثبت شد.`,
       { title: 'عدم حضور ثبت شد', body: `${salon.name} — ${when}` },
       bookingId,
     );
+  }
+
+  /**
+   * An admin called the booking off (POST /admin/bookings/:id/cancel). The customer is
+   * always told by push; the SMS is spent only when the booking was `confirmed` -- an
+   * unconfirmed request or an unpaid hold is not worth a text. The salon owner gets a push
+   * only (they have a panel; the platform is not paying to text them about its own
+   * decision). The admin's free-text reason is internal and is deliberately not forwarded.
+   */
+  async notifyCancelledByAdmin(bookingId: string, wasConfirmed: boolean): Promise<void> {
+    const booking = await this.bookings.findOneBy({ id: bookingId });
+    if (!booking) return;
+    const salon = await this.salonsService.findById(booking.salonId);
+    if (!salon) return;
+    const when = formatIranDateTimeFa(booking.startsAt);
+
+    const [customer, owner] = await Promise.all([
+      this.usersService.findById(booking.userId),
+      this.usersService.findById(salon.ownerId),
+    ]);
+
+    await Promise.all([
+      customer
+        ? this.notifyOne(
+            customer,
+            `نوبت شما در ${salon.name}، ${when} توسط پشتیبانی قیچی لغو شد. در صورت پرداخت، مبلغ کامل به شما بازگردانده می‌شود.`,
+            { title: 'لغو نوبت توسط پشتیبانی', body: `${salon.name} — ${when}` },
+            bookingId,
+            { sms: wasConfirmed },
+          )
+        : Promise.resolve(),
+      owner
+        ? this.notifyOne(
+            owner,
+            `نوبت ${when} در ${salon.name} توسط پشتیبانی قیچی لغو شد.`,
+            { title: 'لغو نوبت توسط پشتیبانی', body: `${salon.name} — ${when}` },
+            bookingId,
+            { sms: false },
+          )
+        : Promise.resolve(),
+    ]);
   }
 
   /**

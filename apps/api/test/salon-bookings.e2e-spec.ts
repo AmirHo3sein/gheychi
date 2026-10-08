@@ -1,7 +1,9 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import { DataSource } from 'typeorm';
 import { loginAs } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
+import { startBookingInThePast } from './utils/booking-time';
 import { createTestApp } from './utils/test-app';
 import { createApprovedSalonWithService, createService, firstCategoryId } from './factories/salon.factory';
 
@@ -49,7 +51,8 @@ describe('Salon-side booking management (e2e)', () => {
       .set('Cookie', customerCookie)
       .expect(404)); // customer has no salon of their own -- SalonOwnerGuard 404s via findMine
 
-  it('marks a confirmed booking completed', async () => {
+  it('marks a confirmed booking completed (once its appointment has started)', async () => {
+    await startBookingInThePast(app.get(DataSource), confirmedBookingId);
     const res = await request(app.getHttpServer())
       .patch(`/api/salons/mine/bookings/${confirmedBookingId}`)
       .set('Cookie', ownerCookie)

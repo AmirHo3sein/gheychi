@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import { loginAs, loginAsAdmin, verifyOtpAndLogin } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
+import { startBookingInThePast } from './utils/booking-time';
 
 // Slice 6 (spec section 2/3/10) -- fixed_discount reward kind end-to-end:
 //   1. a referral configured for fixed_discount actually grants a real coupon
@@ -114,6 +115,7 @@ describe('Fixed-amount discount support (e2e, Slice 6)', () => {
   }
 
   async function markCompleted(bookingId: string): Promise<void> {
+    await startBookingInThePast(app.get(DataSource), bookingId);
     await request(app.getHttpServer())
       .patch(`/api/salons/mine/bookings/${bookingId}`)
       .set('Cookie', ownerCookie)

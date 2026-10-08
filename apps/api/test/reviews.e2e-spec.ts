@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import { loginAs } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
+import { startBookingInThePast } from './utils/booking-time';
 
 describe('Reviews — creation (e2e)', () => {
   let app: INestApplication;
@@ -60,6 +61,7 @@ describe('Reviews — creation (e2e)', () => {
       .expect(201);
     const authority = new URL(created.body.paymentUrl).searchParams.get('Authority')!;
     await request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'OK' }).expect(302);
+    await startBookingInThePast(app.get(DataSource), created.body.booking.id);
     await request(app.getHttpServer())
       .patch(`/api/salons/mine/bookings/${created.body.booking.id}`)
       .set('Cookie', ownerCookie)
@@ -206,6 +208,7 @@ describe('Reviews — public listing (e2e)', () => {
       .expect(201);
     const authority = new URL(created.body.paymentUrl).searchParams.get('Authority')!;
     await request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'OK' }).expect(302);
+    await startBookingInThePast(app.get(DataSource), created.body.booking.id);
     await request(app.getHttpServer())
       .patch(`/api/salons/mine/bookings/${created.body.booking.id}`)
       .set('Cookie', ownerCookie)
@@ -292,6 +295,7 @@ describe('Reviews — salon owner reply (e2e)', () => {
       .expect(201);
     const authority = new URL(created.body.paymentUrl).searchParams.get('Authority')!;
     await request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'OK' }).expect(302);
+    await startBookingInThePast(app.get(DataSource), created.body.booking.id);
     await request(app.getHttpServer())
       .patch(`/api/salons/mine/bookings/${created.body.booking.id}`)
       .set('Cookie', ownerCookie)
@@ -425,6 +429,7 @@ describe('Reviews — admin moderation (e2e)', () => {
       .expect(201);
     const authority = new URL(created.body.paymentUrl).searchParams.get('Authority')!;
     await request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'OK' }).expect(302);
+    await startBookingInThePast(app.get(DataSource), created.body.booking.id);
     await request(app.getHttpServer())
       .patch(`/api/salons/mine/bookings/${created.body.booking.id}`)
       .set('Cookie', ownerCookie)

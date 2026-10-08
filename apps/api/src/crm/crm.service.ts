@@ -37,9 +37,15 @@ const LAPSED_AFTER_DAYS = 60;
  */
 const VISITED_BOOKING_SQL = `b.starts_at < now() AND b.status IN ('confirmed', 'completed')`;
 
-// Bookings that represent real, non-cancelled business. Used for the money figures and the
-// booking/customer counts alike so "10 bookings worth 5,000,000" is always self-consistent.
+// Bookings that represent real, non-cancelled business. Drives the booking/customer COUNTS
+// (a confirmed upcoming booking is real demand).
 const ACTIVE_BOOKING_STATUSES_SQL = `('confirmed', 'completed')`;
+
+// The ONLY status whose list price is counted as a money figure. A confirmed booking has not
+// happened yet (it can still be cancelled or turn into a no-show), so summing it would report
+// revenue the salon has not earned. Every grossValue / grossBookingValue / estimatedSalonRevenue
+// below filters on this; they are list-price values, not cash received.
+const REVENUE_STATUS_SQL = `'completed'`;
 
 // Top-N lists on the dashboard. A fixed small ceiling, not a paginated view -- these answer
 // "what should I look at", not "show me everything".
@@ -59,6 +65,7 @@ export interface CustomerListRow {
   visitsCount: number;
   firstVisitAt: string | null;
   lastVisitAt: string | null;
+  /** Sum of the list prices (price_snapshot) of this customer's COMPLETED bookings. */
   grossValue: number;
   segment: CustomerSegment;
 }
@@ -96,9 +103,13 @@ export interface PeriodMetrics {
   to: string;
   /** Bookings CREATED in the window whose status is confirmed/completed. */
   bookingsCount: number;
+  /** List-price value (price_snapshot) of the window's COMPLETED bookings only -- not cash
+   *  received and not upcoming bookings. */
   grossBookingValue: number;
   onlineCollected: number;
   commission: number;
+  /** grossBookingValue - commission: an estimate at list price, since the salon's own cash
+   *  portion is never observed. Completed bookings only. */
   estimatedSalonRevenue: number;
   /** Distinct customers behind `bookingsCount`. */
   distinctCustomers: number;
@@ -113,7 +124,7 @@ export interface PeriodMetrics {
    *  inflate a salon's apparent cancellation problem. */
   cancelledCount: number;
   noShowCount: number;
-  /** grossBookingValue / bookingsCount, 0 when there were no bookings. */
+  /** grossBookingValue / completedCount (the bookings that produced it), 0 when none completed. */
   averageBookingValue: number;
   /** returningCustomers / distinctCustomers as a percentage, 0 when nobody booked. */
   repeatRatePercent: number;
@@ -215,7 +226,7 @@ export class CrmService {
           COUNT(b.id) FILTER (WHERE ${VISITED_BOOKING_SQL}) AS visits_count,
           MIN(b.starts_at) FILTER (WHERE ${VISITED_BOOKING_SQL}) AS first_visit_at,
           MAX(b.starts_at) FILTER (WHERE ${VISITED_BOOKING_SQL}) AS last_visit_at,
-          COALESCE(SUM(b.price_snapshot) FILTER (WHERE b.status IN ${ACTIVE_BOOKING_STATUSES_SQL}), 0) AS gross_value
+          COALESCE(SUM(b.price_snapshot) FILTER (WHERE b.status = ${REVENUE_STATUS_SQL}), 0) AS gross_value
         FROM bookings b
         JOIN users u ON u.id = b.user_id
         WHERE b.salon_id = $1
@@ -359,7 +370,8 @@ export class CrmService {
    *
    * Every figure here is either directly observed or an explicit, documented derivation of
    * observed numbers -- never invented. grossBookingValue is the full agreed service price
-   * (bookings.price_snapshot), NOT financial_transactions.gross_amount (which is actually
+   * (bookings.price_snapshot) of COMPLETED bookings only -- a list-price value, not cash
+   * received and never an upcoming booking -- NOT financial_transactions.gross_amount (which is actually
    * the online DEPOSIT only -- see that column's own doc comment). estimatedSalonRevenue is
    * labeled "estimated" specifically because it assumes the salon's own cash portion was
    * genuinely collected in full, which this platform cannot observe or verify.
@@ -420,7 +432,7 @@ export class CrmService {
       this.dataSource.query(
         `
         SELECT
-          COALESCE(SUM(price_snapshot) FILTER (WHERE status IN ${ACTIVE_BOOKING_STATUSES_SQL}), 0) AS gross,
+          COALESCE(SUM(price_snapshot) FILTER (WHERE status = ${REVENUE_STATUS_SQL}), 0) AS gross,
           COUNT(*) FILTER (WHERE status IN ${ACTIVE_BOOKING_STATUSES_SQL}) AS bookings_count,
           COUNT(DISTINCT user_id) FILTER (WHERE status IN ${ACTIVE_BOOKING_STATUSES_SQL}) AS distinct_customers,
           COUNT(*) FILTER (WHERE status = 'completed') AS completed_count,
@@ -470,6 +482,7 @@ export class CrmService {
     const grossBookingValue = Number(bookingRow!.gross);
     const commission = Number(commissionRow!.commission);
     const bookingsCount = Number(bookingRow!.bookings_count);
+    const completedCount = Number(bookingRow!.completed_count);
     const distinctCustomers = Number(bookingRow!.distinct_customers);
     const newCustomers = Number(newCustomerRow!.new_customers);
     const returningCustomers = distinctCustomers - newCustomers;
@@ -485,12 +498,12 @@ export class CrmService {
       distinctCustomers,
       newCustomers,
       returningCustomers,
-      completedCount: Number(bookingRow!.completed_count),
+      completedCount,
       cancelledCount: Number(bookingRow!.cancelled_count),
       noShowCount: Number(bookingRow!.no_show_count),
       // Rounded to whole toman/percent: these are dashboard headline figures, and a
       // fractional toman would only ever read as noise.
-      averageBookingValue: bookingsCount === 0 ? 0 : Math.round(grossBookingValue / bookingsCount),
+      averageBookingValue: completedCount === 0 ? 0 : Math.round(grossBookingValue / completedCount),
       repeatRatePercent: distinctCustomers === 0 ? 0 : Math.round((returningCustomers / distinctCustomers) * 100),
     };
   }
@@ -499,7 +512,8 @@ export class CrmService {
     const rows: Array<{ service_id: string; name: string | null; bookings_count: string; gross_value: string }> =
       await this.dataSource.query(
         `
-        SELECT b.service_id, s.name, COUNT(*) AS bookings_count, COALESCE(SUM(b.price_snapshot), 0) AS gross_value
+        SELECT b.service_id, s.name, COUNT(*) AS bookings_count,
+               COALESCE(SUM(b.price_snapshot) FILTER (WHERE b.status = ${REVENUE_STATUS_SQL}), 0) AS gross_value
         FROM bookings b
         LEFT JOIN salon_services s ON s.id = b.service_id
         WHERE b.salon_id = $1 AND b.status IN ${ACTIVE_BOOKING_STATUSES_SQL} AND b.created_at >= $2 AND b.created_at < $3

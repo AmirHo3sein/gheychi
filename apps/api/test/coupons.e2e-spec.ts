@@ -313,7 +313,9 @@ describe('Coupons (e2e)', () => {
         request(app.getHttpServer())
           .post('/api/bookings')
           .set('Cookie', racer)
-          .send({ salonId: salon2Id, serviceId: service2Id, startsAt: futureIso(144), couponCode: 'RACE10' }),
+          // A different hour on purpose: one customer cannot hold two overlapping bookings,
+          // and that rule would otherwise answer one of the two requests before the coupon does.
+          .send({ salonId: salon2Id, serviceId: service2Id, startsAt: futureIso(146), couponCode: 'RACE10' }),
       ]);
 
       const statuses = [first.status, second.status].sort();

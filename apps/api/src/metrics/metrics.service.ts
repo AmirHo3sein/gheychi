@@ -240,7 +240,7 @@ export class MetricsService {
     this.safe(() => this.bookingFailuresTotal.inc({ flow, reason }));
   }
 
-  incBookingCancellation(cancelledBy: 'user' | 'salon'): void {
+  incBookingCancellation(cancelledBy: 'user' | 'salon' | 'admin'): void {
     this.safe(() => this.bookingCancellationsTotal.inc({ cancelled_by: cancelledBy }));
   }
 

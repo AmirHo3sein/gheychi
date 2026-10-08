@@ -48,6 +48,11 @@ export class Salon {
   @Column({ name: 'suspended_cause', type: 'varchar', length: 20, nullable: true })
   suspendedCause: SuspendedCause | null;
 
+  // Public contact number, owner-supplied and optional. Distinct from the owner's account
+  // phone (users.phone), which must never reach a public/customer response.
+  @Column({ name: 'contact_phone', type: 'varchar', length: 20, nullable: true })
+  contactPhone: string | null;
+
   @Column({ type: 'text' })
   address: string;
 

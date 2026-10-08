@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -21,7 +21,9 @@ import { Booking } from './booking.entity';
 import { SalonSmsQuotaService } from '../sms/salon-sms-quota.service';
 import { BookingEventsService } from './booking-events.service';
 import { BookingSettingsService } from './booking-settings.service';
-import { BOOKING_UNAVAILABLE, WORKER_UNAVAILABLE } from './booking-error-codes';
+import {
+  BOOKING_LIMIT_REACHED, BOOKING_UNAVAILABLE, CUSTOMER_DOUBLE_BOOKED, WORKER_UNAVAILABLE,
+} from './booking-error-codes';
 import { Payment } from './payment.entity';
 import { BookingsService } from './bookings.service';
 import { PaymentsService } from './payments.service';
@@ -212,6 +214,7 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
   let redisEval: jest.Mock;
   let walletDebit: jest.Mock;
   let workersFindOneBy: jest.Mock;
+  let workersExists: jest.Mock;
   let analyticsTrack: jest.Mock;
 
   // Cheap enough that the live config's 200,000-toman minimum would otherwise exceed it.
@@ -249,6 +252,7 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
     // applyWalletBalance and overrides this to actually debit something.
     walletDebit = jest.fn().mockResolvedValue({ debited: 0, shortfall: 0, balanceAfter: 0, transactionId: null });
     workersFindOneBy = jest.fn().mockResolvedValue({ id: 'worker-1', salonId: 'salon-1', active: true });
+    workersExists = jest.fn().mockResolvedValue(false); // the customer is not salon staff
     analyticsTrack = jest.fn().mockResolvedValue(undefined);
 
     const moduleRef = await Test.createTestingModule({
@@ -274,7 +278,7 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
           },
         },
         { provide: getRepositoryToken(SalonService), useValue: { findOneBy: jest.fn().mockResolvedValue({ ...SERVICE }) } },
-        { provide: getRepositoryToken(Worker), useValue: { findOneBy: workersFindOneBy } },
+        { provide: getRepositoryToken(Worker), useValue: { findOneBy: workersFindOneBy, exists: workersExists } },
         { provide: getRepositoryToken(User), useValue: usersRepoStub() },
         { provide: UsersService, useValue: usersServiceStub() },
         { provide: AnalyticsService, useValue: { track: analyticsTrack } },
@@ -298,6 +302,9 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
           useValue: {
             getDepositPercent: jest.fn().mockResolvedValue(20),
             getDepositMinToman: jest.fn().mockResolvedValue(200_000),
+            getCancellationWindowHours: jest.fn().mockResolvedValue(24),
+            getBookingMaxActivePerUser: jest.fn().mockResolvedValue(5),
+            getBookingMaxActivePerSalonPerUser: jest.fn().mockResolvedValue(2),
             getFeatureFlags: jest.fn().mockResolvedValue({ onlinePaymentEnabled: true }),
           },
         },
@@ -534,8 +541,105 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
       await service.createHold('customer-1', DTO);
 
       expect(workersFindOneBy).not.toHaveBeenCalled();
-      expect(emCount).toHaveBeenCalledTimes(1); // salon capacity only
+      // Only the salon-capacity count and the customer's own limit counts -- no per-worker one.
+      expect(emCount).not.toHaveBeenCalledWith(Booking, { where: expect.objectContaining({ workerId: expect.anything() }) });
     });
+  });
+
+  describe('self-booking', () => {
+    const salonRepo = () => (service as unknown as { salons: { findOneBy: jest.Mock } }).salons;
+
+    it('refuses the salon owner booking their own salon, before any lock or transaction', async () => {
+      salonRepo().findOneBy.mockResolvedValueOnce({
+        id: 'salon-1', name: 'Test Salon', ownerId: 'customer-1', capacity: 1, bookingConfirmationMode: 'automatic',
+      });
+
+      await expect(service.createHold('customer-1', DTO)).rejects.toThrow('مالک سالن نمی‌تواند برای سالن خودش نوبت ثبت کند');
+      expect(redisSet).not.toHaveBeenCalled();
+      expect(emSave).not.toHaveBeenCalled();
+    });
+
+    it('refuses an active worker of the same salon', async () => {
+      workersExists.mockResolvedValue(true);
+
+      await expect(service.createHold('customer-1', DTO)).rejects.toBeInstanceOf(BadRequestException);
+      expect(workersExists).toHaveBeenCalledWith({ where: { salonId: 'salon-1', userId: 'customer-1', active: true } });
+      expect(emSave).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('active-booking abuse limits', () => {
+    // Routes each em.count() by what it asks: the salon-capacity one, the customer's
+    // active-future total, the same at this salon, and the time-overlap one.
+    function countsReturning(counts: { total?: number; atSalon?: number; overlap?: number }) {
+      emCount.mockImplementation(async (_entity: unknown, { where }: { where: Record<string, { type?: string } | string> }) => {
+        if (!('userId' in where)) return 0; // salon capacity / worker overlap
+        const startsAt = where.startsAt as { type?: string };
+        if (startsAt.type === 'lessThan') return counts.overlap ?? 0;
+        return 'salonId' in where ? (counts.atSalon ?? 0) : (counts.total ?? 0);
+      });
+    }
+
+    it('takes a customer-keyed transaction advisory lock before counting, so parallel requests across salons serialize', async () => {
+      await service.createHold('customer-1', DTO);
+
+      expect(emQuery).toHaveBeenCalledWith('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', ['booking-active:customer-1']);
+      const lockOrder = emQuery.mock.invocationCallOrder[0];
+      const firstUserCount = emCount.mock.calls.findIndex(([, q]) => 'userId' in q.where);
+      expect(lockOrder).toBeLessThan(emCount.mock.invocationCallOrder[firstUserCount]);
+    });
+
+    it('refuses once the customer already holds the overall maximum of active future bookings', async () => {
+      countsReturning({ total: 5 });
+
+      await expect(service.createHold('customer-1', DTO)).rejects.toMatchObject({
+        response: { code: BOOKING_LIMIT_REACHED },
+      });
+      expect(emSave).not.toHaveBeenCalled();
+    });
+
+    it('refuses once the customer already holds the per-salon maximum', async () => {
+      countsReturning({ total: 2, atSalon: 2 });
+
+      await expect(service.createHold('customer-1', DTO)).rejects.toMatchObject({
+        response: { code: BOOKING_LIMIT_REACHED, message: 'در هر سالن حداکثر 2 نوبت فعال می‌توانید داشته باشید' },
+      });
+    });
+
+    it('allows a booking one below both caps', async () => {
+      countsReturning({ total: 4, atSalon: 1 });
+
+      await expect(service.createHold('customer-1', DTO)).resolves.toBeDefined();
+    });
+
+    it('409s when the customer already has a booking overlapping the requested time', async () => {
+      countsReturning({ overlap: 1 });
+
+      await expect(service.createHold('customer-1', DTO)).rejects.toMatchObject({
+        response: { code: CUSTOMER_DOUBLE_BOOKED },
+      });
+      expect(emSave).not.toHaveBeenCalled();
+    });
+
+    it('counts only slot-holding statuses with a future start', async () => {
+      await service.createHold('customer-1', DTO);
+
+      const totalCall = emCount.mock.calls.find(([, q]) => 'userId' in q.where && !('salonId' in q.where) && q.where.startsAt.type === 'moreThan');
+      expect(totalCall).toBeDefined();
+      expect(totalCall![1].where.status).toEqual(In(['pending_approval', 'pending_payment', 'confirmed']));
+    });
+
+    it('reports the slot as unavailable before the customer-side limits when both apply', async () => {
+      emCount.mockResolvedValue(1); // every count is 1: salon at capacity AND customer overlap
+
+      await expect(service.createHold('customer-1', DTO)).rejects.toMatchObject({ response: { code: BOOKING_UNAVAILABLE } });
+    });
+  });
+
+  it('freezes the cancellation window in force onto the booking', async () => {
+    await service.createHold('customer-1', DTO);
+
+    expect(savedBooking().cancellationWindowHours).toBe(24);
   });
 
   describe('analytics', () => {
@@ -580,6 +684,7 @@ describe('BookingsService.createManual', () => {
   let redisSet: jest.Mock;
   let redisEval: jest.Mock;
   let workersFindOneBy: jest.Mock;
+  let workersExists: jest.Mock;
   let isWorkerEligibleForService: jest.Mock;
   let usersFind: jest.Mock;
   let analyticsTrack: jest.Mock;
@@ -608,6 +713,7 @@ describe('BookingsService.createManual', () => {
     redisSet = jest.fn().mockResolvedValue('OK');
     redisEval = jest.fn().mockResolvedValue(1);
     workersFindOneBy = jest.fn().mockResolvedValue({ id: 'worker-1', salonId: 'salon-1', active: true });
+    workersExists = jest.fn().mockResolvedValue(false); // the resolved customer is not salon staff
     isWorkerEligibleForService = jest.fn().mockResolvedValue(true);
     usersFind = jest.fn().mockResolvedValue([{ ...CUSTOMER }]);
     analyticsTrack = jest.fn().mockResolvedValue(undefined);
@@ -617,7 +723,7 @@ describe('BookingsService.createManual', () => {
         BookingsService,
         MetricsService,
         { provide: getRepositoryToken(Booking), useValue: {} },
-        { provide: getRepositoryToken(Payment), useValue: {} },
+        { provide: getRepositoryToken(Payment), useValue: { find: jest.fn().mockResolvedValue([]) } },
         {
           provide: getRepositoryToken(Salon),
           useValue: { findOneBy: jest.fn().mockResolvedValue({ ...SALON }), find: jest.fn().mockResolvedValue([SALON]) },
@@ -626,7 +732,7 @@ describe('BookingsService.createManual', () => {
           provide: getRepositoryToken(SalonService),
           useValue: { findOneBy: jest.fn().mockResolvedValue({ ...SERVICE }), find: jest.fn().mockResolvedValue([{ id: 'service-1', name: 'کوتاهی مو' }]) },
         },
-        { provide: getRepositoryToken(Worker), useValue: { findOneBy: workersFindOneBy, find: jest.fn().mockResolvedValue([]) } },
+        { provide: getRepositoryToken(Worker), useValue: { findOneBy: workersFindOneBy, find: jest.fn().mockResolvedValue([]), exists: workersExists } },
         { provide: getRepositoryToken(User), useValue: { find: usersFind } },
         { provide: UsersService, useValue: { findOrCreateByPhone, updateProfile, findById: jest.fn() } },
         { provide: AnalyticsService, useValue: { track: analyticsTrack } },
@@ -638,7 +744,7 @@ describe('BookingsService.createManual', () => {
             ),
           },
         },
-        { provide: PlatformConfigService, useValue: {} },
+        { provide: PlatformConfigService, useValue: { getCancellationWindowHours: jest.fn().mockResolvedValue(24) } },
         { provide: ConfigService, useValue: { getOrThrow: jest.fn(), get: jest.fn() } },
         { provide: REDIS, useValue: { set: redisSet, eval: redisEval } },
         { provide: PAYMENT_GATEWAY, useValue: {} },
@@ -676,6 +782,35 @@ describe('BookingsService.createManual', () => {
     expect(notifyConfirmed).toHaveBeenCalledWith('booking-1');
     expect(result.customerPhone).toBe('09120000000');
     expect(redisEval).toHaveBeenCalled();
+  });
+
+  describe('self-booking', () => {
+    const salonRepo = () => (service as unknown as { salons: { findOneBy: jest.Mock } }).salons;
+
+    it('refuses a phone that resolves to the salon owner, without touching the account or saving anything', async () => {
+      salonRepo().findOneBy.mockResolvedValueOnce({ ...SALON, ownerId: 'customer-1' });
+
+      await expect(service.createManual('salon-1', { ...DTO, name: 'x' }, 'owner-1')).rejects.toThrow(
+        'مالک سالن نمی‌تواند برای سالن خودش نوبت ثبت کند',
+      );
+      expect(updateProfile).not.toHaveBeenCalled();
+      expect(emSave).not.toHaveBeenCalled();
+      expect(redisSet).not.toHaveBeenCalled();
+    });
+
+    it('refuses a phone that resolves to one of the salon\'s workers', async () => {
+      workersExists.mockResolvedValue(true);
+
+      await expect(service.createManual('salon-1', { ...DTO }, 'owner-1')).rejects.toBeInstanceOf(BadRequestException);
+      expect(workersExists).toHaveBeenCalledWith({ where: { salonId: 'salon-1', userId: 'customer-1', active: true } });
+      expect(emSave).not.toHaveBeenCalled();
+    });
+  });
+
+  it('freezes the cancellation window in force onto the booking', async () => {
+    await service.createManual('salon-1', { ...DTO }, 'owner-1');
+
+    expect(savedBooking().cancellationWindowHours).toBe(24);
   });
 
   it('sets the name on a brand-new shadow customer when one is given', async () => {
@@ -808,6 +943,9 @@ describe('BookingsService.cancel', () => {
   let notifyCancelled: jest.Mock;
   let analyticsTrack: jest.Mock;
   let recordCommission: jest.Mock;
+  let emFind: jest.Mock;
+  let emQuery: jest.Mock;
+  let walletCredit: jest.Mock;
 
   const BOOKING = {
     id: 'booking-1',
@@ -826,6 +964,11 @@ describe('BookingsService.cancel', () => {
     salonsFindOneBy = jest.fn().mockResolvedValue({ id: 'salon-1', ownerId: 'owner-1' });
     analyticsTrack = jest.fn().mockResolvedValue(undefined);
     recordCommission = jest.fn().mockResolvedValue(undefined);
+    // find/query serve releaseBookingHold's wallet reversal: no rows by default (a booking
+    // that never used its wallet); a test that spent wallet overrides emFind.
+    emFind = jest.fn().mockResolvedValue([]);
+    emQuery = jest.fn().mockResolvedValue([{ id: 'booking-1' }]);
+    walletCredit = jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' });
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -847,7 +990,7 @@ describe('BookingsService.cancel', () => {
             // wallet spend, so an empty result keeps that half a no-op, same as a booking
             // that never used its wallet.
             transaction: jest.fn((cb: (em: unknown) => unknown) =>
-              cb({ update: emUpdate, delete: emDelete, find: jest.fn().mockResolvedValue([]) }),
+              cb({ update: emUpdate, delete: emDelete, find: emFind, query: emQuery }),
             ),
           },
         },
@@ -866,7 +1009,7 @@ describe('BookingsService.cancel', () => {
           provide: WalletService,
           useValue: {
             debit: jest.fn().mockResolvedValue({ debited: 0, shortfall: 0, balanceAfter: 0, transactionId: null }),
-            credit: jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' }),
+            credit: walletCredit,
           },
         },
         { provide: InvoicingService, useValue: { recordCommission } },
@@ -969,12 +1112,82 @@ describe('BookingsService.cancel', () => {
     expect(emDelete).toHaveBeenCalledWith(CouponRedemption, expect.objectContaining({ bookingId: expect.anything() }));
   });
 
-  it('does NOT release the coupon redemption when the deposit was actually captured', async () => {
-    bookingsFindOneBy.mockResolvedValue({ ...BOOKING }); // confirmed -> deposit captured
+  describe('wallet credit and coupon on a captured deposit', () => {
+    const WALLET_ROW = [{ id: 'booking-1', userId: 'customer-1', walletAmountUsed: 30_000 }];
 
-    await service.cancel('booking-1', 'owner-1');
+    it('hands the wallet credit and the coupon back when the salon cancels (full refund)', async () => {
+      bookingsFindOneBy.mockResolvedValue({ ...BOOKING });
+      emFind.mockResolvedValue(WALLET_ROW);
 
-    expect(emDelete).not.toHaveBeenCalled();
+      await service.cancel('booking-1', 'owner-1');
+
+      expect(emDelete).toHaveBeenCalledWith(CouponRedemption, expect.objectContaining({ bookingId: expect.anything() }));
+      expect(walletCredit).toHaveBeenCalledWith(
+        expect.anything(), 'customer-1', 'toman', 30_000, 'booking_spend_reversal',
+        expect.objectContaining({ referenceType: 'booking', referenceId: 'booking-1' }),
+      );
+    });
+
+    it('hands them back when the customer cancels inside the refund window', async () => {
+      bookingsFindOneBy.mockResolvedValue({ ...BOOKING }); // 48h out, window 24h
+      emFind.mockResolvedValue(WALLET_ROW);
+
+      await service.cancel('booking-1', 'customer-1');
+
+      expect(emDelete).toHaveBeenCalledWith(CouponRedemption, expect.anything());
+      expect(walletCredit).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps both when a late cancellation forfeits the deposit -- they were spent into money the salon keeps', async () => {
+      bookingsFindOneBy.mockResolvedValue({ ...BOOKING, startsAt: new Date(Date.now() + 2 * 60 * 60_000) });
+      emFind.mockResolvedValue(WALLET_ROW);
+
+      await service.cancel('booking-1', 'customer-1');
+
+      expect(emDelete).not.toHaveBeenCalled();
+      expect(walletCredit).not.toHaveBeenCalled();
+    });
+
+    it('credits nothing when the wallet spend was already reversed (idempotent -- the conditional clear matches no row)', async () => {
+      bookingsFindOneBy.mockResolvedValue({ ...BOOKING });
+      emFind.mockResolvedValue(WALLET_ROW);
+      emQuery.mockResolvedValue([]); // another path already cleared wallet_amount_used
+
+      await service.cancel('booking-1', 'owner-1');
+
+      expect(walletCredit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cancellation window snapshot', () => {
+    it('judges a customer cancel against the window frozen on the booking, not the live config', async () => {
+      // Live config says 24h and the booking is 48h out (would refund) -- but it was made
+      // under a 72h window, so cancelling now is late and forfeits.
+      bookingsFindOneBy.mockResolvedValue({ ...BOOKING, cancellationWindowHours: 72 });
+
+      await service.cancel('booking-1', 'customer-1');
+
+      expect(emUpdate).toHaveBeenCalledWith(Payment, { bookingId: 'booking-1' }, { status: 'paid' });
+      expect(attemptRefund).not.toHaveBeenCalled();
+    });
+
+    it('refunds when the frozen window is shorter than the live one', async () => {
+      bookingsFindOneBy.mockResolvedValue({
+        ...BOOKING, startsAt: new Date(Date.now() + 5 * 60 * 60_000), cancellationWindowHours: 2,
+      });
+
+      await service.cancel('booking-1', 'customer-1');
+
+      expect(attemptRefund).toHaveBeenCalledWith('booking-1');
+    });
+
+    it('falls back to the live config only for a row with no snapshot', async () => {
+      bookingsFindOneBy.mockResolvedValue({ ...BOOKING, cancellationWindowHours: null, startsAt: new Date(Date.now() + 2 * 60 * 60_000) });
+
+      await service.cancel('booking-1', 'customer-1');
+
+      expect(attemptRefund).not.toHaveBeenCalled(); // 2h out vs the live 24h window
+    });
   });
 
   it('still succeeds the cancel when the inline refund attempt reports pending', async () => {
@@ -1163,7 +1376,7 @@ describe('BookingsService.assignWorker', () => {
         BookingsService,
         MetricsService,
         { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy } },
-        { provide: getRepositoryToken(Payment), useValue: {} },
+        { provide: getRepositoryToken(Payment), useValue: { find: jest.fn().mockResolvedValue([]) } },
         { provide: getRepositoryToken(Salon), useValue: { find: jest.fn().mockResolvedValue([]) } },
         { provide: getRepositoryToken(SalonService), useValue: { find: jest.fn().mockResolvedValue([]) } },
         { provide: getRepositoryToken(Worker), useValue: { find: workersFind } },
@@ -1442,6 +1655,7 @@ describe('BookingsService.listMine / findMine -- workerName enrichment', () => {
   let workersFind: jest.Mock;
   let paymentsFindOneBy: jest.Mock;
   let paymentsFind: jest.Mock;
+  let dataSourceQuery: jest.Mock;
 
   beforeEach(async () => {
     bookingsFind = jest.fn();
@@ -1451,6 +1665,7 @@ describe('BookingsService.listMine / findMine -- workerName enrichment', () => {
     workersFind = jest.fn().mockResolvedValue([{ id: 'worker-1', name: 'Sara' }]);
     paymentsFindOneBy = jest.fn().mockResolvedValue(null);
     paymentsFind = jest.fn().mockResolvedValue([]);
+    dataSourceQuery = jest.fn().mockResolvedValue([]);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -1464,7 +1679,7 @@ describe('BookingsService.listMine / findMine -- workerName enrichment', () => {
         { provide: getRepositoryToken(User), useValue: usersRepoStub() },
         { provide: UsersService, useValue: usersServiceStub() },
         { provide: AnalyticsService, useValue: { track: jest.fn().mockResolvedValue(undefined) } },
-        { provide: DataSource, useValue: {} },
+        { provide: DataSource, useValue: { query: dataSourceQuery } },
         { provide: PlatformConfigService, useValue: {} },
         { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
         { provide: REDIS, useValue: {} },
@@ -1500,6 +1715,120 @@ describe('BookingsService.listMine / findMine -- workerName enrichment', () => {
 
     expect(workersFind).toHaveBeenCalled();
     expect(result.workerName).toBe('Sara');
+  });
+
+  describe('salon money fields (listForSalon)', () => {
+    const row = (over: Record<string, unknown> = {}) => ({
+      id: 'booking-1', salonId: 'salon-1', serviceId: 'service-1', workerId: null, userId: 'customer-1',
+      status: 'confirmed', priceSnapshot: 500_000, walletAmountUsed: null, ...over,
+    });
+
+    beforeEach(() => {
+      servicesFind.mockResolvedValue([{ id: 'service-1', name: 'Cut', pricingType: 'fixed' }]);
+    });
+
+    it('free mode: nothing prepaid, the salon collects the whole price', async () => {
+      bookingsFind.mockResolvedValue([row()]);
+
+      const [b] = await service.listForSalon('salon-1');
+
+      expect(b).toMatchObject({ depositPaid: false, prepaidAmount: 0, amountDue: 500_000 });
+    });
+
+    it('subtracts the captured gateway amount from what the salon still collects', async () => {
+      bookingsFind.mockResolvedValue([row()]);
+      paymentsFind.mockResolvedValue([{ bookingId: 'booking-1', status: 'paid', amount: 100_000 }]);
+
+      const [b] = await service.listForSalon('salon-1');
+
+      expect(b).toMatchObject({ depositPaid: true, prepaidAmount: 100_000, amountDue: 400_000 });
+    });
+
+    it('also subtracts the wallet portion applied to the deposit', async () => {
+      bookingsFind.mockResolvedValue([row({ walletAmountUsed: 30_000 })]);
+      paymentsFind.mockResolvedValue([{ bookingId: 'booking-1', status: 'paid', amount: 70_000 }]);
+
+      const [b] = await service.listForSalon('salon-1');
+
+      expect(b).toMatchObject({ prepaidAmount: 70_000, amountDue: 400_000 });
+    });
+
+    it('floors at zero when the prepaid money exceeds the price', async () => {
+      bookingsFind.mockResolvedValue([row({ priceSnapshot: 80_000 })]);
+      paymentsFind.mockResolvedValue([{ bookingId: 'booking-1', status: 'paid', amount: 100_000 }]);
+
+      const [b] = await service.listForSalon('salon-1');
+
+      expect(b.amountDue).toBe(0);
+    });
+
+    it('does not count a refunded payment as money the salon can rely on', async () => {
+      bookingsFind.mockResolvedValue([row({ status: 'cancelled_by_salon' })]);
+      paymentsFind.mockResolvedValue([{ bookingId: 'booking-1', status: 'refunded', amount: 100_000 }]);
+
+      const [b] = await service.listForSalon('salon-1');
+
+      expect(b).toMatchObject({ depositPaid: true, prepaidAmount: 0, amountDue: 0 }); // dead booking: nothing to collect
+    });
+
+    it('amountDue is null for a non-fixed-price service (the figure is a quote, not a number to subtract from)', async () => {
+      servicesFind.mockResolvedValue([{ id: 'service-1', name: 'Color', pricingType: 'quote' }]);
+      bookingsFind.mockResolvedValue([row()]);
+
+      const [b] = await service.listForSalon('salon-1');
+
+      expect(b.amountDue).toBeNull();
+    });
+  });
+
+  describe('reviewable (customer responses)', () => {
+    const done = (over: Record<string, unknown> = {}) => ({
+      id: 'booking-1', salonId: 'salon-1', serviceId: 'service-1', workerId: null, userId: 'customer-1',
+      status: 'completed', source: 'online', ...over,
+    });
+
+    it('is true for a completed online booking with no review yet', async () => {
+      bookingsFind.mockResolvedValue([done()]);
+
+      const [b] = await service.listMine('customer-1');
+
+      expect(b.reviewable).toBe(true);
+      expect(dataSourceQuery).toHaveBeenCalledWith(expect.stringContaining('FROM reviews'), [['booking-1']]);
+    });
+
+    it('is false once a review exists (a withdrawn one still occupies the UNIQUE booking_id)', async () => {
+      bookingsFind.mockResolvedValue([done()]);
+      dataSourceQuery.mockResolvedValue([{ booking_id: 'booking-1' }]);
+
+      const [b] = await service.listMine('customer-1');
+
+      expect(b.reviewable).toBe(false);
+    });
+
+    it('is false for an owner-entered (manual) booking, and without even querying reviews for it', async () => {
+      bookingsFind.mockResolvedValue([done({ source: 'manual' })]);
+
+      const [b] = await service.listMine('customer-1');
+
+      expect(b.reviewable).toBe(false);
+      expect(dataSourceQuery).not.toHaveBeenCalled();
+    });
+
+    it.each(['confirmed', 'pending_payment', 'cancelled_by_user', 'no_show'])('is false while the booking is %s', async (status) => {
+      bookingsFind.mockResolvedValue([done({ status })]);
+
+      const [b] = await service.listMine('customer-1');
+
+      expect(b.reviewable).toBe(false);
+    });
+
+    it('findMine carries the same flag', async () => {
+      bookingsFindOneBy.mockResolvedValue(done());
+
+      const result = await service.findMine('customer-1', 'booking-1');
+
+      expect(result.reviewable).toBe(true);
+    });
   });
 
   it('listForSalon bounds the query with a defensive take cap, since no pagination UI consumes this yet', async () => {
@@ -1570,6 +1899,7 @@ describe('BookingsService.updateStatus -- first-completed-booking referral trigg
   let recordCommission: jest.Mock;
   let getFeatureFlags: jest.Mock;
   let getNoShowGraceMinutes: jest.Mock;
+  let salonsFindOneBy: jest.Mock;
 
   const CONFIRMED_BOOKING = {
     id: 'booking-1',
@@ -1589,6 +1919,7 @@ describe('BookingsService.updateStatus -- first-completed-booking referral trigg
     recordCommission = jest.fn().mockResolvedValue(undefined);
     getFeatureFlags = jest.fn().mockResolvedValue({ referralsEnabled: true });
     getNoShowGraceMinutes = jest.fn().mockResolvedValue(30);
+    salonsFindOneBy = jest.fn().mockResolvedValue({ id: 'salon-1', status: 'approved' });
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -1596,7 +1927,7 @@ describe('BookingsService.updateStatus -- first-completed-booking referral trigg
         MetricsService,
         { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy } },
         { provide: getRepositoryToken(Payment), useValue: {} },
-        { provide: getRepositoryToken(Salon), useValue: {} },
+        { provide: getRepositoryToken(Salon), useValue: { findOneBy: salonsFindOneBy } },
         { provide: getRepositoryToken(SalonService), useValue: {} },
         { provide: getRepositoryToken(Worker), useValue: {} },
         { provide: getRepositoryToken(User), useValue: usersRepoStub() },
@@ -1685,11 +2016,30 @@ describe('BookingsService.updateStatus -- first-completed-booking referral trigg
       expect(emUpdate).toHaveBeenCalled();
     });
 
-    it('never time-guards a completion -- finishing early is legitimate', async () => {
+    it('refuses to complete a booking that has not started yet -- a future date cannot claim its deposit', async () => {
       bookingsFindOneBy.mockResolvedValue({ ...CONFIRMED_BOOKING, startsAt: new Date(Date.now() + 3 * 60 * 60_000) });
+
+      await expect(service.updateStatus('salon-1', 'booking-1', 'completed')).rejects.toBeInstanceOf(BadRequestException);
+      expect(emUpdate).not.toHaveBeenCalled();
+      expect(recordCommission).not.toHaveBeenCalled();
+      expect(tryGrantReward).not.toHaveBeenCalled();
+    });
+
+    it('allows completing once the start time has been reached, with no extra grace (finishing early within the slot is fine)', async () => {
+      bookingsFindOneBy.mockResolvedValue({ ...CONFIRMED_BOOKING, startsAt: new Date(Date.now() - 1000) });
 
       await expect(service.updateStatus('salon-1', 'booking-1', 'completed')).resolves.toBeDefined();
       expect(getNoShowGraceMinutes).not.toHaveBeenCalled();
+    });
+
+    describe('salon standing', () => {
+      it.each(['completed', 'no_show'] as const)('refuses to record %s with a 403 while the salon is not approved', async (status) => {
+        salonsFindOneBy.mockResolvedValue({ id: 'salon-1', status: 'suspended' });
+
+        await expect(service.updateStatus('salon-1', 'booking-1', status)).rejects.toBeInstanceOf(ForbiddenException);
+        expect(emUpdate).not.toHaveBeenCalled();
+        expect(recordCommission).not.toHaveBeenCalled();
+      });
     });
 
     it('honours a grace period of 0 (platform opts out of any grace at all)', async () => {
@@ -1719,5 +2069,181 @@ describe('BookingsService.updateStatus -- first-completed-booking referral trigg
     // tryGrantReward runs AFTER the transaction commits -- a rolled-back transaction
     // must never reach it.
     expect(tryGrantReward).not.toHaveBeenCalled();
+  });
+});
+
+describe('BookingsService.adminCancel', () => {
+  let service: BookingsService;
+  let bookingsFindOneBy: jest.Mock;
+  let emUpdate: jest.Mock;
+  let emDelete: jest.Mock;
+  let emFind: jest.Mock;
+  let emQuery: jest.Mock;
+  let walletCredit: jest.Mock;
+  let attemptRefund: jest.Mock;
+  let notifyCancelledByAdmin: jest.Mock;
+  let eventsRecord: jest.Mock;
+  let recordCommission: jest.Mock;
+  let analyticsTrack: jest.Mock;
+  let metrics: MetricsService;
+
+  const BOOKING = {
+    id: 'booking-1',
+    userId: 'customer-1',
+    salonId: 'salon-1',
+    status: 'confirmed',
+    startsAt: new Date(Date.now() + 2 * 60 * 60_000), // inside any cancellation window: still a FULL refund
+  };
+
+  beforeEach(async () => {
+    emUpdate = jest.fn().mockResolvedValue({ affected: 1 });
+    emDelete = jest.fn().mockResolvedValue({ affected: 0 });
+    emFind = jest.fn().mockResolvedValue([]);
+    emQuery = jest.fn().mockResolvedValue([{ id: 'booking-1' }]);
+    walletCredit = jest.fn().mockResolvedValue({ balanceAfter: 0, transactionId: 'wt-1' });
+    attemptRefund = jest.fn().mockResolvedValue('refunded');
+    notifyCancelledByAdmin = jest.fn().mockResolvedValue(undefined);
+    eventsRecord = jest.fn().mockResolvedValue(undefined);
+    recordCommission = jest.fn().mockResolvedValue(undefined);
+    analyticsTrack = jest.fn().mockResolvedValue(undefined);
+    bookingsFindOneBy = jest.fn().mockResolvedValue({ ...BOOKING });
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        BookingsService,
+        MetricsService,
+        { provide: getRepositoryToken(Booking), useValue: { findOneBy: bookingsFindOneBy } },
+        { provide: getRepositoryToken(Payment), useValue: {} },
+        { provide: getRepositoryToken(Salon), useValue: {} },
+        { provide: getRepositoryToken(SalonService), useValue: {} },
+        { provide: getRepositoryToken(Worker), useValue: {} },
+        { provide: getRepositoryToken(User), useValue: usersRepoStub() },
+        { provide: UsersService, useValue: usersServiceStub() },
+        { provide: AnalyticsService, useValue: { track: analyticsTrack } },
+        {
+          provide: DataSource,
+          useValue: {
+            transaction: jest.fn((cb: (em: unknown) => unknown) =>
+              cb({ update: emUpdate, delete: emDelete, find: emFind, query: emQuery }),
+            ),
+          },
+        },
+        { provide: PlatformConfigService, useValue: {} },
+        { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
+        { provide: REDIS, useValue: {} },
+        { provide: PAYMENT_GATEWAY, useValue: {} },
+        { provide: PaymentsService, useValue: { attemptRefund, notifyCancelledByAdmin } },
+        { provide: AlertsService, useValue: { raise: jest.fn() } },
+        { provide: CouponsService, useValue: {} },
+        { provide: ReferralsService, useValue: {} },
+        { provide: WalletService, useValue: { credit: walletCredit } },
+        { provide: InvoicingService, useValue: { recordCommission } },
+        { provide: WorkerEligibilityService, useValue: {} },
+        { provide: BookingSettingsService, useValue: bookingSettingsStub() },
+        { provide: BookingEventsService, useValue: { record: eventsRecord, listForBooking: jest.fn() } },
+        { provide: SalonSmsQuotaService, useValue: salonSmsQuotaStub() },
+      ],
+    }).compile();
+
+    service = moduleRef.get(BookingsService);
+    metrics = moduleRef.get(MetricsService);
+  });
+
+  it('cancels a confirmed booking, flips a paid Payment to refund_pending and refunds it through the existing flow -- even inside the customer cancellation window', async () => {
+    await service.adminCancel('booking-1', 'admin-1', 'salon suspended');
+
+    expect(emUpdate).toHaveBeenCalledWith(Booking, { id: 'booking-1', status: 'confirmed' }, { status: 'cancelled_by_admin' });
+    expect(emUpdate).toHaveBeenCalledWith(
+      Payment,
+      { bookingId: 'booking-1', status: 'paid' },
+      expect.objectContaining({ status: 'refund_pending', refundRequestedAt: expect.any(Date) }),
+    );
+    expect(attemptRefund).toHaveBeenCalledWith('booking-1');
+    expect(recordCommission).not.toHaveBeenCalled(); // never a forfeit
+  });
+
+  it('returns the wallet credit and the coupon', async () => {
+    emFind.mockResolvedValue([{ id: 'booking-1', userId: 'customer-1', walletAmountUsed: 25_000 }]);
+
+    await service.adminCancel('booking-1', 'admin-1', 'dispute upheld');
+
+    expect(emDelete).toHaveBeenCalledWith(CouponRedemption, expect.objectContaining({ bookingId: expect.anything() }));
+    expect(walletCredit).toHaveBeenCalledWith(
+      expect.anything(), 'customer-1', 'toman', 25_000, 'booking_spend_reversal', expect.anything(),
+    );
+  });
+
+  it.each(['pending_approval', 'pending_payment'])('cancels a %s booking without any refund attempt (nothing was captured)', async (status) => {
+    bookingsFindOneBy.mockResolvedValue({ ...BOOKING, status });
+
+    await service.adminCancel('booking-1', 'admin-1', 'salon closed');
+
+    expect(emUpdate).toHaveBeenCalledWith(Booking, { id: 'booking-1', status }, { status: 'cancelled_by_admin' });
+    expect(emUpdate).toHaveBeenCalledWith(Payment, { bookingId: 'booking-1', status: 'initiated' }, { status: 'failed' });
+    expect(attemptRefund).not.toHaveBeenCalled();
+    expect(notifyCancelledByAdmin).toHaveBeenCalledWith('booking-1', false); // push only, no SMS
+  });
+
+  it('notifies with SMS enabled only for a booking that was confirmed', async () => {
+    await service.adminCancel('booking-1', 'admin-1', 'salon suspended');
+
+    expect(notifyCancelledByAdmin).toHaveBeenCalledWith('booking-1', true);
+  });
+
+  it('writes an admin-attributed BOOKING_CANCELLED event carrying the reason and prior status, then SLOT_RELEASED', async () => {
+    await service.adminCancel('booking-1', 'admin-1', 'salon suspended');
+
+    expect(eventsRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bookingId: 'booking-1',
+        eventType: 'BOOKING_CANCELLED',
+        actorType: 'admin',
+        actorId: 'admin-1',
+        metadata: expect.objectContaining({ fromStatus: 'confirmed', reason: 'salon suspended', refundOwed: true }),
+      }),
+      expect.anything(),
+    );
+    expect(eventsRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'SLOT_RELEASED', metadata: { cause: 'cancelled_by_admin' } }),
+      expect.anything(),
+    );
+  });
+
+  it.each(['completed', 'no_show', 'cancelled_by_user', 'cancelled_by_salon', 'cancelled_by_admin', 'rejected_by_salon', 'expired'])(
+    'refuses a %s booking with a 409 and changes nothing',
+    async (status) => {
+      bookingsFindOneBy.mockResolvedValue({ ...BOOKING, status });
+
+      await expect(service.adminCancel('booking-1', 'admin-1', 'x')).rejects.toBeInstanceOf(ConflictException);
+      expect(emUpdate).not.toHaveBeenCalled();
+    },
+  );
+
+  it('404s for an unknown booking', async () => {
+    bookingsFindOneBy.mockResolvedValue(null);
+
+    await expect(service.adminCancel('nope', 'admin-1', 'x')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('409s, without releasing anything or notifying, when a concurrent transition wins the status CAS', async () => {
+    emUpdate.mockResolvedValueOnce({ affected: 0 });
+
+    await expect(service.adminCancel('booking-1', 'admin-1', 'x')).rejects.toBeInstanceOf(ConflictException);
+    expect(notifyCancelledByAdmin).not.toHaveBeenCalled();
+    expect(attemptRefund).not.toHaveBeenCalled();
+  });
+
+  it('counts the cancellation under cancelled_by=admin', async () => {
+    await service.adminCancel('booking-1', 'admin-1', 'x');
+
+    const metric = await metrics.registry.getSingleMetric('booking_cancellations_total')?.get();
+    expect(metric?.values).toContainEqual(expect.objectContaining({ labels: { cancelled_by: 'admin' }, value: 1 }));
+  });
+
+  it('still succeeds when the notification or the inline refund attempt throws (the cancellation is already committed)', async () => {
+    notifyCancelledByAdmin.mockRejectedValue(new Error('push down'));
+    attemptRefund.mockRejectedValue(new Error('db blip'));
+
+    await expect(service.adminCancel('booking-1', 'admin-1', 'x')).resolves.toBeDefined();
   });
 });

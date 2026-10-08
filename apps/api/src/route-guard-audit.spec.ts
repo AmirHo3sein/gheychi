@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { ExecutionContext } from '@nestjs/common';
+import { ExecutionContext, RequestMethod } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -14,6 +14,8 @@ import { AuthController } from './auth/auth.controller';
 import { AuthGuard } from './auth/auth.guard';
 import { IS_PUBLIC_KEY, Public } from './auth/public.decorator';
 import { ROLES_KEY } from './auth/roles.decorator';
+import { AUDIT_ACTION } from './audit/audit.decorator';
+import { AuditInterceptor } from './audit/audit.interceptor';
 import { RolesGuard } from './auth/roles.guard';
 import { BackupReportController } from './backup-monitoring/backup-report.controller';
 import { AdminSubscriptionBillingController } from './billing/admin-subscription-billing.controller';
@@ -86,6 +88,9 @@ import { WalletController } from './wallet/wallet.controller';
 const PATH_METADATA = 'path';
 // Likewise GUARDS_METADATA -- the key @UseGuards() stores its guard classes under.
 const GUARDS_METADATA = '__guards__';
+// ...and INTERCEPTORS_METADATA / METHOD_METADATA for @UseInterceptors() and the HTTP verb.
+const INTERCEPTORS_METADATA = '__interceptors__';
+const METHOD_METADATA = 'method';
 
 // Every controller in the app, so a newly-added controller file that forgets to be imported
 // here fails loudly (via the "every route is either public or must reject an anonymous
@@ -319,6 +324,24 @@ describe('route guard audit (security regression test)', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  // The platform cancellation is the only admin write on bookings. Besides the generic admin
+  // rule above, pin the specifics a refactor could silently drop: the exact path, the admin
+  // role + RolesGuard, and the audit hook (AuditInterceptor + @AuditAction with the booking id).
+  it('POST admin/bookings/:id/cancel is admin-only and audited as booking.cancelled_by_admin', () => {
+    const proto = AdminBookingsController.prototype as unknown as Record<string, object>;
+    expect(fullRoutePaths(AdminBookingsController, 'cancel')).toEqual(['admin/bookings/:id/cancel']);
+    expect(Reflect.getMetadata(METHOD_METADATA, proto.cancel)).toBe(RequestMethod.POST);
+    expect(guardsOn(AdminBookingsController, 'cancel')).toContain(RolesGuard);
+    expect(new Reflector().getAllAndOverride<string[]>(ROLES_KEY, [proto.cancel as Function, AdminBookingsController])).toEqual(['admin']);
+    expect(Reflect.getMetadata(AUDIT_ACTION, proto.cancel)).toEqual({
+      action: 'booking.cancelled_by_admin',
+      targetType: 'booking',
+      targetIdParam: 'id',
+    });
+    expect(Reflect.getMetadata(INTERCEPTORS_METADATA, proto.cancel)).toContain(AuditInterceptor);
+    expect(isMarkedPublic(AdminBookingsController, 'cancel')).toBe(false);
   });
 
   // GET /salons/mine is the one deliberate exception: it is the provider-panel's "do I have

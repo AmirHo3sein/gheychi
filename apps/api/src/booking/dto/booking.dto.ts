@@ -81,6 +81,16 @@ export class RejectBookingDto {
   reason: string;
 }
 
+// Platform cancellation of a booking. Required and kept (booking_events + audit_log) so a
+// later dispute can see why an admin overrode the salon and the customer; NOT forwarded to
+// the customer or the salon. Trimmed before validation like RejectBookingDto's reason.
+export class AdminCancelBookingDto {
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @Length(3, 500)
+  reason: string;
+}
+
 // The owner recording a customer who called or walked in -- not in the system at all, so
 // `phone` is how BookingsService.createManual resolves (or creates) a real `users` row for
 // them via the same findOrCreateByPhone SalonWorkersController.create() already uses for

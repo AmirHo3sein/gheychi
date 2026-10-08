@@ -52,9 +52,7 @@ export class AdminSalonsController {
 
   @Get(':id')
   async detail(@Param('id', ParseUUIDPipe) id: string) {
-    const salon = await this.salons.findOneBy({ id });
-    if (!salon) throw new NotFoundException();
-    return salon;
+    return this.salonsService.getAdminDetail(id);
   }
 
   // Moderation views: ALL rows, including removed and expired ones — the public

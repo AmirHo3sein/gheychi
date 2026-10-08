@@ -81,6 +81,8 @@ function makeGrantFakeEm(opts: {
   existingRewards?: FakeRewardRow[];
   /** The triggering booking's salon -- only consulted for a salon-scoped (salon_id non-null) referral. */
   bookingSalonId?: string;
+  /** The triggering booking's `source`; defaults to the customer's own online checkout. */
+  bookingSource?: 'online' | 'manual';
 }) {
   const rewards: FakeRewardRow[] = [...(opts.existingRewards ?? [])];
   const coupons: FakeCouponRow[] = [];
@@ -95,8 +97,8 @@ function makeGrantFakeEm(opts: {
     if (sql.includes('FROM payments WHERE booking_id')) {
       return opts.payment ? [opts.payment] : [];
     }
-    if (sql.includes('SELECT salon_id FROM bookings WHERE id')) {
-      return opts.bookingSalonId ? [{ salon_id: opts.bookingSalonId }] : [];
+    if (sql.includes('SELECT salon_id, source FROM bookings WHERE id')) {
+      return [{ salon_id: opts.bookingSalonId ?? null, source: opts.bookingSource ?? 'online' }];
     }
     if (sql.includes('INSERT INTO wallet_balances')) return [];
     if (sql.includes('SELECT user_id FROM wallet_balances')) return [];
@@ -695,6 +697,19 @@ describe('ReferralsService', () => {
       const { em, referralUpdates } = makeGrantFakeEm({
         referral: makeFakeReferral({ qualifying_event: 'first_completed_booking', salon_id: 'salon-referrer' }),
         bookingSalonId: 'salon-other',
+      });
+      dataSource.transaction.mockImplementation((cb: (em: EntityManager) => unknown) => cb(em));
+
+      await service.tryGrantReward('referred-1', 'booking-1', 'completed');
+
+      expect(wallet.credit).not.toHaveBeenCalled();
+      expect(referralUpdates).toHaveLength(0);
+    });
+
+    it('an owner-entered (manual) booking never qualifies a referral -- a salon could otherwise farm rewards against itself', async () => {
+      const { em, referralUpdates } = makeGrantFakeEm({
+        referral: makeFakeReferral({ qualifying_event: 'first_completed_booking' }),
+        bookingSource: 'manual',
       });
       dataSource.transaction.mockImplementation((cb: (em: EntityManager) => unknown) => cb(em));
 

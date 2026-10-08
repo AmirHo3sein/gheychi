@@ -5,6 +5,7 @@ import { loginAs, loginAsAdmin } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
 import { createApprovedSalonWithService } from './factories/salon.factory';
 import { createTestApp } from './utils/test-app';
+import { startBookingInThePast } from './utils/booking-time';
 
 /**
  * End-to-end coverage of the global `feature_online_payment_enabled` toggle
@@ -123,6 +124,7 @@ describe('Global online-payment toggle (e2e)', () => {
       const bookingId = created.body.booking.id;
       expect(created.body.booking.depositAmount).toBeGreaterThan(0);
 
+      await startBookingInThePast(app.get(DataSource), bookingId);
       await request(app.getHttpServer())
         .patch(`/api/salons/mine/bookings/${bookingId}`)
         .set('Cookie', ownerCookie)

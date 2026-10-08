@@ -28,7 +28,7 @@ export class SalonsController {
   @Patch('mine')
   @UseGuards(SalonOwnerGuard)
   update(@Req() req: Request, @Body() dto: UpdateSalonDto) {
-    return this.salons.updateMine(req.salonId!, dto);
+    return this.salons.updateMine(req.salonId!, dto, (req.user as User).id);
   }
 
   // Deliberately its own route/DTO, not folded into UpdateSalonDto -- updateMine() applies

@@ -305,6 +305,23 @@ describe('ReviewsService.create -- worker rating validation and atomic insert', 
     );
   });
 
+  it('400s with the Persian message for an owner-entered (manual) booking -- it can never back a verified review', async () => {
+    bookingsFindOneBy.mockResolvedValue({ ...COMPLETED_BOOKING, source: 'manual' });
+    await expect(service.create('user-1', { bookingId: 'booking-1', rating: 5 })).rejects.toThrow(
+      'این نوبت توسط خود سالن ثبت شده و امکان ثبت نظر ندارد',
+    );
+    expect(reviewsFindOneBy).not.toHaveBeenCalled();
+  });
+
+  it('accepts a completed online booking', async () => {
+    bookingsFindOneBy.mockResolvedValue({ ...COMPLETED_BOOKING, source: 'online' });
+    reviewsFindOneBy.mockResolvedValue({ id: 'existing-review' });
+    // Reaches the duplicate check (409) -- i.e. the source guard let it through.
+    await expect(service.create('user-1', { bookingId: 'booking-1', rating: 5 })).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+
   it('409s when the booking already has a review', async () => {
     bookingsFindOneBy.mockResolvedValue(COMPLETED_BOOKING);
     reviewsFindOneBy.mockResolvedValue({ id: 'existing-review' });

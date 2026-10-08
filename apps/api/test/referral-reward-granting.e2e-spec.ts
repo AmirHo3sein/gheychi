@@ -6,6 +6,7 @@ import { RefundRetryJob } from '../src/booking/refund-retry.job';
 import { loginAs, loginAsAdmin, verifyOtpAndLogin } from './utils/auth-helper';
 import { enableOnlinePayments, resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
+import { startBookingInThePast } from './utils/booking-time';
 
 describe('Referral reward granting + reversal (e2e, Slice 4)', () => {
   let app: INestApplication;
@@ -71,6 +72,7 @@ describe('Referral reward granting + reversal (e2e, Slice 4)', () => {
   }
 
   async function markCompleted(bookingId: string): Promise<void> {
+    await startBookingInThePast(app.get(DataSource), bookingId);
     await request(app.getHttpServer())
       .patch(`/api/salons/mine/bookings/${bookingId}`)
       .set('Cookie', ownerCookie)

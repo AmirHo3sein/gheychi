@@ -68,6 +68,11 @@ export class ReviewsService {
     if (booking.status !== 'completed') {
       throw new BadRequestException('Only completed bookings can be reviewed');
     }
+    // An owner-entered booking is the salon's own claim that a visit happened -- nobody
+    // independent confirmed it, so it can never back a "verified booking" review.
+    if (booking.source === 'manual') {
+      throw new BadRequestException('این نوبت توسط خود سالن ثبت شده و امکان ثبت نظر ندارد');
+    }
     // R9 / booking.workerId is the sole source of truth for whether this review must
     // carry a worker rating -- required when a worker performed the service, rejected
     // (there's nobody to rate) otherwise.

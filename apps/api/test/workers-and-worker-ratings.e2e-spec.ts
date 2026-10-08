@@ -5,6 +5,7 @@ import { loginAs } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
 import { createApprovedSalonWithService } from './factories/salon.factory';
+import { startBookingInThePast } from './utils/booking-time';
 
 describe('Workers + worker ratings (e2e)', () => {
   let app: INestApplication;
@@ -40,6 +41,7 @@ describe('Workers + worker ratings (e2e)', () => {
       .expect(201);
     const authority = new URL(created.body.paymentUrl).searchParams.get('Authority')!;
     await request(app.getHttpServer()).get('/api/payments/callback').query({ Authority: authority, Status: 'OK' }).expect(302);
+    await startBookingInThePast(app.get(DataSource), created.body.booking.id);
     await request(app.getHttpServer())
       .patch(`/api/salons/mine/bookings/${created.body.booking.id}`)
       .set('Cookie', ownerCookie)

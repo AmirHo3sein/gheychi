@@ -4,7 +4,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import Redis from 'ioredis';
-import { DataSource, In, LessThan, MoreThan, Not, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, LessThan, MoreThan, Not, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { isUniqueViolation } from '../common/postgres-error-codes';
@@ -32,7 +32,9 @@ import { WalletService } from '../wallet/wallet.service';
 import { Booking, BookingStatus, DEAD_BOOKING_STATUSES, SLOT_BLOCKING_STATUSES } from './booking.entity';
 import { BookingEventsService } from './booking-events.service';
 import { BookingSettingsService } from './booking-settings.service';
-import { BOOKING_UNAVAILABLE, WORKER_UNAVAILABLE } from './booking-error-codes';
+import {
+  BOOKING_LIMIT_REACHED, BOOKING_UNAVAILABLE, CUSTOMER_DOUBLE_BOOKED, WORKER_UNAVAILABLE,
+} from './booking-error-codes';
 import { releaseBookingHold, reverseWalletSpend } from './booking-hold-release.util';
 import { CreateBookingDto, CreateManualBookingDto } from './dto/booking.dto';
 import { calculateDeposit } from './deposit.util';
@@ -53,6 +55,14 @@ type EnrichedBooking = Booking & {
   workerName: string | null;
   customerName: string | null;
   customerPhone: string;
+};
+
+// What a salon sees on each of its bookings: what the customer actually paid up front and
+// what is left for the salon to collect. See BookingsService.attachNamesForSalon.
+type SalonBooking = EnrichedBooking & {
+  depositPaid: boolean;
+  prepaidAmount: number;
+  amountDue: number | null;
 };
 
 const LOCK_TTL_MS = 5000;
@@ -193,6 +203,7 @@ export class BookingsService {
     if (service.pricingType !== 'fixed') {
       throw new BadRequestException('برای این خدمت باید مستقیماً با سالن هماهنگ کنید');
     }
+    await this.assertCustomerIsNotSalonStaff(salon, userId);
     // A Beauty Guide is private to its author: attaching someone else's guide would hand
     // its image to a salon without that person's consent. Checked with a bare existence
     // query rather than importing BeautyGuideModule (which already depends on this one).
@@ -220,6 +231,13 @@ export class BookingsService {
     // Resolved before the lock: this reads platform_config (Redis-cached) and must not
     // add network round-trips to the locked critical section.
     const settings = await this.bookingSettings.resolveFor(salon);
+    // Same reasoning: the cancellation terms this customer is promised are the ones in
+    // force right now, frozen onto the row below.
+    const [cancellationWindowHours, maxActivePerUser, maxActivePerSalonPerUser] = await Promise.all([
+      this.config.getCancellationWindowHours(),
+      this.config.getBookingMaxActivePerUser(),
+      this.config.getBookingMaxActivePerSalonPerUser(),
+    ]);
 
     // Locked per-SALON, not per-exact-slot-instant. A salon offering services with
     // different durations can produce two bookings with different startsAt values
@@ -285,6 +303,13 @@ export class BookingsService {
             });
           }
         }
+
+        // The customer-side guards come after the slot checks: "this time is taken" is the
+        // more useful answer when both apply.
+        await this.assertWithinActiveBookingLimits(em, userId, dto.salonId, startsAt, endsAt, {
+          perUser: maxActivePerUser,
+          perSalonPerUser: maxActivePerSalonPerUser,
+        });
 
         // Passing `em` activates the row-lock/race-safety path inside
         // resolveAndValidate -- this is the real, money-moving redemption attempt,
@@ -408,6 +433,8 @@ export class BookingsService {
             priceSnapshot: finalPrice,
             depositAmount: deposit,
             walletAmountUsed,
+            // Rounded defensively: the column is an int and a legacy fractional config value must not be able to fail the insert.
+            cancellationWindowHours: Math.round(cancellationWindowHours),
             confirmationMode: manualApproval ? 'manual_approval' : 'automatic',
             approvalExpiresAt,
             paymentExpiresAt,
@@ -598,11 +625,11 @@ export class BookingsService {
   // Public entry point: instruments booking_attempts_total/booking_successes_total/
   // booking_failures_total{flow:'manual'} around createManualImpl -- see
   // trackBookingAttempt's own doc comment.
-  createManual(salonId: string, dto: CreateManualBookingDto, actorId: string): Promise<EnrichedBooking> {
+  createManual(salonId: string, dto: CreateManualBookingDto, actorId: string): Promise<SalonBooking> {
     return this.trackBookingAttempt('manual', () => this.createManualImpl(salonId, dto, actorId));
   }
 
-  private async createManualImpl(salonId: string, dto: CreateManualBookingDto, actorId: string): Promise<EnrichedBooking> {
+  private async createManualImpl(salonId: string, dto: CreateManualBookingDto, actorId: string): Promise<SalonBooking> {
     // Same funnel-entry event as createHold's own, fired before any validation here too
     // -- see that call's comment for the fire-and-forget/no-PII rationale, both apply
     // verbatim. No userId in context: the customer isn't resolved from dto.phone until
@@ -650,9 +677,16 @@ export class BookingsService {
     // an existing shadow account nobody named) -- never overwrites a real registered
     // customer's own name just because the owner typed something different.
     const { user: customer, isNew } = await this.usersService.findOrCreateByPhone(dto.phone);
+    // A phone that resolves to the owner or one of the salon's own workers is a
+    // self-booking just like the online path: it exists to mint a "verified booking" the
+    // salon can then review. Checked before the name write below so a refused attempt has
+    // no side effect on that account.
+    await this.assertCustomerIsNotSalonStaff(salon, customer.id);
     if (dto.name && (isNew || !customer.name)) {
       await this.usersService.updateProfile(customer.id, { name: dto.name });
     }
+
+    const cancellationWindowHours = await this.config.getCancellationWindowHours();
 
     // Same per-salon lock, same reasoning, as createHold's own comment above.
     const lockToken = await this.acquireSalonLock(salonId);
@@ -715,6 +749,8 @@ export class BookingsService {
             endsAt,
             priceSnapshot,
             depositAmount: 0,
+            // Rounded defensively: the column is an int and a legacy fractional config value must not be able to fail the insert.
+            cancellationWindowHours: Math.round(cancellationWindowHours),
             workerId: dto.workerId ?? null,
             // Straight to 'confirmed' even when the salon runs manual_approval, and
             // deliberately so: the person entering this booking IS the approver. Routing an
@@ -760,8 +796,77 @@ export class BookingsService {
       );
     }
 
-    const [withNames] = await this.attachNames([booking]);
+    const [withNames] = await this.attachNamesForSalon([booking]);
     return withNames;
+  }
+
+  /**
+   * The owner and the salon's active workers cannot be the customer on their own salon's
+   * bookings. Otherwise the salon could book itself, mark that booking completed and
+   * review it -- a "verified booking" review nobody earned. Inactive workers are former
+   * staff and may book like anyone else.
+   */
+  private async assertCustomerIsNotSalonStaff(salon: Salon, customerId: string): Promise<void> {
+    if (salon.ownerId === customerId) {
+      throw new BadRequestException('مالک سالن نمی‌تواند برای سالن خودش نوبت ثبت کند');
+    }
+    const isStaff = await this.workers.exists({ where: { salonId: salon.id, userId: customerId, active: true } });
+    if (isStaff) {
+      throw new BadRequestException('کارمند سالن نمی‌تواند برای همان سالن نوبت ثبت کند');
+    }
+  }
+
+  /**
+   * Abuse guard for online booking creation (with online payment off nothing else makes a
+   * booking cost anything). A customer may hold at most `perUser` active future bookings
+   * overall and `perSalonPerUser` at one salon, and may not take a time that overlaps a
+   * booking they already hold -- at any salon.
+   *
+   * "Active" = pending_approval | pending_payment | confirmed with a start in the future,
+   * i.e. exactly the statuses that still occupy a slot (SLOT_BLOCKING_STATUSES).
+   *
+   * Race-safety: the per-salon Redis lock cannot serialize one customer's requests to
+   * DIFFERENT salons, so this takes a transaction-scoped Postgres advisory lock keyed on
+   * the customer. A competing request for the same customer blocks here until the first
+   * transaction commits (the lock is released at commit), and READ COMMITTED then lets its
+   * counts see the first booking -- N parallel requests can never exceed the cap.
+   */
+  private async assertWithinActiveBookingLimits(
+    em: EntityManager,
+    userId: string,
+    salonId: string,
+    startsAt: Date,
+    endsAt: Date,
+    limits: { perUser: number; perSalonPerUser: number },
+  ): Promise<void> {
+    await em.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`booking-active:${userId}`]);
+
+    const activeFuture = { userId, status: In(SLOT_BLOCKING_STATUSES), startsAt: MoreThan(new Date()) };
+    const [total, atSalon, overlapping] = await Promise.all([
+      em.count(Booking, { where: activeFuture }),
+      em.count(Booking, { where: { ...activeFuture, salonId } }),
+      em.count(Booking, {
+        where: { userId, status: In(SLOT_BLOCKING_STATUSES), startsAt: LessThan(endsAt), endsAt: MoreThan(startsAt) },
+      }),
+    ]);
+    if (overlapping > 0) {
+      throw new ConflictException({
+        message: 'در این بازه زمانی نوبت دیگری دارید',
+        code: CUSTOMER_DOUBLE_BOOKED,
+      });
+    }
+    if (total >= limits.perUser) {
+      throw new BadRequestException({
+        message: `حداکثر ${limits.perUser} نوبت فعال می‌توانید داشته باشید؛ پس از انجام یا لغو یکی از آن‌ها دوباره تلاش کنید`,
+        code: BOOKING_LIMIT_REACHED,
+      });
+    }
+    if (atSalon >= limits.perSalonPerUser) {
+      throw new BadRequestException({
+        message: `در هر سالن حداکثر ${limits.perSalonPerUser} نوبت فعال می‌توانید داشته باشید`,
+        code: BOOKING_LIMIT_REACHED,
+      });
+    }
   }
 
   // Shared by createHold and retryPayment -- both need to obtain a fresh Zarinpal
@@ -923,7 +1028,7 @@ export class BookingsService {
    * it -- so a second approve, a reject, an approval-expiry tick, and a customer
    * cancellation all contend on that one predicate and precisely one can win.
    */
-  async approve(salonId: string, bookingId: string, actorId: string): Promise<EnrichedBooking> {
+  async approve(salonId: string, bookingId: string, actorId: string): Promise<SalonBooking> {
     const booking = await this.bookings.findOneBy({ id: bookingId, salonId });
     if (!booking) throw new NotFoundException('Booking not found');
     if (booking.status !== 'pending_approval') {
@@ -1165,7 +1270,7 @@ export class BookingsService {
     }
 
     const updated = await this.bookings.findOneBy({ id: bookingId });
-    const [withNames] = await this.attachNames([updated!]);
+    const [withNames] = await this.attachNamesForSalon([updated!]);
     return withNames;
   }
 
@@ -1176,7 +1281,7 @@ export class BookingsService {
    * for every other "died before capture" path (expiry, cancel-while-unpaid, failed
    * callback). Reusing it here is why rejection needs no reversal logic of its own.
    */
-  async reject(salonId: string, bookingId: string, actorId: string, reason: string): Promise<EnrichedBooking> {
+  async reject(salonId: string, bookingId: string, actorId: string, reason: string): Promise<SalonBooking> {
     const booking = await this.bookings.findOneBy({ id: bookingId, salonId });
     if (!booking) throw new NotFoundException('Booking not found');
     if (booking.status !== 'pending_approval') {
@@ -1218,7 +1323,7 @@ export class BookingsService {
     }
 
     const updated = await this.bookings.findOneBy({ id: bookingId });
-    const [withNames] = await this.attachNames([updated!]);
+    const [withNames] = await this.attachNamesForSalon([updated!]);
     return withNames;
   }
 
@@ -1226,7 +1331,7 @@ export class BookingsService {
     userId: string,
     id: string,
   ): Promise<
-    EnrichedBooking & { refundStatus: 'pending' | 'done' | null; depositPaid: boolean }
+    EnrichedBooking & { refundStatus: 'pending' | 'done' | null; depositPaid: boolean; reviewable: boolean }
   > {
     const booking = await this.bookings.findOneBy({ id, userId });
     if (!booking) throw new NotFoundException('Booking not found');
@@ -1240,22 +1345,28 @@ export class BookingsService {
       : payment?.status === 'refunded' ? ('done' as const)
       : null;
     const [depositPaid] = await this.depositPaidFor([id]);
-    return { ...withNames, refundStatus, depositPaid: depositPaid ?? false };
+    const [reviewable] = await this.reviewableFor([booking]);
+    return { ...withNames, refundStatus, depositPaid: depositPaid ?? false, reviewable: reviewable ?? false };
   }
 
   async listMine(
     userId: string,
-  ): Promise<Array<EnrichedBooking & { depositPaid: boolean }>> {
+  ): Promise<Array<EnrichedBooking & { depositPaid: boolean; reviewable: boolean }>> {
     const bookings = await this.bookings.find({
       where: { userId },
       order: { startsAt: 'DESC' },
       take: MAX_MY_BOOKINGS_LISTED,
     });
-    const [withNames, paidFlags] = await Promise.all([
+    const [withNames, paidFlags, reviewableFlags] = await Promise.all([
       this.attachNames(bookings),
       this.depositPaidFor(bookings.map((b) => b.id)),
+      this.reviewableFor(bookings),
     ]);
-    return withNames.map((b, i) => ({ ...b, depositPaid: paidFlags[i] ?? false }));
+    return withNames.map((b, i) => ({
+      ...b,
+      depositPaid: paidFlags[i] ?? false,
+      reviewable: reviewableFlags[i] ?? false,
+    }));
   }
 
   /**
@@ -1276,6 +1387,29 @@ export class BookingsService {
     });
     const paid = new Set(rows.map((r) => r.bookingId));
     return bookingIds.map((id) => paid.has(id));
+  }
+
+  /**
+   * Whether the customer can still leave a review for each booking: completed, entered by
+   * the customer's own online checkout (an owner-entered `manual` booking is never
+   * reviewable -- ReviewsService.create refuses it), and no review row exists yet. A
+   * withdrawn review still occupies its row (reviews.booking_id is UNIQUE), so it counts as
+   * "already reviewed". Raw SQL to keep this module off the reviews module, same as the
+   * beauty_guides existence check in createHold.
+   *
+   * There is deliberately no "window passed" term: a review can be written at any time
+   * after completion; only editing/withdrawing is time-boxed (review_edit_window_hours).
+   */
+  private async reviewableFor(bookings: Booking[]): Promise<boolean[]> {
+    const candidateIds = bookings.filter((b) => b.status === 'completed' && b.source === 'online').map((b) => b.id);
+    if (candidateIds.length === 0) return bookings.map(() => false);
+    const rows: Array<{ booking_id: string }> = await this.dataSource.query(
+      `SELECT booking_id FROM reviews WHERE booking_id = ANY($1::uuid[])`,
+      [candidateIds],
+    );
+    const reviewed = new Set(rows.map((r) => r.booking_id));
+    const candidates = new Set(candidateIds);
+    return bookings.map((b) => candidates.has(b.id) && !reviewed.has(b.id));
   }
 
   async cancel(bookingId: string, callerId: string): Promise<Booking> {
@@ -1314,7 +1448,10 @@ export class BookingsService {
       newBookingStatus = 'cancelled_by_salon';
       refund = true;
     } else {
-      const cancellationWindowHours = await this.config.getCancellationWindowHours();
+      // The window promised when the booking was made; the live config only for a row
+      // that has no snapshot.
+      const cancellationWindowHours =
+        booking.cancellationWindowHours ?? (await this.config.getCancellationWindowHours());
       const hoursUntilStart = (booking.startsAt.getTime() - Date.now()) / (1000 * 60 * 60);
       newBookingStatus = 'cancelled_by_user';
       refund = hoursUntilStart >= cancellationWindowHours;
@@ -1355,6 +1492,12 @@ export class BookingsService {
           { bookingId: booking.id },
           refund ? { status: 'refund_pending', refundRequestedAt: new Date() } : { status: 'paid' },
         );
+        // A refunded cancellation gives the customer EVERYTHING back, not just the gateway
+        // money: the wallet credit that funded part of the deposit and the coupon code the
+        // price was discounted with (the cancel dialog promises it). Idempotent, see
+        // releaseBookingHold. A forfeited (late) cancellation keeps both -- they were spent
+        // into a deposit the salon now keeps.
+        if (refund) await releaseBookingHold(em, this.walletService, booking.id);
         // A late cancellation FORFEITS the deposit to the salon -- economically identical
         // to a no-show, which has always accrued commission here. The design spec's own
         // rule ("user cancels late, or no-show -> forfeited -> paid to salon minus platform
@@ -1446,6 +1589,102 @@ export class BookingsService {
     return (await this.bookings.findOneBy({ id: booking.id }))!;
   }
 
+  /**
+   * Platform cancellation: an admin calls an active booking off (a suspended salon, a
+   * dispute, a salon that vanished). `pending_approval | pending_payment | confirmed ->
+   * cancelled_by_admin`, always a FULL refund -- the customer did nothing wrong, so the
+   * late-cancellation forfeit never applies.
+   *
+   * Reuses the exact pieces the salon-cancellation path is built from rather than a
+   * parallel mechanism: the status CAS (a concurrent customer/salon cancel or payment
+   * callback makes this lose with a 409, never overwrite), `releaseBookingHold` (wallet
+   * credit and coupon back to the customer, idempotent), the `refund_pending` flip that
+   * PaymentsService.attemptRefund / RefundRetryJob then settle through the existing refund
+   * flow, and booking_events. The audit_log row is written by the controller's
+   * AuditInterceptor.
+   *
+   * The customer is always told (push); SMS is spent only when the booking was `confirmed`
+   * -- a request or an unpaid hold they may not even remember is not worth a text.
+   */
+  async adminCancel(bookingId: string, adminId: string, reason: string): Promise<Booking> {
+    const booking = await this.bookings.findOneBy({ id: bookingId });
+    if (!booking) throw new NotFoundException('Booking not found');
+    if (!SLOT_BLOCKING_STATUSES.includes(booking.status)) {
+      throw new ConflictException('این نوبت در وضعیتی نیست که قابل لغو باشد');
+    }
+    const wasConfirmed = booking.status === 'confirmed';
+
+    await this.dataSource.transaction(async (em) => {
+      const result = await em.update(
+        Booking,
+        { id: booking.id, status: booking.status },
+        { status: 'cancelled_by_admin' },
+      );
+      if (!result.affected) {
+        throw new ConflictException('Booking status changed before this cancellation could be applied');
+      }
+      if (wasConfirmed) {
+        // Zero rows when nothing was ever captured (free mode, manual booking): no refund owed.
+        await em.update(
+          Payment,
+          { bookingId: booking.id, status: 'paid' },
+          { status: 'refund_pending', refundRequestedAt: new Date() },
+        );
+      } else {
+        await em.update(Payment, { bookingId: booking.id, status: 'initiated' }, { status: 'failed' });
+      }
+      await releaseBookingHold(em, this.walletService, booking.id);
+
+      await this.bookingEvents.record(
+        {
+          bookingId: booking.id,
+          eventType: 'BOOKING_CANCELLED',
+          actorType: 'admin',
+          actorId: adminId,
+          metadata: { fromStatus: booking.status, refundOwed: true, cancelledBy: 'admin', reason },
+        },
+        em,
+      );
+      await this.bookingEvents.record(
+        { bookingId: booking.id, eventType: 'SLOT_RELEASED', actorType: 'system', metadata: { cause: 'cancelled_by_admin' } },
+        em,
+      );
+    });
+
+    this.logger.log(
+      `booking.cancelled_by_admin bookingId=${booking.id} salonId=${booking.salonId} customerId=${booking.userId} ` +
+        `from=${booking.status} actorId=${adminId}`,
+    );
+    void this.analytics
+      .track(
+        'booking_cancelled',
+        { bookingId: booking.id, salonId: booking.salonId, cancelledBy: 'admin', refundOwed: true },
+        { userId: adminId },
+      )
+      .catch(() => {});
+    this.metrics.incBookingCancellation('admin');
+
+    try {
+      await this.paymentsService.notifyCancelledByAdmin(booking.id, wasConfirmed);
+    } catch (err) {
+      this.logger.error(
+        `Failed to notify the admin cancellation of booking ${booking.id}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    if (wasConfirmed) {
+      try {
+        await this.paymentsService.attemptRefund(booking.id);
+      } catch (err) {
+        this.logger.error(
+          `Inline refund attempt failed after admin-cancelling booking ${booking.id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    return (await this.bookings.findOneBy({ id: booking.id }))!;
+  }
+
   private async attachNames(
     bookings: Booking[],
   ): Promise<Array<EnrichedBooking>> {
@@ -1477,7 +1716,48 @@ export class BookingsService {
     });
   }
 
-  async listForSalon(salonId: string): Promise<Array<EnrichedBooking>> {
+  /**
+   * attachNames plus the money fields a salon needs to know what to collect at the chair.
+   *
+   * - `depositPaid`: a Payment reached paid (incl. since refund_pending/refunded) -- same
+   *   definition as the customer's, see depositPaidFor.
+   * - `prepaidAmount`: gateway money the salon can count on right now, in toman: the Payment
+   *   amount while its status is `paid`, else 0 (nothing captured, or already being/been
+   *   returned to the customer).
+   * - `amountDue`: what the salon still collects in person =
+   *   max(0, priceSnapshot - prepaidAmount - walletAmountUsed). The wallet portion is part
+   *   of the deposit the customer settled, so it is not owed at the chair either. `null`
+   *   when the service is not fixed-price (the figure is a quote, not a number to subtract
+   *   from), and 0 for a booking that is dead or a no-show (nothing is collected there).
+   */
+  private async attachNamesForSalon(bookings: Booking[]): Promise<SalonBooking[]> {
+    const named = await this.attachNames(bookings);
+    if (named.length === 0) return [];
+    const ids = named.map((b) => b.id);
+    const [payments, services] = await Promise.all([
+      this.payments.find({
+        where: { bookingId: In(ids), status: In(['paid', 'refund_pending', 'refunded']) },
+        select: ['bookingId', 'status', 'amount'],
+      }),
+      this.services.find({ where: { id: In([...new Set(named.map((b) => b.serviceId))]) }, select: ['id', 'pricingType'] }),
+    ]);
+    const paymentByBooking = new Map(payments.map((p) => [p.bookingId, p]));
+    const pricingTypeByService = new Map(services.map((s) => [s.id, s.pricingType]));
+    return named.map((b) => {
+      const payment = paymentByBooking.get(b.id);
+      const prepaidAmount = payment?.status === 'paid' ? payment.amount : 0;
+      const nothingToCollect = b.status === 'no_show' || DEAD_BOOKING_STATUSES.includes(b.status);
+      const amountDue =
+        pricingTypeByService.get(b.serviceId) !== 'fixed'
+          ? null
+          : nothingToCollect
+            ? 0
+            : Math.max(0, b.priceSnapshot - prepaidAmount - (b.walletAmountUsed ?? 0));
+      return { ...b, depositPaid: payment !== undefined, prepaidAmount, amountDue };
+    });
+  }
+
+  async listForSalon(salonId: string): Promise<SalonBooking[]> {
     // No pagination UI exists downstream today (the provider panel's bookings screen
     // loads this once and filters/sorts client-side over the full list) -- rather than
     // change the response shape and force a frontend rework, this is a generous but
@@ -1489,14 +1769,14 @@ export class BookingsService {
       order: { startsAt: 'DESC' },
       take: MAX_SALON_BOOKINGS_LISTED,
     });
-    return this.attachNames(bookings);
+    return this.attachNamesForSalon(bookings);
   }
 
   async assignWorker(
     salonId: string,
     bookingId: string,
     workerId: string,
-  ): Promise<EnrichedBooking> {
+  ): Promise<SalonBooking> {
     // Same per-salon lock createHold's own worker-overlap check relies on -- a worker can
     // never belong to two salons, so serializing on salonId already serializes every
     // request (a new hold, or another assignment) that could conflict on this worker too.
@@ -1567,7 +1847,7 @@ export class BookingsService {
     }
 
     const updated = (await this.bookings.findOneBy({ id: bookingId }))!;
-    const [withNames] = await this.attachNames([updated]);
+    const [withNames] = await this.attachNamesForSalon([updated]);
     return withNames;
   }
 
@@ -1597,7 +1877,7 @@ export class BookingsService {
     bookingId: string,
     newStartsAtIso: string,
     actor: { type: 'customer' | 'salon_owner'; userId: string; salonId?: string },
-  ): Promise<EnrichedBooking> {
+  ): Promise<EnrichedBooking | SalonBooking> {
     const booking = await this.bookings.findOneBy({ id: bookingId });
     if (!booking) throw new NotFoundException('Booking not found');
 
@@ -1620,7 +1900,10 @@ export class BookingsService {
     }
 
     if (actor.type === 'customer') {
-      const cancellationWindowHours = await this.config.getCancellationWindowHours();
+      // Same snapshot rule as cancel(): rescheduling is the other half of the window
+      // promise, so it must not be judged against a window the booking never had.
+      const cancellationWindowHours =
+        booking.cancellationWindowHours ?? (await this.config.getCancellationWindowHours());
       const hoursUntilOriginalStart = (booking.startsAt.getTime() - Date.now()) / 3_600_000;
       if (hoursUntilOriginalStart < cancellationWindowHours) {
         throw new ConflictException(
@@ -1746,7 +2029,10 @@ export class BookingsService {
     }
 
     const updated = (await this.bookings.findOneBy({ id: bookingId }))!;
-    const [withNames] = await this.attachNames([updated]);
+    // The salon's own view carries the money fields; the customer's does not.
+    const [withNames] = actor.type === 'salon_owner'
+      ? await this.attachNamesForSalon([updated])
+      : await this.attachNames([updated]);
     return withNames;
   }
 
@@ -1797,14 +2083,30 @@ export class BookingsService {
     if (booking.status !== 'confirmed') {
       throw new BadRequestException('Only confirmed bookings can be marked completed or no-show');
     }
+    // A suspended (or otherwise not-approved) salon has lost its standing to settle
+    // appointments: recording an outcome is what forfeits a deposit and accrues
+    // commission, and an admin is mid-way through resolving that salon's bookings.
+    const salon = await this.salons.findOneBy({ id: salonId });
+    if (!salon) throw new NotFoundException('Salon not found');
+    if (salon.status !== 'approved') {
+      throw new ForbiddenException('تا زمانی که وضعیت سالن تایید‌شده نباشد، امکان ثبت نتیجه نوبت وجود ندارد');
+    }
+    // An outcome can only be recorded once the appointment has started. Otherwise a salon
+    // could mark a future booking completed to take its deposit (and accrue commission, and
+    // mint a reviewable booking) while the customer was still inside their cancellation
+    // window -- the same hole the no-show grace period closes for no_show.
+    if (status === 'completed' && Date.now() < booking.startsAt.getTime()) {
+      throw new BadRequestException('ثبت انجام‌شدن نوبت پیش از زمان شروع آن ممکن نیست');
+    }
     // A no-show forfeits the customer's deposit AND takes the booking out of every
     // cancellable status, so it must not be recordable before the appointment could
     // possibly have been missed. Without this a salon could mark a booking days ahead
     // no_show the moment its deposit was captured, pocketing money while the customer was
     // still inside their own cancellation window with no route back. The grace period is
     // platform config (admin-only, never salon-editable -- it is the protection AGAINST
-    // the salon). Completion is deliberately NOT time-guarded: finishing early is a real
-    // thing that happens, and it is the honest, non-punitive outcome either way.
+    // the salon). Completion is guarded separately above (not before the start
+    // time): finishing a booking is non-punitive, but marking a FUTURE one completed would
+    // still claim its deposit early.
     if (status === 'no_show') {
       const graceMinutes = await this.config.getNoShowGraceMinutes();
       const eligibleAt = new Date(booking.startsAt.getTime() + graceMinutes * 60_000);

@@ -5,6 +5,7 @@ import { ReferralGrantJob } from '../src/booking/referral-grant.job';
 import { loginAs, loginAsAdmin, verifyOtpAndLogin } from './utils/auth-helper';
 import { enableOnlinePayments, resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
+import { startBookingInThePast } from './utils/booking-time';
 
 describe('Referral discount-kind (percent_discount) rewards via literal coupon rows (e2e, Slice 5, Piece 1)', () => {
   let app: INestApplication;
@@ -99,6 +100,7 @@ describe('Referral discount-kind (percent_discount) rewards via literal coupon r
   }
 
   async function markCompleted(bookingId: string): Promise<void> {
+    await startBookingInThePast(app.get(DataSource), bookingId);
     await request(app.getHttpServer())
       .patch(`/api/salons/mine/bookings/${bookingId}`)
       .set('Cookie', ownerCookie)

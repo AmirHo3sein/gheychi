@@ -89,6 +89,15 @@ describe('Booking approval workflow (e2e)', () => {
     await app.close();
   });
 
+  // Every test books as a fresh customer: this suite creates far more bookings than one
+  // customer may hold at once (50 active) or create per window (the booking-creation rate
+  // limit), and those limits themselves are tested in booking-trust-guards.
+  let customerSeq = 0;
+  beforeEach(async () => {
+    customerSeq += 1;
+    customerCookie = await loginAs(app, `0917112${String(customerSeq).padStart(4, '0')}`);
+  });
+
   // --- Scenario 1: the existing automatic flow is untouched --------------------------
   describe('automatic mode (regression -- must behave exactly as before)', () => {
     beforeAll(() => setMode('automatic'));

@@ -13,6 +13,7 @@ const BOOKING_STATUSES: BookingStatus[] = [
   'completed',
   'cancelled_by_user',
   'cancelled_by_salon',
+  'cancelled_by_admin',
   'rejected_by_salon',
   'expired',
   'no_show',

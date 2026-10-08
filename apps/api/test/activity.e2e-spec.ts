@@ -1,8 +1,10 @@
+import { DataSource } from 'typeorm';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { loginAs, loginAsAdmin } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
+import { startBookingInThePast } from './utils/booking-time';
 
 describe('Activity feed (e2e)', () => {
   let app: INestApplication;
@@ -72,8 +74,23 @@ describe('Activity feed (e2e)', () => {
       .set('Cookie', ownerCookie)
       .send({ phone: '09166800002', serviceId, startsAt: new Date(Date.now() + 3600_000).toISOString() })
       .expect(201);
-    const bookingId = bookingRes.body.id;
+    const manualBookingId = bookingRes.body.id;
+    await startBookingInThePast(app.get(DataSource), manualBookingId);
+    await request(app.getHttpServer())
+      .patch(`/api/salons/mine/bookings/${manualBookingId}`)
+      .set('Cookie', ownerCookie)
+      .send({ status: 'completed' })
+      .expect(200);
 
+    // An owner-entered booking can never be reviewed, so the review is of the customer's
+    // own online booking.
+    const onlineRes = await request(app.getHttpServer())
+      .post('/api/bookings')
+      .set('Cookie', customerCookie)
+      .send({ salonId, serviceId, startsAt: new Date(Date.now() + 48 * 3600_000).toISOString() })
+      .expect(201);
+    const bookingId = onlineRes.body.booking.id;
+    await startBookingInThePast(app.get(DataSource), bookingId);
     await request(app.getHttpServer())
       .patch(`/api/salons/mine/bookings/${bookingId}`)
       .set('Cookie', ownerCookie)
@@ -91,17 +108,18 @@ describe('Activity feed (e2e)', () => {
       .set('Cookie', customerCookie)
       .expect(200);
 
-    expect(res.body.items).toHaveLength(2);
-    // Review comes after the booking in real time (submitted afterward), so it's first
+    expect(res.body.items).toHaveLength(3);
+    // Review comes after both bookings in real time (submitted afterward), so it's first
     // in the newest-first feed.
-    const [reviewItem, bookingItem] = res.body.items;
+    const [reviewItem, onlineItem, manualItem] = res.body.items;
     expect(reviewItem).toMatchObject({
       type: 'review',
       detail: { rating: 4, comment: 'خوب بود', salonName: 'Activity Feed Test Salon' },
     });
-    expect(bookingItem).toMatchObject({
+    expect(onlineItem).toMatchObject({ type: 'booking', id: bookingId, detail: { status: 'completed', source: 'online' } });
+    expect(manualItem).toMatchObject({
       type: 'booking',
-      id: bookingId,
+      id: manualBookingId,
       detail: {
         status: 'completed',
         source: 'manual',

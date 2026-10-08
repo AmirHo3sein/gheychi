@@ -35,10 +35,10 @@ derivation — never invented, per the initiative's own stated requirement:
 
 | Field | Source | Meaning |
 |---|---|---|
-| `grossBookingValue` | `SUM(bookings.price_snapshot)` | The full agreed service price — **not** `financial_transactions.gross_amount`, which is actually the online *deposit* only (that column's own doc comment makes this explicit; conflating the two would have understated real business volume for any partial-deposit booking). |
+| `grossBookingValue` | `SUM(bookings.price_snapshot)` over **`completed` bookings only** | The full agreed service price (a **list-price value**, not cash received; an upcoming `confirmed` booking is not counted until the salon completes it — a booking that can still be cancelled or become a no-show is not revenue) — **not** `financial_transactions.gross_amount`, which is actually the online *deposit* only (that column's own doc comment makes this explicit; conflating the two would have understated real business volume for any partial-deposit booking). |
 | `onlineCollected` | `SUM(payments.amount)` where `status = 'paid'` | Real money the platform actually captured. |
 | `commission` | `SUM(financial_transactions.commission_amount)` | Real platform commission accrued. |
-| `estimatedSalonRevenue` | `grossBookingValue − commission` | Labeled "تخمینی" (estimated) in the UI specifically because it assumes the salon's own cash portion was genuinely collected in full — something this platform cannot observe or verify. |
+| `estimatedSalonRevenue` | `grossBookingValue − commission` | Completed bookings only (same basis as `grossBookingValue`; `averageBookingValue` divides by `completedCount` for the same reason). Labeled "تخمینی" (estimated) in the UI specifically because it assumes the salon's own cash portion was genuinely collected in full — something this platform cannot observe or verify. |
 
 **Date-window semantics:** all three dashboard queries filter by *when the activity
 happened* — `bookings.created_at`, `payments.paid_at`, `financial_transactions.created_at` —

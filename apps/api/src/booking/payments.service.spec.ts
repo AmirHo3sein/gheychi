@@ -855,3 +855,88 @@ describe('PaymentsService.handleCallback verify-persist failure', () => {
     );
   });
 });
+
+describe('PaymentsService.notifyNoShow / notifyCancelledByAdmin', () => {
+  let service: PaymentsService;
+  let paymentsCountBy: jest.Mock;
+  let smsSend: jest.Mock;
+  let pushSend: jest.Mock;
+
+  const BOOKING = { id: 'booking-1', userId: 'user-1', salonId: 'salon-1', startsAt: new Date('2026-09-01T09:00:00.000Z') };
+  const SALON = { id: 'salon-1', name: 'سالن آرا', ownerId: 'owner-1' };
+
+  beforeEach(async () => {
+    paymentsCountBy = jest.fn().mockResolvedValue(0);
+    smsSend = jest.fn().mockResolvedValue(undefined);
+    pushSend = jest.fn().mockResolvedValue(undefined);
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PaymentsService,
+        MetricsService,
+        { provide: BookingEventsService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
+        { provide: getRepositoryToken(Payment), useValue: { countBy: paymentsCountBy } },
+        { provide: getRepositoryToken(Booking), useValue: { findOneBy: jest.fn().mockResolvedValue({ ...BOOKING }) } },
+        { provide: DataSource, useValue: {} },
+        { provide: SalonsService, useValue: { findById: jest.fn().mockResolvedValue({ ...SALON }) } },
+        {
+          provide: UsersService,
+          useValue: {
+            findById: jest.fn().mockImplementation((id: string) =>
+              Promise.resolve(id === 'user-1' ? { id, phone: '09120000000' } : { id, phone: '09121111111' }),
+            ),
+          },
+        },
+        { provide: SMS_PROVIDER, useValue: { send: smsSend } },
+        { provide: PAYMENT_GATEWAY, useValue: {} },
+        { provide: PushService, useValue: { sendToUser: pushSend } },
+        { provide: AlertsService, useValue: { raise: jest.fn() } },
+        { provide: ReferralsService, useValue: {} },
+        { provide: WalletService, useValue: {} },
+        { provide: AnalyticsService, useValue: { track: jest.fn().mockResolvedValue(undefined) } },
+      ],
+    }).compile();
+
+    service = moduleRef.get(PaymentsService);
+  });
+
+  describe('notifyNoShow', () => {
+    it('says the deposit is not returned only when a Payment actually reached paid', async () => {
+      paymentsCountBy.mockResolvedValue(1);
+
+      await service.notifyNoShow('booking-1');
+
+      expect(paymentsCountBy).toHaveBeenCalledWith({ bookingId: 'booking-1', status: 'paid' });
+      expect(smsSend).toHaveBeenCalledWith('09120000000', expect.stringContaining('بیعانه آن بازگردانده نمی‌شود'));
+    });
+
+    it('does NOT claim a forfeit when nothing was ever paid (free mode / zero deposit)', async () => {
+      paymentsCountBy.mockResolvedValue(0);
+
+      await service.notifyNoShow('booking-1');
+
+      const [, body] = smsSend.mock.calls[0];
+      expect(body).toContain('عدم حضور');
+      expect(body).not.toContain('بازگردانده');
+      expect(body).not.toContain('بیعانه');
+    });
+  });
+
+  describe('notifyCancelledByAdmin', () => {
+    it('texts the customer only when the booking was confirmed, and always pushes', async () => {
+      await service.notifyCancelledByAdmin('booking-1', true);
+
+      expect(smsSend).toHaveBeenCalledTimes(1);
+      expect(smsSend).toHaveBeenCalledWith('09120000000', expect.stringContaining('توسط پشتیبانی'));
+      expect(pushSend).toHaveBeenCalledWith('user-1', expect.objectContaining({ data: { type: 'booking', bookingId: 'booking-1' } }));
+    });
+
+    it('spends no SMS on an unconfirmed booking -- push only, to both customer and owner', async () => {
+      await service.notifyCancelledByAdmin('booking-1', false);
+
+      expect(smsSend).not.toHaveBeenCalled();
+      expect(pushSend).toHaveBeenCalledWith('user-1', expect.anything());
+      expect(pushSend).toHaveBeenCalledWith('owner-1', expect.anything());
+    });
+  });
+});

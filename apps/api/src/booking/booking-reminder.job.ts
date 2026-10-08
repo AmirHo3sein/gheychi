@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { And, IsNull, LessThanOrEqual, MoreThan, Repository } from 'typeorm';
+import { And, IsNull, LessThanOrEqual, MoreThan, Raw, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { CronJobRunner } from '../common/cron-job-runner.service';
 import { formatIranDateTimeFa } from '../common/iran-time.util';
@@ -50,8 +50,19 @@ export class BookingReminderJob {
     // rows are re-selected on every tick, and once more than BATCH_SIZE of them exist the
     // unordered batch can be filled entirely by them -- silently starving every real
     // upcoming reminder. Ordered soonest-first so the batch always drains in urgency order.
+    //
+    // Only bookings of salons that are still `approved`: a suspended salon's customers must
+    // not be told to turn up while an admin is resolving those bookings. Filtered in the
+    // query, not just in the loop, for the same starvation reason -- a batch full of
+    // suspended-salon rows would otherwise crowd out every real reminder. Such a booking is
+    // never claimed, so it is reminded normally if the salon is reinstated in time.
     const due = await this.bookings.find({
-      where: { status: 'confirmed', remindedAt: IsNull(), startsAt: And(MoreThan(now), LessThanOrEqual(cutoff)) },
+      where: {
+        status: 'confirmed',
+        remindedAt: IsNull(),
+        startsAt: And(MoreThan(now), LessThanOrEqual(cutoff)),
+        salonId: Raw((alias) => `${alias} IN (SELECT id FROM salons WHERE status = 'approved')`),
+      },
       order: { startsAt: 'ASC' },
       take: BATCH_SIZE,
     });
@@ -73,6 +84,12 @@ export class BookingReminderJob {
         const salon = await this.salonsService.findById(booking.salonId);
         if (!salon) {
           this.logger.warn(`Booking ${booking.id} claimed for reminder but salon ${booking.salonId} was not found`);
+          continue;
+        }
+        if (salon.status !== 'approved') {
+          // Suspended between the query above and now: hand the claim back so the booking
+          // is reminded normally should the salon be reinstated before it starts.
+          await this.bookings.update({ id: booking.id, remindedAt: now }, { remindedAt: null });
           continue;
         }
         const customer = await this.usersService.findById(booking.userId);
