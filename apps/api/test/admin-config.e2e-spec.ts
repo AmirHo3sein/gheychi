@@ -26,6 +26,9 @@ describe('Admin platform config (e2e)', () => {
     // (admin-feature-flags.e2e-spec.ts), deliberately excluded here so this numeric
     // screen's PATCH round-trip never has to see a boolean value.
     expect(keys).toEqual([
+      'beauty_guide_daily_limit_global',
+      'beauty_guide_daily_limit_per_user',
+      'beauty_guide_retention_days',
       'booking_approval_timeout_minutes',
       'booking_hold_ttl_minutes',
       'cancellation_window_hours',

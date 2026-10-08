@@ -28,6 +28,12 @@ export const REQUIRED_PLATFORM_CONFIG_KEYS = [
   'reminder_lead_hours',
   'review_edit_window_hours',
   'no_show_grace_minutes',
+  // Beauty Guide cost controls (docs/superpowers/specs/2026-10-07-beauty-guide-design.md §7).
+  // Customers have no subscription plan (entitlements are salon-scoped), so per-customer
+  // AI usage limits live here rather than in the entitlement engine.
+  'beauty_guide_daily_limit_per_user',
+  'beauty_guide_daily_limit_global',
+  'beauty_guide_retention_days',
 ] as const;
 
 // Separate from REQUIRED_PLATFORM_CONFIG_KEYS/getNumber() on purpose: describeInvalidConfigValue
@@ -47,6 +53,10 @@ export const FEATURE_FLAG_KEYS = [
   // deposit-based check, so flipping it off is equivalent to every booking landing on the
   // zero-deposit path that already exists -- no new booking status, no new code path.
   'feature_online_payment_enabled',
+  // Beauty Guide (AI inspiration analysis). Seeded false: it calls a paid external AI
+  // endpoint, so it must be switched on deliberately once that endpoint is configured
+  // and reachable from the server.
+  'feature_beauty_guide_enabled',
 ] as const;
 
 export interface FeatureFlags {
@@ -56,6 +66,7 @@ export interface FeatureFlags {
   referralsEnabled: boolean;
   couponsEnabled: boolean;
   onlinePaymentEnabled: boolean;
+  beautyGuideEnabled: boolean;
 }
 
 const FEATURE_FLAG_KEY_TO_FIELD: Record<(typeof FEATURE_FLAG_KEYS)[number], keyof FeatureFlags> = {
@@ -65,6 +76,7 @@ const FEATURE_FLAG_KEY_TO_FIELD: Record<(typeof FEATURE_FLAG_KEYS)[number], keyo
   feature_referrals_enabled: 'referralsEnabled',
   feature_coupons_enabled: 'couponsEnabled',
   feature_online_payment_enabled: 'onlinePaymentEnabled',
+  feature_beauty_guide_enabled: 'beautyGuideEnabled',
 };
 
 interface ConfigBounds {
@@ -89,7 +101,17 @@ const MINUTE_TIMEOUT_KEYS = new Set<string>(['booking_approval_timeout_minutes',
 // MINUTE_TIMEOUT_KEY -- but it is capped at a day, past which the booking-completion
 // window is long over anyway.
 const GRACE_MINUTE_KEYS = new Set<string>(['no_show_grace_minutes']);
+// Beauty Guide limits. Explicit ceilings (rather than the default unbounded >= 0) so a
+// typo can't silently remove the cost breaker; 0 is legal and means "nobody can analyze".
+// MUST stay identical to BEAUTY_GUIDE_CONFIG_BOUNDS in dto/admin-config.dto.ts -- a value
+// the write path accepts but this read path rejects would brick the next boot.
+export const BEAUTY_GUIDE_KEY_BOUNDS: Record<string, ConfigBounds> = {
+  beauty_guide_daily_limit_per_user: { min: 0, max: 1000 },
+  beauty_guide_daily_limit_global: { min: 0, max: 1_000_000 },
+  beauty_guide_retention_days: { min: 1, max: 3650 },
+};
 function boundsFor(key: string): ConfigBounds {
+  if (BEAUTY_GUIDE_KEY_BOUNDS[key]) return BEAUTY_GUIDE_KEY_BOUNDS[key];
   if (PERCENT_KEYS.has(key)) return { min: 0, max: 100 };
   if (MINUTE_TIMEOUT_KEYS.has(key)) return { min: 1, max: 1440 };
   if (GRACE_MINUTE_KEYS.has(key)) return { min: 0, max: 1440 };
@@ -234,6 +256,19 @@ export class PlatformConfigService implements OnApplicationBootstrap {
    */
   getNoShowGraceMinutes(): Promise<number> {
     return this.getNumber('no_show_grace_minutes');
+  }
+
+  getBeautyGuideDailyLimitPerUser(): Promise<number> {
+    return this.getNumber('beauty_guide_daily_limit_per_user');
+  }
+
+  /** Platform-wide daily cap on AI analyses -- a cost circuit breaker, not a fairness rule. */
+  getBeautyGuideDailyLimitGlobal(): Promise<number> {
+    return this.getNumber('beauty_guide_daily_limit_global');
+  }
+
+  getBeautyGuideRetentionDays(): Promise<number> {
+    return this.getNumber('beauty_guide_retention_days');
   }
 
   private async getBoolean(key: string): Promise<boolean> {

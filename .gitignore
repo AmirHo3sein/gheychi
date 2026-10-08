@@ -15,5 +15,6 @@ playwright-report/
 blob-report/
 coverage/
 apps/api/uploads/
+apps/api/private-uploads/
 *.tsbuildinfo
 .DS_Store

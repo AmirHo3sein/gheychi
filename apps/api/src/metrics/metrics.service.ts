@@ -185,6 +185,30 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  // Beauty Guide AI analyses. `outcome` and `provider` are code-controlled enums (never
+  // request data), so cardinality stays tiny.
+  private readonly beautyGuideAnalysesTotal = new Counter({
+    name: 'beauty_guide_analyses_total',
+    help: 'Total Beauty Guide AI analyses, labeled by provider and outcome',
+    labelNames: ['provider', 'outcome'] as const,
+    registers: [this.registry],
+  });
+
+  private readonly beautyGuideAnalysisDurationSeconds = new Histogram({
+    name: 'beauty_guide_analysis_duration_seconds',
+    help: 'Beauty Guide AI analysis latency in seconds, labeled by provider',
+    labelNames: ['provider'] as const,
+    buckets: [1, 2.5, 5, 10, 20, 30, 45, 60],
+    registers: [this.registry],
+  });
+
+  private readonly beautyGuideLimitRejectionsTotal = new Counter({
+    name: 'beauty_guide_limit_rejections_total',
+    help: 'Beauty Guide analyses refused by a daily usage limit, labeled by scope (user/global)',
+    labelNames: ['scope'] as const,
+    registers: [this.registry],
+  });
+
   // Every public method below funnels through this -- see class doc for why. Logged
   // (not silently swallowed) so a genuine bug here is still discoverable, but never
   // rethrown: metrics observation must never be able to fail the real operation.
@@ -273,6 +297,17 @@ export class MetricsService {
       this.cronJobRunsTotal.inc({ job, outcome });
       this.cronJobDurationSeconds.observe({ job }, durationSeconds);
     });
+  }
+
+  observeBeautyGuideAnalysis(provider: string, outcome: string, durationSeconds: number): void {
+    this.safe(() => {
+      this.beautyGuideAnalysesTotal.inc({ provider, outcome });
+      this.beautyGuideAnalysisDurationSeconds.observe({ provider }, durationSeconds);
+    });
+  }
+
+  incBeautyGuideLimitRejection(scope: 'user' | 'global'): void {
+    this.safe(() => this.beautyGuideLimitRejectionsTotal.inc({ scope }));
   }
 
   observeBackupReport(outcome: 'success' | 'failure'): void {

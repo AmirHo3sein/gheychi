@@ -171,6 +171,7 @@ export class BookingsService {
           // CreateBookingDto.attributionSource's own doc comment. null (not omitted) when
           // absent, so this key is always present in the funnel's own event shape.
           source: dto.attributionSource ?? null,
+          beautyGuideId: dto.beautyGuideId ?? null,
         },
         { userId },
       )
@@ -191,6 +192,19 @@ export class BookingsService {
     // priceOverrideToman once it's known, rather than this endpoint guessing at it.
     if (service.pricingType !== 'fixed') {
       throw new BadRequestException('برای این خدمت باید مستقیماً با سالن هماهنگ کنید');
+    }
+    // A Beauty Guide is private to its author: attaching someone else's guide would hand
+    // its image to a salon without that person's consent. Checked with a bare existence
+    // query rather than importing BeautyGuideModule (which already depends on this one).
+    if (dto.beautyGuideId) {
+      const owned: unknown[] = await this.dataSource.query(
+        `SELECT 1 FROM beauty_guides WHERE id = $1 AND user_id = $2`,
+        [dto.beautyGuideId, userId],
+      );
+      if (owned.length === 0) throw new BadRequestException('راهنمای زیبایی معتبر نیست');
+      void this.analytics
+        .track('beauty_guide_booking_started', { beautyGuideId: dto.beautyGuideId, salonId: dto.salonId, serviceId: dto.serviceId }, { userId })
+        .catch(() => {});
     }
 
     const startsAt = new Date(dto.startsAt);
@@ -403,6 +417,7 @@ export class BookingsService {
             workerId: dto.workerId ?? null,
             status,
             attributionSource: dto.attributionSource ?? null,
+            beautyGuideId: dto.beautyGuideId ?? null,
             // Only the coupon that actually produced the price is recorded against the
             // booking -- a losing coupon was never applied to it in any sense.
             couponId: couponApplied ? coupon!.id : null,

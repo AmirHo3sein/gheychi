@@ -23,6 +23,9 @@ COPY --from=installer --chown=apiuser:nodejs /app .
 # on first creation -- a mount point Docker has to invent itself is root-owned, and the
 # non-root process would EACCES on the very first upload.
 RUN mkdir -p /app/uploads && chown apiuser:nodejs /app/uploads
+# Same reasoning for Beauty Guide's PRIVATE image store (api_private_uploads) -- 0700 so
+# only the API process user can read customers' inspiration photos.
+RUN mkdir -p /app/private-uploads && chown apiuser:nodejs /app/private-uploads && chmod 700 /app/private-uploads
 # Build-time facts baked into this specific image, surfaced at runtime via GET /version
 # (src/version/version.service.ts) -- these never change without a rebuild, so ARG->ENV is
 # the right mechanism (not a deploy-time .env value, which is why docker-compose.prod.yml's

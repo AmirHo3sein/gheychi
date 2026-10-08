@@ -20,6 +20,13 @@ export interface StorageProvider {
    * DB row whose backing object went missing. Never used to gate a normal read/write.
    */
   exists(key: string): Promise<boolean>;
+  /**
+   * The stored bytes for `key`. Used by Beauty Guide's "Explain this look" to copy an
+   * already-public portfolio image into the private store server-side -- reading by key
+   * rather than fetching the public URL keeps that path independent of the API's own
+   * public hostname (which an in-container request may not be able to reach).
+   */
+  read(key: string): Promise<Buffer>;
   /** Every object whose key starts with `prefix`, for orphan detection. */
   list(prefix: string): Promise<StorageObjectInfo[]>;
 }

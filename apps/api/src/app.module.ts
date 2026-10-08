@@ -9,6 +9,7 @@ import { AlertsModule } from './alerts/alerts.module';
 import { AuthGuard } from './auth/auth.guard';
 import { AuthModule } from './auth/auth.module';
 import { BackupMonitoringModule } from './backup-monitoring/backup-monitoring.module';
+import { BeautyGuideModule } from './beauty-guide/beauty-guide.module';
 import { BillingModule } from './billing/billing.module';
 import { BookingModule } from './booking/booking.module';
 import { CatalogModule } from './catalog/catalog.module';
@@ -74,6 +75,7 @@ import { WalletModule } from './wallet/wallet.module';
     SubscriptionsModule,
     SalonsModule,
     BookingModule,
+    BeautyGuideModule,
     CouponsModule,
     SearchModule,
     ReviewsModule,

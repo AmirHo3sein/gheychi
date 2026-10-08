@@ -18,10 +18,11 @@ describe('Admin feature flags (e2e)', () => {
     await app.close();
   });
 
-  // onlinePaymentEnabled is the one flag seeded false, not true (a real production launch
-  // decision -- see docs/technical-overview/29-global-payment-toggle.md) -- every other flag
-  // stays "on by default" (unchanged pre-existing behavior until an admin opts out).
-  it('the public endpoint returns all 6 flags, true by default except online payment (no auth required)', async () => {
+  // onlinePaymentEnabled and beautyGuideEnabled are seeded false, not true (real launch
+  // decisions -- see docs/technical-overview/29-global-payment-toggle.md and
+  // 37-beauty-guide.md, which calls a paid AI service) -- every other flag stays "on by
+  // default" (unchanged pre-existing behavior until an admin opts out).
+  it('the public endpoint returns all 7 flags, true by default except online payment and beauty guide (no auth required)', async () => {
     const res = await request(app.getHttpServer()).get('/api/platform-config/feature-flags').expect(200);
     expect(res.body).toEqual({
       reviewsEnabled: true,
@@ -30,6 +31,7 @@ describe('Admin feature flags (e2e)', () => {
       referralsEnabled: true,
       couponsEnabled: true,
       onlinePaymentEnabled: false,
+      beautyGuideEnabled: false,
     });
   });
 
@@ -56,6 +58,7 @@ describe('Admin feature flags (e2e)', () => {
       referralsEnabled: true,
       couponsEnabled: true,
       onlinePaymentEnabled: false,
+      beautyGuideEnabled: false,
     });
 
     // restore for later tests in this file / other e2e files sharing the same DB

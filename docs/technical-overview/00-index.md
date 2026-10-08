@@ -56,6 +56,7 @@ This documentation is a snapshot as of **2026-09-03**. The codebase is under act
 | 33 | [Salon SMS + Quota](./33-salon-sms-quota.md) | Owner-initiated customer SMS, the first enforced entitlement (`smsMonthlyQuota`), `salon_sms_messages` log |
 | 34 | [Subscription Coupons & Billing](./34-subscription-coupons-and-billing.md) | `SubscriptionCoupon` (separate from booking coupons), `SubscriptionBillingPeriod`, admin-only settlement — architecture-only billing |
 | 35 | [Entitlement Engine](./35-entitlement-engine.md) | The capability seam paid features read from — key registry, per-key absent-defaults, `hasFeature`/`getLimit`/`getQuota` |
+| 37 | [Beauty Guide](./37-beauty-guide.md) | AI inspiration analysis → controlled vocabulary → real services/salons/portfolio → existing booking; private image store, cost limits, mock/OpenAI-compatible providers |
 
 
 ## Conventions used throughout this documentation

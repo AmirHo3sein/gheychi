@@ -25,6 +25,10 @@ export class LocalDiskStorageProvider implements StorageProvider {
     await fs.rm(join(this.root, key), { force: true });
   }
 
+  read(key: string): Promise<Buffer> {
+    return fs.readFile(join(this.root, key));
+  }
+
   async exists(key: string): Promise<boolean> {
     try {
       await fs.stat(join(this.root, key));

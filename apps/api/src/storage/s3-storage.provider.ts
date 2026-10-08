@@ -1,5 +1,6 @@
 import {
   DeleteObjectCommand,
+  GetObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
   NotFound,
@@ -50,6 +51,12 @@ export class S3StorageProvider implements StorageProvider {
 
   async delete(key: string): Promise<void> {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+  }
+
+  async read(key: string): Promise<Buffer> {
+    const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    if (!res.Body) throw new Error(`Empty S3 object body for ${key}`);
+    return Buffer.from(await res.Body.transformToByteArray());
   }
 
   async exists(key: string): Promise<boolean> {

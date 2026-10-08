@@ -21,6 +21,13 @@ const PERCENT_CONFIG_KEYS = new Set(['deposit_percent', 'commission_percent']);
 // sync deliberately: this is the write path, that is the boot/read path, and a value this
 // accepted but that rejected would brick the API on its next restart.
 const MINUTE_TIMEOUT_CONFIG_KEYS = new Set(['booking_approval_timeout_minutes', 'booking_hold_ttl_minutes']);
+// Mirrors PlatformConfigService's BEAUTY_GUIDE_KEY_BOUNDS exactly -- same brick-on-restart
+// hazard as above. Whole numbers only: these are counts/days.
+const BEAUTY_GUIDE_CONFIG_BOUNDS: Record<string, { min: number; max: number }> = {
+  beauty_guide_daily_limit_per_user: { min: 0, max: 1000 },
+  beauty_guide_daily_limit_global: { min: 0, max: 1_000_000 },
+  beauty_guide_retention_days: { min: 1, max: 3650 },
+};
 
 @ValidatorConstraint({ name: 'configValueInBounds', async: false })
 class ConfigValueInBoundsConstraint implements ValidatorConstraintInterface {
@@ -30,6 +37,8 @@ class ConfigValueInBoundsConstraint implements ValidatorConstraintInterface {
     if (value < 0) return false;
     const key = (args.object as ConfigUpdateEntryDto).key;
     if (MINUTE_TIMEOUT_CONFIG_KEYS.has(key)) return Number.isInteger(value) && value >= 1 && value <= 1440;
+    const beautyBounds = BEAUTY_GUIDE_CONFIG_BOUNDS[key];
+    if (beautyBounds) return Number.isInteger(value) && value >= beautyBounds.min && value <= beautyBounds.max;
     return !(PERCENT_CONFIG_KEYS.has(key) && value > 100);
   }
 
@@ -37,6 +46,8 @@ class ConfigValueInBoundsConstraint implements ValidatorConstraintInterface {
     const key = (args.object as ConfigUpdateEntryDto).key;
     if (PERCENT_CONFIG_KEYS.has(key)) return `value for "${key}" must be between 0 and 100`;
     if (MINUTE_TIMEOUT_CONFIG_KEYS.has(key)) return `value for "${key}" must be a whole number of minutes between 1 and 1440`;
+    const beautyBounds = BEAUTY_GUIDE_CONFIG_BOUNDS[key];
+    if (beautyBounds) return `value for "${key}" must be a whole number between ${beautyBounds.min} and ${beautyBounds.max}`;
     return `value for "${key}" must be at least 0`;
   }
 }

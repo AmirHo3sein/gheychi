@@ -809,6 +809,15 @@ export class PaymentsService {
     void this.analytics
       .track('booking_confirmed', { bookingId: booking.id, salonId: booking.salonId }, { userId: booking.userId })
       .catch(() => {});
+    if (booking.beautyGuideId) {
+      void this.analytics
+        .track(
+          'beauty_guide_booking_confirmed',
+          { bookingId: booking.id, salonId: booking.salonId, beautyGuideId: booking.beautyGuideId },
+          { userId: booking.userId },
+        )
+        .catch(() => {});
+    }
     const salon = await this.salonsService.findById(booking.salonId);
     if (!salon) return;
     const [customer, owner] = await Promise.all([

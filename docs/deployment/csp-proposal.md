@@ -130,9 +130,9 @@ per directive, not just once at the top.
     compose -f docker-compose.prod.yml exec api env | grep S3_` (or the ops-side secret store)
     before finalizing `img-src`.**
   - Also confirmed: map tiles. `apps/user-app/app/components/salon/SalonMap.client.vue:85-90`
-    loads Leaflet raster tiles from `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/...`
+    loads Leaflet raster tiles from `https://tile.openstreetmap.org/{z}/{x}/{y}.png (was CARTO Voyager until 2026-10-08, when CARTO began key-gating its raster tiles)`
     (CARTO's free Voyager tiles, no API key) as `<img>` elements Leaflet manages internally —
-    this needs `img-src https://*.basemaps.cartocdn.com`. **[STATIC only]** — could not exercise
+    this needs `img-src https://tile.openstreetmap.org`. **[STATIC only]** — could not exercise
     this in the browser test since the container has no seeded salon/coordinates to render a
     real map with.
   - Outbound-only, **not** CSP-relevant: `neshanUrl()`/`googleMapsUrl()`
@@ -197,7 +197,7 @@ Content-Security-Policy:
   default-src 'self';
   script-src 'self' 'unsafe-inline';
   style-src 'self' 'unsafe-inline';
-  img-src 'self' data: https://api.gheychi.co https://<S3_PUBLIC_BASE_URL host> https://*.basemaps.cartocdn.com;
+  img-src 'self' data: https://api.gheychi.co https://<S3_PUBLIC_BASE_URL host> https://tile.openstreetmap.org;
   font-src 'self';
   connect-src 'self' https://api.gheychi.co;
   worker-src 'self';
@@ -221,7 +221,7 @@ Per-directive confidence:
 | `style-src 'self' 'unsafe-inline'` | **Verified live** (positive + negative control) | Same methodology; 8 distinct un-hashable style-attr violations observed in the negative control. |
 | `img-src ... api.gheychi.co` | Static, high confidence | `useApi.ts`/`local-disk-storage.provider.ts` code path read directly. |
 | `img-src ... S3_PUBLIC_BASE_URL host` | **Static, unverified value** | Env var exists (`.env.example:44-50`) but its real production value is a secret not in this repo — needs manual confirmation. |
-| `img-src ... cartocdn.com` | Static only | Confirmed in source (`SalonMap.client.vue:87`); not exercised live (no seeded map data). |
+| `img-src ... tile.openstreetmap.org` | Static only | Confirmed in source (`SalonMap.client.vue:87`); not exercised live (no seeded map data). |
 | `img-src data:` | Inferred, not directly verified for this app | Verified present in the *sibling* panel builds' CSS (`SalonInfoStep-C8MCBiDN.css`); user-app's own build wasn't grepped for a `data:` URI, but shares the same toolchain. |
 | `font-src 'self'` | High | Self-hosted `@fontsource-variable/vazirmatn`; zero external font references repo-wide. |
 | `connect-src 'self' https://api.gheychi.co` | Verified CSP didn't block it; network reachability itself unverified | `net::ERR_FAILED` (sandbox network limit) vs. `net::ERR_BLOCKED_BY_CSP` (would indicate a real CSP problem) — the latter was never seen. |

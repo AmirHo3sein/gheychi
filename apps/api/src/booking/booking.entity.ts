@@ -148,6 +148,12 @@ export class Booking {
   @Column({ type: 'varchar', length: 500, nullable: true })
   notes: string | null;
 
+  // The customer's Beauty Guide this booking was started from (nullable, ON DELETE SET
+  // NULL). Context for the salon only -- never read by pricing, deposit, availability,
+  // payment, refund or commission logic.
+  @Column({ name: 'beauty_guide_id', type: 'uuid', nullable: true })
+  beautyGuideId: string | null;
+
   // Which workflow this booking was CREATED under, snapshotted so a salon switching
   // its own mode later never retroactively changes how an already-in-flight booking
   // behaves (an approved-and-awaiting-payment request must not silently become an

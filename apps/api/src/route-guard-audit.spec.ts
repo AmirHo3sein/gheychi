@@ -7,6 +7,9 @@ import { ActivityController } from './activity/activity.controller';
 import { AdminNotificationsController } from './admin-notifications/admin-notifications.controller';
 import { AdminAnalyticsController } from './analytics/admin-analytics.controller';
 import { AdminAuditController } from './audit/admin-audit.controller';
+import { AdminBeautyConceptsController } from './beauty-guide/admin-beauty-concepts.controller';
+import { BeautyGuidesController } from './beauty-guide/beauty-guides.controller';
+import { SalonBookingBeautyGuideController } from './beauty-guide/salon-booking-beauty-guide.controller';
 import { AuthController } from './auth/auth.controller';
 import { AuthGuard } from './auth/auth.guard';
 import { IS_PUBLIC_KEY, Public } from './auth/public.decorator';
@@ -93,6 +96,9 @@ const ALL_CONTROLLERS: Function[] = [
   AdminNotificationsController,
   AdminAnalyticsController,
   AdminAuditController,
+  AdminBeautyConceptsController,
+  BeautyGuidesController,
+  SalonBookingBeautyGuideController,
   AuthController,
   BackupReportController,
   AdminSubscriptionBillingController,

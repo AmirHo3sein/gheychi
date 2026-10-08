@@ -75,6 +75,10 @@ services:
     # that recreated the container (each image pull), leaving DB rows pointing at 404s.
     volumes:
       - api_uploads:/app/uploads
+      # Beauty Guide customer inspiration images: PRIVATE, never served statically (only
+      # /app/uploads is) and deliberately NOT mounted into the backup service -- the backup
+      # mirror never removes files, so backing this up would keep deleted personal images.
+      - api_private_uploads:/app/private-uploads
     mem_limit: 768m
     memswap_limit: 768m
     cpus: 1.5
@@ -215,6 +219,7 @@ networks:
 volumes:
   pgdata:
   api_uploads:
+  api_private_uploads:
   caddy_data:
   caddy_config:
   prometheus_data:

@@ -544,7 +544,7 @@ describe('BookingsService.createHold -- deposit is capped at the price being cha
 
       expect(analyticsTrack).toHaveBeenCalledWith(
         'booking_started',
-        { salonId: 'salon-1', serviceId: 'service-1', workerId: 'worker-1', hasCoupon: false, flow: 'online', source: null },
+        { salonId: 'salon-1', serviceId: 'service-1', workerId: 'worker-1', hasCoupon: false, flow: 'online', source: null, beautyGuideId: null },
         { userId: 'customer-1' },
       );
     });

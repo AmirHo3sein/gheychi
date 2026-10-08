@@ -54,6 +54,13 @@ export class CreateBookingDto {
   @IsOptional()
   @IsIn(['qr', 'direct', 'search'])
   attributionSource?: 'qr' | 'direct' | 'search';
+
+  // The customer's own Beauty Guide this booking came from, so the salon can see the
+  // inspiration attached to the request. Pure context: nothing about price, deposit,
+  // duration or availability ever reads it. Ownership is enforced in createHold.
+  @IsOptional()
+  @IsUUID()
+  beautyGuideId?: string;
 }
 
 export class UpdateBookingStatusDto {

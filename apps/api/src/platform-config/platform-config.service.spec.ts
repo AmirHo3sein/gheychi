@@ -132,6 +132,9 @@ const VALID_CONFIG_VALUES: Record<string, number> = {
   reminder_lead_hours: 3,
   review_edit_window_hours: 72,
   no_show_grace_minutes: 30,
+  beauty_guide_daily_limit_per_user: 3,
+  beauty_guide_daily_limit_global: 300,
+  beauty_guide_retention_days: 90,
 };
 
 describe('PlatformConfigService -- getter failure handling', () => {
@@ -292,7 +295,7 @@ describe('PlatformConfigService -- feature flags', () => {
     service = moduleRef.get(PlatformConfigService);
   });
 
-  it('reads all 6 flags, mapped to their field names', async () => {
+  it('reads all 7 flags, mapped to their field names', async () => {
     repo.findOneBy.mockImplementation(({ key }: { key: string }) =>
       Promise.resolve({ key, value: key === 'feature_stories_enabled' ? false : true }),
     );
@@ -304,6 +307,7 @@ describe('PlatformConfigService -- feature flags', () => {
       referralsEnabled: true,
       couponsEnabled: true,
       onlinePaymentEnabled: true,
+      beautyGuideEnabled: true,
     });
   });
 
