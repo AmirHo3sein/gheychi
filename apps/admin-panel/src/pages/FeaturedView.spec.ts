@@ -113,7 +113,7 @@ describe('FeaturedView', () => {
         method: 'PATCH',
         // End-of-day, not midnight: the boost is gated on `featured_until > now()`, so a
         // midnight instant would lapse at 03:30 local on the very date the field shows.
-        body: { isFeatured: true, featuredUntil: new Date('2026-09-01T23:59:59.999').toISOString() },
+        body: { isFeatured: true, featuredUntil: '2026-09-01T20:29:59.999Z' },
       }),
     )
     expect(wrapper.get('[data-testid="featured-badge"]').text()).toBe('بله')

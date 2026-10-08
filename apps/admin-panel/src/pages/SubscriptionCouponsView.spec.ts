@@ -77,7 +77,7 @@ describe('SubscriptionCouponsView', () => {
       body: {
         code: 'PLUS20',
         discountPercent: 20,
-        expiresAt: new Date('2026-12-31T23:59:59.999').toISOString(),
+        expiresAt: '2026-12-31T20:29:59.999Z',
         maxRedemptions: 10,
       },
     })

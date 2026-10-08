@@ -558,6 +558,17 @@ const ANALYTICS_EVENT: Record<string, string> = {
   user_registered: 'ثبت‌نام کاربر',
   salon_submitted: 'ثبت سالن',
   search_performed: 'جستجو',
+  salon_profile_viewed: 'مشاهده صفحه سالن',
+  beauty_guide_created: 'ساخت راهنمای زیبایی',
+  beauty_guide_reused: 'استفاده مجدد از راهنمای زیبایی',
+  beauty_guide_updated: 'به‌روزرسانی راهنمای زیبایی',
+  beauty_guide_deleted: 'حذف راهنمای زیبایی',
+  beauty_guide_analysis_started: 'شروع تحلیل تصویر',
+  beauty_guide_analysis_completed: 'تحلیل تصویر موفق',
+  beauty_guide_analysis_failed: 'تحلیل تصویر ناموفق',
+  beauty_guide_matches_viewed: 'مشاهده سالن‌های پیشنهادی',
+  beauty_guide_booking_started: 'شروع رزرو از راهنمای زیبایی',
+  beauty_guide_booking_confirmed: 'تایید نوبت از راهنمای زیبایی',
 }
 
 export function analyticsEventLabel(eventName: string): string {

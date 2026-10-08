@@ -14,6 +14,7 @@ import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { debounce } from '@/utils/debounce'
 import { AUDIT_ACTION_KEYS, auditActionLabel, targetTypeLabel } from '@/utils/labels'
+import { endOfTehranDayIso, startOfTehranDayIso } from '@/utils/tehran-day'
 
 // Options derive from labels.ts's canonical key list -- single source of truth with
 // the backend's @AuditAction() names, no locally re-declared copy to drift.
@@ -91,8 +92,8 @@ async function load() {
   if (UUID_RE.test(actorFilter.value.trim())) params.set('actorId', actorFilter.value.trim())
   // Both bounds are anchored in LOCAL time -- `new Date('YYYY-MM-DD')` alone would parse
   // as UTC midnight and silently exclude 00:00-03:29 local rows on the from-day (UTC+3:30).
-  if (fromDate.value) params.set('from', new Date(`${fromDate.value}T00:00:00.000`).toISOString())
-  if (toDate.value) params.set('to', new Date(`${toDate.value}T23:59:59.999`).toISOString())
+  if (fromDate.value) params.set('from', startOfTehranDayIso(fromDate.value))
+  if (toDate.value) params.set('to', endOfTehranDayIso(toDate.value))
 
   const { data, error } = await apiFetch<AuditListResponse>(`/admin/audit-log?${params.toString()}`, { silent: true })
   if (error) {

@@ -252,15 +252,9 @@ describe('CouponsView', () => {
     await addButton.trigger('click')
     await new Promise((r) => setTimeout(r, 0))
 
-    const sent = new Date(JSON.parse(fetchMock.mock.calls[1]![1].body).expiresAt)
-    // Asserted through local getters so the expectation holds in any TZ the suite runs in:
-    // the instant must be the last moment of 1 August locally, never its first.
-    expect(sent.getFullYear()).toBe(2026)
-    expect(sent.getMonth()).toBe(7)
-    expect(sent.getDate()).toBe(1)
-    expect(sent.getHours()).toBe(23)
-    expect(sent.getMinutes()).toBe(59)
-    expect(sent.getTime()).toBeGreaterThan(new Date('2026-08-01').getTime())
+    // The expiry is the last moment of 1 August in Tehran (UTC+03:30), whatever timezone the
+    // owner's browser is in -- a fixed instant, so this holds under any machine TZ.
+    expect(JSON.parse(fetchMock.mock.calls[1]![1].body).expiresAt).toBe('2026-08-01T20:29:59.999Z')
   })
 
   it('maps a non-409 create failure to Persian copy rather than the raw backend message', async () => {

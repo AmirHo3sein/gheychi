@@ -19,6 +19,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import { analyticsEventLabel } from '@/utils/labels'
+import { endOfTehranDayIso, startOfTehranDayIso } from '@/utils/tehran-day'
 
 interface EventTotal {
   eventName: string
@@ -64,8 +65,8 @@ async function load() {
   // Both bounds anchored in LOCAL time -- see WalletView.vue/UsersView.vue for why
   // `new Date('YYYY-MM-DD')` alone (parsed as UTC midnight) would silently drop early
   // local-time rows on the from-day (UTC+3:30).
-  if (fromDate.value) params.set('from', new Date(`${fromDate.value}T00:00:00.000`).toISOString())
-  if (toDate.value) params.set('to', new Date(`${toDate.value}T23:59:59.999`).toISOString())
+  if (fromDate.value) params.set('from', startOfTehranDayIso(fromDate.value))
+  if (toDate.value) params.set('to', endOfTehranDayIso(toDate.value))
   const qs = params.toString()
 
   const { data, error } = await apiFetch<AnalyticsSummaryResponse>(`/admin/analytics/summary${qs ? `?${qs}` : ''}`, {

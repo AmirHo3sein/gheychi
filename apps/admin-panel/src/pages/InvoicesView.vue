@@ -261,6 +261,7 @@ function formatDateTime(iso: string): string {
                       <InvoiceStatusActions
                         :invoice-id="invoice.id"
                         :status="invoice.status"
+                        :remaining="Math.max(0, invoice.totalNetPayable - invoice.paidTotal)"
                         @recorded="onPaymentRecorded(invoice.id)"
                       />
                     </div>

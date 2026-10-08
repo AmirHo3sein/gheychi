@@ -11,6 +11,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useApi } from '@/composables/useApi'
 import { formatToman } from '@/utils/format-toman'
+import { entitlementLabel } from '@/utils/entitlement-label'
 
 interface Plan { id: string; key: string; name: string; description: string | null; monthlyPriceToman: number }
 interface Subscription { status: 'active' | 'canceled' }
@@ -107,7 +108,7 @@ const BILLING_STATUS_LABEL: Record<BillingPeriod['status'], { label: string; ton
         </AppCard>
         <AppCard v-else :padded="false" class="divide-y divide-(--color-border-soft)">
           <div v-for="[key, value] in entitlementEntries()" :key="key" class="flex items-center justify-between gap-3 px-4 py-3 text-sm">
-            <span class="text-(--color-text-muted)">{{ key }}</span>
+            <span class="text-(--color-text-muted)">{{ entitlementLabel(key) }}</span>
             <span dir="ltr" class="tnum font-semibold text-(--color-text)">{{ JSON.stringify(value) }}</span>
           </div>
         </AppCard>

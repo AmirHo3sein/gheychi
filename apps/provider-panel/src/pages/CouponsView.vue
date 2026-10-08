@@ -12,6 +12,7 @@ import { useApi } from '@/composables/useApi'
 import { useConfirm } from '@/composables/useConfirm'
 import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import type { Tone } from '@/utils/labels'
+import { endOfTehranDayIso } from '@/utils/tehran-day'
 
 interface Coupon {
   id: string
@@ -137,7 +138,7 @@ async function createCoupon() {
   // from local end-of-day keeps the coupon alive for the whole day the provider picked; the
   // stored value stays a real UTC instant, matching the codebase's convention (see
   // apps/api/src/booking/availability.util.ts) and the admin panel's coupon form.
-  if (newCoupon.expiresAt) body.expiresAt = new Date(`${newCoupon.expiresAt}T23:59:59.999`).toISOString()
+  if (newCoupon.expiresAt) body.expiresAt = endOfTehranDayIso(newCoupon.expiresAt)
   if (newCoupon.maxRedemptions) body.maxRedemptions = Number(newCoupon.maxRedemptions)
 
   creating.value = true

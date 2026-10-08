@@ -26,6 +26,7 @@ import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { currencyLabel, walletTransactionTypeLabel } from '@/utils/labels'
 import { formatToman } from '@/utils/format-toman'
+import { endOfTehranDayIso, startOfTehranDayIso } from '@/utils/tehran-day'
 
 const TYPE_OPTIONS = [
   { value: '', label: 'همه انواع' },
@@ -88,8 +89,8 @@ async function load() {
   // Both bounds anchored in LOCAL time -- see UsersView.vue/AuditLogView.vue for why
   // `new Date('YYYY-MM-DD')` alone (parsed as UTC midnight) would silently drop early
   // local-time rows on the from-day (UTC+3:30).
-  if (fromDate.value) params.set('from', new Date(`${fromDate.value}T00:00:00.000`).toISOString())
-  if (toDate.value) params.set('to', new Date(`${toDate.value}T23:59:59.999`).toISOString())
+  if (fromDate.value) params.set('from', startOfTehranDayIso(fromDate.value))
+  if (toDate.value) params.set('to', endOfTehranDayIso(toDate.value))
 
   const { data, error } = await apiFetch<WalletTransactionListResponse>(`/admin/wallet/transactions?${params.toString()}`, {
     silent: true,

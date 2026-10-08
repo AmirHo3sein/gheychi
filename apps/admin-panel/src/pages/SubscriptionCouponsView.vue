@@ -17,6 +17,7 @@ import AppInput from '@/components/ui/AppInput.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
+import { endOfTehranDayIso } from '@/utils/tehran-day'
 
 interface SubscriptionCoupon {
   id: string
@@ -70,7 +71,7 @@ async function create() {
     body: {
       code: newCode.value.trim(),
       discountPercent: newDiscountPercent.value,
-      expiresAt: newExpiresAt.value ? new Date(`${newExpiresAt.value}T23:59:59.999`).toISOString() : undefined,
+      expiresAt: newExpiresAt.value ? endOfTehranDayIso(newExpiresAt.value) : undefined,
       maxRedemptions: newMaxRedemptions.value === null ? undefined : newMaxRedemptions.value,
     },
   })

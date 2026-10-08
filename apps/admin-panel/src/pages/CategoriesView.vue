@@ -25,6 +25,7 @@ const newName = ref('')
 const newIcon = ref('')
 const editingId = ref<number | null>(null)
 const editName = ref('')
+const editError = ref<string | null>(null)
 const submitting = ref(false)
 const confirmingId = ref<number | null>(null)
 
@@ -67,6 +68,7 @@ async function add() {
 function startEdit(category: Category) {
   editingId.value = category.id
   editName.value = category.name
+  editError.value = null
   confirmingId.value = null
 }
 
@@ -75,10 +77,16 @@ function cancelEdit() {
 }
 
 async function saveEdit() {
+  const name = editName.value.trim()
+  if (!name) {
+    editError.value = 'نام دسته‌بندی نمی‌تواند خالی باشد'
+    return
+  }
+  editError.value = null
   submitting.value = true
   const { data } = await apiFetch<Category>(`/admin/categories/${editingId.value}`, {
     method: 'PATCH',
-    body: { name: editName.value },
+    body: { name },
   })
   submitting.value = false
   if (data) {
@@ -209,7 +217,7 @@ onMounted(load)
 
               <template v-else-if="editingId === category.id">
                 <td class="px-5 py-3.5">
-                  <AppInput v-model="editName" data-testid="edit-name-input" :maxlength="60" @keyup.enter="saveEdit" />
+                  <AppInput v-model="editName" data-testid="edit-name-input" :maxlength="60" :error="editError ?? undefined" @update:model-value="editError = null" @keyup.enter="saveEdit" />
                 </td>
                 <td class="px-5 py-3.5 text-end">
                   <div class="flex justify-end gap-2.5">

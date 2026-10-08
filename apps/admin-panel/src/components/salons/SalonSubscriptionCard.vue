@@ -17,6 +17,8 @@ import AppSelect, { type SelectOption } from '@/components/ui/AppSelect.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { formatToman } from '@/utils/format-toman'
+import { startOfTehranDayIso } from '@/utils/tehran-day'
+import { entitlementLabel } from '@/utils/entitlement-label'
 
 const props = defineProps<{ salonId: string }>()
 
@@ -143,7 +145,7 @@ async function saveOverrides() {
 
 function formatEntitlements(entitlements: Record<string, unknown>): string {
   const keys = Object.keys(entitlements)
-  return keys.length === 0 ? 'بدون محدودیت' : keys.map((k) => `${k}: ${JSON.stringify(entitlements[k])}`).join('، ')
+  return keys.length === 0 ? 'بدون محدودیت' : keys.map((k) => `${entitlementLabel(k)}${entitlementLabel(k) === k ? '' : ` (${k})`}: ${JSON.stringify(entitlements[k])}`).join('، ')
 }
 
 // --- Billing periods (Phase 7 -- architecture-only: admin creates a period and later
@@ -190,8 +192,8 @@ async function createBillingPeriod() {
   const { data } = await apiFetch<BillingPeriod>(`/admin/salons/${props.salonId}/subscription/billing-periods`, {
     method: 'POST',
     body: {
-      periodStart: new Date(`${newPeriodStart.value}T00:00:00.000`).toISOString(),
-      periodEnd: new Date(`${newPeriodEnd.value}T00:00:00.000`).toISOString(),
+      periodStart: startOfTehranDayIso(newPeriodStart.value),
+      periodEnd: startOfTehranDayIso(newPeriodEnd.value),
       couponCode: newPeriodCoupon.value.trim() || undefined,
     },
   })

@@ -95,6 +95,16 @@ describe('CategoriesView rename', () => {
     expect(wrapper.find('[data-testid="edit-name-input"]').exists()).toBe(false)
   })
 
+  it('refuses to save a blank rename, shows an inline error and does not call the API', async () => {
+    const wrapper = await mountView()
+    await wrapper.findAll('[title="ویرایش"]')[0].trigger('click')
+    await wrapper.get('[data-testid="edit-name-input"]').setValue('   ')
+    await wrapper.get('[data-testid="save-edit"]').trigger('click')
+
+    expect(wrapper.text()).toContain('نام دسته‌بندی نمی‌تواند خالی باشد')
+    expect(fetchMock.mock.calls.some(([, opts]) => opts?.method === 'PATCH')).toBe(false)
+  })
+
   it('submits a rename on Enter in the edit input', async () => {
     fetchMock.mockResolvedValueOnce({ data: { id: 1, name: 'اصلاح مو (جدید)', icon: 'scissors' }, error: null })
     const wrapper = await mountView()

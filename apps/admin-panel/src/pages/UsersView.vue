@@ -16,6 +16,7 @@ import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useSessionStore } from '@/stores/session'
 import { debounce } from '@/utils/debounce'
 import { userRoleLabel, userStatusLabel } from '@/utils/labels'
+import { endOfTehranDayIso, startOfTehranDayIso } from '@/utils/tehran-day'
 
 const ROLE_OPTIONS = [
   { value: '', label: 'همه نقش‌ها' },
@@ -77,8 +78,8 @@ async function load() {
   if (roleFilter.value) params.set('role', roleFilter.value)
   // Both bounds are anchored in LOCAL time -- `new Date('YYYY-MM-DD')` alone would parse
   // as UTC midnight and silently exclude 00:00-03:29 local rows on the from-day (UTC+3:30).
-  if (joinedFrom.value) params.set('joinedFrom', new Date(`${joinedFrom.value}T00:00:00.000`).toISOString())
-  if (joinedTo.value) params.set('joinedTo', new Date(`${joinedTo.value}T23:59:59.999`).toISOString())
+  if (joinedFrom.value) params.set('joinedFrom', startOfTehranDayIso(joinedFrom.value))
+  if (joinedTo.value) params.set('joinedTo', endOfTehranDayIso(joinedTo.value))
 
   const { data, error } = await apiFetch<UserListResponse>(`/admin/users?${params.toString()}`, { silent: true })
   if (currentRequestId !== requestId.value) return

@@ -230,8 +230,8 @@ describe('SalonSubscriptionCard', () => {
       expect(fetchMock).toHaveBeenCalledWith('/admin/salons/s1/subscription/billing-periods', {
         method: 'POST',
         body: {
-          periodStart: new Date('2026-08-01T00:00:00.000').toISOString(),
-          periodEnd: new Date('2026-09-01T00:00:00.000').toISOString(),
+          periodStart: '2026-07-31T20:30:00.000Z',
+          periodEnd: '2026-08-31T20:30:00.000Z',
           couponCode: 'plus20',
         },
       })

@@ -18,6 +18,7 @@ import AppMoneyInput from '@/components/ui/AppMoneyInput.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { formatToman } from '@/utils/format-toman'
+import { entitlementLabel } from '@/utils/entitlement-label'
 
 interface Plan {
   id: string
@@ -62,7 +63,7 @@ onMounted(load)
 function formatEntitlements(entitlements: Record<string, unknown>): string {
   const keys = Object.keys(entitlements)
   if (keys.length === 0) return 'بدون محدودیت تعریف‌شده'
-  return keys.map((k) => `${k}: ${JSON.stringify(entitlements[k])}`).join('، ')
+  return keys.map((k) => `${entitlementLabel(k)}${entitlementLabel(k) === k ? '' : ` (${k})`}: ${JSON.stringify(entitlements[k])}`).join('، ')
 }
 
 // --- Create ---------------------------------------------------------------

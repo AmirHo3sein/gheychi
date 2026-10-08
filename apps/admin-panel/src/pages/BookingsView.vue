@@ -25,6 +25,7 @@ import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { debounce } from '@/utils/debounce'
 import { formatToman } from '@/utils/format-toman'
+import { endOfTehranDayIso, startOfTehranDayIso } from '@/utils/tehran-day'
 import {
   bookingAttributionSourceLabel,
   bookingConfirmationModeLabel,
@@ -163,8 +164,8 @@ async function load() {
   // Both bounds are anchored in LOCAL time -- `new Date('YYYY-MM-DD')` alone parses as UTC
   // midnight and would silently drop 00:00-03:29 local appointments on the from-day
   // (UTC+3:30). Same handling as UsersView.vue's joined-date range.
-  if (fromFilter.value) params.set('from', new Date(`${fromFilter.value}T00:00:00.000`).toISOString())
-  if (toFilter.value) params.set('to', new Date(`${toFilter.value}T23:59:59.999`).toISOString())
+  if (fromFilter.value) params.set('from', startOfTehranDayIso(fromFilter.value))
+  if (toFilter.value) params.set('to', endOfTehranDayIso(toFilter.value))
 
   const { data, error } = await apiFetch<BookingListResponse>(`/admin/bookings?${params.toString()}`, { silent: true })
   if (currentRequestId !== requestId.value) return

@@ -124,7 +124,7 @@ describe('AnalyticsView', () => {
     await flushPromises()
 
     expect(fetchMock).toHaveBeenLastCalledWith(
-      `/admin/analytics/summary?from=${encodeURIComponent(new Date('2026-07-01T00:00:00.000').toISOString())}&to=${encodeURIComponent(new Date('2026-08-01T23:59:59.999').toISOString())}`,
+      `/admin/analytics/summary?from=${encodeURIComponent('2026-06-30T20:30:00.000Z')}&to=${encodeURIComponent('2026-08-01T20:29:59.999Z')}`,
       { silent: true },
     )
   })

@@ -11,6 +11,7 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { toPersianDigits } from '@/utils/digits'
+import { endOfTehranDayIso } from '@/utils/tehran-day'
 
 // Platform-wide coupons only (GET/POST/PATCH/DELETE /admin/coupons) -- salonId is always null
 // for rows returned here, so there's deliberately no salon column, unlike the salon-scoped
@@ -156,7 +157,7 @@ async function add() {
     body: {
       code: newCode.value.trim(),
       discountPercent: newDiscountPercent.value,
-      expiresAt: newExpiresAt.value ? new Date(`${newExpiresAt.value}T23:59:59.999`).toISOString() : undefined,
+      expiresAt: newExpiresAt.value ? endOfTehranDayIso(newExpiresAt.value) : undefined,
       // Explicit null check (not `|| undefined`) -- a falsy-or would coalesce a genuinely
       // typed 0 into "unlimited" instead of sending it through to the server's own Min(1)
       // validation (which correctly rejects 0 with a real error).
@@ -206,7 +207,7 @@ function buildEditDiffs(): FieldDiff[] {
     diffs.push({ key: 'discountPercent', label: 'درصد تخفیف', oldText: oldDiscount, newText: newDiscount })
   }
 
-  const newExpiresIso = editExpiresAt.value ? new Date(`${editExpiresAt.value}T23:59:59.999`).toISOString() : null
+  const newExpiresIso = editExpiresAt.value ? endOfTehranDayIso(editExpiresAt.value) : null
   const oldExpiry = formatDate(editOriginal.value.expiresAt)
   const newExpiry = formatDate(newExpiresIso)
   if (oldExpiry !== newExpiry) {
@@ -242,7 +243,7 @@ async function saveEdit() {
       discountPercent: editDiscountPercent.value,
       // Explicit null clears the field server-side; matches UpdateCouponDto's
       // undefined-leaves-unchanged / null-clears contract.
-      expiresAt: editExpiresAt.value ? new Date(`${editExpiresAt.value}T23:59:59.999`).toISOString() : null,
+      expiresAt: editExpiresAt.value ? endOfTehranDayIso(editExpiresAt.value) : null,
       // Explicit ref value, not `|| null` -- editMaxRedemptions is already normalized to
       // null-or-number by its own input handler, so a falsy-or here would have silently
       // coalesced a genuinely typed 0 into "unlimited".

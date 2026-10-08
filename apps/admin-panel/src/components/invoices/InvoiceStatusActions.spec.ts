@@ -53,6 +53,30 @@ describe('InvoiceStatusActions', () => {
     expect(wrapper.text()).toContain('مبلغ باید بزرگ‌تر از صفر باشد')
   })
 
+  it('shows the remaining balance and refuses an amount above it without calling the API', async () => {
+    const wrapper = mount(InvoiceStatusActions, { props: { invoiceId: 'inv-1', status: 'partially_paid', remaining: 54000 } })
+
+    await wrapper.get('[data-testid="record-payment-button"]').trigger('click')
+    expect(wrapper.get('[data-testid="payment-remaining"]').text()).toContain('۵۴٬۰۰۰')
+
+    await wrapper.get('[data-testid="payment-amount-input"]').setValue('999999')
+    await wrapper.get('[data-testid="submit-payment"]').trigger('click')
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('مبلغ از مانده صورتحساب بیشتر است')
+  })
+
+  it('accepts an amount equal to the remaining balance', async () => {
+    fetchMock.mockResolvedValueOnce({ data: { id: 'inv-1', status: 'paid' }, error: null })
+    const wrapper = mount(InvoiceStatusActions, { props: { invoiceId: 'inv-1', status: 'partially_paid', remaining: 54000 } })
+
+    await wrapper.get('[data-testid="record-payment-button"]').trigger('click')
+    await wrapper.get('[data-testid="payment-amount-input"]').setValue('54000')
+    await wrapper.get('[data-testid="submit-payment"]').trigger('click')
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it('submits amount/method/referenceNumber/note and emits recorded on success', async () => {
     fetchMock.mockResolvedValueOnce({ data: { id: 'inv-1', status: 'partially_paid' }, error: null })
     const wrapper = mount(InvoiceStatusActions, { props: { invoiceId: 'inv-1', status: 'issued' } })

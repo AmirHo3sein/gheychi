@@ -10,6 +10,7 @@ import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import ScrollTable from '@/components/ui/ScrollTable.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
+import { endOfTehranDayIso } from '@/utils/tehran-day'
 
 interface AdminSalon { id: string; name: string; city: string; isFeatured: boolean; featuredUntil: string | null }
 
@@ -77,7 +78,7 @@ async function toggle(salon: AdminSalon) {
       // UTC+3:30) -- on the very date this field displays. Same idiom CouponsView's
       // expiry field uses.
       featuredUntil: featuredUntilInput
-        ? new Date(`${featuredUntilInput}T23:59:59.999`).toISOString()
+        ? endOfTehranDayIso(featuredUntilInput)
         : undefined,
     },
   })

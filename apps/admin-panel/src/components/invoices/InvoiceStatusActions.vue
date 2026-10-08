@@ -11,8 +11,11 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppMoneyInput from '@/components/ui/AppMoneyInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
+import { formatToman } from '@/utils/format-toman'
 
-const props = defineProps<{ invoiceId: string; status: 'issued' | 'partially_paid' | 'paid' | 'void' }>()
+// `remaining` (net payable minus already paid) lets the form refuse an over-large amount before
+// it is sent; the API enforces the same limit, so omitting it only loses the early feedback.
+const props = defineProps<{ invoiceId: string; status: 'issued' | 'partially_paid' | 'paid' | 'void'; remaining?: number }>()
 const emit = defineEmits<{ recorded: [] }>()
 
 const { apiFetch } = useApi()
@@ -23,7 +26,7 @@ const method = ref<'bank_transfer' | 'cash' | 'other'>('bank_transfer')
 const referenceNumber = ref('')
 const note = ref('')
 const submitting = ref(false)
-const amountError = ref(false)
+const amountError = ref<string | null>(null)
 
 const METHOD_OPTIONS = [
   { value: 'bank_transfer', label: 'حواله بانکی' },
@@ -37,12 +40,16 @@ function openForm() {
   method.value = 'bank_transfer'
   referenceNumber.value = ''
   note.value = ''
-  amountError.value = false
+  amountError.value = null
 }
 
 async function submit() {
   if (!amount.value || amount.value <= 0) {
-    amountError.value = true
+    amountError.value = 'مبلغ باید بزرگ‌تر از صفر باشد'
+    return
+  }
+  if (props.remaining !== undefined && amount.value > props.remaining) {
+    amountError.value = `مبلغ از مانده صورتحساب بیشتر است (حداکثر ${formatToman(props.remaining)} تومان)`
     return
   }
   submitting.value = true
@@ -78,14 +85,17 @@ async function submit() {
     </AppButton>
 
     <div v-else class="space-y-3">
+      <p v-if="remaining !== undefined" data-testid="payment-remaining" class="text-xs text-(--color-text-muted)">
+        مانده قابل ثبت: <span class="tnum font-semibold text-(--color-text)">{{ formatToman(remaining) }}</span> تومان
+      </p>
       <div class="flex flex-wrap items-end gap-2.5">
         <AppMoneyInput
           :model-value="amount === null ? '' : String(amount)"
           data-testid="payment-amount-input"
           label="مبلغ (تومان)"
           class="w-36"
-          :error="amountError ? 'مبلغ باید بزرگ‌تر از صفر باشد' : undefined"
-          @update:model-value="(v) => { amount = v === '' ? null : Number(v); amountError = false }"
+          :error="amountError ?? undefined"
+          @update:model-value="(v) => { amount = v === '' ? null : Number(v); amountError = null }"
         />
         <AppSelect v-model="method" label="روش پرداخت" :options="METHOD_OPTIONS" width="10rem" />
         <AppInput v-model="referenceNumber" data-testid="payment-reference-input" label="شماره پیگیری (اختیاری)" class="w-40" />

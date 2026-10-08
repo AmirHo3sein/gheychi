@@ -58,7 +58,7 @@ describe('PlanView', () => {
 
     const wrapper = await mountPlan()
 
-    expect(wrapper.text()).toContain('smsMonthlyQuota')
+    expect(wrapper.text()).toContain('سقف پیامک ماهانه')
     expect(wrapper.text()).toContain('100')
     expect(wrapper.text()).toContain('crmCustomerCap')
   })

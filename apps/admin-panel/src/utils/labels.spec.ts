@@ -404,6 +404,8 @@ describe('jalaliMonthLabel', () => {
 
 describe('analyticsEventLabel', () => {
   it('maps every event_name the backend currently tracks to a Farsi label', () => {
+    expect(analyticsEventLabel('salon_profile_viewed')).toBe('مشاهده صفحه سالن')
+    expect(analyticsEventLabel('beauty_guide_analysis_failed')).toBe('تحلیل تصویر ناموفق')
     expect(analyticsEventLabel('booking_started')).toBe('شروع رزرو')
     expect(analyticsEventLabel('booking_confirmed')).toBe('تایید نوبت')
     expect(analyticsEventLabel('booking_cancelled')).toBe('لغو نوبت')
