@@ -2,6 +2,7 @@
 import type { SessionUser } from '~/stores/session'
 import { toEnglishDigits } from '../utils/digits'
 import { GENDER_OPTIONS } from '../utils/gender-map'
+import { sanitizeRedirect } from '../utils/safe-redirect'
 
 definePageMeta({ layout: 'bare' })
 
@@ -54,6 +55,13 @@ const refParam = route.query.ref
 if (typeof refParam === 'string' && refParam.trim()) {
   referralCode.value = refParam.trim()
   showReferralCode.value = true
+}
+
+// Where auth.global.ts / useApi's 401 handler were sending the visitor before they were
+// bounced here (`?redirect=<fullPath>`). The value is attacker-controllable, so it only ever
+// passes through sanitizeRedirect (same-origin relative paths only; '/' otherwise).
+function postLoginDestination(): string {
+  return sanitizeRedirect(route.query.redirect)
 }
 
 const STEP_ORDER = ['phone', 'code', 'profile'] as const
@@ -169,7 +177,7 @@ async function verifyOtp() {
   if (!data.user.name || !data.user.gender) {
     step.value = 'profile'
   } else {
-    await navigateTo('/')
+    await navigateTo(postLoginDestination())
   }
 }
 
@@ -181,9 +189,9 @@ async function completeProfile() {
     { method: 'PATCH', body: { name: name.value, gender: gender.value } },
   )
   submitting.value = false
-  if (error || !data) { formError.value = 'ثبت اطلاعات با خطا مواجه شد'; return }
+  if (error || !data) { formError.value = 'ثبت اطلاعات انجام نشد؛ دوباره تلاش کنید'; return }
   session.setUser(data)
-  await navigateTo('/')
+  await navigateTo(postLoginDestination())
 }
 
 function goBackToPhone() {
@@ -254,7 +262,7 @@ const STEP_HINT: Record<typeof step.value, string> = {
                 v-if="step === 'code'"
                 type="button"
                 aria-label="بازگشت"
-                class="-ms-1.5 flex h-8 w-8 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-surface-subtle)"
+                class="-ms-2.5 flex h-11 w-11 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-surface-subtle)"
                 @click="goBackToPhone"
               >
                 <BaseIcon name="chevron-forward" :size="20" />

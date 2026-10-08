@@ -82,6 +82,15 @@ async function main() {
      VALUES ($1, $2, 'کوتاهی مو', 300000, 30, true)`,
     [salonId, categoryId],
   )
+  // Beauty Guide (04-beauty-guide.spec.ts): the feature ships seeded OFF, and the mock
+  // provider's default "balayage" analysis maps to the رنگ مو category -- give the seeded
+  // salon one real, fixed-price service there so the guide has something to match and book.
+  await seedClient.query(`UPDATE platform_config SET value = 'true' WHERE key = 'feature_beauty_guide_enabled'`)
+  await seedClient.query(
+    `INSERT INTO salon_services (salon_id, category_id, name, price, duration_min, is_active)
+     VALUES ($1, (SELECT id FROM service_categories WHERE name = 'رنگ مو'), 'بالیاژ', 2500000, 120, true)`,
+    [salonId],
+  )
   for (let weekday = 0; weekday <= 6; weekday++) {
     await seedClient.query(
       `INSERT INTO working_hours (salon_id, weekday, open_time, close_time) VALUES ($1, $2, '09:00', '21:00')`,

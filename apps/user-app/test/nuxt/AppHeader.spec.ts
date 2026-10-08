@@ -22,20 +22,36 @@ describe('AppHeader', () => {
     expect(loggedIn.find('[data-testid="header-logout"]').exists()).toBe(true)
   })
 
-  // Layout regression guard, not styling taste. This header renders on every page, so it
-  // is the single widest-blast-radius overflow risk in the app. At 320px (PRODUCT.md's
-  // hard floor: budget Android) a logged-in header needs roughly 330px -- logo, two text
-  // links, the theme toggle, and the logout icon, none of which can shrink or break --
-  // against a 288px content box. Without wrapping it overflows, and in RTL that escapes to
-  // the LEFT, off the readable edge. happy-dom has no layout engine, so the property that
-  // makes the overflow impossible is pinned by class instead.
-  it('wraps rather than overflowing when the logged-in nav is wider than the viewport', async () => {
+  // The header used to wrap onto a second row below ~370px (logo on one line, two text links,
+  // the theme toggle and logout under it) and spent ~110px of a phone screen before any
+  // content. It is now ONE row at every width: the primary destinations moved to the phone tab
+  // bar (BottomNav) and only appear in the header from `md` up. happy-dom has no layout
+  // engine, so the properties that make a second row impossible are pinned by class.
+  it('is a single row: nothing wraps, and the text nav only shows from md up', async () => {
     useSessionStore().setUser(USER)
     const wrapper = await mountSuspended(AppHeader)
 
-    expect(wrapper.get('header').classes()).toContain('flex-wrap')
-    // The nav itself must wrap too: the toggle alone is unbreakable, so if the nav were a
-    // single non-wrapping row it could still overflow once it has a line to itself.
-    expect(wrapper.get('nav').classes()).toContain('flex-wrap')
+    expect(wrapper.html()).not.toContain('flex-wrap')
+    const nav = wrapper.get('nav[aria-label="ناوبری اصلی"]')
+    expect(nav.classes()).toContain('hidden')
+    expect(nav.classes()).toContain('md:flex')
+  })
+
+  // A logged-out visitor had no way to sign in from the chrome at all (login was reachable only
+  // from a card on the home page).
+  it('offers a sign-in button to a logged-out visitor, and only to them', async () => {
+    const anonymous = await mountSuspended(AppHeader)
+    const login = anonymous.get('[data-testid="header-login"]')
+    expect(login.attributes('href')).toBe('/login')
+
+    useSessionStore().setUser(USER)
+    const loggedIn = await mountSuspended(AppHeader)
+    expect(loggedIn.find('[data-testid="header-login"]').exists()).toBe(false)
+  })
+
+  it('labels the icon-only logout button for assistive tech (title alone is unreliable)', async () => {
+    useSessionStore().setUser(USER)
+    const wrapper = await mountSuspended(AppHeader)
+    expect(wrapper.get('[data-testid="header-logout"]').attributes('aria-label')).toBe('خروج از حساب')
   })
 })

@@ -165,4 +165,42 @@ describe('blog index page', () => {
 
     expect(wrapper.find('[data-testid="next-page"]').attributes('disabled')).toBeUndefined()
   })
+
+  // A failed list fetch used to be indistinguishable from "no posts".
+  it('shows a retry card instead of the empty state when the posts fetch fails, and retry recovers', async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/blog/categories') return CATEGORIES
+      throw { response: { status: 500 } }
+    })
+    wrapper = await mountSuspended(BlogIndexPage)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="empty-state"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="blog-load-error"]').attributes('role')).toBe('alert')
+    expect(wrapper.find('[data-testid="next-page"]').exists()).toBe(false)
+
+    stubList([POST], 1)
+    await wrapper.get('[data-testid="blog-retry-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="blog-load-error"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('ده نکته برای موی سالم')
+  })
+
+  it('keeps the empty state for a list that genuinely has no posts', async () => {
+    stubList([], 0)
+    wrapper = await mountSuspended(BlogIndexPage)
+    expect(wrapper.find('[data-testid="blog-load-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="empty-state"]').exists()).toBe(true)
+  })
+
+  it('gives category chips and pagination buttons a >=44px touch target', async () => {
+    stubList([POST], 25)
+    wrapper = await mountSuspended(BlogIndexPage)
+    const chips = wrapper.findAll('[role="group"] button')
+    expect(chips.length).toBeGreaterThan(0)
+    for (const chip of chips) expect(chip.classes()).toContain('min-h-11')
+    expect(wrapper.get('[data-testid="next-page"]').classes()).toContain('min-h-11')
+    expect(wrapper.get('[data-testid="prev-page"]').classes()).toContain('min-h-11')
+  })
 })

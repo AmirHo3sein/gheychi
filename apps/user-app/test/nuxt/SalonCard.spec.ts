@@ -83,4 +83,25 @@ describe('SalonCard', () => {
     const wrapper = await mountSuspended(SalonCard, { props: { salon: baseSalon } })
     expect(wrapper.text()).not.toContain('+')
   })
+
+  // "۰٫۰ (۰)" reads as a terrible score; a salon with no reviews is simply new.
+  it('labels a salon with no reviews «جدید» rather than showing a zero rating', async () => {
+    const wrapper = await mountSuspended(SalonCard, { props: { salon: { ...baseSalon, ratingAvg: 0, ratingCount: 0 } } })
+    expect(wrapper.find('[data-testid="rating-new"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('۰٫۰')
+  })
+
+  it('shows the rating and review count once there are reviews', async () => {
+    const wrapper = await mountSuspended(SalonCard, { props: { salon: baseSalon } })
+    expect(wrapper.get('[data-testid="rating-label"]').text()).toContain('۴٫۵')
+    expect(wrapper.find('[data-testid="rating-new"]').exists()).toBe(false)
+  })
+
+  it('falls back to the placeholder if the cover photo fails to load', async () => {
+    const wrapper = await mountSuspended(SalonCard, {
+      props: { salon: { ...baseSalon, coverPhoto: 'http://cdn.example/missing.jpg' } },
+    })
+    await wrapper.get('img').trigger('error')
+    expect(wrapper.find('[data-testid="salon-image-placeholder"]').exists()).toBe(true)
+  })
 })

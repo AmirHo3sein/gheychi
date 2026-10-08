@@ -63,6 +63,7 @@ useHead({
 
 const session = useSessionStore()
 const { apiFetch } = useApi()
+const { flags: featureFlags } = useFeatureFlags()
 
 const categories = ref<{ id: number; name: string; icon: string }[]>([])
 const salons = ref<SearchResult[]>([])
@@ -80,23 +81,23 @@ const locating = ref(false)
 const view = ref<'list' | 'map'>('list')
 const salonCoords = ref<Record<string, { lat: number; lng: number }>>({})
 
-const searchGender = computed(() => toSearchGender(session.user?.gender))
+// A logged-in customer's results follow their own gender (mapped to /search's vocabulary).
+// An anonymous visitor has none, and /search REQUIRES one -- the old answer was a login wall
+// with no results at all, which hid the whole catalogue from first-time visitors and from
+// crawlers. They now choose which kind of salon to browse (same default and choice /salons
+// already offers without an account); login is only asked for when they actually book.
+const anonGender = ref<'women' | 'men'>('women')
+const searchGender = computed(() => (session.isLoggedIn ? toSearchGender(session.user?.gender) : anonGender.value))
 
-// /search's `gender` param is REQUIRED, so with no gender on the account there is no valid
-// request to make: ofetch drops the undefined param and the API 400s, which used to land on
-// the generic "something went wrong" card whose retry button could only ever fail again.
-// auth.global.ts sends such a user to /profile before this page renders; this is the local
-// guard for the same precondition (e.g. the value is cleared while this page is open).
-// Split from the anonymous case: `/` is a public route, and a visitor with no account at
-// all has no profile to "complete" -- /profile would only bounce them to /login anyway, so
-// say login is the missing step instead.
-const needsLogin = computed(() => !session.isLoggedIn)
+// A logged-in account with no gender has no searchable request at all (auth.global.ts sends
+// such a user to /profile before this page renders; this is the local guard for the same
+// precondition, e.g. the value is cleared while this page is open).
 const needsProfile = computed(() => session.isLoggedIn && !searchGender.value)
 
 let requestSeq = 0
 
 async function loadSalons() {
-  if (needsLogin.value || needsProfile.value) {
+  if (needsProfile.value) {
     salons.value = []
     searchError.value = false
     loading.value = false
@@ -169,7 +170,7 @@ onMounted(async () => {
   await loadSalons()
 })
 
-watch([selectedCategoryId, sort, coords], loadSalons, { deep: true })
+watch([selectedCategoryId, sort, coords, anonGender], loadSalons, { deep: true })
 
 async function loadCoordsForMap() {
   const missing = salons.value.filter((s) => !salonCoords.value[s.id])
@@ -229,31 +230,39 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
 </script>
 
 <template>
-  <div class="mx-auto max-w-2xl space-y-4 p-4 lg:max-w-5xl lg:p-6">
-    <div class="flex items-center justify-between gap-3">
-      <h1 class="text-xl font-bold text-(--color-text)">سالن‌های نزدیک شما</h1>
-      <BaseButton variant="ghost" size="md" :loading="locating" @click="useMyLocation">
+  <div class="mx-auto max-w-2xl space-y-5 p-4 lg:max-w-5xl lg:p-6">
+    <h1 class="text-xl font-bold text-(--color-text) lg:text-2xl">سالن‌های نزدیک شما</h1>
+
+    <!-- Beauty Guide entry point. Only offered when the feature is on (the flag fails closed),
+         and only for logged-in customers -- the guide page itself is private. A quiet tinted
+         strip rather than a bordered card: it is a secondary path, and the page already has
+         plenty of white boxes (DESIGN.md: no cards-on-cards). -->
+    <NuxtLink
+      v-if="featureFlags.beautyGuideEnabled && session.isLoggedIn"
+      to="/beauty-guide"
+      data-testid="beauty-guide-cta"
+      class="flex items-center gap-3 rounded-2xl bg-(--color-accent-soft) px-4 py-3.5 transition-colors hover:bg-(--color-surface-subtle) active:scale-[0.99] motion-reduce:active:scale-100"
+    >
+      <BaseIcon name="sparkles" :size="22" class="shrink-0 text-(--color-ai)" />
+      <span class="min-w-0 flex-1">
+        <span class="block font-bold text-(--color-text)">این استایل را پیدا کن</span>
+        <span class="block text-xs leading-5 text-(--color-text-muted)">عکس استایل دلخواهت را بفرست؛ می‌گوییم اسمش چیست و کدام سالن‌ها انجامش می‌دهند.</span>
+      </span>
+      <BaseIcon name="chevron-back" :size="18" class="shrink-0 text-(--color-text-muted)" />
+    </NuxtLink>
+
+    <!-- City picker and "near me" share one row: both answer "where?", and on a phone they used
+         to cost two full-width rows. The label moved onto AppSelect itself (kept for screen
+         readers, not drawn): as a bare sibling <label> it named nothing -- a native `for`
+         can't reach vue-multiselect's combobox div -- so the field read as unlabelled.
+         AppSelect associates it via aria-labelledby. -->
+    <div class="flex items-center gap-2">
+      <AppSelect v-model="selectedCity" class="min-w-0 flex-1" label="شهر" hide-label :options="cityOptions" placeholder="شهر را انتخاب کنید" />
+      <BaseButton variant="secondary" size="md" :loading="locating" class="shrink-0" @click="useMyLocation">
         <template #icon><BaseIcon name="map-pin" :size="16" /></template>
         نزدیک من
       </BaseButton>
     </div>
-
-    <!-- Rendered unconditionally, ABOVE every session-dependent branch below. That placement
-         is the point: the results list is client-loaded and session-gated, so this link is
-         the only salon-discovery path in the server-rendered html an anonymous crawler
-         receives for '/'. Without it the home page emits zero internal links toward any
-         salon, leaving the sitemap as the sole entry channel into /salons/:slug. -->
-    <p class="text-sm">
-      <NuxtLink to="/salons" class="inline-flex items-center gap-1 font-medium text-(--color-accent-text) hover:underline">
-        مرور همه سالن‌های زیبایی بر اساس شهر
-        <BaseIcon name="chevron-back" :size="14" />
-      </NuxtLink>
-    </p>
-
-    <!-- The label moved onto AppSelect itself: as a bare sibling <label> it named nothing
-         (a native `for` can't reach vue-multiselect's combobox div), so the field read as
-         unlabelled to a screen reader. AppSelect associates it via aria-labelledby. -->
-    <AppSelect v-model="selectedCity" label="شهر" :options="cityOptions" placeholder="شهر را انتخاب کنید" />
 
     <!-- snap-x + hidden native scrollbar: the row used to show a bare OS scrollbar with no
          scroll affordance beyond it. Snapping gives each pill a resting position instead of
@@ -274,7 +283,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
         <button
           type="button"
           :aria-pressed="selectedCategoryId === null"
-          class="min-h-9 shrink-0 snap-start whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors"
+          class="min-h-10 shrink-0 snap-start whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors"
           :class="selectedCategoryId === null
             ? 'bg-(--color-accent-strong) text-(--color-fill-text)'
             : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) hover:text-(--color-text)'"
@@ -287,7 +296,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
           :key="cat.id"
           type="button"
           :aria-pressed="selectedCategoryId === cat.id"
-          class="flex min-h-9 shrink-0 snap-start items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors"
+          class="flex min-h-10 shrink-0 snap-start items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors"
           :class="selectedCategoryId === cat.id
             ? 'bg-(--color-accent-strong) text-(--color-fill-text)'
             : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) hover:text-(--color-text)'"
@@ -303,7 +312,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
         type="button"
         aria-label="بازگشت به ابتدای دسته‌بندی‌ها"
         data-testid="categories-scroll-back"
-        class="absolute start-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) shadow-(--shadow-sm) transition-colors hover:text-(--color-text)"
+        class="absolute start-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) shadow-(--shadow-sm) transition-colors hover:text-(--color-text)"
         @click="scrollCategories('back')"
       >
         <BaseIcon name="chevron-forward" :size="16" />
@@ -313,7 +322,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
         type="button"
         aria-label="دیدن دسته‌بندی‌های بیشتر"
         data-testid="categories-scroll-more"
-        class="absolute end-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) shadow-(--shadow-sm) transition-colors hover:text-(--color-text)"
+        class="absolute end-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) shadow-(--shadow-sm) transition-colors hover:text-(--color-text)"
         @click="scrollCategories('more')"
       >
         <BaseIcon name="chevron-back" :size="16" />
@@ -324,14 +333,42 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
          above is this screen's one accent-colored element (The One Seal Rule) -- the
          view/sort toggles are secondary filters, not the primary action, so their active
          state is a raised surface-card segment (shadow.sm + bold text) instead of a second
-         accent fill. flex-wrap covers 320px, where both segmented groups together no longer
-         fit one row. -->
+         accent fill. flex-wrap covers 320px, where the groups together no longer fit one
+         row. An anonymous visitor additionally chooses women's/men's salons (a logged-in
+         customer's results follow their profile, so the choice is not offered to them). -->
     <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+      <div
+        v-if="!session.isLoggedIn"
+        class="inline-flex rounded-full bg-(--color-surface-subtle) p-1"
+        role="group"
+        aria-label="نوع سالن"
+        data-testid="anon-gender"
+      >
+        <button
+          type="button"
+          :aria-pressed="anonGender === 'women'"
+          class="min-h-9 rounded-full px-4 py-1.5 text-sm font-medium transition-colors"
+          :class="anonGender === 'women' ? 'bg-(--color-surface-card) font-semibold text-(--color-text) shadow-(--shadow-sm)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
+          @click="anonGender = 'women'"
+        >
+          بانوان
+        </button>
+        <button
+          type="button"
+          :aria-pressed="anonGender === 'men'"
+          class="min-h-9 rounded-full px-4 py-1.5 text-sm font-medium transition-colors"
+          :class="anonGender === 'men' ? 'bg-(--color-surface-card) font-semibold text-(--color-text) shadow-(--shadow-sm)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
+          @click="anonGender = 'men'"
+        >
+          آقایان
+        </button>
+      </div>
+
       <div class="inline-flex rounded-full bg-(--color-surface-subtle) p-1" role="group" aria-label="نوع نمایش">
         <button
           type="button"
           :aria-pressed="view === 'list'"
-          class="min-h-8 rounded-full px-4 py-1.5 text-sm font-medium transition-colors"
+          class="min-h-9 rounded-full px-4 py-1.5 text-sm font-medium transition-colors"
           :class="view === 'list' ? 'bg-(--color-surface-card) font-semibold text-(--color-text) shadow-(--shadow-sm)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
           @click="view = 'list'"
         >
@@ -340,7 +377,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
         <button
           type="button"
           :aria-pressed="view === 'map'"
-          class="min-h-8 rounded-full px-4 py-1.5 text-sm font-medium transition-colors"
+          class="min-h-9 rounded-full px-4 py-1.5 text-sm font-medium transition-colors"
           :class="view === 'map' ? 'bg-(--color-surface-card) font-semibold text-(--color-text) shadow-(--shadow-sm)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
           @click="view = 'map'"
         >
@@ -352,7 +389,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
         <button
           type="button"
           :aria-pressed="sort === 'distance'"
-          class="min-h-8 rounded-full px-3.5 py-1.5 transition-colors"
+          class="min-h-9 rounded-full px-3.5 py-1.5 transition-colors"
           :class="sort === 'distance' ? 'bg-(--color-surface-card) font-semibold text-(--color-text) shadow-(--shadow-sm)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
           @click="sort = 'distance'"
         >
@@ -361,7 +398,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
         <button
           type="button"
           :aria-pressed="sort === 'rating'"
-          class="min-h-8 rounded-full px-3.5 py-1.5 transition-colors"
+          class="min-h-9 rounded-full px-3.5 py-1.5 transition-colors"
           :class="sort === 'rating' ? 'bg-(--color-surface-card) font-semibold text-(--color-text) shadow-(--shadow-sm)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
           @click="sort = 'rating'"
         >
@@ -370,34 +407,10 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
       </div>
     </div>
 
-    <!-- An anonymous visitor: /search needs a gender, which only an account carries, so
-         there is nothing to show yet and login is the one step that unblocks it. -->
-    <div
-      v-if="needsLogin"
-      data-testid="needs-login"
-      role="status"
-      class="flex flex-col items-center gap-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-6 text-center"
-    >
-      <BaseIcon name="user" :size="20" class="text-(--color-accent-text)" />
-      <p class="text-sm text-(--color-text)">برای دیدن سالن‌های مناسب شما، ابتدا وارد حساب خود شوید.</p>
-      <NuxtLink
-        to="/login"
-        class="inline-flex items-center justify-center rounded-xl bg-(--color-accent-strong) px-4 py-2.5 text-sm font-semibold text-(--color-fill-text) transition-colors hover:bg-(--color-accent-deep)"
-      >
-        ورود یا ثبت‌نام
-      </NuxtLink>
-      <!-- Login is the primary action but no longer the ONLY one: this card is exactly what an
-           anonymous visitor (and every crawler) sees in place of results, and offering nothing
-           but a login wall here is what made the whole salon catalogue undiscoverable without
-           an account. The browse page needs no session at all. -->
-      <NuxtLink to="/salons" class="text-sm font-medium text-(--color-accent-text) hover:underline">
-        یا بدون ورود، سالن‌ها را ببینید
-      </NuxtLink>
-    </div>
     <!-- No gender on the account means no searchable request exists at all, so say what's
          missing and where to fix it instead of showing an error the user can't act on. -->
     <div
-      v-else-if="needsProfile"
+      v-if="needsProfile"
       data-testid="needs-profile"
       role="status"
       class="flex flex-col items-center gap-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-6 text-center"
@@ -406,7 +419,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
       <p class="text-sm text-(--color-text)">برای نمایش سالن‌های مناسب شما، ابتدا پروفایل خود را تکمیل کنید.</p>
       <NuxtLink
         to="/profile"
-        class="inline-flex items-center justify-center rounded-xl bg-(--color-accent-strong) px-4 py-2.5 text-sm font-semibold text-(--color-fill-text) transition-colors hover:bg-(--color-accent-deep)"
+        class="inline-flex min-h-11 items-center justify-center rounded-xl bg-(--color-accent-strong) px-4 text-sm font-semibold text-(--color-fill-text) transition-colors hover:bg-(--color-accent-deep)"
       >
         تکمیل پروفایل
       </NuxtLink>
@@ -416,8 +429,21 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
            nested inside the list branch only, leaving map view with no feedback at all
            while a city change re-ran the search (or failed). The map itself stays mounted
            through a reload rather than being torn down and re-created around the loading
-           line -- SalonMap's own prop watchers refresh its pins in place. -->
-      <p v-if="loading" role="status" class="py-8 text-center text-sm text-(--color-text-muted)">در حال بارگذاری...</p>
+           state -- SalonMap's own prop watchers refresh its pins in place. The list view
+           shows card-shaped skeletons so the grid doesn't jump when results land. -->
+      <div v-if="loading" role="status" data-testid="salons-loading">
+        <span class="sr-only">در حال بارگذاری...</span>
+        <div v-if="view === 'list'" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
+          <div v-for="n in 3" :key="n" class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-2.5">
+            <div class="skeleton aspect-[4/3] rounded-xl" />
+            <div class="space-y-2 px-1.5 pt-3 pb-2">
+              <div class="skeleton h-4 w-2/3 rounded" />
+              <div class="skeleton h-3 w-1/3 rounded" />
+              <div class="skeleton h-3 w-1/2 rounded" />
+            </div>
+          </div>
+        </div>
+      </div>
       <div v-else-if="searchError" role="alert" class="flex flex-col items-center gap-3 rounded-2xl border border-(--color-danger-soft) bg-(--color-danger-soft) p-6 text-center">
         <BaseIcon name="alert-circle" :size="20" class="text-(--color-danger)" />
         <p class="text-sm text-(--color-text)">مشکلی در بارگذاری سالن‌ها پیش آمد.</p>
@@ -425,17 +451,33 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
       </div>
       <LazySalonMap v-if="view === 'map' && !searchError" :salons="salons" :center="coords" :salon-coords="salonCoords" />
       <template v-else-if="view === 'list' && !loading && !searchError">
-        <p v-if="!salons.length" class="py-8 text-center text-sm text-(--color-text-muted)">سالنی در این منطقه پیدا نشد</p>
+        <div v-if="!salons.length" data-testid="salons-empty" class="flex flex-col items-center gap-2 py-10 text-center">
+          <BaseIcon name="search" :size="28" class="text-(--color-text-muted) opacity-60" />
+          <p class="font-medium text-(--color-text)">سالنی در این منطقه پیدا نشد</p>
+          <p class="max-w-xs text-sm text-(--color-text-muted)">شهر دیگری را امتحان کنید یا دسته‌بندی را روی «همه» بگذارید.</p>
+          <BaseButton v-if="selectedCategoryId !== null" variant="secondary" size="md" @click="selectedCategoryId = null">نمایش همه دسته‌ها</BaseButton>
+        </div>
         <template v-else>
           <h2 class="sr-only">نتایج جستجو</h2>
-          <!-- Single column stays the true default (mobile-primary per PRODUCT.md); sm/lg
-               columns are a correctness pass for wider viewports, not a layout redesign --
-               SalonCard's own horizontal thumb+text layout is unchanged. -->
+          <!-- Single column stays the true default (mobile-primary per PRODUCT.md); the card is
+               image-first, so two columns from `sm` keeps each photo a useful size. -->
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <SalonCard v-for="salon in salons" :key="salon.id" :salon="salon" />
           </div>
         </template>
       </template>
     </template>
+
+    <!-- Rendered unconditionally (not behind the results): the results list is client-loaded, so
+         this link is the only salon-discovery path in the server-rendered html a crawler
+         receives for '/'. Without it the home page emits zero internal links toward any salon,
+         leaving the sitemap as the sole entry channel into /salons/:slug. It sits below the
+         results rather than above them: it is a "see everything" door, not a first action. -->
+    <p class="pt-2 text-center text-sm">
+      <NuxtLink to="/salons" class="inline-flex min-h-11 items-center gap-1 font-medium text-(--color-accent-text) hover:underline">
+        مرور همه سالن‌های زیبایی بر اساس شهر
+        <BaseIcon name="chevron-back" :size="14" />
+      </NuxtLink>
+    </p>
   </div>
 </template>

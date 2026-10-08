@@ -1,4 +1,5 @@
 import { isPublicRoute } from '../utils/route-guard'
+import { loginLocation } from '../utils/safe-redirect'
 import type { SessionUser } from '../stores/session'
 
 // The account page doubles as the profile-completion screen -- there is no separate
@@ -36,7 +37,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
   }
 
   if (!session.isLoggedIn && !isPublicRoute(to.path)) {
-    return navigateTo('/login')
+    // Remember where they were going; login.vue sends them back after sign-in.
+    return navigateTo(loginLocation(to.fullPath))
   }
 
   // An account with no name/gender yet is not merely cosmetically incomplete: `gender` is a

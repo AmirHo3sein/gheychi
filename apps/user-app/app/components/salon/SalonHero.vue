@@ -81,21 +81,20 @@ const { titleId } = useDialog(dialogRoot as unknown as Ref<HTMLElement | null>, 
       v-if="heroPhotos.length"
       type="button"
       data-testid="salon-hero-photo"
-      class="block h-64 w-full overflow-hidden rounded-2xl sm:h-80"
+      class="block h-64 w-full overflow-hidden rounded-2xl sm:h-80 lg:h-[26rem]"
       :aria-label="`مشاهده گالری تصاویر ${salonName}`"
       @click="openLightbox(0)"
     >
-      <NuxtImg
-        provider="arvancloud"
+      <SafeImage
         :src="heroPhotos[0]!.url"
-        width="672"
-        height="320"
+        width="1024"
+        height="416"
         fetchpriority="high"
         class="h-full w-full object-cover"
         :alt="`تصویر اصلی ${salonName}`"
       />
     </button>
-    <div v-else data-testid="salon-hero-photo" class="h-64 w-full sm:h-80">
+    <div v-else data-testid="salon-hero-photo" class="h-64 w-full sm:h-80 lg:h-[26rem]">
       <SalonImagePlaceholder :icon-size="40" />
     </div>
 
@@ -134,8 +133,7 @@ const { titleId } = useDialog(dialogRoot as unknown as Ref<HTMLElement | null>, 
       <div ref="dialogRoot" role="dialog" aria-modal="true" :aria-labelledby="titleId" tabindex="-1" class="m-auto w-full max-w-lg outline-none">
         <h2 :id="titleId" class="sr-only">گالری تصاویر {{ salonName }}</h2>
         <div class="relative">
-          <NuxtImg
-            provider="arvancloud"
+          <SafeImage
             :src="heroPhotos[activeIndex!]!.url"
             width="700"
             height="700"

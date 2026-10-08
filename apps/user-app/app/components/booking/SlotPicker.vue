@@ -10,7 +10,10 @@ import { pickDefaultDate, formatSlotTime, formatDateLabel, type DayAvailability 
 // what actually enforces the choice, since a slot free for "any staff" can be exactly
 // the slot a specific chosen worker is busy in.
 const props = defineProps<{ salonId: string; serviceId: string; selectedSlot?: string | null; workerId?: string | null }>()
-const emit = defineEmits<{ select: [iso: string] }>()
+// `clear` tells the parent to drop its selected slot: that instant belonged to the day /
+// staff member / availability snapshot the customer has just moved away from, so leaving it
+// selected would let a visible "confirm" card submit a time nothing on screen shows any more.
+const emit = defineEmits<{ select: [iso: string]; clear: [] }>()
 
 const { apiFetch } = useApi()
 const days = ref<DayAvailability[]>([])
@@ -23,8 +26,14 @@ const hasError = ref(false)
 // offering the customer exactly the times their chosen worker is busy in.
 let requestSeq = 0
 
+let hasLoadedOnce = false
+
 async function fetchSlots() {
   const seq = ++requestSeq
+  // Any refetch (worker change, retry) invalidates a previously picked instant; the very
+  // first load has nothing to invalidate.
+  if (hasLoadedOnce) emit('clear')
+  hasLoadedOnce = true
   loading.value = true
   const { data, error } = await apiFetch<DayAvailability[]>(`/salons/${props.salonId}/availability`, {
     query: { serviceId: props.serviceId, workerId: props.workerId || undefined },
@@ -79,7 +88,9 @@ const slotBuckets = computed(() => {
 })
 
 function selectDate(date: string) {
+  if (date === selectedDate.value) return
   selectedDate.value = date
+  emit('clear')
 }
 
 // Selected-state fill shared by date pills and time-slot buttons: a bold, neutral "chosen"
@@ -90,10 +101,20 @@ const UNCHOSEN_FILL = 'border-(--color-border) bg-(--color-surface-card) text-(-
 </script>
 
 <template>
-  <div v-if="loading" class="py-6 text-center text-sm text-(--color-text-muted)">در حال بارگذاری...</div>
-  <div v-else-if="hasError" class="py-6 text-center text-sm text-(--color-text-muted)">مشکلی پیش آمد، دوباره تلاش کنید</div>
+  <div v-if="loading" role="status" class="py-6 text-center text-sm text-(--color-text-muted)">در حال بارگذاری...</div>
+  <div v-else-if="hasError" role="alert" class="space-y-3 py-6 text-center text-sm text-(--color-text-muted)">
+    <p>بارگذاری نوبت‌ها ممکن نشد؛ دوباره تلاش کنید.</p>
+    <button
+      type="button"
+      data-testid="slots-retry"
+      class="inline-flex min-h-11 items-center justify-center rounded-xl border border-(--color-border) bg-(--color-surface-subtle) px-4 font-semibold text-(--color-text) transition-colors hover:bg-(--color-border)"
+      @click="fetchSlots"
+    >
+      تلاش دوباره
+    </button>
+  </div>
   <div v-else-if="!hasAnySlots" class="rounded-2xl border border-dashed border-(--color-border) py-8 text-center text-sm text-(--color-text-muted)">
-    نوبت خالی — این سالن در ۱۴ روز آینده نوبت آزاد ندارد
+    در ۱۴ روز آینده نوبت آزادی وجود ندارد
   </div>
   <div v-else class="space-y-5">
     <section>

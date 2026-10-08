@@ -104,6 +104,25 @@ components:
 
 # Design System: Gheychi
 
+> **Status note (2026-10-08) — read before trusting the colour section below.** The palette and
+> several "due for migration" lists in this document describe the system *as of July*. Since then:
+> - **Colour:** the app ships a peach accent (`#FFB6A3`, text-on-light `#8F4335`) on warm white
+>   `#FFF8F5`, with a warm charcoal dark mode — *not* the teal/violet values in the front matter.
+>   `app/assets/css/main.css` is the source of truth for tokens. The principles (one accent used
+>   sparingly, restrained shadow, logical properties, one typeface) are unchanged.
+> - **Migrated** to this system: `AppHeader` (one row at every width, sticky, no blur), a new phone
+>   `BottomNav` tab bar (hidden on checkout and on a salon's own page, where a sticky CTA owns the
+>   bottom edge), `SalonCard` (image-first), the home page, the salon page (two columns from `lg`,
+>   services as one grouped list), the profile page (grouped shortcut list), and `ToastStack`
+>   (tones + dismiss).
+> - **New primitives:** `SafeImage` (any photo degrades to the brand placeholder), `RatingLabel`
+>   («جدید» instead of a zero score), a `.skeleton` loading block (no route transition: an `out-in` fade blanked pages after client navigation),
+>   and a global `prefers-reduced-motion` override.
+> - **Type ramp:** use the documented steps only (12 / 14 / 16 / 20 / 30 px, i.e. `text-xs` /
+>   `text-sm` / `text-base` / `text-xl` / `text-3xl`); avoid `text-[11px]`-style literals.
+> - Do not nest a bordered card inside a bordered card; prefer one grouped surface with dividers
+>   for lists (services, shortcuts).
+
 ## Overview
 
 **Creative North Star: "The Verified Ledger"**

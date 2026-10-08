@@ -19,7 +19,8 @@ mockNuxtImport('navigateTo', () => navigateToMock)
 // `(to, from) => ...` handler -- only `to.path` is read, so a minimal object stands in
 // for the real `RouteLocationNormalized`.
 function toRoute(path: string) {
-  return { path } as Parameters<typeof authMiddleware>[0]
+  // fullPath carries the query/hash the middleware must remember across the login bounce.
+  return { path: path.split(/[?#]/, 1)[0], fullPath: path } as Parameters<typeof authMiddleware>[0]
 }
 
 describe('auth.global middleware', () => {
@@ -63,7 +64,17 @@ describe('auth.global middleware', () => {
     await authMiddleware(toRoute('/profile'), toRoute('/'))
 
     expect(navigateToMock).toHaveBeenCalledTimes(1)
-    expect(navigateToMock).toHaveBeenCalledWith('/login')
+    expect(navigateToMock).toHaveBeenCalledWith('/login?redirect=%2Fprofile')
+  })
+
+  it('carries the full path (query string included) in ?redirect= so the booking flow can resume', async () => {
+    fetchMock.mockRejectedValue({ response: { status: 401 } })
+    await authMiddleware(toRoute('/booking/my-salon/svc-1?beautyGuideId=abc&source=qr'), toRoute('/'))
+
+    expect(navigateToMock).toHaveBeenCalledTimes(1)
+    expect(navigateToMock).toHaveBeenCalledWith(
+      '/login?redirect=' + encodeURIComponent('/booking/my-salon/svc-1?beautyGuideId=abc&source=qr'),
+    )
   })
 
   it('does not re-probe the session on a private route once it is already checked, but still fetches feature flags once', async () => {

@@ -87,6 +87,7 @@ useHead({
 const bodyHtml = useState(`blog-post-body-${slug}`, () => renderMarkdown(post.value!.bodyMarkdown))
 
 const publishedDate = new Date(post.value.publishedAt).toLocaleDateString('fa-IR', {
+  timeZone: 'Asia/Tehran',
   year: 'numeric',
   month: 'long',
   day: 'numeric',

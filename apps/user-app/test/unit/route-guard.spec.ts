@@ -23,6 +23,12 @@ describe('isPublicRoute', () => {
     expect(isPublicRoute('/admin/featured')).toBe(false)
   })
 
+  it('keeps Beauty Guide pages private (they show the customer\'s own photos)', () => {
+    expect(isPublicRoute('/beauty-guide')).toBe(false)
+    expect(isPublicRoute('/beauty-guide/0b6c1e57-2f0a-4c1e-9b1e-1d2c3e4f5a6b')).toBe(false)
+    expect(isPublicRoute('/account/beauty-guides')).toBe(false)
+  })
+
   it('does not treat /salons-something-else as public (no false-positive prefix match)', () => {
     expect(isPublicRoute('/salons-archive')).toBe(false)
   })

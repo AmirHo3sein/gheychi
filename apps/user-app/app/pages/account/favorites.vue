@@ -14,13 +14,13 @@ interface FavoriteSalonItem {
 
 const { apiFetch } = useApi()
 
-// silent: true + no separate error/retry UI, matching account/wallet.vue and
-// account/referral.vue's own useAsyncData calls -- a failed fetch here just renders as
-// "no salons saved yet", the same as a genuinely empty list. Losing that distinction is an
-// accepted tradeoff for consistency with this app's other account/* pages, none of which
-// have a retry affordance either.
-const { data: favorites, pending } = await useAsyncData('favorites', async () => {
-  const { data } = await apiFetch<FavoriteSalonItem[]>('/favorites', { silent: true })
+// A failed fetch must never read as «هنوز سالنی ذخیره نکرده‌اید»: that empty state is a claim
+// about the customer's data, and a network blip can't be allowed to make it. So a failure
+// throws out of the handler (useAsyncData then exposes it as `error`) and the template shows a
+// retry card instead.
+const { data: favorites, pending, error, refresh } = await useAsyncData('favorites', async () => {
+  const { data, error: apiError } = await apiFetch<FavoriteSalonItem[]>('/favorites', { silent: true })
+  if (apiError) throw new Error(apiError.message)
   return data ?? []
 })
 
@@ -33,15 +33,23 @@ useSeoMeta({ title: 'سالن‌های ذخیره‌شده — قیچی' })
       <NuxtLink
         to="/profile"
         aria-label="بازگشت"
-        class="flex h-8 w-8 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-surface-subtle)"
+        class="-ms-2 flex h-11 w-11 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-surface-subtle)"
       >
         <BaseIcon name="chevron-forward" :size="20" />
       </NuxtLink>
       <h1 class="text-lg font-bold">سالن‌های ذخیره‌شده</h1>
     </div>
 
+    <p v-if="pending && !favorites && !error" role="status" class="flex items-center justify-center gap-2 py-8 text-sm text-(--color-text-muted)">
+      <BaseIcon name="spinner" :size="18" class="animate-spin" />
+      در حال بارگذاری...
+    </p>
+    <BaseCard v-else-if="error" data-testid="favorites-load-error" role="alert" class="space-y-3 text-center">
+      <p class="text-sm text-(--color-text-muted)">سالن‌های ذخیره‌شده بارگذاری نشد.</p>
+      <BaseButton variant="secondary" data-testid="favorites-retry-button" :loading="pending" @click="refresh()">تلاش دوباره</BaseButton>
+    </BaseCard>
     <p
-      v-if="!pending && !favorites?.length"
+      v-else-if="!favorites?.length"
       data-testid="empty-state"
       class="py-6 text-center text-sm text-(--color-text-muted)"
     >

@@ -5,6 +5,7 @@ export interface FeatureFlags {
   referralsEnabled: boolean
   couponsEnabled: boolean
   onlinePaymentEnabled: boolean
+  beautyGuideEnabled: boolean
 }
 
 // Fails open (all true) rather than hiding every gated feature platform-wide on a
@@ -22,6 +23,9 @@ const DEFAULT_FLAGS: FeatureFlags = {
   referralsEnabled: true,
   couponsEnabled: true,
   onlinePaymentEnabled: true,
+  // The one flag that fails CLOSED: Beauty Guide calls a paid AI service and is seeded off,
+  // so a flag fetch failure must not advertise an entry point the API would 404.
+  beautyGuideEnabled: false,
 }
 
 // Exported so a test can reset this shared useState ref between cases (useState has no

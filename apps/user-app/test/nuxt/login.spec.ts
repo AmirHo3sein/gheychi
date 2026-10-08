@@ -433,3 +433,75 @@ describe('login page - OTP expiry and resend budget', () => {
     expect(wrapper.find('[data-testid="code-expiry"]').exists()).toBe(true)
   })
 })
+
+// auth.global.ts and useApi's 401 handler send an anonymous visitor to
+// /login?redirect=<fullPath>; the booking flow in particular must resume exactly where it was
+// interrupted (query string and all). The param is attacker-controlled, so only same-origin
+// relative paths may ever be followed.
+describe('login page - post-login redirect', () => {
+  beforeEach(() => {
+    fetchMock.mockReset()
+    navigateToMock.mockReset()
+    vi.stubGlobal('$fetch', fetchStub)
+    routeQuery = {}
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/auth/request-otp') return undefined
+      if (path === '/auth/verify-otp') return { user: EXISTING_USER, isNewUser: false }
+      if (path === '/auth/profile') return { ...NEW_USER_INCOMPLETE, name: 'Sara', gender: 'female' }
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  async function loginThroughCode() {
+    const wrapper = await mountSuspended(LoginPage)
+    await goToCodeStep(wrapper)
+    await wrapper.find('input[inputmode="numeric"]').setValue('123456')
+    await wrapper.find('form').trigger('submit.prevent')
+    await flushPromises()
+    return wrapper
+  }
+
+  it('returns to the page the visitor was bounced from, query string preserved', async () => {
+    routeQuery = { redirect: '/booking/my-salon/svc-1?beautyGuideId=abc&source=qr' }
+    await loginThroughCode()
+    expect(navigateToMock).toHaveBeenCalledWith('/booking/my-salon/svc-1?beautyGuideId=abc&source=qr')
+  })
+
+  it('goes home when there is no redirect param', async () => {
+    await loginThroughCode()
+    expect(navigateToMock).toHaveBeenCalledWith('/')
+  })
+
+  it.each(['//evil.example', 'https://evil.example/x', '/\\evil.example', 'javascript:alert(1)', '/ok?u=https://evil.example'])(
+    'ignores the unsafe redirect %s',
+    async (bad) => {
+      routeQuery = { redirect: bad }
+      await loginThroughCode()
+      expect(navigateToMock).toHaveBeenCalledTimes(1)
+      expect(navigateToMock).toHaveBeenCalledWith('/')
+    },
+  )
+
+  it('honours the redirect after profile completion for a brand-new account too', async () => {
+    routeQuery = { redirect: '/bookings' }
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/auth/request-otp') return undefined
+      if (path === '/auth/verify-otp') return { user: NEW_USER_INCOMPLETE, isNewUser: true }
+      if (path === '/auth/profile') return { ...NEW_USER_INCOMPLETE, name: 'Sara', gender: 'female' }
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    const wrapper = await loginThroughCode()
+    expect(navigateToMock).not.toHaveBeenCalled() // still on the profile step
+
+    const vm = wrapper.vm as unknown as { name: string; gender: string }
+    vm.name = 'Sara'
+    vm.gender = 'female'
+    await wrapper.find('form').trigger('submit.prevent')
+    await flushPromises()
+    expect(navigateToMock).toHaveBeenCalledWith('/bookings')
+  })
+})

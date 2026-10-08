@@ -3,6 +3,7 @@ import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { flushPromises } from '@vue/test-utils'
 import BookingsListPage from '../../app/pages/bookings/index.vue'
 import { useToast } from '../../app/composables/useToast'
+import { formatAppointment } from '../../app/utils/format-date'
 
 // Same pattern as bookings-list.spec.ts / booking-confirm.spec.ts: `$fetch` is a real
 // globalThis binding, not an unimport-tracked auto-import, so it's stubbed directly. This
@@ -117,7 +118,7 @@ describe('bookings list reschedule', () => {
     expect(dialog.attributes('role')).toBe('dialog')
     expect(dialog.attributes('aria-modal')).toBe('true')
     expect(wrapper.get('[data-testid="reschedule-current-time"]').text()).toContain(
-      new Date(CONFIRMED_BOOKING.startsAt).toLocaleString('fa-IR'),
+      formatAppointment(CONFIRMED_BOOKING.startsAt),
     )
     // Nothing picked yet -- submitting a booking with no chosen slot makes no sense.
     expect((wrapper.get('[data-testid="reschedule-submit"]').element as HTMLButtonElement).disabled).toBe(true)
@@ -142,7 +143,7 @@ describe('bookings list reschedule', () => {
     )
     // Dialog closed and the list reflects the moved time -- no full page reload needed.
     expect(wrapper.find('[data-testid="reschedule-dialog"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="booking-card"]').text()).toContain(new Date(NEW_SLOT_ISO).toLocaleString('fa-IR'))
+    expect(wrapper.get('[data-testid="booking-card"]').text()).toContain(formatAppointment(NEW_SLOT_ISO))
   })
 
   it('shows the API\'s own conflict message on a 409 and keeps the dialog open for a retry', async () => {

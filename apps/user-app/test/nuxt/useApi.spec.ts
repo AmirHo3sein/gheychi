@@ -17,10 +17,16 @@ const fetchStub = Object.assign((...args: unknown[]) => fetchMock(...args), {
 const { navigateToMock } = vi.hoisted(() => ({ navigateToMock: vi.fn() }))
 mockNuxtImport('navigateTo', () => navigateToMock)
 
+// useApi reads the router's current route (not useRoute -- that warns inside middleware) to
+// remember where a 401 interrupted the customer.
+const { currentFullPath } = vi.hoisted(() => ({ currentFullPath: { value: '/' } }))
+mockNuxtImport('useRouter', () => () => ({ currentRoute: { get value() { return { fullPath: currentFullPath.value } } } }))
+
 describe('useApi', () => {
   beforeEach(() => {
     fetchMock.mockReset()
     navigateToMock.mockReset()
+    currentFullPath.value = '/'
     // Re-stub before every test (and undo it in afterEach below) rather than stubbing
     // once at module scope, so this file doesn't rely on Vitest's default per-file
     // isolation to keep the global stub from leaking across tests/files.
@@ -51,6 +57,22 @@ describe('useApi', () => {
     fetchMock.mockRejectedValue({ response: { status: 401 } })
     const { apiFetch } = useApi()
     await apiFetch('/bookings/mine')
+    expect(navigateToMock).toHaveBeenCalledWith('/login')
+  })
+
+  it('on a 401, remembers the current page (with its query) in ?redirect=', async () => {
+    currentFullPath.value = '/bookings/abc?tab=1'
+    fetchMock.mockRejectedValue({ response: { status: 401 } })
+    const { apiFetch } = useApi()
+    await apiFetch('/bookings/abc')
+    expect(navigateToMock).toHaveBeenCalledWith('/login?redirect=' + encodeURIComponent('/bookings/abc?tab=1'))
+  })
+
+  it('on a 401 raised while already on /login, does not nest a redirect to itself', async () => {
+    currentFullPath.value = '/login?redirect=%2Fbookings'
+    fetchMock.mockRejectedValue({ response: { status: 401 } })
+    const { apiFetch } = useApi()
+    await apiFetch('/anything')
     expect(navigateToMock).toHaveBeenCalledWith('/login')
   })
 
@@ -143,6 +165,75 @@ describe('useApi', () => {
     const { apiFetch } = useApi()
     const result = await apiFetch('/search', { silent: true })
     expect(result.error?.status).toBe(0)
-    expect(result.error?.message).toContain('ارتباط')
+    expect(result.error?.message).toBe('اتصال برقرار نشد؛ اینترنت خود را بررسی کنید')
+  })
+
+  describe('customer-facing error messages', () => {
+    async function failWith(status: number, data?: unknown, silent = true) {
+      fetchMock.mockRejectedValue({ response: { status }, ...(data !== undefined ? { data } : {}) })
+      const { apiFetch } = useApi()
+      return apiFetch('/x', { silent })
+    }
+
+    it.each([
+      [400, 'اطلاعات واردشده معتبر نیست'],
+      [403, 'اجازه انجام این کار را ندارید'],
+      [404, 'مورد درخواستی پیدا نشد'],
+      [409, 'وضعیت این مورد تغییر کرده است؛ صفحه را تازه کنید و دوباره تلاش کنید'],
+      [429, 'تعداد درخواست‌ها زیاد است؛ کمی بعد دوباره تلاش کنید'],
+      [500, 'مشکلی پیش آمد؛ لطفاً دوباره تلاش کنید'],
+      [503, 'مشکلی پیش آمد؛ لطفاً دوباره تلاش کنید'],
+    ])('replaces an English server message on a %i with Persian copy', async (status, expected) => {
+      const result = await failWith(status, { message: 'Booking cannot be cancelled in its current state' })
+      expect(result.error?.message).toBe(expected)
+      expect(result.error?.status).toBe(status)
+    })
+
+    it('shows the Persian fallback in the toast, never the English server message', async () => {
+      const { toasts } = useToast()
+      const before = toasts.value.length
+      await failWith(409, { message: 'Booking cannot be cancelled in its current state' }, false)
+      expect(toasts.value.length).toBe(before + 1)
+      const last = toasts.value[toasts.value.length - 1]!
+      expect(last.message).toBe('وضعیت این مورد تغییر کرده است؛ صفحه را تازه کنید و دوباره تلاش کنید')
+      expect(last.message).not.toContain('Booking')
+    })
+
+    it('passes a Persian server message through unchanged, whatever the status', async () => {
+      const result = await failWith(409, { message: 'این بازه زمانی دیگر آزاد نیست' })
+      expect(result.error?.message).toBe('این بازه زمانی دیگر آزاد نیست')
+    })
+
+    it('treats a message mixing Persian with Latin text as Persian (passes through)', async () => {
+      const result = await failWith(400, { message: 'کد SMS نامعتبر است' })
+      expect(result.error?.message).toBe('کد SMS نامعتبر است')
+    })
+
+    it("falls back for class-validator's all-English string[] bodies", async () => {
+      const result = await failWith(400, { message: ['startsAt must be a valid ISO 8601 date string'] })
+      expect(result.error?.message).toBe('اطلاعات واردشده معتبر نیست')
+    })
+
+    it('uses the Persian entries of a mixed string[] body', async () => {
+      const result = await failWith(400, { message: ['startsAt must be a date', 'نام الزامی است'] })
+      expect(result.error?.message).toBe('نام الزامی است')
+    })
+
+    it('treats an empty/whitespace message as missing', async () => {
+      const result = await failWith(404, { message: '   ' })
+      expect(result.error?.message).toBe('مورد درخواستی پیدا نشد')
+    })
+
+    it('uses the network copy for status 0 even when a stray English message is present', async () => {
+      fetchMock.mockRejectedValue({ data: { message: 'fetch failed' } })
+      const { apiFetch } = useApi()
+      const result = await apiFetch('/x', { silent: true })
+      expect(result.error?.message).toBe('اتصال برقرار نشد؛ اینترنت خود را بررسی کنید')
+    })
+
+    it('keeps the machine-readable code regardless of the message rewrite', async () => {
+      const result = await failWith(400, { message: 'Coupon expired', code: 'COUPON_EXPIRED' })
+      expect(result.error?.code).toBe('COUPON_EXPIRED')
+    })
   })
 })

@@ -186,7 +186,7 @@ describe('profile page', () => {
     // (the HTTP reason phrase) and no body `message`, so apiFetch correctly falls back to
     // its own Persian copy rather than surfacing the English phrase.
     expect(toasts.value.length).toBe(before + 1)
-    expect(toasts.value.at(-1)?.message).toBe('خطایی رخ داد')
+    expect(toasts.value.at(-1)?.message).toBe('مشکلی پیش آمد؛ لطفاً دوباره تلاش کنید')
   })
 
   it('links out to /account/favorites instead of listing saved salons inline', async () => {
@@ -203,17 +203,18 @@ describe('profile page', () => {
       .findAllComponents({ name: 'NuxtLink' })
       .find((link) => link.props('to') === '/account/favorites')
     expect(favoritesLink).toBeTruthy()
-    expect(favoritesLink!.text()).toContain('مشاهده سالن‌های ذخیره‌شده')
+    expect(favoritesLink!.text()).toContain('سالن‌های ذخیره‌شده')
   })
 
-  it('renders the sign-out control with danger styling, not the reserved ad/sponsorship color', async () => {
+  it('renders the sign-out control as a quiet danger-toned action, not the reserved ad/sponsorship color', async () => {
     stub()
     const wrapper = await mountSuspended(ProfilePage)
     await flushPromises()
 
     const logoutButton = wrapper.findAll('button').find((b) => b.text() === 'خروج از حساب')
     expect(logoutButton).toBeTruthy()
-    expect(logoutButton!.classes().join(' ')).toContain('--color-danger-strong')
+    // Danger-toned TEXT on a ghost button (not a solid red fill competing with the page above it).
+    expect(logoutButton!.classes().join(' ')).toContain('text-(--color-danger)')
     expect(logoutButton!.classes().join(' ')).not.toContain('--color-ad')
 
     await logoutButton!.trigger('click')

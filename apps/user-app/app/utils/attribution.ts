@@ -36,7 +36,18 @@ export function resolveAttributionSource(querySource: unknown, referrer: string)
  * `/booking/...` silently dropped the `?source=` a QR scan had landed with, and the booking
  * then recorded as unattributed.
  */
-export function buildBookingLink(slug: string, serviceId: string, attributionSource: AttributionSource | null | undefined): string {
+export function buildBookingLink(
+  slug: string,
+  serviceId: string,
+  attributionSource: AttributionSource | null | undefined,
+  // A Beauty Guide this booking starts from (the customer's own) -- carried so the salon can
+  // see the inspiration attached to the booking. Pure context; never affects price/slots.
+  options: { beautyGuideId?: string } = {},
+): string {
+  const params = new URLSearchParams()
+  if (attributionSource) params.set('source', attributionSource)
+  if (options.beautyGuideId) params.set('beautyGuideId', options.beautyGuideId)
+  const query = params.toString()
   const base = `/booking/${slug}/${serviceId}`
-  return attributionSource ? `${base}?source=${attributionSource}` : base
+  return query ? `${base}?${query}` : base
 }

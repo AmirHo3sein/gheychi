@@ -19,6 +19,8 @@ const props = withDefaults(
     modelValue: string
     options: SelectOption[]
     label?: string
+    /** Keep the label for assistive tech but don't draw it (the field's context makes it obvious). */
+    hideLabel?: boolean
     error?: string
     required?: boolean
     placeholder?: string
@@ -50,7 +52,7 @@ function onSelect(option: SelectOption | null) {
 
 <template>
   <div>
-    <label v-if="label" :id="labelId" class="mb-1.5 block text-sm font-medium text-(--color-text-muted)">
+    <label v-if="label" :id="labelId" class="block text-sm font-medium text-(--color-text-muted)" :class="hideLabel ? 'sr-only' : 'mb-1.5'">
       {{ label }}
     </label>
     <Multiselect

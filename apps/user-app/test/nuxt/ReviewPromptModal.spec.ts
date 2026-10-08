@@ -118,7 +118,6 @@ describe('ReviewPromptModal', () => {
   })
 
   it('deletes the review after confirmation and shows the deleted message', async () => {
-    vi.stubGlobal('confirm', () => true)
     fetchMock.mockImplementation(async (_path: string, options: { method?: string }) => {
       if (options?.method === 'POST') return { id: 'r1', rating: 5, comment: null }
       if (options?.method === 'DELETE') return null
@@ -130,12 +129,42 @@ describe('ReviewPromptModal', () => {
     await flushPromises()
     await wrapper.find('[data-testid="delete-review-button"]').trigger('click')
     await flushPromises()
+    // Nothing is deleted until the in-app dialog is confirmed.
+    expect(fetchMock).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ method: 'DELETE' }))
+    expect(wrapper.get('[data-testid="delete-review-dialog"]').attributes('role')).toBe('alertdialog')
+    await wrapper.find('[data-testid="delete-review-confirm"]').trigger('click')
+    await flushPromises()
 
     expect(wrapper.text()).toContain('نظر شما حذف شد')
   })
 
+  it('Escape while the delete confirmation is open closes only the confirmation, not the review dialog', async () => {
+    const wrapper = await mountSuspended(ReviewPromptModal, {
+      props: { bookingId: 'b1', review: { id: 'rev-1', rating: 3, comment: null, workerRating: null, canEdit: true } },
+      attachTo: document.body,
+    })
+    await wrapper.find('[data-testid="delete-review-button"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="delete-review-dialog"]').exists()).toBe(true)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="delete-review-dialog"]').exists()).toBe(false)
+    expect(wrapper.emitted('close')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('styles the comment textarea like BaseInput (tokens, accent-text focus ring, not the 30% peach)', async () => {
+    const wrapper = await mountSuspended(ReviewPromptModal, { props: { bookingId: 'b1' } })
+    const classes = wrapper.get('textarea').classes()
+    expect(classes).toContain('text-(--color-text)')
+    expect(classes).toContain('bg-(--color-surface-card)')
+    expect(classes).toContain('focus-visible:ring-(--color-accent-text)')
+    expect(classes.join(' ')).not.toContain('accent)/30')
+  })
+
   it('does not delete when the confirm dialog is dismissed', async () => {
-    vi.stubGlobal('confirm', () => false)
     fetchMock.mockImplementation(async (_path: string, options: { method?: string }) => {
       if (options?.method === 'POST') return { id: 'r1', rating: 5, comment: null }
       throw new Error(`unexpected call: ${options?.method}`)
@@ -146,7 +175,10 @@ describe('ReviewPromptModal', () => {
     await flushPromises()
     await wrapper.find('[data-testid="delete-review-button"]').trigger('click')
     await flushPromises()
+    await wrapper.find('[data-testid="delete-review-cancel"]').trigger('click')
+    await flushPromises()
 
+    expect(wrapper.find('[data-testid="delete-review-dialog"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('نظر شما حذف شد')
     expect(wrapper.find('[data-testid="edit-review-button"]').exists()).toBe(true)
   })
@@ -187,13 +219,13 @@ describe('ReviewPromptModal', () => {
   })
 
   it('deletes a pre-filled review without ever creating one first', async () => {
-    vi.stubGlobal('confirm', () => true)
     fetchMock.mockResolvedValue(null)
     const wrapper = await mountSuspended(ReviewPromptModal, {
       props: { bookingId: 'b1', review: { id: 'rev-1', rating: 3, comment: null, workerRating: null, canEdit: true } },
     })
 
     await wrapper.find('[data-testid="delete-review-button"]').trigger('click')
+    await wrapper.find('[data-testid="delete-review-confirm"]').trigger('click')
     await flushPromises()
 
     expect(fetchMock).toHaveBeenCalledWith('/reviews/rev-1', expect.objectContaining({ method: 'DELETE' }))

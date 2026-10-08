@@ -19,6 +19,8 @@ const props = defineProps<{
   attributionSource?: AttributionSource | null
 }>()
 
+const { flags: featureFlags } = useFeatureFlags()
+
 const lightboxItem = ref<SalonPortfolioItem | null>(null)
 const reportOpen = ref(false)
 
@@ -61,7 +63,7 @@ const { titleId } = useDialog(dialogRoot as unknown as Ref<HTMLElement | null>, 
 
 <template>
   <section>
-    <h2 class="mb-2 flex items-center gap-1.5 text-lg font-bold text-(--color-text)">
+    <h2 class="mb-2 flex items-center gap-1.5 text-xl font-bold text-(--color-text)">
       <BaseIcon name="camera" :size="17" class="text-(--color-text-muted)" />
       نمونه کارها
     </h2>
@@ -74,8 +76,7 @@ const { titleId } = useDialog(dialogRoot as unknown as Ref<HTMLElement | null>, 
         class="text-start"
         @click="openLightbox(item)"
       >
-        <NuxtImg
-          provider="arvancloud"
+        <SafeImage
           :src="item.url"
           width="300"
           height="300"
@@ -111,8 +112,7 @@ const { titleId } = useDialog(dialogRoot as unknown as Ref<HTMLElement | null>, 
         class="my-auto w-full max-w-sm space-y-3 text-center outline-none"
       >
         <h2 :id="titleId" class="sr-only">نمایش نمونه کار</h2>
-        <NuxtImg
-          provider="arvancloud"
+        <SafeImage
           :src="lightboxItem.url"
           width="600"
           height="600"
@@ -127,6 +127,17 @@ const { titleId } = useDialog(dialogRoot as unknown as Ref<HTMLElement | null>, 
           class="inline-flex min-h-11 items-center rounded-full bg-(--color-accent) px-4 text-sm font-semibold text-(--color-fill-text)"
         >
           رزرو این خدمت
+        </NuxtLink>
+        <!-- "Explain this look": the same Beauty Guide engine, started from this salon's own
+             published work instead of an upload. Hidden entirely while the feature is off. -->
+        <NuxtLink
+          v-if="featureFlags.beautyGuideEnabled"
+          :to="`/beauty-guide?portfolioItemId=${lightboxItem.id}`"
+          data-testid="portfolio-explain-look"
+          class="ms-2 inline-flex min-h-11 items-center gap-1 rounded-full border border-white/40 px-4 text-sm font-semibold text-white"
+        >
+          <BaseIcon name="sparkles" :size="16" />
+          توضیح این استایل
         </NuxtLink>
         <button
           v-if="canReport"

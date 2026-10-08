@@ -105,11 +105,12 @@ html, body {
 /* Consistent focus treatment for every interactive element -- replaces the
    browser default outline (which clips awkwardly on rounded inputs/buttons) without
    removing focus visibility entirely. accent-text, not the raw pastel accent -- a light
-   peach outline on a light page would barely be visible (WCAG 1.4.11 non-text contrast). */
+   peach outline on a light page would barely be visible (WCAG 1.4.11 non-text contrast).
+   No border-radius here on purpose: an outline already follows the element's own radius, and
+   forcing 4px reshaped every rounded-full pill/button into a near-square while focused. */
 :focus-visible {
   outline: 2px solid var(--color-accent-text);
   outline-offset: 2px;
-  border-radius: 4px;
 }
 
 /* vue-multiselect brand + RTL overrides -- identical to provider-panel/admin-panel's
@@ -254,5 +255,46 @@ html, body {
 @media (prefers-reduced-motion: no-preference) {
   html {
     scroll-behavior: smooth;
+  }
+}
+
+/* Tabular figures: prices, times and counts are ~30 call sites that carry `tnum` but the
+   class was never defined, so columns of numbers silently didn't align. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Loading placeholder: a flat tinted block with a slow sheen. Used where content has a known
+   shape (cards, rows) so the page doesn't jump when data lands. The sheen is dropped under
+   prefers-reduced-motion, leaving the static block. */
+@keyframes skeleton-sheen {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+.skeleton {
+  background-color: var(--color-surface-subtle);
+  background-image: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--color-border) 55%, transparent) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: skeleton-sheen 1.6s linear infinite;
+}
+
+/* Route change: a short opacity fade only. mode="out-in" means the old page leaves before the
+   new one mounts (no two layouts in the DOM at once), so each leg is kept to 90ms -- the
+   transition must never feel like waiting. */
+
+/* Honour the OS "reduce motion" setting everywhere: no transforms/animations/transitions
+   (state changes stay instant), no smooth scrolling. Spinners are exempt -- a frozen spinner
+   reads as a hung page, and a rotating icon is not vestibular motion at this size. */
+@media (prefers-reduced-motion: reduce) {
+  *:not(.animate-spin),
+  *:not(.animate-spin)::before,
+  *:not(.animate-spin)::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .skeleton {
+    animation: none;
   }
 }

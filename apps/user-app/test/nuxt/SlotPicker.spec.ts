@@ -107,7 +107,8 @@ describe('SlotPicker', () => {
   it('shows an empty state when no day has any slots', async () => {
     fetchMock.mockResolvedValue([{ date: '2026-07-10', slots: [] }])
     const wrapper = await mountSuspended(SlotPicker, { props: { salonId: 's1', serviceId: 'sv1' } })
-    expect(wrapper.text()).toContain('نوبت خالی')
+    expect(wrapper.text()).toContain('در ۱۴ روز آینده نوبت آزادی وجود ندارد')
+    expect(wrapper.text()).not.toContain('نوبت خالی')
   })
 
   it('switches the displayed slots when a different date chip is clicked', async () => {
@@ -166,7 +167,65 @@ describe('SlotPicker', () => {
   it('shows an error state when the availability request fails', async () => {
     fetchMock.mockRejectedValue({ response: { status: 500 }, statusMessage: 'Server error' })
     const wrapper = await mountSuspended(SlotPicker, { props: { salonId: 's1', serviceId: 'sv1' } })
-    expect(wrapper.text()).toContain('مشکلی پیش آمد')
+    expect(wrapper.text()).toContain('بارگذاری نوبت‌ها ممکن نشد')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+  })
+
+  it('offers a retry button on error that refetches and recovers', async () => {
+    fetchMock.mockRejectedValueOnce({ response: { status: 500 } })
+    const wrapper = await mountSuspended(SlotPicker, { props: { salonId: 's1', serviceId: 'sv1' } })
+    const retry = wrapper.find('[data-testid="slots-retry"]')
+    expect(retry.exists()).toBe(true)
+    expect(retry.text()).toBe('تلاش دوباره')
+
+    fetchMock.mockResolvedValue([{ date: '2026-07-11', slots: ['2026-07-11T09:00:00.000Z'] }])
+    await retry.trigger('click')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="slot-button"]')).toHaveLength(1)
+  })
+
+  // The stale-slot bug: pick Monday 10:00, switch to Tuesday -- nothing is highlighted, yet the
+  // parent still held Monday's instant and its confirm card would happily submit it.
+  it('emits clear when the customer switches to a different day', async () => {
+    fetchMock.mockResolvedValue([
+      { date: '2026-07-11', slots: ['2026-07-11T09:00:00.000Z'] },
+      { date: '2026-07-12', slots: ['2026-07-12T10:00:00.000Z'] },
+    ])
+    const wrapper = await mountSuspended(SlotPicker, {
+      props: { salonId: 's1', serviceId: 'sv1', selectedSlot: '2026-07-11T09:00:00.000Z' },
+    })
+    expect(wrapper.emitted('clear')).toBeUndefined()
+
+    const dateChips = wrapper.findAll('button').filter((b) => !b.attributes('data-testid'))
+    await dateChips[1]!.trigger('click')
+    expect(wrapper.emitted('clear')).toHaveLength(1)
+  })
+
+  it('does not emit clear when the already-selected day is tapped again', async () => {
+    fetchMock.mockResolvedValue([
+      { date: '2026-07-11', slots: ['2026-07-11T09:00:00.000Z'] },
+      { date: '2026-07-12', slots: ['2026-07-12T10:00:00.000Z'] },
+    ])
+    const wrapper = await mountSuspended(SlotPicker, {
+      props: { salonId: 's1', serviceId: 'sv1', selectedSlot: '2026-07-11T09:00:00.000Z' },
+    })
+    const dateChips = wrapper.findAll('button').filter((b) => !b.attributes('data-testid'))
+    await dateChips[0]!.trigger('click')
+    expect(wrapper.emitted('clear')).toBeUndefined()
+  })
+
+  it('emits clear when a new worker choice refetches availability, but not on the first load', async () => {
+    fetchMock.mockResolvedValue([{ date: '2026-07-11', slots: ['2026-07-11T09:00:00.000Z'] }])
+    const wrapper = await mountSuspended(SlotPicker, {
+      props: { salonId: 's1', serviceId: 'sv1', workerId: null, selectedSlot: '2026-07-11T09:00:00.000Z' },
+    })
+    expect(wrapper.emitted('clear')).toBeUndefined()
+
+    await wrapper.setProps({ workerId: 'w-b' })
+    await flushPromises()
+    expect(wrapper.emitted('clear')).toHaveLength(1)
   })
 
   // Tapping worker A then B fires two availability requests; if A's response lands last it

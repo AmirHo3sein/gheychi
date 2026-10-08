@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateTime } from '../../utils/format-date'
 import { formatToman } from '../../utils/format-toman'
 
 interface WalletBalance {
@@ -92,10 +93,6 @@ function typeLabel(type: WalletTransactionItem['type']): string {
   return TYPE_LABELS[type] ?? type
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString('fa-IR')
-}
-
 // Toman is money and reads left-to-right, comma-grouped (formatToman); "points" is a loyalty
 // count, not a price, and stays in this app's ordinary Persian-digit format.
 function formatAmount(amount: number, currency: string): string {
@@ -112,7 +109,7 @@ useSeoMeta({ title: 'کیف پول — قیچی' })
       <NuxtLink
         to="/profile"
         aria-label="بازگشت"
-        class="flex h-8 w-8 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-surface-subtle)"
+        class="-ms-2 flex h-11 w-11 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-surface-subtle)"
       >
         <BaseIcon name="chevron-forward" :size="20" />
       </NuxtLink>
@@ -135,7 +132,7 @@ useSeoMeta({ title: 'کیف پول — قیچی' })
 
       <BaseCard v-if="!transactions" data-testid="transactions-load-error" role="alert" class="space-y-3 text-center">
         <p class="text-sm text-(--color-text-muted)">بارگذاری تاریخچه تراکنش‌ها با خطا مواجه شد.</p>
-        <BaseButton variant="secondary" data-testid="transactions-retry-button" :loading="transactionsPending" @click="refreshTransactions()">تلاش مجدد</BaseButton>
+        <BaseButton variant="secondary" data-testid="transactions-retry-button" :loading="transactionsPending" @click="refreshTransactions()">تلاش دوباره</BaseButton>
       </BaseCard>
 
       <p
@@ -156,7 +153,7 @@ useSeoMeta({ title: 'کیف پول — قیچی' })
                  can carry an arbitrarily long unbreakable run. -->
             <div class="min-w-0 space-y-0.5 text-sm break-words">
               <p class="font-medium">{{ typeLabel(tx.type) }}</p>
-              <p class="text-xs text-(--color-text-muted)">{{ formatDate(tx.createdAt) }}</p>
+              <p class="text-xs text-(--color-text-muted)">{{ formatDateTime(tx.createdAt) }}</p>
               <p v-if="tx.reason" class="text-xs text-(--color-text-muted)">{{ tx.reason }}</p>
             </div>
             <p

@@ -103,10 +103,14 @@ function initMap() {
     touchZoom: !props.compact,
   }).setView([props.center.lat, props.center.lng], 13)
 
-  // CARTO's free Voyager tiles -- no API key, no per-request cost, and a cleaner/
-  // softer look than raw OpenStreetMap's default style.
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  // OpenStreetMap's standard tiles. CARTO's free Voyager raster endpoint used here before now
+  // answers EVERY request with an "API KEY REQUIRED" placeholder tile (verified 2026-10-08;
+  // all rastertiles/light_all variants are key-gated), which silently broke every map.
+  // OSM's tile policy (operations.osmfoundation.org/policies/tiles) allows light use with
+  // attribution but forbids heavy/commercial-scale load -- before launch at scale, move to a
+  // paid/self-hosted provider (change this one URL + the Caddyfile img-src).
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     maxZoom: 19,
   }).addTo(mapInstance)
 

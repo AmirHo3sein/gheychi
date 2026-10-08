@@ -115,6 +115,11 @@ export default defineNuxtConfig({
     },
   },
   app: {
+    // No route transition, deliberately. A fade with mode 'out-in' left the booking page BLANK after a
+    // client-side navigation (e2e/01-happy-path timed out waiting for the slot list): out-in waits for the
+    // incoming page's enter hook, and a lazily-loaded route that isn't resolved yet wedges the wrapper --
+    // the same failure admin-panel's AppLayout documents. A 90ms fade is not worth a blank page.
+    pageTransition: false,
     head: {
       htmlAttrs: { lang: 'fa', dir: 'rtl' },
       link: [

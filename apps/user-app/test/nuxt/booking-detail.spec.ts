@@ -326,7 +326,6 @@ describe('booking detail page', () => {
   })
 
   it('lets the customer withdraw a request the salon has not answered', async () => {
-    vi.stubGlobal('confirm', () => true)
     fetchMock.mockImplementation(async (path: string, opts?: { method?: string }) => {
       if (path === '/bookings/b1' && (!opts || opts.method === undefined || opts.method === 'GET')) {
         return { ...BASE_BOOKING, status: 'pending_approval', confirmationMode: 'manual_approval' }
@@ -340,6 +339,13 @@ describe('booking detail page', () => {
     expect(cancelButton.text()).toBe('لغو درخواست')
 
     await cancelButton.trigger('click')
+    await flushPromises()
+    // Nothing is sent until the dialog is confirmed; it states that no money was taken.
+    expect(fetchMock).not.toHaveBeenCalledWith('/bookings/b1/cancel', expect.anything())
+    expect(wrapper.get('[data-testid="cancel-confirm-dialog"]').text()).toContain('لغو درخواست')
+    expect(wrapper.get('[data-testid="cancel-confirm-refund-copy"]').text()).toContain('مبلغی از شما دریافت نشده')
+
+    await wrapper.get('[data-testid="cancel-confirm-submit"]').trigger('click')
     await flushPromises()
 
     expect(fetchMock).toHaveBeenCalledWith('/bookings/b1/cancel', expect.objectContaining({ method: 'POST' }))
@@ -366,8 +372,7 @@ describe('booking detail page', () => {
     expect(wrapper.find('[data-testid="retry-payment-button"]').exists()).toBe(false)
   })
 
-  it('cancels the booking and refreshes after confirmation', async () => {
-    vi.stubGlobal('confirm', () => true)
+  it('cancels the booking and refreshes only after the dialog is confirmed', async () => {
     fetchMock.mockImplementation(async (path: string, opts?: { method?: string }) => {
       if (path === '/bookings/b1' && (!opts || opts.method === undefined || opts.method === 'GET')) {
         return { ...BASE_BOOKING, status: 'confirmed' }
@@ -379,19 +384,61 @@ describe('booking detail page', () => {
 
     await wrapper.find('[data-testid="cancel-booking-button"]').trigger('click')
     await flushPromises()
+    expect(fetchMock).not.toHaveBeenCalledWith('/bookings/b1/cancel', expect.anything())
+
+    await wrapper.get('[data-testid="cancel-confirm-submit"]').trigger('click')
+    await flushPromises()
 
     expect(fetchMock).toHaveBeenCalledWith('/bookings/b1/cancel', expect.objectContaining({ method: 'POST' }))
+    expect(wrapper.find('[data-testid="cancel-confirm-dialog"]').exists()).toBe(false)
   })
 
-  it('does not cancel when the confirm dialog is dismissed', async () => {
-    vi.stubGlobal('confirm', () => false)
+  it('uses the shared cancel dialog: explains forfeiture inside the cancellation window, refund outside it', async () => {
+    const stubWithStart = (startsAt: string) =>
+      fetchMock.mockImplementation(async (path: string) => {
+        if (path === '/platform-config/booking-terms') return { cancellationWindowHours: 24 }
+        if (path === '/bookings/b1') return { ...BASE_BOOKING, status: 'confirmed', depositPaid: true, startsAt }
+        throw new Error(`unexpected fetch path in test: ${path}`)
+      })
+
+    stubWithStart(new Date(Date.now() + 2 * 3600_000).toISOString())
+    wrapper = await mountSuspended(BookingDetailPage)
+    await flushPromises()
+    await wrapper.find('[data-testid="cancel-booking-button"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="cancel-confirm-refund-copy"]').text()).toContain('پیش‌پرداخت قابل بازگشت نیست')
+    wrapper.unmount()
+    clearNuxtData(['booking-detail-b1', 'booking-review-b1'])
+
+    stubWithStart(new Date(Date.now() + 72 * 3600_000).toISOString())
+    wrapper = await mountSuspended(BookingDetailPage)
+    await flushPromises()
+    await wrapper.find('[data-testid="cancel-booking-button"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="cancel-confirm-refund-copy"]').text()).toContain('به طور کامل بازگردانده می‌شود')
+  })
+
+  it('does not cancel when the dialog is dismissed', async () => {
     fetchMock.mockResolvedValue({ ...BASE_BOOKING, status: 'confirmed' })
     wrapper = await mountSuspended(BookingDetailPage)
 
     await wrapper.find('[data-testid="cancel-booking-button"]').trigger('click')
     await flushPromises()
+    await wrapper.get('[data-testid="cancel-confirm-dismiss"]').trigger('click')
+    await flushPromises()
 
     expect(fetchMock).not.toHaveBeenCalledWith('/bookings/b1/cancel', expect.anything())
+    expect(wrapper.find('[data-testid="cancel-confirm-dialog"]').exists()).toBe(false)
+  })
+
+  it('no longer uses the native confirm() for cancelling', async () => {
+    const nativeConfirm = vi.fn(() => true)
+    vi.stubGlobal('confirm', nativeConfirm)
+    fetchMock.mockResolvedValue({ ...BASE_BOOKING, status: 'confirmed' })
+    wrapper = await mountSuspended(BookingDetailPage)
+    await wrapper.find('[data-testid="cancel-booking-button"]').trigger('click')
+    await flushPromises()
+    expect(nativeConfirm).not.toHaveBeenCalled()
   })
 
   // depositAmount is recorded on every booking row for reporting, even when the platform's

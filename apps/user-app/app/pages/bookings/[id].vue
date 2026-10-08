@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { IconName } from '~/components/ui/BaseIcon.vue'
 import { formatToman } from '../../utils/format-toman'
+import { formatAppointment } from '../../utils/format-date'
 
 interface BookingDetail {
   id: string
@@ -125,22 +126,34 @@ async function retryPayment() {
 }
 
 const cancelling = ref(false)
+const cancelOpen = ref(false)
 
-// A simple, direct confirm rather than duplicating bookings/index.vue's dedicated
-// cancel-confirmation dialog (which surfaces a refund-outcome preview computed from
-// /platform-config/booking-terms) -- this page just needs capability parity, not
-// the exact same UI. Matches the native-confirm pattern already used for
-// deleteReview in ReviewPromptModal.vue.
-async function cancelBooking() {
+// The cancel dialog's refund copy depends on the cancellation window. Fetched client-side
+// after mount (not awaited during SSR -- nothing renders from it until the dialog opens) and
+// degrades silently: a null result makes the dialog fall back to the seeded policy wording.
+const cancellationTerms = ref<{ cancellationWindowHours: number } | null>(null)
+onMounted(async () => {
+  const { data } = await apiFetch<{ cancellationWindowHours: number }>('/platform-config/booking-terms', { silent: true })
+  // Shape-checked: a malformed config answer must degrade to the fallback wording, not crash the dialog.
+  cancellationTerms.value = typeof data?.cancellationWindowHours === 'number' ? data : null
+})
+
+// Same dialog as the bookings list (CancelBookingDialog) so both entry points tell the
+// customer what happens to their deposit before they commit.
+function cancelBooking() {
   if (!booking.value || cancelling.value) return
-  // A pending_approval booking isn't an appointment yet -- the customer is withdrawing a
-  // request the salon hasn't answered, so the prompt (and the button) say exactly that.
-  const prompt = booking.value.status === 'pending_approval' ? 'این درخواست لغو شود؟' : 'این نوبت لغو شود؟'
-  if (!confirm(prompt)) return
+  cancelOpen.value = true
+}
+
+async function confirmCancel() {
+  if (!booking.value || cancelling.value) return
   cancelling.value = true
   const { error } = await apiFetch(`/bookings/${booking.value.id}/cancel`, { method: 'POST' })
   cancelling.value = false
-  if (!error) await refresh()
+  if (!error) {
+    cancelOpen.value = false
+    await refresh()
+  }
 }
 
 const reviewOpen = ref(false)
@@ -205,7 +218,7 @@ const reviewButtonLabel = computed(() => {
       <p v-if="booking.workerName" class="text-(--color-text-muted)">کارمند: {{ booking.workerName }}</p>
       <p class="flex items-center gap-1.5 text-(--color-text-muted)">
         <BaseIcon name="calendar" :size="14" />
-        {{ new Date(booking.startsAt).toLocaleString('fa-IR') }}
+        {{ formatAppointment(booking.startsAt) }}
       </p>
       <div class="space-y-1 border-t border-(--color-border) pt-2">
         <p>مبلغ کل: <span dir="ltr" class="tnum">{{ formatToman(booking.priceSnapshot) }}</span> تومان</p>
@@ -300,7 +313,6 @@ const reviewButtonLabel = computed(() => {
         v-if="CANCELLABLE_STATUSES.includes(booking.status)"
         variant="danger"
         data-testid="cancel-booking-button"
-        :loading="cancelling"
         @click="cancelBooking"
       >
         {{ booking.status === 'pending_approval' ? 'لغو درخواست' : 'لغو نوبت' }}
@@ -326,6 +338,19 @@ const reviewButtonLabel = computed(() => {
 
     <NuxtLink to="/bookings" class="block text-sm text-(--color-text) hover:underline">بازگشت به نوبت‌های من</NuxtLink>
 
+    <CancelBookingDialog
+      v-if="cancelOpen"
+      :salon-name="booking.salonName"
+      :service-name="booking.serviceName"
+      :status="booking.status"
+      :starts-at="booking.startsAt"
+      :deposit-paid="hasOnlineDeposit"
+      :terms="cancellationTerms"
+      :cancelling="cancelling"
+      @confirm="confirmCancel"
+      @close="cancelOpen = false"
+    />
+
     <ReviewPromptModal
       v-if="reviewOpen"
       :booking-id="booking.id"
@@ -341,9 +366,9 @@ const reviewButtonLabel = computed(() => {
        retryable-error convention as bookings/index.vue's own loadError state. -->
   <div v-else class="mx-auto max-w-2xl p-4">
     <BaseCard data-testid="booking-detail-load-error" role="alert" class="space-y-3 text-center text-sm">
-      <p class="text-(--color-text-muted)">بارگذاری اطلاعات نوبت با خطا مواجه شد.</p>
+      <p class="text-(--color-text-muted)">اطلاعات نوبت بارگذاری نشد.</p>
       <BaseButton variant="secondary" data-testid="booking-detail-retry-button" :loading="retryingLoad" @click="retryLoad">
-        تلاش مجدد
+        تلاش دوباره
       </BaseButton>
     </BaseCard>
   </div>

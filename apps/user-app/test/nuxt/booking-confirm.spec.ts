@@ -650,7 +650,7 @@ describe('booking confirm page', () => {
     await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
     await nextTick()
 
-    expect(wrapper.text()).toContain(`لغو رایگان تا ${TERMS.cancellationWindowHours} ساعت قبل از نوبت`)
+    expect(wrapper.text()).toContain(`لغو رایگان تا ${TERMS.cancellationWindowHours.toLocaleString('fa-IR')} ساعت قبل از نوبت`)
     expect(wrapper.text()).toContain('پیش‌پرداخت قابل بازگشت نیست')
   })
 
@@ -810,6 +810,23 @@ describe('booking confirm page', () => {
     expect(bookingCall?.[1]).toMatchObject({ body: expect.objectContaining({ attributionSource: 'qr' }) })
   })
 
+  it('forwards a well-formed ?beautyGuideId as beautyGuideId, and drops a malformed one', async () => {
+    routeQuery = { beautyGuideId: '0b6c1e57-2f0a-4c1e-9b1e-1d2c3e4f5a6b' }
+    stubPageLoad('success')
+    wrapper = await mountSuspended(BookingConfirmPage)
+    await pickSlotAndSubmit(wrapper)
+    let bookingCall = fetchMock.mock.calls.find(([path]) => path === '/bookings')
+    expect(bookingCall?.[1]).toMatchObject({ body: expect.objectContaining({ beautyGuideId: '0b6c1e57-2f0a-4c1e-9b1e-1d2c3e4f5a6b' }) })
+
+    fetchMock.mockReset()
+    routeQuery = { beautyGuideId: 'not-a-uuid' }
+    stubPageLoad('success')
+    wrapper = await mountSuspended(BookingConfirmPage)
+    await pickSlotAndSubmit(wrapper)
+    bookingCall = fetchMock.mock.calls.find(([path]) => path === '/bookings')
+    expect(bookingCall?.[1]).toMatchObject({ body: expect.objectContaining({ beautyGuideId: undefined }) })
+  })
+
   it('sends no attributionSource when the URL carries no (or an unrecognized) source', async () => {
     routeQuery = { source: 'not-a-real-channel' }
     stubPageLoad('success')
@@ -882,5 +899,54 @@ describe('booking confirm page', () => {
     const note = wrapper.get('[data-testid="manual-approval-note"]')
     expect(note.text()).toContain('هزینه به صورت نقدی در سالن دریافت می‌شود')
     expect(note.text()).not.toContain('پس از تایید سالن پرداخت')
+  })
+
+  // The stale-slot bug: pick a time, switch day (SlotPicker highlights nothing) -- the old
+  // time used to stay selected, and the visible confirm card would submit it.
+  it('hides the confirm card and drops the slot when SlotPicker reports the customer moved away from it', async () => {
+    stubPageLoad('success')
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+    await nextTick()
+    expect(wrapper.find('[data-testid="confirm-booking-button"]').exists()).toBe(true)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('clear')
+    await nextTick()
+    expect(wrapper.find('[data-testid="confirm-booking-button"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="selected-slot-summary"]').exists()).toBe(false)
+    expect(wrapper.findComponent(SlotPicker).props('selectedSlot')).toBeNull()
+    // ...and nothing can be submitted any more.
+    expect(fetchMock.mock.calls.some(([path, opts]) => path === '/bookings' && opts?.method === 'POST')).toBe(false)
+  })
+
+  it('summarises the chosen slot in human Persian inside the confirm card', async () => {
+    stubPageLoad('success')
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    await wrapper.findComponent(SlotPicker).vm.$emit('select', '2026-10-07T11:30:00.000Z')
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="selected-slot-summary"]').text()).toBe('چهارشنبه ۱۵ مهر ۱۴۰۵ · ساعت ۱۵:۰۰')
+  })
+
+  it('scrolls the confirm card into view when it first appears, but not when switching slots', async () => {
+    stubPageLoad('success')
+    const scrollIntoView = vi.fn()
+    const original = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = scrollIntoView
+    try {
+      wrapper = await mountSuspended(BookingConfirmPage)
+
+      await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+      await flushPromises()
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+
+      await wrapper.findComponent(SlotPicker).vm.$emit('select', '2026-07-10T09:30:00.000Z')
+      await flushPromises()
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    } finally {
+      Element.prototype.scrollIntoView = original
+    }
   })
 })

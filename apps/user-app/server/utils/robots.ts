@@ -18,11 +18,12 @@
 //   /bookings  -- the customer's own booking list AND /bookings/:id detail
 //   /booking/  -- the checkout flow itself (/booking/:slug/:serviceId, /booking/callback)
 //   /profile   -- the customer's own account settings
+//   /beauty-guide -- a customer's private Beauty Guides (their own inspiration photos)
 // Note the deliberate asymmetry: `/bookings` has no trailing slash so it covers both the
 // list route and every `/bookings/:id` beneath it (robots.txt matching is a bare prefix
 // match, not a path-segment match), while `/booking/` keeps its slash so it cannot also
 // swallow `/bookings`.
-const DISALLOWED_PATHS = ['/admin/', '/account/', '/bookings', '/booking/', '/profile'];
+const DISALLOWED_PATHS = ['/admin/', '/account/', '/bookings', '/booking/', '/profile', '/beauty-guide'];
 
 export function buildRobotsTxt(siteUrl: string): string {
   // Trailing slash stripped before concatenating, exactly as the sitemap handlers do -- a

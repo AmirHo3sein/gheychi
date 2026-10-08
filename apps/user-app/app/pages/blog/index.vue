@@ -23,10 +23,10 @@ const { data: categories, pending: categoriesPending } = await useAsyncData('blo
 // Filter/page state lives in the route query, so a chip click or page turn is one
 // router.push: both watched computeds change in the same flush and useAsyncData refetches
 // exactly once (single-fetch idiom -- never the page-reset-then-load double-fetch form).
-const { data: list, pending: postsPending } = await useAsyncData(
+const { data: list, pending: postsPending, error: postsError, refresh: refreshPosts } = await useAsyncData(
   'blog-posts',
   async () => {
-    const { data } = await apiFetch<BlogListResponse>('/blog/posts', {
+    const { data, error } = await apiFetch<BlogListResponse>('/blog/posts', {
       query: {
         category: categorySlug.value || undefined,
         page: page.value,
@@ -34,6 +34,9 @@ const { data: list, pending: postsPending } = await useAsyncData(
       },
       silent: true,
     })
+    // A failed list must surface as an error (retry card) rather than as «مطلبی پیدا نشد» --
+    // that empty state is only for a list that genuinely has no posts.
+    if (error) throw new Error(error.message)
     return data
   },
   { watch: [page, categorySlug] },
@@ -61,7 +64,7 @@ function goToPage(target: number) {
 }
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('fa-IR', { year: 'numeric', month: 'long', day: 'numeric' })
+  return new Date(iso).toLocaleDateString('fa-IR', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'long', day: 'numeric' })
 }
 
 /**
@@ -155,7 +158,7 @@ useHead({
         type="button"
         :aria-pressed="categorySlug === ''"
         :disabled="isLoading"
-        class="min-h-9 shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+        class="min-h-11 shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60"
         :class="categorySlug === ''
           ? 'bg-(--color-accent-strong) text-(--color-fill-text)'
           : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) hover:text-(--color-text)'"
@@ -169,7 +172,7 @@ useHead({
         type="button"
         :aria-pressed="categorySlug === cat.slug"
         :disabled="isLoading"
-        class="min-h-9 shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+        class="min-h-11 shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60"
         :class="categorySlug === cat.slug
           ? 'bg-(--color-accent-strong) text-(--color-fill-text)'
           : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) hover:text-(--color-text)'"
@@ -179,7 +182,15 @@ useHead({
       </button>
     </div>
 
-    <p v-if="!list?.items?.length" data-testid="empty-state" aria-live="polite" class="py-10 text-center text-sm text-(--color-text-muted)">
+    <p v-if="isLoading && !list && !postsError" data-testid="blog-loading" role="status" class="flex items-center justify-center gap-2 py-10 text-sm text-(--color-text-muted)">
+      <BaseIcon name="spinner" :size="18" class="animate-spin" />
+      در حال بارگذاری...
+    </p>
+    <BaseCard v-else-if="postsError" data-testid="blog-load-error" role="alert" class="space-y-3 text-center">
+      <p class="text-sm text-(--color-text-muted)">مطالب بلاگ بارگذاری نشد.</p>
+      <BaseButton variant="secondary" data-testid="blog-retry-button" :loading="postsPending" @click="refreshPosts()">تلاش دوباره</BaseButton>
+    </BaseCard>
+    <p v-else-if="!list?.items?.length" data-testid="empty-state" aria-live="polite" class="py-10 text-center text-sm text-(--color-text-muted)">
       مطلبی برای نمایش پیدا نشد
     </p>
 
@@ -219,11 +230,11 @@ useHead({
       </NuxtLink>
     </div>
 
-    <nav v-if="totalPages > 1" class="flex items-center justify-center gap-3 pt-2 text-sm" aria-label="صفحه‌بندی">
+    <nav v-if="totalPages > 1 && !postsError" class="flex items-center justify-center gap-3 pt-2 text-sm" aria-label="صفحه‌بندی">
       <button
         type="button"
         data-testid="prev-page"
-        class="min-h-9 rounded-full border border-(--color-border) bg-(--color-surface-card) px-4 py-2 text-(--color-text) disabled:cursor-not-allowed disabled:opacity-40"
+        class="min-h-11 rounded-full border border-(--color-border) bg-(--color-surface-card) px-4 py-2 text-(--color-text) disabled:cursor-not-allowed disabled:opacity-40"
         :disabled="page <= 1 || postsPending"
         @click="goToPage(page - 1)"
       >
@@ -236,7 +247,7 @@ useHead({
       <button
         type="button"
         data-testid="next-page"
-        class="min-h-9 rounded-full border border-(--color-border) bg-(--color-surface-card) px-4 py-2 text-(--color-text) disabled:cursor-not-allowed disabled:opacity-40"
+        class="min-h-11 rounded-full border border-(--color-border) bg-(--color-surface-card) px-4 py-2 text-(--color-text) disabled:cursor-not-allowed disabled:opacity-40"
         :disabled="page >= totalPages || postsPending"
         @click="goToPage(page + 1)"
       >

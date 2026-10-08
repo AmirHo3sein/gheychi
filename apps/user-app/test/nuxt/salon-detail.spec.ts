@@ -439,7 +439,7 @@ describe('salon detail page', () => {
     const dayNames = wrapper
       .get('[data-testid="hours-list"]')
       .findAll('li')
-      .map((li: { text: () => string }) => li.text().split(':')[0]!.trim())
+      .map((li: { find: (sel: string) => { text: () => string } }) => li.find('span').text().trim())
     expect(dayNames).toEqual(['شنبه', 'یکشنبه', 'چهارشنبه'])
   })
 

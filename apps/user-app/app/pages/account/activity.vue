@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateTime } from '../../utils/format-date'
 import type { IconName } from '~/components/ui/BaseIcon.vue'
 import { formatToman } from '../../utils/format-toman'
 
@@ -132,10 +133,6 @@ async function loadMore() {
   loadingMore.value = false
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString('fa-IR')
-}
-
 function bookingTitle(detail: BookingDetail): string {
   return `${detail.salonName} — ${detail.serviceName}`
 }
@@ -162,7 +159,7 @@ onMounted(load)
       <NuxtLink
         to="/profile"
         aria-label="بازگشت"
-        class="flex h-8 w-8 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-surface-subtle)"
+        class="-ms-2 flex h-11 w-11 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-surface-subtle)"
       >
         <BaseIcon name="chevron-forward" :size="20" />
       </NuxtLink>
@@ -176,7 +173,7 @@ onMounted(load)
 
     <BaseCard v-else-if="loadError" data-testid="activity-load-error" role="alert" class="space-y-3 text-center">
       <p class="text-sm text-(--color-text-muted)">بارگذاری تاریخچه فعالیت با خطا مواجه شد.</p>
-      <BaseButton variant="secondary" data-testid="activity-retry-button" @click="load">تلاش مجدد</BaseButton>
+      <BaseButton variant="secondary" data-testid="activity-retry-button" @click="load">تلاش دوباره</BaseButton>
     </BaseCard>
 
     <p v-else-if="!items.length" data-testid="activity-empty-state" class="py-6 text-center text-sm text-(--color-text-muted)">
@@ -251,7 +248,7 @@ onMounted(load)
             </p>
           </template>
 
-          <p class="text-xs text-(--color-text-muted)">{{ formatDate(item.occurredAt) }}</p>
+          <p class="text-xs text-(--color-text-muted)">{{ formatDateTime(item.occurredAt) }}</p>
         </div>
       </BaseCard>
 

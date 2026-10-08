@@ -28,12 +28,12 @@ Entirely mobile web / installable PWA (Nuxt 4 SSR, `@vite-pwa/nuxt`, Web Push). 
 - Persian/RTL is a hard requirement, not a locale option — there is no other language and no i18n library in this app by design.
 - Auth is phone-OTP only; there is no password, email, or social login surface to design for.
 - Payments/deposits are real and external (Zarinpal redirect) — the design must accommodate a full page navigation away from and back into the app mid-flow, not just an in-app modal.
-- Maps use Leaflet + CARTO tiles (no paid map SDK, no API key) — client-only, never SSR'd.
+- Maps use Leaflet + OpenStreetMap's standard tiles (no paid map SDK, no API key) — client-only, never SSR'd. CARTO's free raster tiles now return an "API KEY REQUIRED" placeholder (checked 2026-10-08) so they were replaced; OSM's tile policy covers light use only, so move to a paid/self-hosted tile provider before launching at scale.
 - Push notifications are optional/best-effort (VAPID) and must degrade gracefully with no keys configured.
 
 ## Brand Commitments
 
-None yet — "آرایشگاه" (Gheychi) is a working name for this practice/dev project, not a committed brand identity. The current teal-accent light theme / purple-accent dark theme (`app/assets/css/main.css`, "Teal Trust" / "Bold Editorial") is an existing implementation, not a binding brand commitment — open to being treated as evidence/anti-reference for a future redesign rather than preserved as-is, per the user's explicit choice during this init.
+None yet — "آرایشگاه" (Gheychi) is a working name for this practice/dev project, not a committed brand identity. The shipped palette (`app/assets/css/main.css`: peach `#FFB6A3` accent on warm white, charcoal in dark mode, the scissors mascot) supersedes the earlier teal/purple "Teal Trust" / "Bold Editorial" themes and is the source of truth for colour; it is still an implementation choice rather than a binding brand commitment — open to being treated as evidence/anti-reference for a future redesign rather than preserved as-is, per the user's explicit choice during this init.
 
 ## Evidence on Hand
 

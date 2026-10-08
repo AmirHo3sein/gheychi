@@ -386,7 +386,7 @@ function scrollToSection(id: string) {
        this template with `page` at its pre-fetch value (undefined) before the rejection is
        handled. Without this v-if, that pass throws inside the render function itself (an
        unhandled rejection, not the createError) -- see blog/[slug].vue, which this mirrors. -->
-  <div v-if="page" class="mx-auto max-w-2xl space-y-6 p-4" :class="minServicePrice !== null ? 'pb-24' : ''">
+  <div v-if="page" class="mx-auto max-w-2xl space-y-6 p-4 lg:max-w-5xl lg:p-6" :class="minServicePrice !== null ? 'pb-24 lg:pb-6' : ''">
     <SalonHero
       :photos="page.photos"
       :fallback-photo="page.portfolio[0]?.url ?? null"
@@ -406,6 +406,8 @@ function scrollToSection(id: string) {
       </template>
     </SalonHero>
 
+    <div class="lg:grid lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-start lg:gap-8">
+      <div class="min-w-0 space-y-6">
     <div>
       <div class="flex flex-wrap items-center gap-2">
         <!-- break-words, not just the wrapper's min-w-0: a provider-authored salon name
@@ -430,11 +432,10 @@ function scrollToSection(id: string) {
       <a
         v-if="featureFlags.reviewsEnabled"
         href="#reviews"
-        class="mt-1 flex w-fit items-center gap-1 text-sm text-(--color-text-muted) underline-offset-2 hover:text-(--color-text) hover:underline"
+        class="mt-1 flex min-h-8 w-fit items-center text-sm underline-offset-2 hover:underline"
         @click.prevent="scrollToSection('reviews')"
       >
-        <BaseIcon name="star" :size="14" />
-        {{ Number(page.salon.ratingAvg).toLocaleString('fa-IR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }} ({{ page.salon.ratingCount.toLocaleString('fa-IR') }})
+        <RatingLabel :average="page.salon.ratingAvg" :count="page.salon.ratingCount" />
       </a>
       <!-- items-start, unlike the rating row above it: at 320px the name column is
            ~176px wide and a Persian street address wraps to three lines, which
@@ -442,8 +443,19 @@ function scrollToSection(id: string) {
            icon-nudge idiom as the policy callout further down. -->
       <p class="mt-1 flex items-start gap-1 text-sm text-(--color-text-muted)">
         <BaseIcon name="map-pin" :size="14" class="mt-0.5 shrink-0" />
-        {{ page.salon.address }}
+        <span class="min-w-0">{{ page.salon.address }}</span>
       </p>
+      <!-- Phones: the map and directions live further down the page (in the aside), so offer a
+           jump straight to them from the address instead of making the customer scroll for them.
+           On desktop the aside is already beside the content. -->
+      <a
+        href="#location"
+        class="mt-1 inline-flex min-h-11 items-center gap-1 text-sm font-medium text-(--color-accent-text) hover:underline lg:hidden"
+        @click.prevent="scrollToSection('location')"
+      >
+        نقشه و مسیریابی
+        <BaseIcon name="chevron-back" :size="14" />
+      </a>
       <a
         v-if="page.salon.instagramHandle"
         :href="`https://instagram.com/${page.salon.instagramHandle}`"
@@ -457,36 +469,6 @@ function scrollToSection(id: string) {
       </a>
     </div>
 
-    <div class="space-y-2">
-      <LazySalonMap
-        compact
-        data-testid="salon-map"
-        :salons="salonMapData.salons"
-        :center="salonMapData.center"
-        :salon-coords="salonMapData.salonCoords"
-      />
-      <!-- Exposed directly here, not just inside the map's own marker popup two taps deep
-           (open the popup, then find the link) -- this is the whole reason a customer would
-           interact with the map at all on a page whose job is booking, not exploring. -->
-      <div class="grid grid-cols-2 gap-2 text-xs font-semibold">
-        <a
-          :href="`https://nshn.ir/?lat=${salonMapData.center.lat}&lng=${salonMapData.center.lng}`"
-          target="_blank"
-          rel="noopener"
-          class="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-(--color-border) bg-(--color-surface-card) text-(--color-text) transition-colors hover:bg-(--color-surface-subtle)"
-        >
-          مسیریابی با نشان
-        </a>
-        <a
-          :href="`https://www.google.com/maps/dir/?api=1&destination=${salonMapData.center.lat},${salonMapData.center.lng}`"
-          target="_blank"
-          rel="noopener"
-          class="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-(--color-border) bg-(--color-surface-card) text-(--color-text) transition-colors hover:bg-(--color-surface-subtle)"
-        >
-          مسیریابی با گوگل‌مپ
-        </a>
-      </div>
-    </div>
 
     <section v-if="page.salon.about" data-testid="salon-about">
       <h2 class="mb-2 text-xl font-bold text-(--color-text)">درباره سالن</h2>
@@ -527,18 +509,21 @@ function scrollToSection(id: string) {
           <span>پیش‌پرداختی دریافت نمی‌شود؛ هزینه خدمت در سالن پرداخت می‌شود.</span>
         </p>
       </div>
-      <ul v-if="page.services.length" class="space-y-2">
+      <!-- ONE grouped surface with dividers, not a bordered card per service: a long menu of
+           separate boxes is the "collection of identical cards" the design system warns
+           against, and it is slower to scan than a single list. -->
+      <ul v-if="page.services.length" class="divide-y divide-(--color-border) overflow-hidden rounded-2xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-sm)">
         <li v-for="service in page.services" :key="service.id">
           <!-- Only a FIXED-price service can go through the automatic online booking flow
                (the API rejects a hold attempt against any other pricing type -- see
                BookingsService.createHoldImpl's pricingType guard), so FROM/RANGE/QUOTE
                block the click into a flow that would 400 at submission and drop the hover
                affordance, rather than rendering a plain <div> (which would need duplicating
-               this whole card's markup across two branches just to dodge one click). -->
+               this whole row's markup across two branches just to dodge one click). -->
           <NuxtLink
             :to="bookingLink(service.id)"
-            class="block rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 text-sm shadow-(--shadow-sm) transition-shadow"
-            :class="service.pricingType === 'fixed' ? 'hover:shadow-(--shadow-md)' : 'cursor-default'"
+            class="block px-4 py-3.5 text-sm transition-colors"
+            :class="service.pricingType === 'fixed' ? 'hover:bg-(--color-surface-subtle) active:bg-(--color-surface-subtle)' : 'cursor-default'"
             @click="(e: MouseEvent) => { if (service.pricingType !== 'fixed') e.preventDefault() }"
           >
             <!-- Same shape as the booking page's price row, and for the same reason: at
@@ -547,31 +532,11 @@ function scrollToSection(id: string) {
                  break (it is the only genuinely elastic part), while the badge and each
                  price stay whole and wrap as units. -->
             <div class="flex items-center justify-between gap-3">
-              <span class="min-w-0 break-words text-(--color-text)">{{ service.name }} ({{ service.durationMin.toLocaleString('fa-IR') }} دقیقه)</span>
-              <span class="flex flex-wrap items-center justify-end gap-2">
-                <span
-                  v-if="service.discountPercent"
-                  class="whitespace-nowrap rounded-full bg-(--color-danger-soft) px-2 py-0.5 text-xs font-bold text-(--color-danger)"
-                >
-                  ٪{{ service.discountPercent.toLocaleString('fa-IR') }} تخفیف
-                </span>
-                <span v-if="service.pricingType === 'fixed'" class="flex flex-col items-end whitespace-nowrap leading-tight">
-                  <span v-if="service.discountPercent" class="text-xs text-(--color-text-muted) line-through">
-                    <span dir="ltr" class="tnum">{{ formatToman(service.price!) }}</span> تومان
-                  </span>
-                  <span class="font-bold text-(--color-text)">
-                    <span dir="ltr" class="tnum">{{ formatToman(applyDiscount(service.price!, service.discountPercent)) }}</span> تومان
-                  </span>
-                </span>
-                <span v-else-if="service.pricingType === 'from'" class="font-bold text-(--color-text) whitespace-nowrap">
-                  از <span dir="ltr" class="tnum">{{ formatToman(service.price!) }}</span> تومان
-                </span>
-                <span v-else-if="service.pricingType === 'range'" class="font-bold text-(--color-text) whitespace-nowrap">
-                  <span dir="ltr" class="tnum">{{ formatToman(service.price!) }}</span> تا
-                  <span dir="ltr" class="tnum">{{ formatToman(service.priceMax!) }}</span> تومان
-                </span>
-                <span v-else class="font-bold text-(--color-text) whitespace-nowrap">قیمت توافقی</span>
+              <span class="min-w-0 break-words font-medium text-(--color-text)">
+                {{ service.name }}
+                <span class="font-normal text-(--color-text-muted)">· {{ service.durationMin.toLocaleString('fa-IR') }} دقیقه</span>
               </span>
+              <ServicePriceTag :service="service" />
             </div>
             <p v-if="service.pricingType !== 'fixed'" class="mt-1 text-xs text-(--color-text-muted)">
               برای رزرو این خدمت باید ابتدا با سالن هماهنگ کنید.
@@ -580,6 +545,10 @@ function scrollToSection(id: string) {
                  the duration above is a minimum, not a guarantee, and this is where a salon
                  says so explicitly instead of a customer being surprised mid-appointment. -->
             <p v-if="service.description" class="mt-1.5 text-xs text-(--color-text-muted)">{{ service.description }}</p>
+            <p v-if="service.pricingType === 'fixed'" class="mt-1.5 flex items-center gap-0.5 text-xs font-semibold text-(--color-accent-text)">
+              انتخاب و رزرو
+              <BaseIcon name="chevron-back" :size="12" />
+            </p>
           </NuxtLink>
         </li>
       </ul>
@@ -644,6 +613,72 @@ function scrollToSection(id: string) {
       :attribution-source="attributionSource"
     />
 
+    <SalonTeam :workers="page.workers" />
+
+    <SalonReviews v-if="featureFlags.reviewsEnabled" :reviews="page.reviews" :can-report="canReport" @report="openReviewReport" />
+
+    <button
+      v-if="canReport"
+      type="button"
+      data-testid="report-salon-button"
+      class="inline-flex min-h-11 items-center text-xs opacity-70 underline"
+      @click="openSalonReport"
+    >
+      گزارش این سالن
+    </button>
+
+      </div>
+      <aside class="mt-6 min-w-0 space-y-6 lg:sticky lg:top-20 lg:mt-0">
+      <!-- Desktop only: the phone has the sticky bottom bar. The same "from" price and the one
+           action the page exists for, kept in view beside the content while the customer reads. -->
+      <div v-if="minServicePrice !== null" data-testid="booking-summary" class="hidden rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 shadow-(--shadow-sm) lg:block">
+        <p class="text-sm text-(--color-text-muted)">
+          شروع از
+          <span class="block text-lg font-bold text-(--color-text)"><span dir="ltr" class="tnum">{{ formatToman(minServicePrice) }}</span> تومان</span>
+        </p>
+        <a
+          href="#services"
+          class="mt-3 flex min-h-11 items-center justify-center rounded-xl bg-(--color-text) px-5 text-sm font-semibold text-(--color-surface)"
+          @click.prevent="scrollToSection('services')"
+        >
+          مشاهده خدمات
+        </a>
+      </div>
+
+    <section id="location" class="scroll-mt-20">
+      <h2 class="sr-only">موقعیت مکانی</h2>
+      <div class="space-y-2">
+        <LazySalonMap
+          compact
+          data-testid="salon-map"
+          :salons="salonMapData.salons"
+          :center="salonMapData.center"
+          :salon-coords="salonMapData.salonCoords"
+        />
+        <!-- Exposed directly here, not just inside the map's own marker popup two taps deep
+             (open the popup, then find the link) -- this is the whole reason a customer would
+             interact with the map at all on a page whose job is booking, not exploring. -->
+        <div class="grid grid-cols-2 gap-2 text-xs font-semibold">
+          <a
+            :href="`https://nshn.ir/?lat=${salonMapData.center.lat}&lng=${salonMapData.center.lng}`"
+            target="_blank"
+            rel="noopener"
+            class="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-(--color-border) bg-(--color-surface-card) text-(--color-text) transition-colors hover:bg-(--color-surface-subtle)"
+          >
+            مسیریابی با نشان
+          </a>
+          <a
+            :href="`https://www.google.com/maps/dir/?api=1&destination=${salonMapData.center.lat},${salonMapData.center.lng}`"
+            target="_blank"
+            rel="noopener"
+            class="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-(--color-border) bg-(--color-surface-card) text-(--color-text) transition-colors hover:bg-(--color-surface-subtle)"
+          >
+            مسیریابی با گوگل‌مپ
+          </a>
+        </div>
+      </div>
+    </section>
+
     <section>
       <div class="mb-2 flex flex-wrap items-center gap-2">
         <h2 class="flex items-center gap-1.5 text-xl font-bold text-(--color-text)">
@@ -670,7 +705,8 @@ function scrollToSection(id: string) {
           class="flex items-center justify-between gap-2 rounded-lg px-2 py-1"
           :class="day.weekday === todayWeekday ? 'bg-(--color-surface-subtle) font-bold' : ''"
         >
-          <span class="shrink-0">{{ WEEKDAY_NAMES[day.weekday] }}:</span>
+          <span class="shrink-0">{{ WEEKDAY_NAMES[day.weekday] }}</span>
+          <span class="mx-1 min-w-4 flex-1 self-center border-b border-dotted border-(--color-border)" aria-hidden="true" />
           <!-- dir="ltr" isn't decorative here: without it, the bidi algorithm reorders this
                RTL-embedded "09:00 - 20:00" run so open/close visually swap (the exact bug
                the instagram handle above already had to work around the same way). Applying
@@ -701,19 +737,8 @@ function scrollToSection(id: string) {
       </div>
     </section>
 
-    <SalonTeam :workers="page.workers" />
-
-    <SalonReviews v-if="featureFlags.reviewsEnabled" :reviews="page.reviews" :can-report="canReport" @report="openReviewReport" />
-
-    <button
-      v-if="canReport"
-      type="button"
-      data-testid="report-salon-button"
-      class="inline-flex min-h-11 items-center text-xs opacity-70 underline"
-      @click="openSalonReport"
-    >
-      گزارش این سالن
-    </button>
+      </aside>
+    </div>
 
     <ReportForm v-if="reportOpen" :salon-id="page.salon.id" :review-id="reportReviewId" @close="closeReport" />
 
@@ -737,7 +762,7 @@ function scrollToSection(id: string) {
          with the page on wider viewports instead of stretching full-bleed behind it. -->
     <div
       v-if="minServicePrice !== null"
-      class="fixed inset-x-0 bottom-0 z-40 border-t border-(--color-border) bg-(--color-surface-card)/95 backdrop-blur"
+      class="fixed inset-x-0 bottom-0 z-40 border-t border-(--color-border) bg-(--color-surface-card) lg:hidden"
       style="padding-bottom: env(safe-area-inset-bottom)"
     >
       <div class="mx-auto flex max-w-2xl items-center justify-between gap-3 p-4">

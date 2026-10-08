@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateShort } from '../../utils/format-date'
 import { formatToman } from '../../utils/format-toman'
 
 interface MyCodeResponse {
@@ -221,7 +222,7 @@ function couponValidityLabel(reward: RewardItem): string | null {
   if (!reward.couponExpiresAt) return null
   return isCouponExpired(reward)
     ? 'مهلت استفاده از این کد گذشته است'
-    : `معتبر تا ${formatDate(reward.couponExpiresAt)}`
+    : `معتبر تا ${formatDateShort(reward.couponExpiresAt)}`
 }
 
 // A coupon-kind reward's couponCode is a literal, redeemable row in the same `coupons`
@@ -274,10 +275,6 @@ function formatRewardValue(item: RewardItem): string {
   return `${value}${currency ? ' ' + currency : ''}`
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('fa-IR')
-}
-
 useSeoMeta({ title: 'دعوت از دوستان — قیچی' })
 </script>
 
@@ -287,7 +284,7 @@ useSeoMeta({ title: 'دعوت از دوستان — قیچی' })
       <NuxtLink
         to="/profile"
         aria-label="بازگشت"
-        class="flex h-8 w-8 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-surface-subtle)"
+        class="-ms-2 flex h-11 w-11 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-surface-subtle)"
       >
         <BaseIcon name="chevron-forward" :size="20" />
       </NuxtLink>
@@ -322,7 +319,7 @@ useSeoMeta({ title: 'دعوت از دوستان — قیچی' })
 
       <BaseCard v-if="!referrals" data-testid="referrals-load-error" role="alert" class="space-y-3 text-center">
         <p class="text-sm text-(--color-text-muted)">بارگذاری دعوت‌ها با خطا مواجه شد.</p>
-        <BaseButton variant="secondary" data-testid="referrals-retry-button" :loading="referralsPending" @click="refreshReferrals()">تلاش مجدد</BaseButton>
+        <BaseButton variant="secondary" data-testid="referrals-retry-button" :loading="referralsPending" @click="refreshReferrals()">تلاش دوباره</BaseButton>
       </BaseCard>
 
       <p
@@ -338,7 +335,7 @@ useSeoMeta({ title: 'دعوت از دوستان — قیچی' })
           <div class="flex items-center justify-between gap-2">
             <div class="min-w-0 space-y-0.5 text-sm">
               <p class="font-medium">{{ r.referredUserPhoneMasked }}</p>
-              <p class="text-xs text-(--color-text-muted)">{{ formatDate(r.createdAt) }}</p>
+              <p class="text-xs text-(--color-text-muted)">{{ formatDateShort(r.createdAt) }}</p>
             </div>
             <p data-testid="referral-status" class="shrink-0 whitespace-nowrap text-sm font-bold" :class="STATUS_CLASSES[r.status]">
               {{ statusLabel(r.status) }}
@@ -381,7 +378,7 @@ useSeoMeta({ title: 'دعوت از دوستان — قیچی' })
 
       <BaseCard v-if="!rewards" data-testid="rewards-load-error" role="alert" class="space-y-3 text-center">
         <p class="text-sm text-(--color-text-muted)">بارگذاری پاداش‌ها با خطا مواجه شد.</p>
-        <BaseButton variant="secondary" data-testid="rewards-retry-button" :loading="rewardsPending" @click="refreshRewards()">تلاش مجدد</BaseButton>
+        <BaseButton variant="secondary" data-testid="rewards-retry-button" :loading="rewardsPending" @click="refreshRewards()">تلاش دوباره</BaseButton>
       </BaseCard>
 
       <p
@@ -403,7 +400,7 @@ useSeoMeta({ title: 'دعوت از دوستان — قیچی' })
             <div class="min-w-0 space-y-0.5 text-sm break-words">
               <p data-testid="reward-kind" class="font-medium">{{ rewardKindLabel(rw.rewardKind) }}</p>
               <p class="text-xs text-(--color-text-muted)">
-                {{ rewardBeneficiaryLabel(rw.beneficiaryRole) }} · {{ formatDate(rw.grantedAt) }}
+                {{ rewardBeneficiaryLabel(rw.beneficiaryRole) }} · {{ formatDateShort(rw.grantedAt) }}
               </p>
               <template v-if="rw.couponCode">
                 <p class="text-xs text-(--color-text-muted)">کد تخفیف: {{ rw.couponCode }}</p>

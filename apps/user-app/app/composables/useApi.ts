@@ -1,7 +1,20 @@
+import { customerFacingApiMessage, persianServerMessage } from '../utils/api-error-message'
+import { loginLocation } from '../utils/safe-redirect'
+
 export interface ApiError {
   /** 0 means a network/DNS/timeout failure with no HTTP response at all, not a real status code */
   status: number
+  /**
+   * Always Persian and safe to show a customer: the server's own message when it is Persian,
+   * otherwise a status-based fallback (see utils/api-error-message.ts).
+   */
   message: string
+  /**
+   * The server's own message, only when it is Persian (i.e. written for the customer).
+   * Undefined when the server sent English/none. For callers that must tell "the API gave a
+   * real reason" apart from the generic status-based `message` fallback.
+   */
+  serverMessage?: string
   /**
    * The API's stable, machine-readable error code, when the response body carried one
    * (e.g. coupon-validation failures -- see apps/api's coupon-error-codes.ts). Undefined
@@ -28,6 +41,14 @@ interface ApiFetchOptions {
 
 export function useApi() {
   const config = useRuntimeConfig()
+  // Captured at setup time: nuxt context is gone after the first await. useRouter (not
+  // useRoute) because useRoute warns when reached through route middleware.
+  let router: ReturnType<typeof useRouter> | null = null
+  try {
+    router = useRouter()
+  } catch {
+    router = null
+  }
 
   async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<ApiResult<T>> {
     const headers: Record<string, string> = {}
@@ -62,18 +83,18 @@ export function useApi() {
         statusMessage?: string
       }
       const bodyMessage = fetchErr.data?.message ?? fetchErr.response?._data?.message
-      const message =
-        typeof bodyMessage === 'string' && bodyMessage.trim()
-          ? bodyMessage
-          : status === 0
-            ? 'خطا در ارتباط با سرور'
-            : 'خطایی رخ داد'
+      const message = customerFacingApiMessage(status, bodyMessage)
       const bodyCode = fetchErr.data?.code ?? fetchErr.response?._data?.code
-      const apiError: ApiError = { status, message, code: typeof bodyCode === 'string' ? bodyCode : undefined }
+      const apiError: ApiError = {
+        status,
+        message,
+        serverMessage: persianServerMessage(bodyMessage) ?? undefined,
+        code: typeof bodyCode === 'string' ? bodyCode : undefined,
+      }
 
       if (status === 401) {
         if (options.redirectOn401 !== false) {
-          await navigateTo('/login')
+          await navigateTo(loginLocation(router?.currentRoute.value.fullPath))
         }
         return { data: null, error: apiError }
       }

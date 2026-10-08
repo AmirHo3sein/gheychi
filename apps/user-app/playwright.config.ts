@@ -54,7 +54,13 @@ export default defineConfig({
       // ordinary local dev stack) gets reused as-is instead, still pointed at ITS OWN
       // DB_NAME. Stop that server (or export DB_NAME=gheychi_e2e before starting it) before
       // running this suite locally, or the reused server won't see prepare-db.cjs's seed data.
-      env: { ...process.env, DB_NAME: process.env.DB_NAME ?? 'gheychi_e2e' },
+      // BEAUTY_ANALYSIS_PROVIDER: the deterministic mock (never a real AI vendor) for
+      // 04-beauty-guide.spec.ts -- process.env wins over apps/api/.env in @nestjs/config.
+      env: {
+        ...process.env,
+        DB_NAME: process.env.DB_NAME ?? 'gheychi_e2e',
+        BEAUTY_ANALYSIS_PROVIDER: process.env.BEAUTY_ANALYSIS_PROVIDER ?? 'mock',
+      },
     },
     {
       command: 'pnpm --filter @gheychi/user-app dev',

@@ -13,7 +13,7 @@ function flagReview(reviewId: string) {
 
 <template>
   <section id="reviews">
-    <h2 class="mb-2 flex items-center gap-1.5 text-lg font-bold text-(--color-text)">
+    <h2 class="mb-2 flex items-center gap-1.5 text-xl font-bold text-(--color-text)">
       <BaseIcon name="star" :size="17" class="text-(--color-text-muted)" />
       نظرات
     </h2>

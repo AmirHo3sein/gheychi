@@ -238,7 +238,7 @@ useHead({
         <NuxtLink
           :to="browseLink({ gender: 'women', cursor: null })"
           :aria-current="gender === 'women' ? 'page' : undefined"
-          class="min-h-8 rounded-full px-4 py-1.5 transition-colors"
+          class="flex min-h-9 items-center rounded-full px-4 py-1.5 transition-colors"
           :class="gender === 'women' ? 'bg-(--color-surface-card) font-semibold text-(--color-text) shadow-(--shadow-sm)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
         >
           زنانه
@@ -246,16 +246,25 @@ useHead({
         <NuxtLink
           :to="browseLink({ gender: 'men', cursor: null })"
           :aria-current="gender === 'men' ? 'page' : undefined"
-          class="min-h-8 rounded-full px-4 py-1.5 transition-colors"
+          class="flex min-h-9 items-center rounded-full px-4 py-1.5 transition-colors"
           :class="gender === 'men' ? 'bg-(--color-surface-card) font-semibold text-(--color-text) shadow-(--shadow-sm)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
         >
           مردانه
         </NuxtLink>
       </nav>
 
-      <p v-if="pending" data-testid="browse-loading" role="status" class="py-8 text-center text-sm text-(--color-text-muted)">
-        در حال بارگذاری...
-      </p>
+      <div v-if="pending" data-testid="browse-loading" role="status">
+        <span class="sr-only">در حال بارگذاری...</span>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
+          <div v-for="n in 3" :key="n" class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-2.5">
+            <div class="skeleton aspect-[16/10] rounded-xl sm:aspect-[4/3]" />
+            <div class="space-y-2 px-1.5 pt-3 pb-2">
+              <div class="skeleton h-4 w-2/3 rounded" />
+              <div class="skeleton h-3 w-1/3 rounded" />
+            </div>
+          </div>
+        </div>
+      </div>
       <div
         v-else-if="failed"
         data-testid="browse-error"
@@ -282,7 +291,7 @@ useHead({
           :to="browseLink({ cursor: nextCursor })"
           data-testid="browse-next"
           rel="next"
-          class="min-h-9 rounded-full border border-(--color-border) bg-(--color-surface-card) px-5 py-2 text-sm text-(--color-text) transition-colors hover:bg-(--color-surface-subtle)"
+          class="flex min-h-11 items-center rounded-full border border-(--color-border) bg-(--color-surface-card) px-5 text-sm text-(--color-text) transition-colors hover:bg-(--color-surface-subtle)"
         >
           صفحه بعد
         </NuxtLink>
@@ -291,15 +300,22 @@ useHead({
       <!-- The crawl frontier. Every city is one hop from here, and every city page is one hop
            from its own salons, so the full approved catalogue is reachable by following links
            from /salons alone -- which is what the sitemap could never establish on its own. -->
-      <section class="space-y-2 border-t border-(--color-border) pt-4">
-        <h2 class="text-sm font-bold text-(--color-text)">سالن‌های زیبایی در سایر شهرها</h2>
-        <div class="flex flex-wrap gap-1.5">
+      <!-- A <details>, collapsed by default: ~80 city chips used to be the loudest thing on the
+           page, dwarfing the salons the visitor came for. A closed <details> still has its
+           content in the server-rendered HTML, so every city link stays crawlable -- the frontier
+           is unchanged; only the screen real estate is. -->
+      <details class="group space-y-2 border-t border-(--color-border) pt-2">
+        <summary class="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 text-sm font-bold text-(--color-text) [&::-webkit-details-marker]:hidden">
+          <h2>سالن‌های زیبایی در سایر شهرها</h2>
+          <BaseIcon name="chevron-back" :size="16" class="text-(--color-text-muted) transition-transform group-open:-rotate-90 motion-reduce:transition-none" />
+        </summary>
+        <div class="flex flex-wrap gap-2 pb-2">
           <NuxtLink
             v-for="city in cities"
             :key="city.id"
             :to="browseLink({ city: city.slug, cursor: null })"
             :aria-current="city.id === activeCity.id ? 'page' : undefined"
-            class="rounded-full border border-(--color-border) px-3 py-1 text-xs transition-colors"
+            class="flex min-h-10 items-center rounded-full border border-(--color-border) px-3.5 text-sm transition-colors"
             :class="city.id === activeCity.id
               ? 'bg-(--color-surface-subtle) font-semibold text-(--color-text)'
               : 'bg-(--color-surface-card) text-(--color-text-muted) hover:text-(--color-text)'"
@@ -307,7 +323,7 @@ useHead({
             {{ city.name }}
           </NuxtLink>
         </div>
-      </section>
+      </details>
     </template>
 
     <div

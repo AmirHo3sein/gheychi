@@ -2,6 +2,8 @@
 import type { ApiError } from '~/composables/useApi'
 import { applyDiscount } from '../../../utils/discount'
 import { formatToman } from '../../../utils/format-toman'
+import { isUuid } from '../../../utils/beauty-guide'
+import { formatAppointment } from '../../../utils/format-date'
 
 // `bookingConfirmationMode` is on the public GET /salons/:slug payload (findPublicBySlug
 // returns the whole salon row), which is what lets this page tell the customer BEFORE they
@@ -43,6 +45,9 @@ const ATTRIBUTION_SOURCES = new Set(['qr', 'direct', 'search'])
 const attributionSource = ATTRIBUTION_SOURCES.has(String(route.query.source))
   ? (route.query.source as string)
   : undefined
+// The customer's own Beauty Guide, when the booking started from one. Only a well-formed
+// UUID is forwarded; the API additionally rejects a guide that isn't this user's.
+const beautyGuideId = isUuid(route.query.beautyGuideId) ? route.query.beautyGuideId : undefined
 const slug = route.params.slug as string
 const serviceId = route.params.serviceId as string
 const { apiFetch } = useApi()
@@ -103,6 +108,19 @@ const submitError = ref('')
 // change rather than silently carried over to a worker it was never checked against.
 watch(selectedWorkerId, () => {
   selectedSlot.value = null
+})
+
+// The confirm card mounts below the fold on a phone once a time is picked; bring it into
+// view (instantly, if the customer asked for reduced motion) so the next step is obvious.
+// Only when the card APPEARS -- switching between two slots must not re-scroll the page.
+const confirmCardEl = ref<HTMLElement | null>(null)
+watch(selectedSlot, async (slot, previous) => {
+  if (!slot || previous) return
+  await nextTick()
+  const el = confirmCardEl.value
+  if (!el || typeof el.scrollIntoView !== 'function') return
+  const reduceMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'nearest' })
 })
 
 const couponCode = ref('')
@@ -212,6 +230,10 @@ function customerFacingMessage(message: string | undefined): string | null {
   return message && PERSIAN_TEXT.test(message) ? message : null
 }
 
+// `error.serverMessage` (not `.message`) is deliberate: `.message` is always some Persian
+// sentence now (useApi substitutes a status-based fallback for English), but this page needs
+// to know whether the API itself gave a real, actionable reason.
+
 // A coupon rejection from POST /bookings now carries a stable, machine-readable `code`
 // (see apps/api's coupon-error-codes.ts) whenever the API returned a real, structured
 // JSON body -- CouponsService.resolveAndValidate's four rejections and createHold's own
@@ -268,7 +290,7 @@ async function applyCoupon() {
     // "کد تخفیف نامعتبر است" before this, sending them off to re-check a code they typed
     // perfectly. A non-400 carries no coupon-specific meaning, so it keeps generic copy.
     couponError.value =
-      (error?.status === 400 ? customerFacingMessage(error.message) : null) ??
+      (error?.status === 400 ? customerFacingMessage(error.serverMessage) : null) ??
       'بررسی کد تخفیف ممکن نشد، لطفا دوباره تلاش کنید'
     return
   }
@@ -289,6 +311,7 @@ async function confirmBooking() {
       applyWalletBalance: applyWalletBalance.value || undefined,
       workerId: selectedWorkerId.value || undefined,
       attributionSource,
+      beautyGuideId,
     },
     silent: true,
   })
@@ -305,7 +328,7 @@ async function confirmBooking() {
       return
     }
 
-    const reason = error?.status === 400 ? customerFacingMessage(error.message) : null
+    const reason = error?.status === 400 ? customerFacingMessage(error.serverMessage) : null
 
     // createHold re-validates the coupon inside its own transaction, so a code that passed
     // the preview minutes ago can still be refused here (expired in between, redemption cap
@@ -355,7 +378,7 @@ async function confirmBooking() {
       <NuxtLink
         :to="`/salons/${slug}`"
         aria-label="بازگشت به سالن"
-        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-surface-subtle)"
+        class="-ms-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-surface-subtle)"
       >
         <BaseIcon name="chevron-forward" :size="20" />
       </NuxtLink>
@@ -424,6 +447,7 @@ async function confirmBooking() {
       :worker-id="selectedWorkerId"
       :selected-slot="selectedSlot"
       @select="selectedSlot = $event"
+      @clear="selectedSlot = null"
     />
 
     <!-- Fills the gap between "here are the times" and the confirm card below, which only
@@ -433,7 +457,14 @@ async function confirmBooking() {
       یک زمان را انتخاب کنید تا رزرو خود را نهایی کنید
     </p>
 
-    <BaseCard v-if="selectedSlot" class="space-y-4 text-sm">
+    <div v-if="selectedSlot" ref="confirmCardEl" class="scroll-mb-4">
+    <BaseCard class="space-y-4 text-sm">
+      <!-- Restates exactly which time is about to be booked, so a customer who has scrolled
+           past the picker can still see (and trust) what the button below will submit. -->
+      <p data-testid="selected-slot-summary" class="flex items-center gap-1.5 font-bold text-(--color-text)">
+        <BaseIcon name="calendar" :size="16" class="shrink-0 text-(--color-text-muted)" />
+        {{ formatAppointment(selectedSlot) }}
+      </p>
       <!-- At 320px the label, the discount badge and a seven-figure price want ~265px of
            the card's 254px content box, so something has to give -- and it must not be the
            numbers. whitespace-nowrap keeps the badge and each price atomic (a price broken
@@ -480,7 +511,7 @@ async function confirmBooking() {
           (<span dir="ltr" class="tnum">{{ formatToman(walletAmountToApply) }}</span> تومان از کیف پول)
         </span>
       </p>
-      <p v-if="page.terms && featureFlags.onlinePaymentEnabled" class="text-(--color-text-muted)">لغو رایگان تا {{ page.terms.cancellationWindowHours }} ساعت قبل از نوبت</p>
+      <p v-if="page.terms && featureFlags.onlinePaymentEnabled" class="text-(--color-text-muted)">لغو رایگان تا {{ page.terms.cancellationWindowHours.toLocaleString('fa-IR') }} ساعت قبل از نوبت</p>
       <!-- Non-refundable-by-default disclosure (Product Principle #3) -- calm/muted, not
            danger-red: this informs what happens after the free-cancel window, it doesn't
            alarm. Numbers still come exclusively from /platform-config/booking-terms above. -->
@@ -554,6 +585,7 @@ async function confirmBooking() {
         {{ manualApproval ? 'ثبت درخواست رزرو' : (featureFlags.onlinePaymentEnabled ? 'پرداخت و رزرو' : 'رزرو') }}
       </BaseButton>
     </BaseCard>
+    </div>
 
     <!-- Deliberately outside the `selectedSlot` block above: confirmBooking() resets
     selectedSlot to null in the same branch that sets this message (a 409, or any non-coupon

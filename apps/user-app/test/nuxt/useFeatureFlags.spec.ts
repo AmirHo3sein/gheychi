@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { FEATURE_FLAGS_LOADED_STATE_KEY, useFeatureFlags } from '../../app/composables/useFeatureFlags'
+import { FEATURE_FLAGS_LOADED_STATE_KEY, FEATURE_FLAGS_STATE_KEY, useFeatureFlags } from '../../app/composables/useFeatureFlags'
 
 const fetchMock = vi.fn()
 const fetchStub = Object.assign((...args: unknown[]) => fetchMock(...args), {
@@ -13,13 +13,18 @@ describe('useFeatureFlags', () => {
     // See auth.global.spec.ts's own comment -- useState has no $reset(), so this
     // module-shared ref must be reset by hand between tests.
     useState(FEATURE_FLAGS_LOADED_STATE_KEY).value = false
+    // Also clear the flags themselves: the Nuxt test environment boots the real app, whose
+    // global middleware may already have loaded flags from whatever API happens to be running
+    // on the configured apiBase (e.g. a local dev server) -- undefined makes useState re-run
+    // its initializer, so the defaults below are tested, not that server's live values.
+    useState(FEATURE_FLAGS_STATE_KEY).value = undefined
   })
 
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('defaults every flag to true before loading', () => {
+  it('defaults every flag to true before loading -- except Beauty Guide, which fails closed', () => {
     const { flags } = useFeatureFlags()
     expect(flags.value).toEqual({
       reviewsEnabled: true,
@@ -28,6 +33,8 @@ describe('useFeatureFlags', () => {
       referralsEnabled: true,
       couponsEnabled: true,
       onlinePaymentEnabled: true,
+      // A paid AI feature seeded off: a failed flag fetch must not advertise it.
+      beautyGuideEnabled: false,
     })
   })
 

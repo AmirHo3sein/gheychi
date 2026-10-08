@@ -70,6 +70,21 @@ describe('account wallet page', () => {
     vi.unstubAllGlobals()
   })
 
+  it('prints transaction dates as «day month year · hh:mm» in Tehran time, without seconds', async () => {
+    stub([{ currency: 'toman', balance: 50_000 }], [TX_CREDIT], 1)
+    const wrapper = await mountSuspended(WalletPage)
+    await flushPromises()
+    // 2026-07-18T08:00Z -> 11:30 Tehran, 27 Tir 1405.
+    expect(wrapper.text()).toContain('۲۷ تیر ۱۴۰۵ · ۱۱:۳۰')
+    expect(wrapper.text()).not.toMatch(/۱۱:۳۰:۰۰/)
+  })
+
+  it('has a >=44px back button', async () => {
+    stub([], [], 0)
+    const wrapper = await mountSuspended(WalletPage)
+    expect(wrapper.get('a[aria-label="بازگشت"]').classes()).toEqual(expect.arrayContaining(['h-11', 'w-11']))
+  })
+
   // A failed transactions fetch used to render as "no transactions yet" -- a claim about
   // the customer's money that a network blip has no business making.
   it('shows a retry state, not the empty state, when the transaction list fails to load', async () => {

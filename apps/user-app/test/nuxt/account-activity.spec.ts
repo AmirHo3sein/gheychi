@@ -54,6 +54,15 @@ describe('account activity page', () => {
     vi.unstubAllGlobals()
   })
 
+  it('prints the activity time as «day month year · hh:mm» in Tehran time, without seconds', async () => {
+    fetchMock.mockResolvedValue({ items: [BOOKING_ITEM], nextCursor: null })
+    const wrapper = await mountSuspended(ActivityPage)
+    await flushPromises()
+    // 2026-08-01T09:00Z -> 12:30 Tehran, 10 Mordad 1405.
+    expect(wrapper.text()).toContain('۱۰ مرداد ۱۴۰۵ · ۱۲:۳۰')
+    expect(wrapper.text()).not.toMatch(/۱۲:۳۰:۰۰/)
+  })
+
   it('renders one card per activity type with its own summary line', async () => {
     fetchMock.mockResolvedValue({
       items: [REWARD_ITEM, REVIEW_ITEM, WALLET_ITEM, BOOKING_ITEM],

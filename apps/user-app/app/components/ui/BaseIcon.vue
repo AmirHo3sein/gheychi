@@ -37,6 +37,8 @@ export type IconName =
   | 'logout'
   | 'wallet'
   | 'gift'
+  | 'home'
+  | 'book-open'
 
 const props = withDefaults(defineProps<{ name: IconName; size?: number }>(), { size: 20 })
 </script>
@@ -94,6 +96,15 @@ const props = withDefaults(defineProps<{ name: IconName; size?: number }>(), { s
     </template>
     <template v-else-if="name === 'heart'">
       <path d="M12 20.5s-7.5-4.6-9.7-9.2C.8 7.9 2.7 4.5 6 4c2-.3 3.6.7 6 3 2.4-2.3 4-3.3 6-3 3.3.5 5.2 3.9 3.7 7.3-2.2 4.6-9.7 9.2-9.7 9.2Z" />
+    </template>
+    <template v-else-if="name === 'home'">
+      <path d="M3.5 11 12 4l8.5 7" />
+      <path d="M5.5 10v9.5h13V10" />
+      <path d="M10 19.5V14h4v5.5" />
+    </template>
+    <template v-else-if="name === 'book-open'">
+      <path d="M12 6.5C10.5 5.3 8.4 4.8 5 5v13c3.4-.2 5.5.3 7 1.5 1.5-1.2 3.6-1.7 7-1.5V5c-3.4-.2-5.5.3-7 1.5Z" />
+      <path d="M12 6.5v13" />
     </template>
     <template v-else-if="name === 'camera'">
       <path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z" />

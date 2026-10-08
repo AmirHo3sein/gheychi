@@ -46,4 +46,10 @@ describe('buildBookingLink', () => {
     expect(buildBookingLink('my-salon', 'svc1', null)).toBe('/booking/my-salon/svc1')
     expect(buildBookingLink('my-salon', 'svc1', undefined)).toBe('/booking/my-salon/svc1')
   })
+
+  it('carries an optional beautyGuideId alongside (or without) the attribution source', () => {
+    const guide = '0b6c1e57-2f0a-4c1e-9b1e-1d2c3e4f5a6b'
+    expect(buildBookingLink('my-salon', 'svc1', null, { beautyGuideId: guide })).toBe(`/booking/my-salon/svc1?beautyGuideId=${guide}`)
+    expect(buildBookingLink('my-salon', 'svc1', 'qr', { beautyGuideId: guide })).toBe(`/booking/my-salon/svc1?source=qr&beautyGuideId=${guide}`)
+  })
 })

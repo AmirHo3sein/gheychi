@@ -101,4 +101,43 @@ describe('account favorites page', () => {
     const backLink = wrapper.findAllComponents({ name: 'NuxtLink' }).find((l) => l.props('to') === '/profile')
     expect(backLink).toBeTruthy()
   })
+
+  // A failed fetch used to render as the empty list -- a false claim about the customer's data.
+  it('shows a retry state, not the empty state, when the favorites fetch fails; retry recovers', async () => {
+    fetchMock.mockRejectedValue({ response: { status: 500 } })
+    const wrapper = await mountSuspended(FavoritesPage)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="empty-state"]').exists()).toBe(false)
+    const card = wrapper.get('[data-testid="favorites-load-error"]')
+    expect(card.attributes('role')).toBe('alert')
+    expect(card.text()).toContain('بارگذاری نشد')
+
+    stub([SALON_WITH_PHOTO])
+    await wrapper.get('[data-testid="favorites-retry-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="favorites-load-error"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="favorite-salon"]')).toHaveLength(1)
+  })
+
+  it('never shows the empty state for a list that is still loading, then renders it', async () => {
+    let resolve!: (v: unknown) => void
+    fetchMock.mockImplementation(() => new Promise((r) => { resolve = r }))
+    const pending = mountSuspended(FavoritesPage)
+    await flushPromises()
+    resolve([SALON_WITH_PHOTO])
+    const wrapper = await pending
+    await flushPromises()
+    expect(wrapper.find('[data-testid="empty-state"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="favorite-salon"]')).toHaveLength(1)
+  })
+
+  it('has a >=44px back button', async () => {
+    stub([])
+    const wrapper = await mountSuspended(FavoritesPage)
+    const back = wrapper.get('a[aria-label="بازگشت"]')
+    expect(back.classes()).toContain('h-11')
+    expect(back.classes()).toContain('w-11')
+  })
 })

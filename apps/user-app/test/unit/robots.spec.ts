@@ -21,6 +21,10 @@ describe('buildRobotsTxt', () => {
 
   // The gap this list exists to close: wallet/referral/activity/favorites all live under
   // /account/ and were fully crawlable.
+  it('disallows private Beauty Guides (customers\' own inspiration photos)', () => {
+    expect(buildRobotsTxt(SITE)).toMatch(/^Disallow: \/beauty-guide$/m)
+  })
+
   it('disallows the private per-user account section', () => {
     expect(buildRobotsTxt(SITE)).toMatch(/^Disallow: \/account\/$/m)
   })

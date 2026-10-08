@@ -115,14 +115,21 @@ async function saveEdit() {
   // stay on the edit form so the user can see their unsaved input.
 }
 
+// Deleting is irreversible, so it goes through the shared ConfirmDialog rather than firing
+// on the first tap (and never through native confirm()).
+const confirmingDelete = ref(false)
+
+function askDeleteReview() {
+  if (!reviewId.value || deleting.value) return
+  confirmingDelete.value = true
+}
+
 async function deleteReview() {
   if (!reviewId.value) return
-  // Matches the native-confirm pattern already used for cancelBooking in bookings/index.vue.
-  if (!confirm('این نظر حذف شود؟')) return
-
   deleting.value = true
   const { error } = await apiFetch(`/reviews/${reviewId.value}`, { method: 'DELETE' })
   deleting.value = false
+  confirmingDelete.value = false
   if (!error) {
     phase.value = 'deleted'
     emit('changed')
@@ -136,7 +143,11 @@ function close() {
 const dialogRoot = ref<HTMLElement | null>(null)
 // The cast works around a vue-tsc/vue 3.5.42 template-ref inference mismatch (see
 // useDialog.ts's own signature) -- dialogRoot really is Ref<HTMLElement | null> at runtime.
-const { titleId } = useDialog(dialogRoot as unknown as Ref<HTMLElement | null>, { onClose: close })
+const { titleId } = useDialog(dialogRoot as unknown as Ref<HTMLElement | null>, {
+  onClose: close,
+  // The nested delete confirmation owns Escape/Tab while it is open.
+  enabled: () => !confirmingDelete.value,
+})
 </script>
 
 <template>
@@ -196,7 +207,7 @@ const { titleId } = useDialog(dialogRoot as unknown as Ref<HTMLElement | null>, 
           <BaseButton variant="secondary" block data-testid="edit-review-button" @click="startEdit">
             ویرایش
           </BaseButton>
-          <BaseButton variant="danger" block :loading="deleting" data-testid="delete-review-button" @click="deleteReview">
+          <BaseButton variant="danger" block :loading="deleting" data-testid="delete-review-button" @click="askDeleteReview">
             حذف
           </BaseButton>
         </div>
@@ -239,7 +250,7 @@ const { titleId } = useDialog(dialogRoot as unknown as Ref<HTMLElement | null>, 
         <textarea
           v-model="editComment"
           placeholder="نظر شما (اختیاری)"
-          class="w-full resize-y rounded-xl border border-(--color-border) bg-(--color-surface-card) p-2 text-sm focus:outline-none focus:ring-2 focus:ring-(--color-accent)/30"
+          class="w-full resize-y rounded-xl border border-(--color-border) bg-(--color-surface-card) px-4 py-2.5 text-sm text-(--color-text) transition-colors placeholder:text-(--color-text-muted) focus:border-(--color-accent-text) focus:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent-text)"
           rows="3"
         />
         <div class="flex gap-2">
@@ -284,7 +295,7 @@ const { titleId } = useDialog(dialogRoot as unknown as Ref<HTMLElement | null>, 
         <textarea
           v-model="comment"
           placeholder="نظر شما (اختیاری)"
-          class="w-full resize-y rounded-xl border border-(--color-border) bg-(--color-surface-card) p-2 text-sm focus:outline-none focus:ring-2 focus:ring-(--color-accent)/30"
+          class="w-full resize-y rounded-xl border border-(--color-border) bg-(--color-surface-card) px-4 py-2.5 text-sm text-(--color-text) transition-colors placeholder:text-(--color-text-muted) focus:border-(--color-accent-text) focus:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent-text)"
           rows="3"
         />
         <BaseButton block :loading="submitting" data-testid="submit-review-button" @click="submit">
@@ -294,5 +305,19 @@ const { titleId } = useDialog(dialogRoot as unknown as Ref<HTMLElement | null>, 
 
       <button type="button" class="min-h-11 w-full text-sm text-(--color-text-muted)" @click="close">بستن</button>
     </div>
+
+    <ConfirmDialog
+      v-if="confirmingDelete"
+      title="حذف نظر"
+      message="این نظر برای همیشه حذف می‌شود. ادامه می‌دهید؟"
+      confirm-label="حذف نظر"
+      tone="danger"
+      :loading="deleting"
+      data-testid="delete-review-dialog"
+      confirm-test-id="delete-review-confirm"
+      cancel-test-id="delete-review-cancel"
+      @confirm="deleteReview"
+      @cancel="confirmingDelete = false"
+    />
   </div>
 </template>

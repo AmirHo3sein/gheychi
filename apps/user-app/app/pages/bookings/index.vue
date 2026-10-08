@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { IconName } from '~/components/ui/BaseIcon.vue'
+import { formatAppointment } from '../../utils/format-date'
 
 interface BookingItem {
   id: string
@@ -161,52 +162,10 @@ async function retryPayment(id: string) {
   if (data) await navigateTo(data.paymentUrl, { external: true })
 }
 
-// Cancellation confirmation -- an in-app dialog (useDialog composable, same
-// role=dialog/focus-trap/Escape contract as ReportForm.vue) replacing the old bare
-// native confirm(), so the actual refund outcome for THIS booking can be shown
-// rather than a content-free yes/no prompt. A pending_payment booking never had a
-// captured payment (BookingsService.cancel), so cancelling it is free regardless of
-// the cancellation window; a confirmed booking's deposit is only refunded if the
-// window (fetched from /platform-config/booking-terms, same source
-// booking/[slug]/[serviceId].vue uses) hasn't yet closed.
+// Cancellation confirmation -- CancelBookingDialog (shared with the detail page) explains the
+// actual refund outcome for THIS booking rather than a content-free yes/no prompt.
 const cancelTarget = ref<BookingItem | null>(null)
 const cancelling = ref(false)
-
-function cancelOutcomeText(booking: BookingItem): string {
-  // A manual-approval request that hasn't been answered yet never opened a payment window,
-  // so there is nothing to refund and no cancellation window to be inside or outside of.
-  if (booking.status === 'pending_approval') {
-    return 'این درخواست هنوز تایید نشده و مبلغی از شما دریافت نشده است؛ لغو آن هزینه‌ای ندارد.'
-  }
-  if (booking.status === 'pending_payment') {
-    return 'این نوبت هنوز پرداخت نشده است؛ لغو آن هزینه‌ای برای شما ندارد.'
-  }
-  // A confirmed booking with no payment behind it (online payment collection was off when
-  // it was made): promising the deposit "will be refunded in full" would describe money that
-  // never moved. There is nothing to lose and no window to be inside or outside of.
-  if (!hasOnlineDeposit(booking)) {
-    return 'برای این نوبت پیش‌پرداختی دریافت نشده است؛ لغو آن هزینه‌ای برای شما ندارد.'
-  }
-  if (!terms.value) {
-    // Fallback if /platform-config/booking-terms didn't load -- same general policy
-    // wording as booking/[slug]/[serviceId].vue, combined into one sentence. 24 matches
-    // the seeded cancellation_window_hours (initial-schema migration), so a config fetch
-    // failure can't quietly promise a longer free-cancel window than the API enforces.
-    return 'لغو رایگان تا ۲۴ ساعت قبل از نوبت، پس از آن پیش‌پرداخت قابل بازگشت نیست.'
-  }
-  const hoursUntilStart = (new Date(booking.startsAt).getTime() - Date.now()) / (1000 * 60 * 60)
-  const windowHours = terms.value.cancellationWindowHours.toLocaleString('fa-IR')
-  if (hoursUntilStart >= terms.value.cancellationWindowHours) {
-    return `چون بیش از ${windowHours} ساعت به این نوبت مانده، پیش‌پرداخت شما به طور کامل بازگردانده می‌شود.`
-  }
-  return `چون کمتر از ${windowHours} ساعت به این نوبت مانده، پیش‌پرداخت قابل بازگشت نیست.`
-}
-
-// Same wording as the card's own button, so the dialog the customer opened is
-// unmistakably about the thing they clicked (a request vs. an actual appointment).
-const cancelActionLabel = computed(() =>
-  cancelTarget.value?.status === 'pending_approval' ? 'لغو درخواست' : 'لغو نوبت',
-)
 
 function openCancelConfirm(booking: BookingItem) {
   cancelTarget.value = booking
@@ -227,14 +186,6 @@ async function confirmCancel() {
     await load()
   }
 }
-
-const cancelDialogRoot = ref<HTMLElement | null>(null)
-// The cast works around a vue-tsc/vue 3.5.42 template-ref inference mismatch (see
-// useDialog.ts's own signature) -- cancelDialogRoot really is Ref<HTMLElement | null> at
-// runtime.
-const { titleId: cancelTitleId } = useDialog(cancelDialogRoot as unknown as Ref<HTMLElement | null>, {
-  onClose: closeCancelConfirm,
-})
 
 // Reschedule -- moves the SAME booking to a new time (POST /bookings/:id/reschedule) rather
 // than cancel-and-rebook, which for a within-window cancellation forfeited the deposit and
@@ -301,8 +252,8 @@ const { titleId: rescheduleTitleId } = useDialog(rescheduleDialogRoot as unknown
       در حال بارگذاری...
     </p>
     <BaseCard v-else-if="loadError" data-testid="bookings-load-error" role="alert" class="space-y-3 text-center">
-      <p class="text-sm text-(--color-text-muted)">بارگذاری نوبت‌ها با خطا مواجه شد.</p>
-      <BaseButton variant="secondary" data-testid="bookings-retry-button" @click="load">تلاش مجدد</BaseButton>
+      <p class="text-sm text-(--color-text-muted)">نوبت‌ها بارگذاری نشد.</p>
+      <BaseButton variant="secondary" data-testid="bookings-retry-button" @click="load">تلاش دوباره</BaseButton>
     </BaseCard>
     <p
       v-else-if="!bookings.length"
@@ -321,7 +272,7 @@ const { titleId: rescheduleTitleId } = useDialog(rescheduleDialogRoot as unknown
           <p class="font-bold break-words text-(--color-text)">{{ booking.salonName }} — {{ booking.serviceName }}</p>
           <p class="mt-1 flex items-center gap-1 text-(--color-text-muted)">
             <BaseIcon name="calendar" :size="14" />
-            {{ new Date(booking.startsAt).toLocaleString('fa-IR') }}
+            {{ formatAppointment(booking.startsAt) }}
           </p>
         </div>
         <span
@@ -443,38 +394,20 @@ const { titleId: rescheduleTitleId } = useDialog(rescheduleDialogRoot as unknown
       @close="reviewingBooking = null"
     />
 
-    <!-- items-start + my-auto + overflow-y-auto, same reasoning as ReportForm/
-         ReviewPromptModal: a long salon+service line plus the refund-outcome sentence can
-         push this past a landscape phone's ~360px, and centering an overflowing flex item
-         puts its top out of scroll reach. Auto cross-axis margins center when there's room
-         and collapse to zero when there isn't. -->
-    <div v-if="cancelTarget" class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-black/40 p-4">
-      <div
-        ref="cancelDialogRoot"
-        role="dialog"
-        aria-modal="true"
-        :aria-labelledby="cancelTitleId"
-        tabindex="-1"
-        data-testid="cancel-confirm-dialog"
-        class="my-auto w-full max-w-sm space-y-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-6 shadow-(--shadow-lg) outline-none"
-      >
-        <h2 :id="cancelTitleId" class="text-lg font-bold text-(--color-text)">{{ cancelActionLabel }}</h2>
-        <p class="text-sm break-words text-(--color-text)">{{ cancelTarget.salonName }} — {{ cancelTarget.serviceName }}</p>
-        <p data-testid="cancel-confirm-refund-copy" class="text-sm text-(--color-text-muted)">
-          {{ cancelOutcomeText(cancelTarget) }}
-        </p>
-        <div class="flex gap-2 pt-1">
-          <BaseButton variant="secondary" block data-testid="cancel-confirm-dismiss" :disabled="cancelling" @click="closeCancelConfirm">
-            انصراف
-          </BaseButton>
-          <BaseButton variant="danger" block data-testid="cancel-confirm-submit" :loading="cancelling" @click="confirmCancel">
-            {{ cancelActionLabel }}
-          </BaseButton>
-        </div>
-      </div>
-    </div>
+    <CancelBookingDialog
+      v-if="cancelTarget"
+      :salon-name="cancelTarget.salonName"
+      :service-name="cancelTarget.serviceName"
+      :status="cancelTarget.status"
+      :starts-at="cancelTarget.startsAt"
+      :deposit-paid="hasOnlineDeposit(cancelTarget)"
+      :terms="terms"
+      :cancelling="cancelling"
+      @confirm="confirmCancel"
+      @close="closeCancelConfirm"
+    />
 
-    <!-- Same overlay shape as the cancel dialog above, just wider (max-w-md, not max-w-sm) --
+    <!-- Wider (max-w-md) than ConfirmDialog's sheet --
          SlotPicker's own date pills/time grid need more room than a one-line confirmation. -->
     <div v-if="rescheduleTarget" class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-black/40 p-4">
       <div
@@ -491,7 +424,7 @@ const { titleId: rescheduleTitleId } = useDialog(rescheduleDialogRoot as unknown
         <!-- The booking's own current time, stated plainly before the picker so it's clear
              what's actually being changed. -->
         <p data-testid="reschedule-current-time" class="text-sm text-(--color-text-muted)">
-          زمان فعلی: {{ new Date(rescheduleTarget.startsAt).toLocaleString('fa-IR') }}
+          زمان فعلی: {{ formatAppointment(rescheduleTarget.startsAt) }}
         </p>
         <SlotPicker
           :salon-id="rescheduleTarget.salonId"
@@ -499,6 +432,7 @@ const { titleId: rescheduleTitleId } = useDialog(rescheduleDialogRoot as unknown
           :worker-id="rescheduleTarget.workerId"
           :selected-slot="newSlot"
           @select="newSlot = $event"
+          @clear="newSlot = null"
         />
         <div class="flex gap-2 pt-1">
           <BaseButton variant="secondary" block data-testid="reschedule-dismiss" :disabled="rescheduling" @click="closeRescheduleDialog">

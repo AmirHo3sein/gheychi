@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { mountSuspended } from '@nuxt/test-utils/runtime'
+import { mockComponent, mountSuspended } from '@nuxt/test-utils/runtime'
 import { flushPromises } from '@vue/test-utils'
 import Multiselect from 'vue-multiselect'
 import IndexPage from '../../app/pages/index.vue'
@@ -11,6 +11,11 @@ const fetchMock = vi.fn()
 const fetchStub = Object.assign((...args: unknown[]) => fetchMock(...args), {
   create: () => fetchStub,
 })
+
+// The real SalonMap lazily imports Leaflet. Nothing here tests the map itself, and that dynamic
+// import could finish AFTER the test environment was torn down ("window is not defined" from
+// leaflet/src/core/Util.js -- an intermittent unhandled rejection that failed the whole run).
+mockComponent('SalonMap', { template: '<div data-testid="salon-map-stub" />' })
 
 const USER = { id: 'u1', phone: '09120000000', name: 'Test', gender: 'female' as const, role: 'customer' as const }
 
@@ -60,20 +65,44 @@ describe('home page', () => {
     expect(wrapper.text()).not.toContain('مشکلی در بارگذاری سالن‌ها پیش آمد')
   })
 
-  // `/` is a public route, and an anonymous visitor used to get the "complete your profile"
-  // card -- whose /profile link would only bounce them to /login anyway.
-  it('asks an anonymous visitor to log in, not to complete a profile they do not have', async () => {
+  // `/` is a public route. An anonymous visitor used to hit a login wall with NO results (the
+  // API's /search requires a gender and only an account carries one), which hid the whole
+  // catalogue from first-time visitors and crawlers. They now browse women's salons by default
+  // and can switch to men's; login is only asked for at booking time.
+  it('shows an anonymous visitor real results (women\'s salons by default) instead of a login wall', async () => {
     useSessionStore().$reset()
     useSessionStore().setUser(null)
     stub()
     const wrapper = await mountSuspended(IndexPage)
     await flushPromises()
 
-    expect(fetchMock).not.toHaveBeenCalledWith('/search', expect.anything())
+    expect(wrapper.find('[data-testid="needs-login"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="needs-profile"]').exists()).toBe(false)
-    const prompt = wrapper.get('[data-testid="needs-login"]')
-    expect(prompt.find('a').attributes('href')).toBe('/login')
+    const searchCall = fetchMock.mock.calls.find(([path]) => path === '/search')
+    expect(searchCall?.[1]).toMatchObject({ query: expect.objectContaining({ gender: 'women' }) })
     expect(wrapper.text()).not.toContain('مشکلی در بارگذاری سالن‌ها پیش آمد')
+  })
+
+  it('lets an anonymous visitor switch to men\'s salons, which re-runs the search', async () => {
+    useSessionStore().$reset()
+    useSessionStore().setUser(null)
+    stub()
+    const wrapper = await mountSuspended(IndexPage)
+    await flushPromises()
+    fetchMock.mockClear()
+
+    await wrapper.findAll('[data-testid="anon-gender"] button').find((b) => b.text() === 'آقایان')!.trigger('click')
+    await flushPromises()
+
+    const searchCall = fetchMock.mock.calls.find(([path]) => path === '/search')
+    expect(searchCall?.[1]).toMatchObject({ query: expect.objectContaining({ gender: 'men' }) })
+  })
+
+  it('does not offer the gender switch to a logged-in customer (their results follow their profile)', async () => {
+    stub()
+    const wrapper = await mountSuspended(IndexPage)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="anon-gender"]').exists()).toBe(false)
   })
 
   // The loading/error states used to be nested inside the list branch only, so a failed

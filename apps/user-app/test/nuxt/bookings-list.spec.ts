@@ -184,7 +184,7 @@ describe('bookings list page', () => {
     await flushPromises()
 
     const dialog = wrapper.get('[data-testid="cancel-confirm-dialog"]')
-    expect(dialog.attributes('role')).toBe('dialog')
+    expect(dialog.attributes('role')).toBe('alertdialog')
     expect(dialog.attributes('aria-modal')).toBe('true')
     expect(wrapper.get('[data-testid="cancel-confirm-refund-copy"]').text()).toContain('بازگردانده می‌شود')
   })

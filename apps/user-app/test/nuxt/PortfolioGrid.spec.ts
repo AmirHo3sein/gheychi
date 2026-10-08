@@ -3,6 +3,7 @@ import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import PortfolioGrid from '../../app/components/salon/PortfolioGrid.vue'
+import { FEATURE_FLAGS_STATE_KEY } from '../../app/composables/useFeatureFlags'
 
 // Same pattern as ReportForm.spec.ts: `$fetch` is a real globalThis binding, stubbed
 // directly -- the embedded ReportForm posts through it.
@@ -205,5 +206,19 @@ describe('PortfolioGrid', () => {
 
     expect(wrapper.find('[data-testid="report-reason-input"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="portfolio-lightbox"]').exists()).toBe(true)
+  })
+
+  it('offers "explain this look" in the lightbox only when Beauty Guide is enabled', async () => {
+    const flags = useState<Record<string, boolean>>(FEATURE_FLAGS_STATE_KEY)
+    flags.value = { ...(flags.value ?? {}), beautyGuideEnabled: false }
+    const wrapper = await mountSuspended(PortfolioGrid, { props: BASE_PROPS })
+    await wrapper.findAll('button').find((b) => b.text().includes('رنگ مو'))!.trigger('click')
+    await nextTick()
+    expect(wrapper.find('[data-testid="portfolio-explain-look"]').exists()).toBe(false)
+
+    flags.value = { ...flags.value, beautyGuideEnabled: true }
+    await nextTick()
+    expect(wrapper.get('[data-testid="portfolio-explain-look"]').attributes('href')).toBe('/beauty-guide?portfolioItemId=pf1')
+    flags.value = { ...flags.value, beautyGuideEnabled: false }
   })
 })
