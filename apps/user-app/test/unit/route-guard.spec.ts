@@ -41,4 +41,12 @@ describe('isPublicRoute', () => {
   it('does not treat /blog-something-else as public (no false-positive prefix match)', () => {
     expect(isPublicRoute('/blog-archive')).toBe(false)
   })
+
+  it('treats the legal documents as public, and nothing that merely starts with them', () => {
+    expect(isPublicRoute('/terms')).toBe(true)
+    expect(isPublicRoute('/privacy')).toBe(true)
+    expect(isPublicRoute('/booking-policy')).toBe(true)
+    expect(isPublicRoute('/terms/extra')).toBe(false)
+    expect(isPublicRoute('/booking')).toBe(false)
+  })
 })

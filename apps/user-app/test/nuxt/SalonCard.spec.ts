@@ -104,4 +104,23 @@ describe('SalonCard', () => {
     await wrapper.get('img').trigger('error')
     expect(wrapper.find('[data-testid="salon-image-placeholder"]').exists()).toBe(true)
   })
+
+  it('renders the salon name as an h2 by default and honours headingLevel 3', async () => {
+    const def = await mountSuspended(SalonCard, { props: { salon: baseSalon } })
+    expect(def.find('h2').text()).toBe('Test Salon')
+    expect(def.find('h3').exists()).toBe(false)
+    const nested = await mountSuspended(SalonCard, { props: { salon: baseSalon, headingLevel: 3 } })
+    expect(nested.find('h3').text()).toBe('Test Salon')
+    expect(nested.find('h2').exists()).toBe(false)
+  })
+
+  // The first card's photo is the page's largest paint: it must not be lazily deferred.
+  it('loads the cover photo lazily by default and eagerly at high priority when it is the first card', async () => {
+    const lazy = await mountSuspended(SalonCard, { props: { salon: { ...baseSalon, coverPhoto: 'http://cdn.example/a.jpg' } } })
+    expect(lazy.get('img').attributes('loading')).toBe('lazy')
+
+    const first = await mountSuspended(SalonCard, { props: { salon: { ...baseSalon, coverPhoto: 'http://cdn.example/a.jpg' }, priority: true } })
+    expect(first.get('img').attributes('loading')).toBe('eager')
+    expect(first.get('img').attributes('fetchpriority')).toBe('high')
+  })
 })

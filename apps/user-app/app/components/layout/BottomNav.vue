@@ -42,7 +42,7 @@ const tabs = computed<Tab[]>(() => {
   <nav
     aria-label="ناوبری سریع"
     data-testid="bottom-nav"
-    class="fixed inset-x-0 bottom-0 z-30 border-t border-(--color-border) bg-(--color-surface-card) md:hidden"
+    class="fixed inset-x-0 bottom-0 z-30 border-t border-(--color-border) bg-(--color-surface-card) md:hidden print:hidden"
     style="padding-bottom: env(safe-area-inset-bottom)"
   >
     <ul class="mx-auto flex max-w-lg items-stretch justify-around">

@@ -84,7 +84,7 @@ useSeoMeta({ title: 'سالن‌های ذخیره‌شده — قیچی' })
              flex-shrink-0, so this column owns only what's left and a provider-authored
              name can be a single unbreakable token. -->
         <div class="min-w-0 flex-1 text-sm">
-          <h3 class="font-bold break-words text-(--color-text)">{{ salon.name }}</h3>
+          <h2 class="font-bold break-words text-(--color-text)">{{ salon.name }}</h2>
           <p class="mt-0.5 text-(--color-text-muted)">{{ salon.city }}</p>
           <div v-if="salon.categories.length" class="mt-1 flex flex-wrap items-center gap-1">
             <span

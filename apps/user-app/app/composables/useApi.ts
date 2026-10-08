@@ -37,6 +37,8 @@ interface ApiFetchOptions {
   silent?: boolean
   /** Set to false to suppress the automatic redirect-to-/login on a 401 (defaults to true). */
   redirectOn401?: boolean
+  /** Abort the request after this many ms (surfaces as a status-0 error). For callers on the SSR critical path that must never hang a page render. */
+  timeoutMs?: number
 }
 
 export function useApi() {
@@ -68,6 +70,7 @@ export function useApi() {
         query: options.query,
         credentials: 'include',
         headers,
+        timeout: options.timeoutMs,
       })
       return { data, error: null }
     } catch (err: unknown) {

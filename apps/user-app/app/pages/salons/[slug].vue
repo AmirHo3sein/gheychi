@@ -7,6 +7,8 @@ import { applyDiscount } from '../../utils/discount'
 import { geoJsonToLatLng } from '../../utils/geo'
 import { formatToman } from '../../utils/format-toman'
 import { toPersianDigits } from '../../utils/digits'
+import { formatContactPhone } from '../../utils/contact-phone'
+import { formatMemberSince } from '../../utils/member-since'
 
 interface Salon {
   id: string
@@ -20,6 +22,10 @@ interface Salon {
   about: string | null
   instagramHandle: string | null
   location: { type: 'Point'; coordinates: [number, number] }
+  // Both added by the trust & launch-readiness API: absent on an older API, null when the salon
+  // gave no contact number.
+  contactPhone?: string | null
+  memberSince?: string | null
 }
 type PricingType = 'fixed' | 'from' | 'range' | 'quote'
 interface SalonServiceItem {
@@ -133,6 +139,8 @@ const { data: resolved } = await useAsyncData(`salon-${slug}`, async () => {
 // Everything below (and the whole template) still reads `page` exactly as before -- only the
 // wrapper around it changed, so the redirect could ride along in the same payload.
 const page = computed(() => resolved.value?.page ?? null)
+const contact = computed(() => formatContactPhone(page.value?.salon.contactPhone))
+const memberSince = computed(() => formatMemberSince(page.value?.salon.memberSince))
 
 if (resolved.value?.movedTo) {
   // A PERMANENT redirect, not the default 302: this handle will never come back (it stays
@@ -182,6 +190,7 @@ if (resolved.value?.movedTo) {
           '@type': 'BeautySalon',
           name: page.value.salon.name,
           description: seoDescription,
+          telephone: page.value.salon.contactPhone || undefined,
           address: { '@type': 'PostalAddress', streetAddress: page.value.salon.address, addressLocality: page.value.salon.city },
           // The API's handle regex ([A-Za-z0-9._]{1,30}) is what makes this interpolation safe.
           sameAs: page.value.salon.instagramHandle
@@ -414,20 +423,10 @@ function scrollToSection(id: string) {
              can be one long unbreakable token, and min-w-0 only lets the BOX shrink --
              the text inside it still overflows unless it is allowed to break. -->
         <h1 class="text-xl font-bold break-words text-(--color-text)">{{ page.salon.name }}</h1>
-        <!-- This page only ever renders an approved salon (the API's findPublicBySlug
-             gates on status:'approved'), so this badge makes an already-true fact
-             visible rather than asserting a new check. The one accent-colored element
-             on this page (One Seal Rule) -- the booking CTAs (service rows, the sticky
-             footer) are deliberately neutral, matching the brand voice's "quietly
-             official" character over a loud e-commerce "BUY NOW" push. -->
-        <span
-          data-testid="salon-verified-badge"
-          class="inline-flex items-center gap-1 rounded-full bg-(--color-accent-soft) px-2 py-1 text-xs font-bold text-(--color-text)"
-        >
-          <BaseIcon name="shield" :size="14" class="text-(--color-accent-text)" />
-          سالن تایید شده
-        </span>
       </div>
+      <!-- A plain statement of fact we actually hold (the join date) -- approval only means an
+           admin reviewed self-declared data, so nothing here claims the salon is "verified". -->
+      <p v-if="memberSince" data-testid="salon-member-since" class="mt-1 text-xs text-(--color-text-muted)">{{ memberSince }}</p>
       <p v-if="page.salon.tagline" data-testid="salon-tagline" class="mt-1 text-sm text-(--color-text-muted)">{{ page.salon.tagline }}</p>
       <a
         v-if="featureFlags.reviewsEnabled"
@@ -445,6 +444,18 @@ function scrollToSection(id: string) {
         <BaseIcon name="map-pin" :size="14" class="mt-0.5 shrink-0" />
         <span class="min-w-0">{{ page.salon.address }}</span>
       </p>
+      <!-- Phones: the call link sits by the address (the aside, with its own copy for desktop,
+           is far down the page here). Hidden entirely when the salon gave no contact number. -->
+      <a
+        v-if="contact"
+        :href="contact.href"
+        data-testid="salon-contact-mobile"
+        class="mt-1 inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-(--color-accent-text) hover:underline lg:hidden"
+      >
+        <BaseIcon name="phone" :size="14" />
+        تماس با سالن
+        <span dir="ltr" class="tnum text-(--color-text-muted)">{{ contact.display }}</span>
+      </a>
       <!-- Phones: the map and directions live further down the page (in the aside), so offer a
            jump straight to them from the address instead of making the customer scroll for them.
            On desktop the aside is already beside the content. -->
@@ -478,9 +489,7 @@ function scrollToSection(id: string) {
 
     <section id="services">
       <h2 class="mb-2 text-xl font-bold text-(--color-text)">خدمات</h2>
-      <!-- Neutral (surface-subtle), not accent-soft -- the verified badge above is already
-           this page's one accent element (The One Seal Rule); a second accent-tinted
-           surface here would dilute that instead of reinforcing it. Both lines reuse data
+      <!-- Neutral (surface-subtle), not accent-soft -- keeps the surface calm. Both lines reuse data
            this page already fetches (booking-terms) but the cancellation window previously
            went completely unshown despite the deposit being real, non-trivial money --
            PRODUCT.md is explicit that a booking's financial commitment must never feel
@@ -494,10 +503,10 @@ function scrollToSection(id: string) {
           <p class="flex items-start gap-1.5">
             <BaseIcon name="shield" :size="14" class="mt-0.5 shrink-0" />
             <span v-if="page.terms">
-              برای تضمین نوبت، پیش‌پرداخت آنلاین معادل ٪{{ page.terms.depositPercent.toLocaleString('fa-IR') }} مبلغ خدمت
+              برای تضمین نوبت، بیعانه آنلاین معادل ٪{{ page.terms.depositPercent.toLocaleString('fa-IR') }} مبلغ خدمت
               (حداقل <span dir="ltr" class="tnum">{{ formatToman(page.terms.depositMinToman) }}</span> تومان) دریافت می‌شود.
             </span>
-            <span v-else>برای تضمین نوبت، پیش‌پرداخت آنلاین دریافت می‌شود.</span>
+            <span v-else>برای تضمین نوبت، بیعانه آنلاین دریافت می‌شود.</span>
           </p>
           <p v-if="page.terms" class="flex items-start gap-1.5">
             <BaseIcon name="clock" :size="14" class="mt-0.5 shrink-0" />
@@ -506,7 +515,7 @@ function scrollToSection(id: string) {
         </template>
         <p v-else class="flex items-start gap-1.5">
           <BaseIcon name="shield" :size="14" class="mt-0.5 shrink-0" />
-          <span>پیش‌پرداختی دریافت نمی‌شود؛ هزینه خدمت در سالن پرداخت می‌شود.</span>
+          <span>بیعانه‌ای دریافت نمی‌شود؛ هزینه خدمت در سالن پرداخت می‌شود.</span>
         </p>
       </div>
       <!-- ONE grouped surface with dividers, not a bordered card per service: a long menu of
@@ -645,6 +654,17 @@ function scrollToSection(id: string) {
         </a>
       </div>
 
+    <a
+        v-if="contact"
+        :href="contact.href"
+        data-testid="salon-contact-desktop"
+        class="hidden min-h-11 items-center justify-center gap-2 rounded-xl border border-(--color-border) bg-(--color-surface-card) px-4 text-sm font-semibold text-(--color-text) transition-colors hover:bg-(--color-surface-subtle) lg:flex"
+      >
+        <BaseIcon name="phone" :size="16" />
+        تماس با سالن
+        <span dir="ltr" class="tnum text-(--color-text-muted)">{{ contact.display }}</span>
+      </a>
+
     <section id="location" class="scroll-mt-20">
       <h2 class="sr-only">موقعیت مکانی</h2>
       <div class="space-y-2">
@@ -755,9 +775,8 @@ function scrollToSection(id: string) {
 
     <!-- Sticky footer CTA: the only persistent way back to "book" on a page long enough to
          scroll through photos/map/about/portfolio/hours/team/reviews. Deliberately NOT
-         accent-colored (see the header badge's own One Seal comment above) -- a dark,
-         confident neutral fill reads as "the important action" through weight and
-         permanence rather than by competing for the page's one accent. Nested inside the
+         accent-colored -- a dark, confident neutral fill reads as "the important action"
+         through weight and permanence rather than by competing with the page's accents. Nested inside the
          max-w-2xl content column (not a true edge-to-edge bar) so it stays visually aligned
          with the page on wider viewports instead of stretching full-bleed behind it. -->
     <div

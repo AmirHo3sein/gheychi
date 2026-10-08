@@ -30,6 +30,8 @@ function stub() {
 
 describe('home page', () => {
   beforeEach(() => {
+    // The server-rendered first page is cached by key for the lifetime of the Nuxt app; each test must start cold.
+    clearNuxtData('home-initial-search')
     fetchMock.mockReset()
     vi.stubGlobal('$fetch', fetchStub)
     useSessionStore().$reset()
@@ -46,6 +48,54 @@ describe('home page', () => {
     await flushPromises()
 
     expect(fetchMock).toHaveBeenCalledWith('/search', expect.objectContaining({ query: expect.objectContaining({ gender: 'women' }) }))
+  })
+
+  // The search only needs the default coordinates + gender. Chaining it behind the category and city
+  // lists added a full round trip before the page's largest paint (the first salon) could be requested.
+  it('requests the salons without waiting for the category and city lists', async () => {
+    fetchMock.mockImplementation((path: string) => {
+      if (path === '/categories' || path === '/cities') return new Promise(() => {}) // never resolves
+      if (path === '/search') return Promise.resolve({ items: [], nextCursor: null, hasMore: false })
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    await mountSuspended(IndexPage)
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith('/search', expect.anything())
+  })
+
+  // The first page is server-rendered with the same parameters the client would use, so mounting must not fire
+  // that search a second time -- that duplicate was exactly the post-hydration round trip this removes.
+  it('uses the server-rendered first page instead of searching again after mount, with a bounded wait', async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/categories') return []
+      if (path === '/cities') return [{ name: 'تهران', lat: 35.6892, lng: 51.389 }]
+      if (path === '/search') return { items: [{ id: 's1', slug: 's1', name: 'سالن نمونه', city: 'تهران', coverPhoto: null, ratingAvg: 0, ratingCount: 0, distanceKm: 1, minPrice: 100000, categories: [], isFeatured: false, hasActiveStory: false }], nextCursor: null, hasMore: false }
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    const wrapper = await mountSuspended(IndexPage)
+    await flushPromises()
+
+    const searches = fetchMock.mock.calls.filter(([p]) => p === '/search')
+    expect(searches).toHaveLength(1)
+    expect(searches[0]![1]).toMatchObject({ timeout: 3000 })
+    expect(wrapper.text()).toContain('سالن نمونه')
+    expect(wrapper.find('[data-testid="salons-loading"]').exists()).toBe(false)
+  })
+
+  it('falls back to a client-side search after mount when the server-rendered one failed', async () => {
+    let n = 0
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/categories') return []
+      if (path === '/cities') return [{ name: 'تهران', lat: 35.6892, lng: 51.389 }]
+      if (path === '/search') { if (++n === 1) throw new Error('boom'); return { items: [], nextCursor: null, hasMore: false } }
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    const wrapper = await mountSuspended(IndexPage)
+    await flushPromises()
+
+    expect(fetchMock.mock.calls.filter(([p]) => p === '/search')).toHaveLength(2)
+    expect(wrapper.find('[data-testid="salons-empty"]').exists()).toBe(true) // recovered, not stuck on the error card
   })
 
   it('asks an account with no gender to complete its profile instead of firing a request that can only 400', async () => {
@@ -123,17 +173,23 @@ describe('home page', () => {
     expect(wrapper.find('[role="alert"]').text()).toContain('مشکلی در بارگذاری سالن‌ها پیش آمد')
   })
 
-  it('shows the loading state in map view while a search is in flight', async () => {
+  it('shows the loading state in map view while a (re-)search is in flight', async () => {
+    useSessionStore().$reset()
+    useSessionStore().setUser(null) // anonymous: only they get the gender switch used below to trigger a re-search
     let resolveSearch: (value: unknown) => void = () => {}
+    let searches = 0
     fetchMock.mockImplementation(async (path: string) => {
       if (path === '/categories') return []
       if (path === '/cities') return [{ name: 'تهران', lat: 35.6892, lng: 51.389 }]
-      if (path === '/search') return new Promise((resolve) => { resolveSearch = resolve })
+      // The first page is server-rendered and resolves at once; the user's NEXT search is the one left in flight.
+      if (path === '/search') return ++searches === 1 ? { items: [], nextCursor: null, hasMore: false } : new Promise((resolve) => { resolveSearch = resolve })
       throw new Error(`unexpected fetch path in test: ${path}`)
     })
     const wrapper = await mountSuspended(IndexPage)
     await flushPromises()
 
+    await wrapper.get('[data-testid="anon-gender"] button:last-child').trigger('click') // re-runs the search, left pending
+    await flushPromises()
     await wrapper.get('[aria-label="نوع نمایش"] button:last-child').trigger('click')
     await flushPromises()
     expect(wrapper.find('[role="status"]').text()).toContain('در حال بارگذاری')
@@ -142,6 +198,7 @@ describe('home page', () => {
     await flushPromises()
     expect(wrapper.find('[role="status"]').exists()).toBe(false)
   })
+
 
   // The city field used to be a native <select> over a 4-city hardcoded starter list
   // (CITY_CENTERS); it's now the full backend-owned city list (GET /cities, same source

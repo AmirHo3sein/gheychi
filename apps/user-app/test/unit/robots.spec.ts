@@ -53,6 +53,14 @@ describe('buildRobotsTxt', () => {
     expect(txt).not.toMatch(/^Disallow: \/blog/m)
   })
 
+  it('keeps the legal documents crawlable (/booking-policy must not be caught by the /booking/ checkout rule)', () => {
+    const txt = buildRobotsTxt(SITE)
+    const disallowed = [...txt.matchAll(/^Disallow: (.*)$/gm)].map((m) => m[1]!)
+    for (const path of ['/terms', '/privacy', '/booking-policy']) {
+      expect(disallowed.some((d) => path.startsWith(d))).toBe(false)
+    }
+  })
+
   it('starts with a wildcard user-agent group', () => {
     expect(buildRobotsTxt(SITE).split('\n')[0]).toBe('User-agent: *')
   })

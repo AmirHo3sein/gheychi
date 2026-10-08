@@ -12,7 +12,7 @@ interface IranCity { name: string; lat: number; lng: number }
 // og:url must be fully-qualified for social crawlers, and this page has no other source of
 // the site's own origin to build them from.
 const requestUrl = useRequestURL()
-const homeDescription = 'با قیچی، نزدیک‌ترین سالن‌های زیبایی تایید‌شده به خودت را پیدا می‌کنی و نوبتت را به‌صورت آنلاین رزرو می‌کنی.'
+const homeDescription = 'با قیچی، نزدیک‌ترین سالن‌های زیبایی به خودت را پیدا می‌کنی و نوبتت را به‌صورت آنلاین رزرو می‌کنی.'
 // brand-icon.png is the same logo asset AppHeader/login.vue already render as the site's
 // identity elsewhere -- not a dedicated 1200x630 OG asset (none exists in public/ yet), so
 // 'summary' (not 'summary_large_image') is the twitter card type that actually matches its
@@ -136,6 +136,27 @@ async function loadSalons() {
   if (view.value === 'map') await loadCoordsForMap()
 }
 
+// Server-render the FIRST page of results (the default city + the visitor's gender) with the exact
+// parameters the client would use. Fetching them only after hydration put the whole JS download,
+// hydration and an API round trip in front of the page's largest paint (the first salon photo) -- ~5 s
+// to LCP on a slow phone. Later filter/city/sort changes still go through loadSalons() below.
+const initialSearch = await useAsyncData('home-initial-search', async () => {
+  if (needsProfile.value) return null
+  const { data, error } = await apiFetch<SearchPage>('/search', {
+    query: { lat: coords.value.lat, lng: coords.value.lng, gender: searchGender.value, sort: sort.value },
+    silent: true,
+    // Never let a slow search hold the whole page render hostage: on timeout/error this resolves to null and
+    // the client falls back to its own fetch after mount (the behaviour before the first page was server-rendered).
+    timeoutMs: 3000,
+  })
+  return error ? null : (data ?? null)
+})
+const initialPage = initialSearch.data.value
+if (initialPage) {
+  salons.value = initialPage.items ?? []
+  loading.value = false
+}
+
 // Selecting a city only updates the search coordinates; the coords watch below is the
 // single place that actually re-runs the search, shared with the "near me" geolocation path.
 watch(selectedCity, (name) => {
@@ -161,13 +182,18 @@ function useMyLocation() {
 }
 
 onMounted(async () => {
+  // The search only needs the default coordinates and gender, not the city/category lists, so it starts
+  // WITH them instead of after them -- chaining it behind both added a full round trip before the first
+  // salon (the page's largest paint) could even be requested.
+  // Already server-rendered? Only the default query is, so there is nothing to fetch yet.
+  const salonsLoaded = initialPage ? Promise.resolve() : loadSalons()
   const [categoriesRes, citiesRes] = await Promise.all([
     apiFetch<typeof categories.value>('/categories'),
     apiFetch<IranCity[]>('/cities'),
   ])
   categories.value = categoriesRes.data ?? []
   cities.value = citiesRes.data ?? []
-  await loadSalons()
+  await salonsLoaded
 })
 
 watch([selectedCategoryId, sort, coords, anonGender], loadSalons, { deep: true })
@@ -462,7 +488,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
           <!-- Single column stays the true default (mobile-primary per PRODUCT.md); the card is
                image-first, so two columns from `sm` keeps each photo a useful size. -->
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <SalonCard v-for="salon in salons" :key="salon.id" :salon="salon" />
+            <SalonCard v-for="(salon, i) in salons" :key="salon.id" :salon="salon" :heading-level="3" :priority="i === 0" />
           </div>
         </template>
       </template>

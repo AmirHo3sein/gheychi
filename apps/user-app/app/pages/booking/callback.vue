@@ -36,7 +36,7 @@ const COPY: Record<Outcome, {
   success: {
     seoTitle: 'پرداخت موفق — قیچی',
     title: 'پرداخت با موفقیت انجام شد',
-    body: 'نوبت شما با دریافت پیش‌پرداخت ثبت شد.',
+    body: 'نوبت شما با دریافت بیعانه ثبت شد.',
     icon: 'check-circle',
     badgeClass: 'bg-(--color-success)/10 text-(--color-success)',
     bookingLinkLabel: 'مشاهده جزئیات نوبت',
@@ -47,7 +47,7 @@ const COPY: Record<Outcome, {
   refunding: {
     seoTitle: 'بازگشت وجه در حال انجام — قیچی',
     title: 'پرداخت شما دریافت شد، اما نوبت ثبت نشد',
-    body: 'پیش‌پرداخت شما دریافت شد، ولی این نوبت پیش از تکمیل پرداخت آزاد شده بود و قابل ثبت نیست. بازگشت وجه به‌صورت خودکار در حال انجام است و نیازی به اقدام شما نیست.',
+    body: 'بیعانه شما دریافت شد، ولی این نوبت پیش از تکمیل پرداخت آزاد شده بود و قابل ثبت نیست. بازگشت وجه به‌صورت خودکار در حال انجام است و نیازی به اقدام شما نیست.',
     icon: 'clock',
     badgeClass: 'bg-(--color-surface-subtle) text-(--color-text-muted)',
     bookingLinkLabel: 'پیگیری بازگشت وجه',

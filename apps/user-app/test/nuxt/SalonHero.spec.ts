@@ -55,6 +55,7 @@ describe('SalonHero', () => {
     const wrapper = await mountSuspended(SalonHero, { props: BASE_PROPS })
     const button = wrapper.get('[data-testid="favorite-button"]')
     expect(button.attributes('aria-pressed')).toBe('false')
+    expect(button.attributes('aria-label')).toBe('ذخیره سالن')
 
     await button.trigger('click')
     expect(wrapper.emitted('toggle-favorite')).toHaveLength(1)
@@ -104,5 +105,12 @@ describe('SalonHero', () => {
       slots: { corner: '<button data-testid="fake-story-ring">استوری</button>' },
     })
     expect(wrapper.find('[data-testid="fake-story-ring"]').exists()).toBe(true)
+  })
+
+  it('names the favorite button for its saved state', async () => {
+    const wrapper = await mountSuspended(SalonHero, { props: { ...BASE_PROPS, isFavorited: true } })
+    const button = wrapper.get('[data-testid="favorite-button"]')
+    expect(button.attributes('aria-pressed')).toBe('true')
+    expect(button.attributes('aria-label')).toBe('حذف از سالن‌های ذخیره‌شده')
   })
 })

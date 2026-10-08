@@ -40,6 +40,18 @@ describe('login page - referral code entry', () => {
     vi.unstubAllGlobals()
   })
 
+  it('shows the quiet consent line linking terms and privacy on every step', async () => {
+    fetchMock.mockResolvedValueOnce(undefined) // request-otp
+    const wrapper = await mountSuspended(LoginPage)
+
+    const line = wrapper.get('[data-testid="login-legal"]')
+    expect(line.text().replace(/\s+/g, ' ')).toBe('با ورود یا ثبت‌نام، شرایط استفاده و حریم خصوصی را می‌پذیرید.')
+    expect(line.findAll('a').map((a) => a.attributes('href'))).toEqual(['/terms', '/privacy'])
+
+    await goToCodeStep(wrapper)
+    expect(wrapper.find('[data-testid="login-legal"]').exists()).toBe(true)
+  })
+
   it('keeps the referral code field collapsed behind a toggle by default on the code step', async () => {
     fetchMock.mockResolvedValueOnce(undefined) // request-otp
     const wrapper = await mountSuspended(LoginPage)

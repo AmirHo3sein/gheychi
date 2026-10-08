@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildSitemapIndexXml,
+  buildStaticPageEntries,
   buildUrlsetXml,
   computeSitemapPageCount,
   MAX_SITEMAP_PAGES,
@@ -99,5 +100,17 @@ describe('parsePageFromSitemapPath', () => {
     expect(parsePageFromSitemapPath('/sitemap-posts-1.xml', 'sitemap-salons')).toBeNull()
     expect(parsePageFromSitemapPath('/sitemap-salons-.xml', 'sitemap-salons')).toBeNull()
     expect(parsePageFromSitemapPath('/sitemap-salons-1.json', 'sitemap-salons')).toBeNull()
+  })
+})
+
+describe('buildStaticPageEntries', () => {
+  it('lists the three legal documents as absolute urls, tolerating a trailing slash on the origin', () => {
+    const entries = buildStaticPageEntries('https://example.com/')
+    expect(entries.map((e) => e.loc)).toEqual([
+      'https://example.com/terms',
+      'https://example.com/privacy',
+      'https://example.com/booking-policy',
+    ])
+    expect(buildUrlsetXml(entries)).toContain('<loc>https://example.com/privacy</loc>')
   })
 })

@@ -13,6 +13,7 @@ interface BookingDetail {
     | 'completed'
     | 'cancelled_by_user'
     | 'cancelled_by_salon'
+    | 'cancelled_by_admin'
     | 'rejected_by_salon'
     | 'expired'
     | 'no_show'
@@ -67,6 +68,7 @@ const BOOKING_STATUS_LABELS: Record<BookingDetail['status'], string> = {
   cancelled_by_user: 'لغو شده توسط شما',
   rejected_by_salon: 'رد شده توسط سالن',
   cancelled_by_salon: 'لغو شده توسط سالن',
+  cancelled_by_admin: 'لغو شده توسط قیچی',
   expired: 'منقضی شده',
   no_show: 'عدم مراجعه',
 }
@@ -75,7 +77,7 @@ const WALLET_TYPE_LABELS: Record<WalletTransactionDetail['type'], string> = {
   referral_reward: 'پاداش معرفی',
   referral_reversal: 'برگشت پاداش معرفی',
   booking_spend: 'استفاده در رزرو',
-  booking_spend_reversal: 'برگشت وجه رزرو',
+  booking_spend_reversal: 'برگشت وجه نوبت',
 }
 const REWARD_KIND_LABELS: Record<ReferralRewardDetail['rewardKind'], string> = {
   wallet_credit: 'اعتبار کیف پول',
@@ -218,7 +220,7 @@ onMounted(load)
 
           <template v-else-if="item.type === 'review'">
             <p class="break-words font-medium text-(--color-text)">نظر شما برای {{ (item.detail as ReviewDetail).salonName }}</p>
-            <div class="flex items-center gap-0.5" :aria-label="`${(item.detail as ReviewDetail).rating.toLocaleString('fa-IR')} از ۵ ستاره`">
+            <div role="img" class="flex items-center gap-0.5" :aria-label="`${(item.detail as ReviewDetail).rating.toLocaleString('fa-IR')} از ۵ ستاره`">
               <BaseIcon
                 v-for="n in 5"
                 :key="n"

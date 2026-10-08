@@ -162,17 +162,66 @@ describe('salon detail page', () => {
     })
   })
 
-  it('shows the approval badge and a one-line deposit disclosure sourced from booking-terms', async () => {
+  it('shows no "verified salon" claim, and a deposit disclosure sourced from booking-terms', async () => {
     mockEndpoints()
     wrapper = await mountSuspended(SalonDetailPage)
 
-    expect(wrapper.get('[data-testid="salon-verified-badge"]').text()).toContain('تایید شده')
+    // Approval only means an admin reviewed self-declared data: the badge and its wording are gone.
+    expect(wrapper.find('[data-testid="salon-verified-badge"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('سالن تایید شده')
     // Every result on this page is already API-gated to status:'approved' -- the
     // disclosure's numbers must come from the fetched terms, not be hardcoded. Both the
     // percent and the toman amount (formatToman) render as Farsi digits, matching the rest
     // of the page.
     expect(wrapper.text()).toContain(`٪${(20).toLocaleString('fa-IR')}`)
     expect(wrapper.text()).toContain((50000).toLocaleString('fa-IR'))
+  })
+
+  it('shows «عضو قیچی از <ماه و سال شمسی>» from memberSince, and nothing when it is absent', async () => {
+    mockEndpoints({ salon: { memberSince: '2026-10-08T10:00:00.000Z' } })
+    wrapper = await mountSuspended(SalonDetailPage)
+    expect(wrapper.get('[data-testid="salon-member-since"]').text()).toBe('عضو قیچی از مهر ۱۴۰۵')
+
+    wrapper.unmount()
+    clearNuxtData('salon-test-salon')
+    mockEndpoints()
+    wrapper = await mountSuspended(SalonDetailPage)
+    expect(wrapper.find('[data-testid="salon-member-since"]').exists()).toBe(false)
+  })
+
+  it('offers a tel: link (ASCII href, Persian digits shown) on mobile and desktop when contactPhone is set', async () => {
+    mockEndpoints({ salon: { contactPhone: '02112345678' } })
+    wrapper = await mountSuspended(SalonDetailPage)
+
+    for (const id of ['salon-contact-mobile', 'salon-contact-desktop']) {
+      const link = wrapper.get(`[data-testid="${id}"]`)
+      expect(link.attributes('href')).toBe('tel:02112345678')
+      expect(link.text()).toContain('تماس با سالن')
+      expect(link.text()).toContain('۰۲۱ ۱۲۳۴ ۵۶۷۸')
+    }
+    // The mobile link is not inside the sticky CTA bar.
+    expect(wrapper.get('.fixed').find('[data-testid="salon-contact-mobile"]').exists()).toBe(false)
+  })
+
+  it('renders no contact link and no JSON-LD telephone when contactPhone is null', async () => {
+    mockEndpoints({ salon: { contactPhone: null } })
+    wrapper = await mountSuspended(SalonDetailPage)
+
+    expect(wrapper.find('[data-testid="salon-contact-mobile"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="salon-contact-desktop"]').exists()).toBe(false)
+    expect(wrapper.find('a[href^="tel:"]').exists()).toBe(false)
+    await vi.waitFor(() => {
+      expect(document.head.querySelector('script[type="application/ld+json"]')?.textContent).toContain('BeautySalon')
+    })
+    expect(document.head.querySelector('script[type="application/ld+json"]')?.textContent).not.toContain('telephone')
+  })
+
+  it('adds telephone to the JSON-LD only when a contact number exists', async () => {
+    mockEndpoints({ salon: { contactPhone: '09123456789' } })
+    wrapper = await mountSuspended(SalonDetailPage)
+    await vi.waitFor(() => {
+      expect(document.head.querySelector('script[type="application/ld+json"]')?.textContent).toContain('"telephone":"09123456789"')
+    })
   })
 
   // With the platform's online-payment flag off the API confirms every booking with nothing
@@ -190,7 +239,7 @@ describe('salon detail page', () => {
     wrapper = await mountSuspended(SalonDetailPage)
 
     const callout = wrapper.get('[data-testid="booking-policy-callout"]')
-    expect(callout.text()).toContain('پیش‌پرداختی دریافت نمی‌شود')
+    expect(callout.text()).toContain('بیعانه‌ای دریافت نمی‌شود')
     expect(callout.text()).not.toContain('دریافت می‌شود.')
     expect(callout.text()).not.toContain('لغو رایگان')
     // The deposit numbers must not leak in through some other line either.

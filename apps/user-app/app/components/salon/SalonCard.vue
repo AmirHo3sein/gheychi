@@ -3,9 +3,14 @@ import type { SearchResult } from '../../utils/types'
 import { iconForCategory } from '../../utils/category-icon'
 import { formatToman } from '../../utils/format-toman'
 
-const props = defineProps<{
+// The card sits under an <h1> on most pages (default 2); a page that nests cards under its own
+// <h2> section passes 3 so the outline never skips a level.
+const props = withDefaults(defineProps<{
   salon: SearchResult
-}>()
+  headingLevel?: 2 | 3
+  /** The first card on a page is usually the largest paint: load its photo eagerly at high priority instead of lazily. */
+  priority?: boolean
+}>(), { headingLevel: 2, priority: false })
 
 // Caps at 2 visible badges + a "+N" overflow chip -- a salon can carry many tags (Part 1's
 // multi-category support) and the card is a fixed-height scanning unit in a grid, so more
@@ -37,7 +42,8 @@ const hiddenCategoryCount = computed(() => Math.max(0, props.salon.categories.le
         :alt="salon.name"
         :width="480"
         :height="360"
-        loading="lazy"
+        :loading="priority ? 'eager' : 'lazy'"
+        :fetchpriority="priority ? 'high' : undefined"
         class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
       />
       <SalonImagePlaceholder v-else :icon-size="32" />
@@ -61,7 +67,7 @@ const hiddenCategoryCount = computed(() => Math.max(0, props.salon.categories.le
       <!-- min-w-0 + break-words: the name is provider-authored and can be one long unbreakable
            token; it has to be allowed to shrink beside the rating instead of pushing it off. -->
       <div class="flex items-start justify-between gap-2">
-        <h3 class="min-w-0 break-words font-bold leading-6 text-(--color-text)">{{ salon.name }}</h3>
+        <component :is="`h${headingLevel}`" class="min-w-0 break-words font-bold leading-6 text-(--color-text)">{{ salon.name }}</component>
         <RatingLabel :average="salon.ratingAvg" :count="salon.ratingCount" class="mt-0.5 shrink-0 text-sm" />
       </div>
 

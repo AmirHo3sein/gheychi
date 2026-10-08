@@ -13,7 +13,7 @@ defineProps<{ salons: GuideMatches['salons']; guideId: string; conceptNames: Rec
 <template>
   <ul class="space-y-4">
     <li v-for="match in salons" :key="match.salon.id" class="space-y-2" data-testid="guide-salon-match">
-      <SalonCard :salon="match.salon" />
+      <SalonCard :salon="match.salon" :heading-level="3" />
       <p class="px-1 text-xs text-(--color-text-muted)">
         خدمات مرتبط با: {{ match.matchedConceptKeys.map((k) => conceptNames[k] ?? k).join('، ') }}
       </p>

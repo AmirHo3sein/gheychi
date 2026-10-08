@@ -84,6 +84,17 @@ export default defineNuxtConfig({
       // a build-time `import.meta.env` read (which is what the two panels have to do) means
       // turning it on is an .env edit plus `up -d user-app`, with no image rebuild.
       sentryDsn: process.env.NUXT_PUBLIC_SENTRY_DSN ?? '',
+      // Operator identity shown on the legal pages (/terms, /privacy). Empty = that line is
+      // omitted from the page, never faked -- see utils/legal-render.ts.
+      legalName: process.env.NUXT_PUBLIC_LEGAL_NAME ?? '',
+      legalEmail: process.env.NUXT_PUBLIC_LEGAL_EMAIL ?? '',
+      legalPhone: process.env.NUXT_PUBLIC_LEGAL_PHONE ?? '',
+      legalAddress: process.env.NUXT_PUBLIC_LEGAL_ADDRESS ?? '',
+      legalRegistration: process.env.NUXT_PUBLIC_LEGAL_REGISTRATION ?? '',
+      // Map tile provider (see utils/map-tiles.ts). Empty = OpenStreetMap's standard tiles.
+      // A different provider also needs its host added to the CSP `img-src`.
+      mapTileUrl: process.env.NUXT_PUBLIC_MAP_TILE_URL ?? '',
+      mapTileAttribution: process.env.NUXT_PUBLIC_MAP_TILE_ATTRIBUTION ?? '',
     },
   },
   pwa: {

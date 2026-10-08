@@ -4,6 +4,8 @@ import { formatAppointment } from '../../utils/format-date'
 
 interface BookingItem {
   id: string
+  /** The free-cancel window frozen on THIS booking at creation (null on rows that predate it). */
+  cancellationWindowHours?: number | null
   salonName: string
   serviceName: string
   workerName: string | null
@@ -17,6 +19,7 @@ interface BookingItem {
     | 'completed'
     | 'cancelled_by_user'
     | 'cancelled_by_salon'
+    | 'cancelled_by_admin'
     | 'rejected_by_salon'
     | 'expired'
     | 'no_show'
@@ -35,6 +38,9 @@ interface BookingItem {
   // with the platform's online-payment flag off it stays non-zero on bookings nothing was
   // collected for.
   depositPaid: boolean
+  // False once a review can no longer be started (owner-entered booking, review already on file,
+  // window passed). Optional so an older API -- which omits it -- keeps offering the prompt.
+  reviewable?: boolean
   // The plain Booking entity's own columns -- always present on /bookings/mine (no
   // serialization exclusion strips them), just never read by this page until now. Needed to
   // reuse SlotPicker for the reschedule dialog below: it fetches this exact salon+service's
@@ -76,6 +82,12 @@ const { apiFetch } = useApi()
 const { flags: featureFlags } = useFeatureFlags()
 const bookings = ref<BookingItem[]>([])
 const terms = ref<BookingTerms | null>(null)
+// A booking is cancelled under the window it was MADE under, not today's config: the API snapshots it per
+// booking, so quoting the live number here could promise a refund the API won't give (or the reverse).
+function termsFor(b: BookingItem): { cancellationWindowHours: number } | null {
+  if (typeof b.cancellationWindowHours === 'number') return { cancellationWindowHours: b.cancellationWindowHours }
+  return terms.value
+}
 const reviewByBookingId = ref<Record<string, MyReview>>({})
 const loading = ref(true)
 // A failed /bookings/mine must never render as "you have no bookings" -- that empty state
@@ -97,6 +109,8 @@ const STATUS_META: Record<BookingItem['status'], { label: string; icon: IconName
   completed: { label: 'انجام شده', icon: 'check-circle', badgeClass: 'bg-(--color-success)/10 text-(--color-success)' },
   cancelled_by_user: { label: 'لغو شده توسط شما', icon: 'x', badgeClass: 'bg-(--color-danger-soft) text-(--color-danger)' },
   cancelled_by_salon: { label: 'لغو شده توسط سالن', icon: 'x', badgeClass: 'bg-(--color-danger-soft) text-(--color-danger)' },
+  // Cancelled by the platform, not the customer or the salon -- the customer is never at fault.
+  cancelled_by_admin: { label: 'لغو شده توسط قیچی', icon: 'x', badgeClass: 'bg-(--color-danger-soft) text-(--color-danger)' },
   // Distinct from cancelled_by_salon: this request never became a booking at all, and no
   // money was ever taken for it. Shares the danger treatment because the outcome for the
   // customer is the same -- they need to book somewhere/something else.
@@ -305,6 +319,17 @@ const { titleId: rescheduleTitleId } = useDialog(rescheduleDialogRoot as unknown
         </span>
       </div>
 
+      <!-- Platform cancellation: state that the customer did nothing wrong, and (only when money
+           really moved) that it is all returned. Muted surface -- informative, not alarming. -->
+      <p
+        v-if="booking.status === 'cancelled_by_admin'"
+        data-testid="admin-cancelled-note"
+        class="rounded-xl bg-(--color-surface-subtle) p-3 text-(--color-text-muted)"
+      >
+        قیچی این نوبت را لغو کرد؛ این لغو به دلیل مشکلی از سمت شما نبود.
+        <template v-if="hasOnlineDeposit(booking)">بیعانه‌ی پرداخت‌شده به‌طور کامل به شما بازگردانده می‌شود.</template>
+      </p>
+
       <!-- flex-wrap + shrink-0 on the button: at 320px this row has ~230px for a ~195px
            warning and a ~100px call to action. Without wrapping the button is the item
            that gives, and "تکمیل پرداخت" breaks across two lines -- the one control on the
@@ -362,14 +387,14 @@ const { titleId: rescheduleTitleId } = useDialog(rescheduleDialogRoot as unknown
           <!-- A review already on file stays viewable/editable even with the flag off,
                only net-new "ثبت نظر" is hidden -- same reasoning as bookings/[id].vue. -->
           <BaseButton
-            v-if="reviewFor(booking.id)?.status !== 'withdrawn' && (reviewFor(booking.id) || featureFlags.reviewsEnabled)"
+            v-if="reviewFor(booking.id)?.status !== 'withdrawn' && (reviewFor(booking.id) || (featureFlags.reviewsEnabled && booking.reviewable !== false))"
             variant="secondary"
             data-testid="review-booking-button"
             @click="reviewingBooking = booking"
           >
             {{ reviewButtonLabel(booking.id) }}
           </BaseButton>
-          <p v-else data-testid="review-withdrawn-note" class="text-(--color-text-muted)">
+          <p v-else-if="reviewFor(booking.id)?.status === 'withdrawn'" data-testid="review-withdrawn-note" class="text-(--color-text-muted)">
             نظر شما برای این نوبت حذف شده است
           </p>
         </template>
@@ -401,7 +426,7 @@ const { titleId: rescheduleTitleId } = useDialog(rescheduleDialogRoot as unknown
       :status="cancelTarget.status"
       :starts-at="cancelTarget.startsAt"
       :deposit-paid="hasOnlineDeposit(cancelTarget)"
-      :terms="terms"
+      :terms="termsFor(cancelTarget)"
       :cancelling="cancelling"
       @confirm="confirmCancel"
       @close="closeCancelConfirm"

@@ -43,7 +43,18 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 // fallthrough lands it on that root div for us. aria-required/aria-invalid ride along the
 // same way, standing in for the `required` attribute and the error styling a native
 // <select> would have carried natively.
-const labelId = useId()
+const uid = useId()
+const labelId = `${uid}-label`
+// Always a real string: vue-multiselect builds its listbox id/aria-controls from this, and an
+// unset one renders the literal "listbox-null" (an invalid aria-controls reference).
+const selectId = `${uid}-select`
+
+// vue-multiselect only renders its listbox while open, yet always puts aria-controls on its
+// search input -- a reference to an element that doesn't exist (axe: aria-valid-attr-value).
+// While closed we render an empty hidden listbox under that exact id so the reference resolves;
+// it is removed the moment the real one mounts, so the id is never duplicated.
+const isOpen = ref(false)
+const listboxId = `listbox-${selectId}`
 
 function onSelect(option: SelectOption | null) {
   emit('update:modelValue', option ? option.value : '')
@@ -56,6 +67,7 @@ function onSelect(option: SelectOption | null) {
       {{ label }}
     </label>
     <Multiselect
+      :id="selectId"
       class="app-select"
       :class="{ 'app-select--error': error }"
       :model-value="props.options.find((o) => o.value === props.modelValue) ?? null"
@@ -70,8 +82,11 @@ function onSelect(option: SelectOption | null) {
       :aria-labelledby="props.label ? labelId : undefined"
       :aria-required="props.required ? 'true' : undefined"
       :aria-invalid="props.error ? 'true' : undefined"
+      @open="isOpen = true"
+      @close="isOpen = false"
       @update:model-value="onSelect"
     />
+    <ul v-if="!isOpen" :id="listboxId" role="listbox" hidden />
     <p v-if="error" class="mt-1.5 flex items-center gap-1 text-xs text-(--color-danger)">
       <BaseIcon name="alert-circle" :size="14" />
       {{ error }}

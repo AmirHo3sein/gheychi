@@ -2,6 +2,7 @@
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { googleMapsUrl, neshanUrl } from '../../utils/map-links'
+import { resolveMapTileConfig } from '../../utils/map-tiles'
 
 const props = withDefaults(
   defineProps<{
@@ -108,9 +109,10 @@ function initMap() {
   // all rastertiles/light_all variants are key-gated), which silently broke every map.
   // OSM's tile policy (operations.osmfoundation.org/policies/tiles) allows light use with
   // attribution but forbids heavy/commercial-scale load -- before launch at scale, move to a
-  // paid/self-hosted provider (change this one URL + the Caddyfile img-src).
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  // paid/self-hosted provider: set NUXT_PUBLIC_MAP_TILE_URL/_ATTRIBUTION + the CSP img-src.
+  const tiles = resolveMapTileConfig(useRuntimeConfig().public)
+  L.tileLayer(tiles.url, {
+    attribution: tiles.attribution,
     maxZoom: 19,
   }).addTo(mapInstance)
 

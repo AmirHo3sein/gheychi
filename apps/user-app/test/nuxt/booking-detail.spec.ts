@@ -278,6 +278,41 @@ describe('booking detail page', () => {
     expect(wrapper.get('[data-testid="edit-window-closed"]').text()).toContain('مهلت ویرایش')
   })
 
+  it('explains a platform cancellation honestly: not the customer\'s fault, deposit refunded in full when paid', async () => {
+    stub({ ...BASE_BOOKING, status: 'cancelled_by_admin', depositPaid: true, refundStatus: 'pending' })
+    wrapper = await mountSuspended(BookingDetailPage)
+
+    expect(wrapper.get('[data-testid="booking-status-badge"]').text()).toContain('لغو شده توسط قیچی')
+    const card = wrapper.get('[data-testid="admin-cancelled-card"]')
+    expect(card.text()).toContain('به دلیل مشکلی از سمت شما نبود')
+    expect(card.text()).toContain('بیعانه‌ای که پرداخت کرده‌اید به‌طور کامل به شما بازگردانده می‌شود')
+    expect(wrapper.find('[data-testid="cancel-booking-button"]').exists()).toBe(false)
+  })
+
+  it('does not promise a refund for a platform cancellation when nothing was paid', async () => {
+    stub({ ...BASE_BOOKING, status: 'cancelled_by_admin', depositPaid: false })
+    wrapper = await mountSuspended(BookingDetailPage)
+
+    const card = wrapper.get('[data-testid="admin-cancelled-card"]')
+    expect(card.text()).toContain('هزینه‌ای برای شما ندارد')
+    expect(card.text()).not.toContain('بازگردانده می‌شود')
+  })
+
+  it('offers no "ثبت نظر" for a completed booking the API marks reviewable: false (e.g. owner-entered)', async () => {
+    stub({ ...BASE_BOOKING, status: 'completed', reviewable: false })
+    wrapper = await mountSuspended(BookingDetailPage)
+
+    expect(wrapper.find('[data-testid="review-booking-button"]').exists()).toBe(false)
+    // Not misreported as a deleted review either.
+    expect(wrapper.find('[data-testid="review-withdrawn-note"]').exists()).toBe(false)
+  })
+
+  it('still offers "ثبت نظر" when reviewable is true or absent (older API)', async () => {
+    stub({ ...BASE_BOOKING, status: 'completed', reviewable: true })
+    wrapper = await mountSuspended(BookingDetailPage)
+    expect(wrapper.find('[data-testid="review-booking-button"]').exists()).toBe(true)
+  })
+
   it('shows a note instead of a review action once the review has been withdrawn', async () => {
     stub({ ...BASE_BOOKING, status: 'completed' }, [{ ...MY_REVIEW, status: 'withdrawn', canEdit: false }])
     wrapper = await mountSuspended(BookingDetailPage)
@@ -322,7 +357,7 @@ describe('booking detail page', () => {
 
     expect(wrapper.find('[data-testid="retry-payment-button"]').exists()).toBe(false)
     // The deposit figure is still shown, but tensed as what WILL be due -- never as paid.
-    expect(wrapper.text()).toContain('پیش‌پرداخت پس از تایید سالن')
+    expect(wrapper.text()).toContain('بیعانه پس از تایید سالن')
   })
 
   it('lets the customer withdraw a request the salon has not answered', async () => {
@@ -406,7 +441,7 @@ describe('booking detail page', () => {
     await flushPromises()
     await wrapper.find('[data-testid="cancel-booking-button"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="cancel-confirm-refund-copy"]').text()).toContain('پیش‌پرداخت قابل بازگشت نیست')
+    expect(wrapper.get('[data-testid="cancel-confirm-refund-copy"]').text()).toContain('بیعانه قابل بازگشت نیست')
     wrapper.unmount()
     clearNuxtData(['booking-detail-b1', 'booking-review-b1'])
 
@@ -443,7 +478,7 @@ describe('booking detail page', () => {
 
   // depositAmount is recorded on every booking row for reporting, even when the platform's
   // online-payment flag was off and nothing was ever collected -- the page used to print it
-  // as "پیش‌پرداخت: X تومان" regardless, inventing a payment.
+  // as "بیعانه: X تومان" regardless, inventing a payment.
   it('prints the deposit for a confirmed booking whose deposit was actually captured', async () => {
     stub({ ...BASE_BOOKING, status: 'confirmed', depositPaid: true })
     wrapper = await mountSuspended(BookingDetailPage)
@@ -458,7 +493,7 @@ describe('booking detail page', () => {
 
     expect(wrapper.find('[data-testid="deposit-line"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="no-deposit-line"]').text()).toContain('دریافت نشده است')
-    expect(wrapper.text()).not.toContain('پیش‌پرداخت:')
+    expect(wrapper.text()).not.toContain('بیعانه:')
   })
 
   // A refund can only exist for a captured payment, and wallet credit is real money the
@@ -488,7 +523,7 @@ describe('booking detail page', () => {
     stub({ ...BASE_BOOKING, status: 'pending_approval', confirmationMode: 'manual_approval', approvalExpiresAt: inMinutes(45) })
     wrapper = await mountSuspended(BookingDetailPage)
 
-    expect(wrapper.text()).not.toContain('پیش‌پرداخت پس از تایید سالن')
+    expect(wrapper.text()).not.toContain('بیعانه پس از تایید سالن')
     expect(wrapper.find('[data-testid="no-deposit-line"]').exists()).toBe(true)
   })
 })

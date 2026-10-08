@@ -40,7 +40,7 @@ const TYPE_LABELS: Record<WalletTransactionItem['type'], string> = {
   referral_reward: 'پاداش معرفی',
   referral_reversal: 'برگشت پاداش معرفی',
   booking_spend: 'استفاده در رزرو',
-  booking_spend_reversal: 'برگشت وجه رزرو',
+  booking_spend_reversal: 'برگشت وجه نوبت',
 }
 
 const page = computed(() => {

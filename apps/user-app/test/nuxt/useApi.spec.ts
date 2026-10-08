@@ -44,6 +44,19 @@ describe('useApi', () => {
     expect(result).toEqual({ data: { id: '1' }, error: null })
   })
 
+  // A caller on the SSR critical path (the home page's first search) must be able to bound the wait so a slow
+  // API can never hold a page render hostage; ofetch surfaces the abort as a status-0 error.
+  it('forwards timeoutMs to $fetch as its timeout, and reports a timed-out request as a status-0 error', async () => {
+    fetchMock.mockRejectedValue(new Error('timeout'))
+    const { apiFetch } = useApi()
+
+    const result = await apiFetch('/search', { silent: true, timeoutMs: 3000 })
+
+    expect(fetchMock).toHaveBeenCalledWith('/search', expect.objectContaining({ timeout: 3000 }))
+    expect(result.data).toBeNull()
+    expect(result.error?.status).toBe(0)
+  })
+
   it('in silent mode, returns the error instead of throwing or redirecting', async () => {
     fetchMock.mockRejectedValue({ response: { status: 409 }, statusMessage: 'Conflict' })
     const { apiFetch } = useApi()

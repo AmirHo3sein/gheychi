@@ -5,6 +5,8 @@ import { formatAppointment } from '../../utils/format-date'
 
 interface BookingDetail {
   id: string
+  /** The free-cancel window frozen on THIS booking at creation (null on rows that predate it). */
+  cancellationWindowHours?: number | null
   salonName: string
   serviceName: string
   workerName: string | null
@@ -19,6 +21,7 @@ interface BookingDetail {
     | 'completed'
     | 'cancelled_by_user'
     | 'cancelled_by_salon'
+    | 'cancelled_by_admin'
     | 'rejected_by_salon'
     | 'expired'
     | 'no_show'
@@ -30,6 +33,9 @@ interface BookingDetail {
   approvalExpiresAt: string | null
   paymentExpiresAt: string | null
   depositPaid: boolean
+  // False once a review can no longer be started (owner-entered booking, review already on file,
+  // window passed). Optional so an older API -- which omits it -- keeps offering the prompt.
+  reviewable?: boolean
 }
 
 // Mirrors bookings/index.vue's own interface/const of the same names -- this codebase's
@@ -61,6 +67,7 @@ const STATUS_META: Record<BookingDetail['status'], { label: string; icon: IconNa
   completed: { label: 'انجام شده', icon: 'check-circle', badgeClass: 'bg-(--color-success)/10 text-(--color-success)' },
   cancelled_by_user: { label: 'لغو شده توسط شما', icon: 'x', badgeClass: 'bg-(--color-danger-soft) text-(--color-danger)' },
   cancelled_by_salon: { label: 'لغو شده توسط سالن', icon: 'x', badgeClass: 'bg-(--color-danger-soft) text-(--color-danger)' },
+  cancelled_by_admin: { label: 'لغو شده توسط قیچی', icon: 'x', badgeClass: 'bg-(--color-danger-soft) text-(--color-danger)' },
   rejected_by_salon: { label: 'رد شده توسط سالن', icon: 'x', badgeClass: 'bg-(--color-danger-soft) text-(--color-danger)' },
   expired: { label: 'منقضی شده', icon: 'alert-circle', badgeClass: 'bg-(--color-danger-soft) text-(--color-danger)' },
   no_show: { label: 'عدم مراجعه', icon: 'alert-circle', badgeClass: 'bg-(--color-danger-soft) text-(--color-danger)' },
@@ -132,6 +139,12 @@ const cancelOpen = ref(false)
 // after mount (not awaited during SSR -- nothing renders from it until the dialog opens) and
 // degrades silently: a null result makes the dialog fall back to the seeded policy wording.
 const cancellationTerms = ref<{ cancellationWindowHours: number } | null>(null)
+// The booking's own frozen window wins over the live config (see the matching note in bookings/index.vue).
+const bookingCancellationTerms = computed(() =>
+  typeof booking.value?.cancellationWindowHours === 'number'
+    ? { cancellationWindowHours: booking.value.cancellationWindowHours }
+    : cancellationTerms.value,
+)
 onMounted(async () => {
   const { data } = await apiFetch<{ cancellationWindowHours: number }>('/platform-config/booking-terms', { silent: true })
   // Shape-checked: a malformed config answer must degrade to the fallback wording, not crash the dialog.
@@ -158,7 +171,7 @@ async function confirmCancel() {
 
 const reviewOpen = ref(false)
 
-// Whether the "پیش‌پرداخت" figure describes money that actually moved: the API derives
+// Whether the "بیعانه" figure describes money that actually moved: the API derives
 // depositPaid from the Payment row (paid, or since refunded) -- see BookingsService's
 // depositPaidFor -- plus the two extra signals this endpoint exposes: a refund in any state
 // can only exist for a captured payment, and wallet credit applied at checkout is real money
@@ -227,14 +240,14 @@ const reviewButtonLabel = computed(() => {
              the misunderstanding this whole flow has to avoid. Absent entirely when no
              money moved (see showDepositLine): depositAmount is recorded on every row for
              CRM/reporting even when the platform collected nothing, so printing it as
-             "پیش‌پرداخت: X تومان" would invent a payment. -->
+             "بیعانه: X تومان" would invent a payment. -->
         <p v-if="showDepositLine" data-testid="deposit-line">
-          {{ booking.status === 'pending_approval' ? 'پیش‌پرداخت پس از تایید سالن' : 'پیش‌پرداخت' }}:
+          {{ booking.status === 'pending_approval' ? 'بیعانه پس از تایید سالن' : 'بیعانه' }}:
           <span dir="ltr" class="tnum">{{ formatToman(booking.depositAmount) }}</span> تومان
         </p>
         <!-- Tense-neutral on purpose: true of a live booking (paid at the salon), a
              cancelled one, and a rejected request alike. -->
-        <p v-else data-testid="no-deposit-line" class="text-(--color-text-muted)">پیش‌پرداختی به‌صورت آنلاین دریافت نشده است</p>
+        <p v-else data-testid="no-deposit-line" class="text-(--color-text-muted)">بیعانه‌ای به‌صورت آنلاین دریافت نشده است</p>
         <!-- depositAmount above is already what's charged online (post-wallet) --
              this line exists only so the reduction is traceable back to the wallet,
              mirroring booking.entity.ts's own walletAmountUsed doc comment. -->
@@ -271,6 +284,18 @@ const reviewButtonLabel = computed(() => {
         سالن این درخواست را رد کرد
       </p>
       <p class="text-(--color-text-muted)">مبلغی از شما دریافت نشده است. می‌توانید زمان یا سالن دیگری را انتخاب کنید.</p>
+    </BaseCard>
+
+    <!-- Cancelled by the platform. Says plainly that the customer did nothing wrong, and --
+         only when money really moved -- that it all comes back; the refund-status card below
+         carries the progress of that refund. -->
+    <BaseCard v-if="booking.status === 'cancelled_by_admin'" data-testid="admin-cancelled-card" class="space-y-1.5 text-sm">
+      <p class="flex items-center gap-1.5 font-bold text-(--color-danger)">
+        <BaseIcon name="x" :size="15" />
+        قیچی این نوبت را لغو کرد
+      </p>
+      <p class="text-(--color-text-muted)">این لغو به دلیل مشکلی از سمت شما نبود و هزینه‌ای برای شما ندارد.</p>
+      <p v-if="hasOnlineDeposit" class="text-(--color-text-muted)">بیعانه‌ای که پرداخت کرده‌اید به‌طور کامل به شما بازگردانده می‌شود.</p>
     </BaseCard>
 
     <!-- Refund status: "pending" and "done" are opposite emotional states and must not
@@ -323,14 +348,14 @@ const reviewButtonLabel = computed(() => {
              API only blocks NEW create/reply while disabled, see reviews.service.ts) --
              only the net-new "ثبت نظر" path is hidden here. -->
         <BaseButton
-          v-if="myReview?.status !== 'withdrawn' && (myReview || featureFlags.reviewsEnabled)"
+          v-if="myReview?.status !== 'withdrawn' && (myReview || (featureFlags.reviewsEnabled && booking.reviewable !== false))"
           variant="secondary"
           data-testid="review-booking-button"
           @click="reviewOpen = true"
         >
           {{ reviewButtonLabel }}
         </BaseButton>
-        <p v-else data-testid="review-withdrawn-note" class="text-sm text-(--color-text-muted)">
+        <p v-else-if="myReview?.status === 'withdrawn'" data-testid="review-withdrawn-note" class="text-sm text-(--color-text-muted)">
           نظر شما برای این نوبت حذف شده است
         </p>
       </template>
@@ -345,7 +370,7 @@ const reviewButtonLabel = computed(() => {
       :status="booking.status"
       :starts-at="booking.startsAt"
       :deposit-paid="hasOnlineDeposit"
-      :terms="cancellationTerms"
+      :terms="bookingCancellationTerms"
       :cancelling="cancelling"
       @confirm="confirmCancel"
       @close="cancelOpen = false"

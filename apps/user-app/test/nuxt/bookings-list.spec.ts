@@ -189,6 +189,22 @@ describe('bookings list page', () => {
     expect(wrapper.get('[data-testid="cancel-confirm-refund-copy"]').text()).toContain('بازگردانده می‌شود')
   })
 
+  // The API snapshots the free-cancel window onto each booking, so the dialog must quote THAT, not today's config:
+  // here the live config says 48h but this booking was made under 12h, so 30h out is still a full refund.
+  it("quotes the booking's own frozen cancellation window rather than the live config", async () => {
+    const own = { ...CONFIRMED_FAR_BOOKING, id: 'b-own-window', cancellationWindowHours: 12, startsAt: new Date(Date.now() + 30 * 3600 * 1000).toISOString() }
+    stub([own])
+    wrapper = await mountSuspended(BookingsListPage)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="cancel-booking-button"]').trigger('click')
+    await flushPromises()
+
+    const copy = wrapper.get('[data-testid="cancel-confirm-refund-copy"]').text()
+    expect(copy).toContain('۱۲')
+    expect(copy).toContain('بازگردانده می‌شود')
+  })
+
   it('shows a no-refund outcome for a confirmed booking inside the cancellation window', async () => {
     const soonBooking = { ...CONFIRMED_FAR_BOOKING, id: 'b-confirmed-soon', startsAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() }
     stub([soonBooking])
@@ -213,7 +229,7 @@ describe('bookings list page', () => {
     await flushPromises()
 
     const copy = wrapper.get('[data-testid="cancel-confirm-refund-copy"]').text()
-    expect(copy).toContain('پیش‌پرداختی دریافت نشده است')
+    expect(copy).toContain('بیعانه‌ای دریافت نشده است')
     expect(copy).not.toContain('بازگردانده می‌شود')
     expect(copy).not.toContain('قابل بازگشت نیست')
   })
@@ -327,6 +343,26 @@ describe('bookings list page', () => {
 
   // A booking whose review was deleted stays permanently un-reviewable (the DB unique
   // index is on booking_id regardless of status), so offering any action would only 409.
+  it('labels a platform cancellation «لغو شده توسط قیچی» with an honest explanation', async () => {
+    stub([{ ...COMPLETED_BOOKING, status: 'cancelled_by_admin', depositPaid: true }])
+    wrapper = await mountSuspended(BookingsListPage)
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="booking-status-badge"]').text()).toContain('لغو شده توسط قیچی')
+    const note = wrapper.get('[data-testid="admin-cancelled-note"]')
+    expect(note.text()).toContain('به دلیل مشکلی از سمت شما نبود')
+    expect(note.text()).toContain('به‌طور کامل به شما بازگردانده می‌شود')
+  })
+
+  it('offers no review action for a completed booking with reviewable: false', async () => {
+    stub([{ ...COMPLETED_BOOKING, reviewable: false }], TERMS, [])
+    wrapper = await mountSuspended(BookingsListPage)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="review-booking-button"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="review-withdrawn-note"]').exists()).toBe(false)
+  })
+
   it('shows a note instead of a review action once the review has been withdrawn', async () => {
     stub([COMPLETED_BOOKING], TERMS, [{ ...MY_REVIEW, status: 'withdrawn', canEdit: false }])
     wrapper = await mountSuspended(BookingsListPage)

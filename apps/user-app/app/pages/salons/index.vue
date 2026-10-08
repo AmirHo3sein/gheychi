@@ -139,7 +139,7 @@ const genderLabel = computed(() => (gender.value === 'men' ? 'مردانه' : '�
 const cityName = computed(() => activeCity.value?.name ?? '')
 const heading = computed(() => `سالن‌های زیبایی ${genderLabel.value} در ${cityName.value}`)
 const description = computed(
-  () => `فهرست سالن‌های زیبایی ${genderLabel.value} تایید‌شده در ${cityName.value} — امتیاز، خدمات و قیمت هر سالن را ببینید و نوبتتان را آنلاین رزرو کنید.`,
+  () => `فهرست سالن‌های زیبایی ${genderLabel.value} در ${cityName.value} — امتیاز، خدمات و قیمت هر سالن را ببینید و نوبتتان را آنلاین رزرو کنید.`,
 )
 
 /**
@@ -281,7 +281,7 @@ useHead({
       <!-- SalonCard renders a NuxtLink to /salons/<slug>, which SSRs as a real <a href> -- the
            one thing this whole page exists to put into the server-rendered html. -->
       <div v-else data-testid="browse-results" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <SalonCard v-for="salon in salons" :key="salon.id" :salon="salon" />
+        <SalonCard v-for="(salon, i) in salons" :key="salon.id" :salon="salon" :priority="i === 0" />
       </div>
 
       <!-- An <a>, not a button: a "load more" that only exists as a click handler is invisible

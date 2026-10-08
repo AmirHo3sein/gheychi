@@ -95,3 +95,13 @@ export function parsePageFromSitemapPath(path: string, prefix: string): number |
   if (!match) return null;
   return parsePageParam(match[1]);
 }
+
+// Hand-listed public pages that aren't rows in any API source: the legal documents. Served as
+// their own tiny sitemap (/sitemap-pages.xml) and listed in the index, so adding a static page
+// is a one-line change here.
+export const STATIC_SITEMAP_PATHS = ['/terms', '/privacy', '/booking-policy'];
+
+export function buildStaticPageEntries(siteUrl: string): SitemapUrlEntry[] {
+  const origin = siteUrl.replace(/\/$/, '');
+  return STATIC_SITEMAP_PATHS.map((path) => ({ loc: `${origin}${path}`, changefreq: 'yearly', priority: 0.3 }));
+}

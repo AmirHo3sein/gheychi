@@ -29,6 +29,7 @@ export async function buildSitemapIndexPayload(): Promise<string> {
   const postPageCount = computeSitemapPageCount(postsFirstPage.total, postsFirstPage.pageSize);
 
   const sitemapLocs = [
+    `${siteUrl}/sitemap-pages.xml`,
     ...Array.from({ length: salonPageCount }, (_, i) => `${siteUrl}/sitemap-salons-${i + 1}.xml`),
     ...Array.from({ length: postPageCount }, (_, i) => `${siteUrl}/sitemap-posts-${i + 1}.xml`),
   ];

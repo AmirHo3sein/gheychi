@@ -651,7 +651,7 @@ describe('booking confirm page', () => {
     await nextTick()
 
     expect(wrapper.text()).toContain(`لغو رایگان تا ${TERMS.cancellationWindowHours.toLocaleString('fa-IR')} ساعت قبل از نوبت`)
-    expect(wrapper.text()).toContain('پیش‌پرداخت قابل بازگشت نیست')
+    expect(wrapper.text()).toContain('بیعانه قابل بازگشت نیست')
   })
 
   // Design-system migration: the pay button is BaseButton (not a hand-rolled <button>) and
@@ -781,7 +781,7 @@ describe('booking confirm page', () => {
     expect(note.text()).toContain('اکنون مبلغی پرداخت نمی‌کنید')
     expect(note.text()).toContain('پس از تایید سالن')
     // Same tensing on the deposit figure: it's what will be due, not what's being charged.
-    expect(wrapper.text()).toContain('پیش‌پرداخت آنلاین (پس از تایید سالن)')
+    expect(wrapper.text()).toContain('بیعانه آنلاین (پس از تایید سالن)')
   })
 
   // paymentUrl is an absolute URL built from the API's FRONTEND_BASE_URL. When there's no
@@ -869,7 +869,7 @@ describe('booking confirm page', () => {
     await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
     await nextTick()
 
-    expect(wrapper.text()).not.toContain('پیش‌پرداخت آنلاین')
+    expect(wrapper.text()).not.toContain('بیعانه آنلاین')
     expect(wrapper.text()).not.toContain('استفاده از موجودی کیف پول')
     expect(wrapper.text()).not.toContain('لغو رایگان تا')
     expect(wrapper.get('[data-testid="confirm-booking-button"]').text()).toBe('رزرو')
@@ -878,6 +878,35 @@ describe('booking confirm page', () => {
     await flushPromises()
 
     expect(navigateToMock).toHaveBeenCalledWith('/bookings/b-free')
+  })
+
+  it('links the booking policy next to the cancellation wording, with payments on or off', async () => {
+    for (const onlinePaymentEnabled of [true, false]) {
+      useState('feature-flags').value = {
+        reviewsEnabled: true,
+        storiesEnabled: true,
+        portfolioEnabled: true,
+        referralsEnabled: true,
+        couponsEnabled: true,
+        onlinePaymentEnabled,
+      }
+      fetchMock.mockImplementation(async (path: string) => {
+        if (path === '/salons/test-salon') return SALON
+        if (path === '/salons/test-salon/services') return [SERVICE]
+        if (path === '/platform-config/booking-terms') return TERMS
+        if (path === '/salons/test-salon/workers') return []
+        if (path === `/salons/${SALON.id}/availability`) return []
+        if (path === '/wallet/mine') return { balances: [] }
+        throw new Error(`unexpected fetch path in test: ${path}`)
+      })
+      wrapper?.unmount()
+      clearNuxtData()
+      wrapper = await mountSuspended(BookingConfirmPage)
+      await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+      await nextTick()
+
+      expect(wrapper.get('[data-testid="booking-policy-link"]').attributes('href')).toBe('/booking-policy')
+    }
   })
 
   it('tells a manual-approval customer to expect cash at the salon when the platform payment flag is off', async () => {

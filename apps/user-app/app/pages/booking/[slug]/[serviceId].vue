@@ -340,7 +340,7 @@ async function confirmBooking() {
     if (appliedCoupon.value && reason && mentionsCoupon(error, reason)) {
       appliedCoupon.value = null
       couponError.value = reason
-      submitError.value = 'کد تخفیف از این رزرو برداشته شد؛ می‌توانید بدون آن پرداخت را ادامه دهید'
+      submitError.value = 'کد تخفیف از این نوبت برداشته شد؛ می‌توانید بدون آن پرداخت را ادامه دهید'
       return
     }
 
@@ -505,7 +505,7 @@ async function confirmBooking() {
         <span>استفاده از موجودی کیف پول (<span dir="ltr" class="tnum">{{ formatToman(walletBalanceToman) }}</span> تومان)</span>
       </label>
       <p v-if="depositDueOnline !== null && featureFlags.onlinePaymentEnabled">
-        {{ manualApproval ? 'پیش‌پرداخت آنلاین (پس از تایید سالن)' : 'پیش‌پرداخت آنلاین' }}:
+        {{ manualApproval ? 'بیعانه آنلاین (پس از تایید سالن)' : 'بیعانه آنلاین' }}:
         <span dir="ltr" class="tnum">{{ formatToman(depositDueOnline) }}</span> تومان
         <span v-if="walletAmountToApply > 0" class="text-(--color-text-muted)">
           (<span dir="ltr" class="tnum">{{ formatToman(walletAmountToApply) }}</span> تومان از کیف پول)
@@ -515,7 +515,15 @@ async function confirmBooking() {
       <!-- Non-refundable-by-default disclosure (Product Principle #3) -- calm/muted, not
            danger-red: this informs what happens after the free-cancel window, it doesn't
            alarm. Numbers still come exclusively from /platform-config/booking-terms above. -->
-      <p v-if="page.terms && featureFlags.onlinePaymentEnabled" class="text-(--color-text-muted)">بعد از این زمان، پیش‌پرداخت قابل بازگشت نیست</p>
+      <p v-if="page.terms && featureFlags.onlinePaymentEnabled" class="text-(--color-text-muted)">بعد از این زمان، بیعانه قابل بازگشت نیست</p>
+      <!-- Always shown (not behind the payment flag): the cancellation policy applies to a free booking too. -->
+      <NuxtLink
+        to="/booking-policy"
+        data-testid="booking-policy-link"
+        class="inline-flex min-h-11 items-center text-(--color-accent-text) underline underline-offset-2 hover:text-(--color-text)"
+      >
+        قوانین رزرو و لغو نوبت
+      </NuxtLink>
 
       <div v-if="featureFlags.couponsEnabled" class="space-y-2 border-t border-(--color-border) pt-4">
         <div class="flex items-end gap-2">
@@ -577,8 +585,8 @@ async function confirmBooking() {
       <p v-if="manualApproval" data-testid="manual-approval-note" class="flex items-start gap-1.5 text-xs text-(--color-text-muted)">
         <BaseIcon name="clock" :size="14" class="mt-0.5 shrink-0" />
         {{ featureFlags.onlinePaymentEnabled
-          ? 'این سالن رزروها را دستی تایید می‌کند؛ اکنون مبلغی پرداخت نمی‌کنید و پس از تایید سالن پرداخت انجام می‌شود.'
-          : 'این سالن رزروها را دستی تایید می‌کند؛ هزینه به صورت نقدی در سالن دریافت می‌شود.' }}
+          ? 'این سالن نوبت‌ها را دستی تایید می‌کند؛ اکنون مبلغی پرداخت نمی‌کنید و پس از تایید سالن پرداخت انجام می‌شود.'
+          : 'این سالن نوبت‌ها را دستی تایید می‌کند؛ هزینه به صورت نقدی در سالن دریافت می‌شود.' }}
       </p>
 
       <BaseButton block size="lg" data-testid="confirm-booking-button" :loading="submitting" @click="confirmBooking">

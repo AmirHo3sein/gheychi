@@ -111,6 +111,7 @@ const { titleId } = useDialog(dialogRoot as unknown as Ref<HTMLElement | null>, 
       type="button"
       :disabled="favoriteBusy"
       :aria-pressed="isFavorited"
+      :aria-label="isFavorited ? 'حذف از سالن‌های ذخیره‌شده' : 'ذخیره سالن'"
       data-testid="favorite-button"
       class="absolute top-3 end-3 flex h-11 w-11 items-center justify-center rounded-full backdrop-blur transition-colors disabled:opacity-60"
       :class="isFavorited ? 'bg-(--color-danger-strong) text-(--color-fill-text)' : 'bg-black/40 text-white hover:bg-black/55'"

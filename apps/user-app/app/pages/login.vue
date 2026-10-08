@@ -232,7 +232,7 @@ const STEP_HINT: Record<typeof step.value, string> = {
            floating in its own empty band. -->
       <div class="login-stagger relative -mb-20 flex justify-center" style="animation-delay: 0s">
         <div class="login-glow pointer-events-none absolute bottom-4 h-40 w-56 opacity-70" aria-hidden="true" />
-        <img src="/mascot-full.png" alt="" class="relative h-60 w-auto" />
+        <img src="/mascot-full.webp" alt="" width="267" height="480" fetchpriority="high" decoding="async" class="relative h-60 w-auto" />
       </div>
 
       <div class="login-stagger relative z-10" style="animation-delay: 0.1s">
@@ -391,7 +391,16 @@ const STEP_HINT: Record<typeof step.value, string> = {
           </p>
         </BaseCard>
 
-        <p class="login-stagger mt-6 text-center text-xs text-(--color-text-muted)" style="animation-delay: 0.2s">
+        <!-- Quiet consent line, not a checkbox: using the service is the acceptance. -->
+        <p data-testid="login-legal" class="login-stagger mt-4 text-center text-xs leading-6 text-(--color-text-muted)" style="animation-delay: 0.15s">
+          با ورود یا ثبت‌نام،
+          <NuxtLink to="/terms" class="inline-block py-2 underline underline-offset-2 hover:text-(--color-text)">شرایط استفاده</NuxtLink>
+          و
+          <NuxtLink to="/privacy" class="inline-block py-2 underline underline-offset-2 hover:text-(--color-text)">حریم خصوصی</NuxtLink>
+          را می‌پذیرید.
+        </p>
+
+        <p class="login-stagger mt-2 text-center text-xs text-(--color-text-muted)" style="animation-delay: 0.2s">
           © {{ new Date().getFullYear() }} قیچی
         </p>
       </div>

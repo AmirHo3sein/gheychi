@@ -34,20 +34,20 @@ const outcomeText = computed(() => {
   // it was made): promising the deposit "will be refunded in full" would describe money that
   // never moved.
   if (!props.depositPaid) {
-    return 'برای این نوبت پیش‌پرداختی دریافت نشده است؛ لغو آن هزینه‌ای برای شما ندارد.'
+    return 'برای این نوبت بیعانه‌ای دریافت نشده است؛ لغو آن هزینه‌ای برای شما ندارد.'
   }
   if (!props.terms) {
     // Fallback if /platform-config/booking-terms didn't load. 24 matches the seeded
     // cancellation_window_hours (initial-schema migration), so a config fetch failure can't
     // quietly promise a longer free-cancel window than the API enforces.
-    return 'لغو رایگان تا ۲۴ ساعت قبل از نوبت، پس از آن پیش‌پرداخت قابل بازگشت نیست.'
+    return 'لغو رایگان تا ۲۴ ساعت قبل از نوبت، پس از آن بیعانه قابل بازگشت نیست.'
   }
   const hoursUntilStart = (new Date(props.startsAt).getTime() - Date.now()) / (1000 * 60 * 60)
   const windowHours = props.terms.cancellationWindowHours.toLocaleString('fa-IR')
   if (hoursUntilStart >= props.terms.cancellationWindowHours) {
-    return `چون بیش از ${windowHours} ساعت به این نوبت مانده، پیش‌پرداخت شما به طور کامل بازگردانده می‌شود.`
+    return `چون بیش از ${windowHours} ساعت به این نوبت مانده، بیعانه شما به طور کامل بازگردانده می‌شود.`
   }
-  return `چون کمتر از ${windowHours} ساعت به این نوبت مانده، پیش‌پرداخت قابل بازگشت نیست.`
+  return `چون کمتر از ${windowHours} ساعت به این نوبت مانده، بیعانه قابل بازگشت نیست.`
 })
 
 // Same wording as the triggering button, so the dialog is unmistakably about the thing the

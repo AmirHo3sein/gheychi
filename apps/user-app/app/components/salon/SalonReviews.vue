@@ -29,7 +29,7 @@ function flagReview(reviewId: string) {
             <!-- Discrete filled/unfilled star row, matching ReviewPromptModal.vue's own
                  rating-display convention -- a bare "4 —" number read as a raw data dump,
                  not a rating a customer would recognize as "their" star scale. -->
-            <div class="flex items-center gap-0.5" :aria-label="`${review.rating.toLocaleString('fa-IR')} از ۵ ستاره`">
+            <div role="img" class="flex items-center gap-0.5" :aria-label="`${review.rating.toLocaleString('fa-IR')} از ۵ ستاره`">
               <BaseIcon
                 v-for="n in 5"
                 :key="n"

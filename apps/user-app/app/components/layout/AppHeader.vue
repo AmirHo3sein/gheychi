@@ -13,7 +13,7 @@ const { flags } = useFeatureFlags()
        destinations appear here as text links.
        Solid surface, no backdrop blur: PRODUCT.md's budget-Android constraint rules out
        effects that assume a capable GPU, and a sticky header is repainted on every scroll. -->
-  <header class="sticky top-0 z-30 border-b border-(--color-border) bg-(--color-surface-card)">
+  <header class="sticky top-0 z-30 print:hidden border-b border-(--color-border) bg-(--color-surface-card)">
     <div class="mx-auto flex h-14 max-w-5xl items-center gap-2 px-4">
       <NuxtLink to="/" class="flex items-center gap-2" aria-label="قیچی — صفحه اصلی">
         <!-- Decorative: the wordmark beside it already names the brand to assistive tech. -->
