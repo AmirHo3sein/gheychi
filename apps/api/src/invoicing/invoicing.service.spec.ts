@@ -158,6 +158,25 @@ describe('InvoicingService.recordPayment', () => {
     expect(emInsert).not.toHaveBeenCalled();
   });
 
+  it('refuses a payment larger than the remaining balance (a mistyped amount must not mark the invoice paid)', async () => {
+    emFindOneBy.mockResolvedValue({ ...INVOICE, paidTotal: 60_000 });
+
+    await expect(
+      service.recordPayment('inv-1', 'admin-1', { amount: 40_001, method: 'bank_transfer' }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(emInsert).not.toHaveBeenCalled();
+    expect(emUpdate).not.toHaveBeenCalled();
+  });
+
+  it('refuses any further payment on an invoice that is already fully paid', async () => {
+    emFindOneBy.mockResolvedValue({ ...INVOICE, paidTotal: 100_000, status: 'paid' });
+
+    await expect(
+      service.recordPayment('inv-1', 'admin-1', { amount: 1, method: 'cash' }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(emInsert).not.toHaveBeenCalled();
+  });
+
   it('inserts an InvoicePayment row and marks the invoice partially_paid when the payment is less than the total owed', async () => {
     await service.recordPayment('inv-1', 'admin-1', { amount: 40_000, method: 'bank_transfer', referenceNumber: 'REF-1' });
 

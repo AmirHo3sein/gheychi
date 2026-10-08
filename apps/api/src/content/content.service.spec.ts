@@ -601,6 +601,15 @@ describe('ContentService.updateCategory', () => {
     );
   });
 
+  it('keeps the existing slug when the same name is saved again (public ?category= URLs must not churn)', async () => {
+    const { service, mocks } = await setup();
+    mocks.categoriesRepo.findOneBy.mockResolvedValue({ id: 1, name: 'Hair Care', slug: 'hair-care-ab12' });
+
+    await service.updateCategory(1, { name: 'Hair Care' });
+
+    expect(mocks.categoriesRepo.save).toHaveBeenCalledWith(expect.objectContaining({ name: 'Hair Care', slug: 'hair-care-ab12' }));
+  });
+
   it('keeps a pinned slug over regeneration', async () => {
     const { service, mocks } = await setup();
     mocks.categoriesRepo.findOneBy.mockResolvedValue({ id: 1, name: 'Hair Care', slug: 'hair-care-ab12' });

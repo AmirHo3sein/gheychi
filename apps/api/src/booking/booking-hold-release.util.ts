@@ -97,7 +97,7 @@ export async function reverseWalletSpend(
     await walletService.credit(em, row.userId, 'toman', row.walletAmountUsed, 'booking_spend_reversal', {
       referenceType: 'booking',
       referenceId: row.id,
-      reason: 'Booking hold released before its deposit was captured',
+      reason: 'بازگشت اعتبار کیف پول: نوبت پیش از دریافت بیعانه آزاد شد',
     });
   }
 }

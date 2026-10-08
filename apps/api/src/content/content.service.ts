@@ -298,10 +298,13 @@ export class ContentService {
   async updateCategory(id: number, dto: UpdateBlogCategoryDto): Promise<BlogCategory> {
     const category = await this.categories.findOneBy({ id });
     if (!category) throw new NotFoundException('Category not found');
+    const nameChanged = typeof dto.name === 'string' && dto.name !== category.name;
     if (typeof dto.name === 'string') category.name = dto.name;
-    // Slug regenerates from the (possibly new) name unless the caller pinned one.
+    // Slug regenerates from a genuinely new name unless the caller pinned one. Re-saving the
+    // same name must not mint a new random suffix: the slug is part of public
+    // `/blog?category=<slug>` URLs, so a no-op save would silently break every shared link.
     if (typeof dto.slug === 'string') category.slug = dto.slug;
-    else if (typeof dto.name === 'string') category.slug = makeSlug(dto.name, 'category');
+    else if (nameChanged) category.slug = makeSlug(dto.name!, 'category');
     try {
       return await this.categories.save(category);
     } catch (err) {

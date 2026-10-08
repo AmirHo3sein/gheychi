@@ -178,6 +178,13 @@ describe('Commission ledger + monthly invoicing (e2e)', () => {
       expect(partial.body.status).toBe('partially_paid');
       expect(partial.body.paidTotal).toBe(100_000);
 
+      // Over the remaining 80_000: refused, and nothing is written (invoice stays partially_paid).
+      await request(app.getHttpServer())
+        .patch(`/api/admin/invoices/${invoiceId}/payment`)
+        .set('Cookie', adminCookie)
+        .send({ amount: 80_001, method: 'bank_transfer' })
+        .expect(409);
+
       const final = await request(app.getHttpServer())
         .patch(`/api/admin/invoices/${invoiceId}/payment`)
         .set('Cookie', adminCookie)
@@ -196,6 +203,13 @@ describe('Commission ledger + monthly invoicing (e2e)', () => {
       // The owning provider sees the final paid status too.
       const mine = await request(app.getHttpServer()).get('/api/salons/mine/invoices').set('Cookie', ownerCookie).expect(200);
       expect(mine.body[0].status).toBe('paid');
+
+      // Once fully paid, even a 1-toman payment is refused.
+      await request(app.getHttpServer())
+        .patch(`/api/admin/invoices/${invoiceId}/payment`)
+        .set('Cookie', adminCookie)
+        .send({ amount: 1, method: 'cash' })
+        .expect(409);
     });
 
     it('a non-admin gets 403 recording a payment', async () => {

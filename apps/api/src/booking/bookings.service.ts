@@ -372,7 +372,7 @@ export class BookingsService {
         if (dto.applyWalletBalance && depositBeforeWallet > 0 && onlinePaymentEnabled) {
           const result = await this.walletService.debit(em, userId, 'toman', depositBeforeWallet, 'booking_spend', {
             referenceType: 'booking',
-            reason: 'Applied to booking deposit at checkout',
+            reason: 'پرداخت بخشی از بیعانه نوبت از کیف پول',
           });
           if (result.debited > 0) {
             walletAmountUsed = result.debited;

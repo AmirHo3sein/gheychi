@@ -117,6 +117,14 @@ export class InvoicingService {
         .getOne();
       if (!invoice) throw new NotFoundException();
       if (invoice.status === 'void') throw new ConflictException('این صورتحساب باطل شده است و پرداختی روی آن ثبت نمی‌شود');
+      // This records a bank transfer that already happened. A mistyped amount (an extra zero) must
+      // not silently mark the invoice paid with a paid_total far above what is owed, so refuse
+      // anything past the remaining balance and let the admin correct it.
+      const remaining = invoice.totalNetPayable - invoice.paidTotal;
+      if (remaining <= 0) throw new ConflictException('این صورتحساب پیش‌تر به‌طور کامل پرداخت شده است');
+      if (dto.amount > remaining) {
+        throw new ConflictException(`مبلغ از مانده صورتحساب بیشتر است؛ حداکثر مبلغ قابل ثبت ${remaining.toLocaleString('fa-IR')} تومان است`);
+      }
 
       await em.insert(InvoicePayment, {
         invoiceId: id,
