@@ -28,7 +28,7 @@ ARG VITE_MAP_TILE_ATTRIBUTION=
 ENV VITE_MAP_TILE_ATTRIBUTION=$VITE_MAP_TILE_ATTRIBUTION
 RUN pnpm turbo run build --filter=@gheychi/admin-panel
 
-FROM nginx:1.27-alpine AS runner
+FROM nginx:1.31-alpine AS runner
 COPY docker/nginx-spa.conf /etc/nginx/conf.d/default.conf
 COPY --from=installer /app/apps/admin-panel/dist /usr/share/nginx/html
 EXPOSE 80
