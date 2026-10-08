@@ -201,4 +201,37 @@ describe('SalonStatusActions', () => {
     expect(wrapper.find('[data-testid="approve-button"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('اقدامی برای این وضعیت لازم نیست.')
   })
+
+  describe('approveBlocked (review checklist gate)', () => {
+    it('disables Approve and explains why, but leaves Reject available', async () => {
+      const wrapper = mount(SalonStatusActions, { props: { salonId: 's1', status: 'pending', approveBlocked: true } })
+
+      expect((wrapper.get('[data-testid="approve-button"]').element as HTMLButtonElement).disabled).toBe(true)
+      expect(wrapper.get('[data-testid="approve-blocked-hint"]').text()).toContain('علامت بزنید')
+      expect((wrapper.get('[data-testid="reject-button"]').element as HTMLButtonElement).disabled).toBe(false)
+    })
+
+    it('does not open the confirm strip when a blocked Approve is clicked', async () => {
+      const wrapper = mount(SalonStatusActions, { props: { salonId: 's1', status: 'pending', approveBlocked: true } })
+      await wrapper.get('[data-testid="approve-button"]').trigger('click')
+      expect(wrapper.find('[data-testid="approve-confirm"]').exists()).toBe(false)
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it('does not gate reinstating a suspended salon', async () => {
+      const wrapper = mount(SalonStatusActions, {
+        props: { salonId: 's1', status: 'suspended', suspendedCause: 'admin', approveBlocked: true },
+      })
+      expect((wrapper.get('[data-testid="reapprove-button"]').element as HTMLButtonElement).disabled).toBe(false)
+    })
+
+    it('still rejects with a reason while blocked', async () => {
+      fetchMock.mockResolvedValueOnce({ data: { id: 's1', status: 'rejected' }, error: null })
+      const wrapper = mount(SalonStatusActions, { props: { salonId: 's1', status: 'pending', approveBlocked: true } })
+      await wrapper.get('[data-testid="reject-button"]').trigger('click')
+      await wrapper.get('[data-testid="reason-input"]').setValue('مدارک ناقص')
+      await wrapper.get('[data-testid="reject-submit"]').trigger('click')
+      expect(fetchMock).toHaveBeenCalledWith('/admin/salons/s1/status', { method: 'PATCH', body: { status: 'rejected', reason: 'مدارک ناقص' } })
+    })
+  })
 })

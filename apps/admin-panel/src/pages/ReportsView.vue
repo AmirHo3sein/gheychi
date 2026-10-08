@@ -118,8 +118,7 @@ watch(page, load)
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
         <div data-testid="status-filter">
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">وضعیت</label>
-          <AppSelect v-model="statusFilter" :options="STATUS_OPTIONS" width="10rem" />
+          <AppSelect label="وضعیت" v-model="statusFilter" :options="STATUS_OPTIONS" width="10rem" />
         </div>
       </div>
     </AppCard>
@@ -208,7 +207,7 @@ watch(page, load)
                collected it -- and nothing on the row distinguishes them, so the copy must
                cover both rather than assert the benign one. -->
           <p v-else data-testid="story-gone-note" class="text-sm text-(--color-text-muted)">
-            این استوری دیگر در دسترس نیست؛ یا آرایشگاه‌دار آن را حذف کرده یا مهلت ۲۴ ساعته‌اش تمام شده است. گزارش را بر اساس متن آن بررسی کنید.
+            این استوری دیگر در دسترس نیست؛ یا سالن‌دار آن را حذف کرده یا مهلت ۲۴ ساعته‌اش تمام شده است. گزارش را بر اساس متن آن بررسی کنید.
           </p>
         </div>
 
@@ -229,7 +228,7 @@ watch(page, load)
                so a nulled FK can only mean the provider deleted the item themselves. Saying
                "expired" here would read as benign and no-action-needed; it is the opposite. -->
           <p v-else data-testid="portfolio-gone-note" class="text-sm text-(--color-text-muted)">
-            این نمونه کار توسط آرایشگاه‌دار حذف شده است. گزارش را بر اساس متن آن بررسی کنید.
+            این نمونه کار توسط سالن‌دار حذف شده است. گزارش را بر اساس متن آن بررسی کنید.
           </p>
         </div>
 

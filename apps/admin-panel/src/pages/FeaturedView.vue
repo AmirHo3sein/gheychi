@@ -143,7 +143,7 @@ watch(page, load)
                 <th scope="col" class="px-5 py-3 font-semibold">شهر</th>
                 <th scope="col" class="px-5 py-3 font-semibold">ویژه</th>
                 <th scope="col" class="px-5 py-3 font-semibold">تا تاریخ</th>
-                <th scope="col" class="px-5 py-3"></th>
+                <th scope="col" class="px-5 py-3"><span class="sr-only">عملیات</span></th>
               </tr>
             </thead>
             <tbody>

@@ -36,7 +36,7 @@ describe('AuditLogView', () => {
 
     expect(fetchMock).toHaveBeenCalledWith('/admin/audit-log?page=1&pageSize=20', { silent: true })
     // Action renders as its Farsi label, never the raw dotted enum.
-    expect(wrapper.text()).toContain('تغییر وضعیت آرایشگاه')
+    expect(wrapper.text()).toContain('تغییر وضعیت سالن')
     expect(wrapper.text()).not.toContain('salon.status.set')
     expect(wrapper.text()).toContain('مدیر کل')
     expect(wrapper.text()).toContain('09121234567')

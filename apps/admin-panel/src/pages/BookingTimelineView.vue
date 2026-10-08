@@ -1,7 +1,7 @@
 <!-- apps/admin-panel/src/pages/BookingTimelineView.vue -->
 <!-- The support timeline for one booking: every lifecycle moment the backend recorded,
-     oldest first. Read-only by construction -- there is no admin route that mutates a
-     booking, and this page must not imply otherwise.
+     oldest first. Read-only: the one admin write (platform cancel) lives on the bookings list,
+     next to the status that decides whether it is offered.
 
      Deliberately NOT reachable from the sidebar: it is addressed by booking id, so it is a
      deep-link/escalation target (paste an id from a support ticket), not a browsable list. -->
@@ -123,6 +123,7 @@ function formatDateTime(iso: string): string {
 function formatMetadataValue(key: string, value: unknown): string {
   if (value === null || value === undefined) return '—'
   if (key === 'confirmationMode') return bookingConfirmationModeLabel(String(value)).label
+  if (key === 'cancelledBy') return bookingEventActorTypeLabel(String(value))
   if (key === 'fromStatus') return bookingStatusLabel(String(value)).label
   // `cause` is always an enum; `reason` is usually the salon's own free text, but
   // BOOKING_CONFIRMED writes the enum-ish 'zero_deposit' under it. The map falls back to
@@ -166,7 +167,7 @@ onMounted(load)
           <AppIcon name="history" :size="22" />
         </div>
         <div class="min-w-0">
-          <h2 class="text-lg font-bold text-(--color-text)">تاریخچه رزرو</h2>
+          <h2 class="text-lg font-bold text-(--color-text)">تاریخچه نوبت</h2>
           <!-- dir="ltr" + break-all: a UUID has no break opportunity and would otherwise
                widen the card on a narrow viewport. -->
           <p dir="ltr" class="tnum mt-0.5 break-all text-right text-xs text-(--color-text-muted)">{{ bookingId }}</p>
@@ -194,7 +195,7 @@ onMounted(load)
       <div class="flex h-12 w-12 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)">
         <AppIcon name="warning" :size="22" />
       </div>
-      <p class="text-sm text-(--color-text-muted)">بارگذاری تاریخچه این رزرو با خطا مواجه شد.</p>
+      <p class="text-sm text-(--color-text-muted)">بارگذاری تاریخچه این نوبت با خطا مواجه شد.</p>
       <AppButton type="button" variant="secondary" data-testid="timeline-retry" @click="load">
         <template #icon><AppIcon name="reset" :size="15" /></template>
         تلاش مجدد
@@ -207,7 +208,7 @@ onMounted(load)
     <EmptyState
       v-else-if="events.length === 0"
       icon="history"
-      message="رویدادی برای این رزرو ثبت نشده است؛ شناسه رزرو را بررسی کنید."
+      message="رویدادی برای این نوبت ثبت نشده است؛ شناسه نوبت را بررسی کنید."
     />
 
     <AppCard v-else>

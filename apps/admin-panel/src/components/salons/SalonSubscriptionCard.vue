@@ -242,7 +242,7 @@ async function resolvePeriod(period: BillingPeriod) {
       <div class="flex h-12 w-12 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)">
         <AppIcon name="warning" :size="22" />
       </div>
-      <p class="text-sm text-(--color-text-muted)">بارگذاری اشتراک این آرایشگاه با خطا مواجه شد.</p>
+      <p class="text-sm text-(--color-text-muted)">بارگذاری اشتراک این سالن با خطا مواجه شد.</p>
       <AppButton type="button" variant="secondary" data-testid="subscription-retry" @click="load">تلاش مجدد</AppButton>
     </div>
 

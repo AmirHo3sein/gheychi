@@ -239,13 +239,11 @@ watch(page, load)
         </div>
 
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">وضعیت</label>
-          <AppSelect v-model="statusFilter" :options="STATUS_OPTIONS" width="12rem" />
+          <AppSelect label="وضعیت" v-model="statusFilter" :options="STATUS_OPTIONS" width="12rem" />
         </div>
 
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">نوع معرفی</label>
-          <AppSelect v-model="typeFilter" :options="TYPE_OPTIONS" width="10rem" />
+          <AppSelect label="نوع معرفی" v-model="typeFilter" :options="TYPE_OPTIONS" width="10rem" />
         </div>
 
         <AppButton
@@ -294,7 +292,7 @@ watch(page, load)
                 <th scope="col" class="px-5 py-3 font-semibold">نوع</th>
                 <th scope="col" class="px-5 py-3 font-semibold">وضعیت</th>
                 <th scope="col" class="px-5 py-3 font-semibold">جزئیات</th>
-                <th scope="col" class="px-5 py-3"></th>
+                <th scope="col" class="px-5 py-3"><span class="sr-only">عملیات</span></th>
               </tr>
             </thead>
           <tbody>

@@ -22,6 +22,10 @@ ENV VITE_API_BASE=$VITE_API_BASE
 # initialized at all, so a build with no DSN behaves exactly as it did before this existed.
 ARG VITE_SENTRY_DSN=
 ENV VITE_SENTRY_DSN=$VITE_SENTRY_DSN
+ARG VITE_MAP_TILE_URL=
+ENV VITE_MAP_TILE_URL=$VITE_MAP_TILE_URL
+ARG VITE_MAP_TILE_ATTRIBUTION=
+ENV VITE_MAP_TILE_ATTRIBUTION=$VITE_MAP_TILE_ATTRIBUTION
 RUN pnpm turbo run build --filter=@gheychi/admin-panel
 
 FROM nginx:1.27-alpine AS runner

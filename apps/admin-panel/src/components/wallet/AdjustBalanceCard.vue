@@ -200,8 +200,7 @@ async function submit() {
         </div>
 
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">واحد</label>
-          <AppSelect v-model="currency" :options="CURRENCY_OPTIONS" width="8rem" />
+          <AppSelect label="واحد" v-model="currency" :options="CURRENCY_OPTIONS" width="8rem" />
         </div>
       </div>
 

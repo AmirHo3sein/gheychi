@@ -150,7 +150,7 @@ watch(page, load)
   <div class="space-y-5 p-4 sm:p-6 lg:p-8">
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
-        <AppInput v-model="nameFilter" icon="search" label="جست‌وجو" placeholder="نام آرایشگاه" class="w-52" />
+        <AppInput v-model="nameFilter" icon="search" label="جست‌وجو" placeholder="نام سالن" class="w-52" />
         <div v-if="citiesError" class="flex items-end gap-2">
           <AppIcon name="warning" :size="14" class="mb-2.5 shrink-0 text-(--tone-danger-text)" />
           <AppButton type="button" variant="secondary" data-testid="retry-cities" @click="loadCities">تلاش دوباره</AppButton>
@@ -190,11 +190,11 @@ watch(page, load)
       <div class="flex h-12 w-12 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)">
         <AppIcon name="warning" :size="22" />
       </div>
-      <p class="text-sm text-(--color-text-muted)">خطا در دریافت فهرست آرایشگاه‌ها.</p>
+      <p class="text-sm text-(--color-text-muted)">خطا در دریافت فهرست سالن‌ها.</p>
       <AppButton type="button" variant="secondary" data-testid="retry-load" @click="load">تلاش دوباره</AppButton>
     </AppCard>
 
-    <EmptyState v-else-if="!loading && salons.length === 0" icon="salons" message="آرایشگاهی با این فیلترها یافت نشد." />
+    <EmptyState v-else-if="!loading && salons.length === 0" icon="salons" message="سالنی با این فیلترها یافت نشد." />
 
     <AppCard v-else :padded="false" class="overflow-hidden">
       <div class="relative">
@@ -211,7 +211,7 @@ watch(page, load)
              trailing columns rather than letting the operator reach them. Desktop is untouched:
              no scrollbar exists while the table fits, which is the ≥1280px case this app
              optimizes for. -->
-        <ScrollTable label="فهرست آرایشگاه‌ها">
+        <ScrollTable label="فهرست سالن‌ها">
           <table class="w-full text-start text-sm transition-opacity" :class="{ 'opacity-50': loading }">
             <thead>
               <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">

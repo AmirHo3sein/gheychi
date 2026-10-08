@@ -442,7 +442,7 @@ onMounted(load)
             </div>
             <div>
               <label class="mb-1.5 block text-xs text-(--color-text-muted)">نوع پاداش</label>
-              <AppSelect v-model="row.referrerRewardKind" :options="REWARD_KIND_OPTIONS" width="100%" />
+              <AppSelect v-model="row.referrerRewardKind" aria-label="نوع پاداش معرف" :options="REWARD_KIND_OPTIONS" width="100%" />
             </div>
             <!-- items-START, not items-end: only the cap field carries a helper line, so
                  aligning the pair's BOTTOMS pushed its input (and its label) visibly higher
@@ -454,12 +454,14 @@ onMounted(load)
               <div class="min-w-0 flex-1">
                 <label class="mb-1.5 block text-xs text-(--color-text-muted)">مقدار ({{ rewardKindUnit(row.referrerRewardKind) }})</label>
                 <AppMoneyInput
+                  :aria-label="`مقدار (${rewardKindUnit(row.referrerRewardKind)})`"
                   v-if="rewardKindUnit(row.referrerRewardKind) === 'تومان'"
                   :model-value="String(row.referrerRewardValue)"
                   :data-testid="`referrer-value-${row.referralType}`"
                   @update:model-value="(v) => (row.referrerRewardValue = Number(v))"
                 />
                 <AppInput
+                  :aria-label="`مقدار (${rewardKindUnit(row.referrerRewardKind)})`"
                   v-else
                   :model-value="String(row.referrerRewardValue)"
                   :data-testid="`referrer-value-${row.referralType}`"
@@ -475,12 +477,14 @@ onMounted(load)
               <div class="min-w-0 flex-1">
                 <label class="mb-1.5 block text-xs text-(--color-text-muted)">سقف (اختیاری)</label>
                 <AppMoneyInput
+                  aria-label="سقف (اختیاری)"
                   v-if="rewardKindUnit(row.referrerRewardKind) === 'تومان'"
                   :model-value="row.referrerRewardMax === null ? '' : String(row.referrerRewardMax)"
                   :data-testid="`referrer-max-${row.referralType}`"
                   @update:model-value="(v) => (row.referrerRewardMax = v === '' ? null : Number(v))"
                 />
                 <AppInput
+                  aria-label="سقف (اختیاری)"
                   v-else
                   :model-value="row.referrerRewardMax === null ? '' : String(row.referrerRewardMax)"
                   :data-testid="`referrer-max-${row.referralType}`"
@@ -505,18 +509,20 @@ onMounted(load)
             </div>
             <div>
               <label class="mb-1.5 block text-xs text-(--color-text-muted)">نوع پاداش</label>
-              <AppSelect v-model="row.referredRewardKind" :options="REWARD_KIND_OPTIONS" width="100%" />
+              <AppSelect v-model="row.referredRewardKind" aria-label="نوع پاداش معرفی‌شده" :options="REWARD_KIND_OPTIONS" width="100%" />
             </div>
             <div class="flex items-start gap-2">
               <div class="min-w-0 flex-1">
                 <label class="mb-1.5 block text-xs text-(--color-text-muted)">مقدار ({{ rewardKindUnit(row.referredRewardKind) }})</label>
                 <AppMoneyInput
+                  :aria-label="`مقدار (${rewardKindUnit(row.referredRewardKind)})`"
                   v-if="rewardKindUnit(row.referredRewardKind) === 'تومان'"
                   :model-value="String(row.referredRewardValue)"
                   :data-testid="`referred-value-${row.referralType}`"
                   @update:model-value="(v) => (row.referredRewardValue = Number(v))"
                 />
                 <AppInput
+                  :aria-label="`مقدار (${rewardKindUnit(row.referredRewardKind)})`"
                   v-else
                   :model-value="String(row.referredRewardValue)"
                   :data-testid="`referred-value-${row.referralType}`"
@@ -532,12 +538,14 @@ onMounted(load)
               <div class="min-w-0 flex-1">
                 <label class="mb-1.5 block text-xs text-(--color-text-muted)">سقف (اختیاری)</label>
                 <AppMoneyInput
+                  aria-label="سقف (اختیاری)"
                   v-if="rewardKindUnit(row.referredRewardKind) === 'تومان'"
                   :model-value="row.referredRewardMax === null ? '' : String(row.referredRewardMax)"
                   :data-testid="`referred-max-${row.referralType}`"
                   @update:model-value="(v) => (row.referredRewardMax = v === '' ? null : Number(v))"
                 />
                 <AppInput
+                  aria-label="سقف (اختیاری)"
                   v-else
                   :model-value="row.referredRewardMax === null ? '' : String(row.referredRewardMax)"
                   :data-testid="`referred-max-${row.referralType}`"
@@ -566,12 +574,12 @@ onMounted(load)
                a laptop -- without this the four fields overrun their tracks into each other. -->
           <div class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
             <div class="min-w-0">
-              <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">رویداد شرط پاداش</label>
-              <AppSelect v-model="row.qualifyingEvent" :options="QUALIFYING_EVENT_OPTIONS" width="100%" />
+              <AppSelect label="رویداد شرط پاداش" v-model="row.qualifyingEvent" :options="QUALIFYING_EVENT_OPTIONS" width="100%" />
             </div>
             <div class="min-w-0">
               <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">مهلت انتظار اعطا (ساعت)</label>
               <AppInput
+                aria-label="مهلت انتظار اعطا (ساعت)"
                 :model-value="String(row.grantHoldbackHours)"
                 type="number"
                 min="0"
@@ -585,6 +593,7 @@ onMounted(load)
             <div class="min-w-0">
               <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">انقضا (روز، اختیاری)</label>
               <AppInput
+                aria-label="انقضا (روز، اختیاری)"
                 :model-value="row.expirationDays === null ? '' : String(row.expirationDays)"
                 type="number"
                 min="0"
@@ -600,6 +609,7 @@ onMounted(load)
             <div class="min-w-0">
               <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">سقف تعداد معرفی هر معرف (اختیاری)</label>
               <AppInput
+                aria-label="سقف تعداد معرفی هر معرف (اختیاری)"
                 :model-value="row.maxReferralsPerReferrer === null ? '' : String(row.maxReferralsPerReferrer)"
                 type="number"
                 min="0"

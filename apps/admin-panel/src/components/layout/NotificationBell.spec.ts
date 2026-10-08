@@ -150,6 +150,15 @@ describe('NotificationBell', () => {
     }
     afterEach(() => setVisibility('visible'))
 
+    // WCAG 2.5.3 (label in name): the visible badge text must be part of the accessible name.
+    it('includes the visible badge text, capped at ۹۹+, in the bell\'s accessible name', async () => {
+      fetchMock.mockResolvedValue({ data: { count: 150, items: [], total: 0, page: 1, pageSize: 10 }, error: null })
+      const { wrapper } = await mountBell()
+      const badge = wrapper.get('[data-testid="unread-badge"]').text()
+      expect(badge).toBe('۹۹+')
+      expect(wrapper.get('[data-testid="notification-bell"]').attributes('aria-label')).toContain(badge)
+    })
+
     it('exposes the popup state on the bell button', async () => {
       fetchMock.mockResolvedValue({ data: { count: 3, items: [], total: 0, page: 1, pageSize: 10 }, error: null })
       const { wrapper } = await mountBell()
@@ -208,5 +217,57 @@ describe('NotificationBell', () => {
       await flushPromises()
       expect(fetchMock).toHaveBeenCalledTimes(3)
     })
+  })
+
+  it('renders a salon_material_edit notification with its changed-fields body and links to that salon', async () => {
+    fetchMock.mockImplementation((path: string) => {
+      if (path.startsWith('/admin/notifications?')) {
+        return Promise.resolve({
+          data: {
+            items: [
+              {
+                ...notification,
+                id: 'n9',
+                type: 'salon_material_edit',
+                title: 'تغییر مهم در اطلاعات سالن',
+                body: 'فیلدهای تغییریافته: نام، آدرس',
+                link: '/salons/abc',
+              },
+            ],
+            total: 1,
+            page: 1,
+            pageSize: 10,
+          },
+          error: null,
+        })
+      }
+      return Promise.resolve({ data: { count: 1 }, error: null })
+    })
+    const { wrapper, router } = await mountBell()
+    await wrapper.get('[data-testid="notification-bell"]').trigger('click')
+    await flushPromises()
+
+    const item = wrapper.get('[data-testid="notification-item"]')
+    expect(item.text()).toContain('تغییر مهم در اطلاعات سالن')
+    expect(item.text()).toContain('نام، آدرس')
+
+    await item.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/salons/abc')
+  })
+
+  it('falls back to the type label when a notification arrives without a title', async () => {
+    fetchMock.mockImplementation((path: string) =>
+      path.startsWith('/admin/notifications?')
+        ? Promise.resolve({
+            data: { items: [{ ...notification, type: 'salon_material_edit', title: '' }], total: 1, page: 1, pageSize: 10 },
+            error: null,
+          })
+        : Promise.resolve({ data: { count: 1 }, error: null }),
+    )
+    const { wrapper } = await mountBell()
+    await wrapper.get('[data-testid="notification-bell"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="notification-item"]').text()).toContain('تغییر مهم در اطلاعات سالن')
   })
 })

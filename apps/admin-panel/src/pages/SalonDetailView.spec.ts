@@ -56,6 +56,28 @@ const portfolioItem = {
   createdAt: '2026-07-10T08:00:00.000Z',
 }
 
+const CHECK_KEYS = ['identity', 'location', 'photos', 'call', 'services']
+
+// Approve is gated by the written review checklist; tests that approve must tick it first.
+async function tickAllChecks(wrapper: { get: (s: string) => { setValue: (v: boolean) => Promise<void> } }) {
+  for (const key of CHECK_KEYS) await wrapper.get(`[data-testid="check-${key}"]`).setValue(true)
+}
+
+// The enriched GET /admin/salons/:id payload (spec "API contract").
+const reviewPayload = {
+  ...salon,
+  contactPhone: '02112345678',
+  createdAt: '2026-10-01T08:00:00.000Z',
+  owner: { id: 'u1', name: 'مریم احمدی', phone: '09121234567', status: 'active' },
+  location: { lat: 35.7, lng: 51.4 },
+  photos: [{ id: 'ph1', url: 'http://cdn.example/a.jpg', sortOrder: 0 }],
+  services: [
+    { id: 'sv1', name: 'کوتاهی', pricingType: 'fixed', price: 200000, priceMax: null, durationMinutes: 45, isActive: true },
+  ],
+  hours: [{ dayOfWeek: 6, openTime: '09:00:00', closeTime: '18:00:00', isClosed: false }],
+  riskSummary: { bookingsTotal: 4, onlineBookings: 3, manualBookings: 1, cancelledBySalon: 0, rejectedBySalon: 0, noShowMarked: 0, openReports: 0 },
+}
+
 describe('SalonDetailView', () => {
   beforeEach(() => {
     fetchMock.mockReset()
@@ -93,6 +115,7 @@ describe('SalonDetailView', () => {
     const wrapper = await mountWithRouter()
     expect(wrapper.text()).toContain('سالن نمونه')
 
+    await tickAllChecks(wrapper)
     await wrapper.get('[data-testid="approve-button"]').trigger('click')
     await wrapper.get('[data-testid="approve-confirm"]').trigger('click')
     await flushPromises()
@@ -109,7 +132,7 @@ describe('SalonDetailView', () => {
 
     const wrapper = await mountWithRouter()
 
-    expect(wrapper.text()).toContain('آرایشگاه یافت نشد')
+    expect(wrapper.text()).toContain('سالن یافت نشد')
   })
 
   it('explains the cascade cause when the salon was suspended via its owner', async () => {
@@ -182,7 +205,7 @@ describe('SalonDetailView', () => {
     await wrapper.get('[data-testid="tab-stories"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('استوری‌ای برای این آرایشگاه ثبت نشده است.')
+    expect(wrapper.text()).toContain('استوری‌ای برای این سالن ثبت نشده است.')
   })
 
   it('removes a story with a reason and reloads the list', async () => {
@@ -290,7 +313,7 @@ describe('SalonDetailView', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="stories-error"]').exists()).toBe(true)
-    expect(wrapper.text()).not.toContain('استوری‌ای برای این آرایشگاه ثبت نشده است.')
+    expect(wrapper.text()).not.toContain('استوری‌ای برای این سالن ثبت نشده است.')
 
     fetchMock.mockResolvedValueOnce({ data: [activeStory], error: null })
     await wrapper.get('[data-testid="stories-retry"]').trigger('click')
@@ -377,5 +400,52 @@ describe('SalonDetailView', () => {
     expect(wrapper.get('[data-testid="tab-info"]').attributes('aria-selected')).toBe('true')
     await wrapper.get('[data-testid="tab-info"]').trigger('keydown', { key: 'End' })
     expect(wrapper.get('[data-testid="tab-portfolio"]').attributes('aria-selected')).toBe('true')
+  })
+
+  describe('approval review', () => {
+    it('shows the review panel and keeps Approve disabled until every checklist item is ticked', async () => {
+      fetchMock.mockResolvedValueOnce({ data: reviewPayload, error: null })
+      const wrapper = await mountWithRouter()
+
+      expect(wrapper.find('[data-testid="review-panel"]').exists()).toBe(true)
+      const approve = () => wrapper.get('[data-testid="approve-button"]').element as HTMLButtonElement
+      expect(approve().disabled).toBe(true)
+      expect(wrapper.find('[data-testid="approve-blocked-hint"]').exists()).toBe(true)
+
+      // One short of complete is still blocked -- the gate is "all", not "any".
+      for (const key of CHECK_KEYS.slice(0, -1)) await wrapper.get(`[data-testid="check-${key}"]`).setValue(true)
+      expect(approve().disabled).toBe(true)
+
+      await wrapper.get('[data-testid="check-services"]').setValue(true)
+      expect(approve().disabled).toBe(false)
+      expect(wrapper.find('[data-testid="approve-blocked-hint"]').exists()).toBe(false)
+
+      // Un-ticking re-blocks it.
+      await wrapper.get('[data-testid="check-call"]').setValue(false)
+      expect(approve().disabled).toBe(true)
+    })
+
+    it('never gates Reject behind the checklist', async () => {
+      fetchMock.mockResolvedValueOnce({ data: reviewPayload, error: null })
+      const wrapper = await mountWithRouter()
+
+      expect((wrapper.get('[data-testid="reject-button"]').element as HTMLButtonElement).disabled).toBe(false)
+    })
+
+    it('offers no checklist for a salon that is not pending', async () => {
+      fetchMock.mockResolvedValueOnce({ data: { ...reviewPayload, status: 'approved' }, error: null })
+      const wrapper = await mountWithRouter()
+
+      expect(wrapper.find('[data-testid="approval-checklist"]').exists()).toBe(false)
+      expect((wrapper.get('[data-testid="suspend-button"]').element as HTMLButtonElement).disabled).toBe(false)
+    })
+
+    it('still renders (without the panel) if the API sends only the base salon fields', async () => {
+      fetchMock.mockResolvedValueOnce({ data: salon, error: null })
+      const wrapper = await mountWithRouter()
+
+      expect(wrapper.find('[data-testid="review-panel"]').exists()).toBe(false)
+      expect(wrapper.text()).toContain('سالن نمونه')
+    })
   })
 })

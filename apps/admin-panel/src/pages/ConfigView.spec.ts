@@ -52,12 +52,12 @@ describe('ConfigView', () => {
     const summary = wrapper.get('[data-testid="config-confirm-summary"]')
     const changedRows = wrapper.findAll('[data-testid="config-confirm-row"]')
     expect(changedRows).toHaveLength(1)
-    expect(summary.text()).toContain('درصد پیش‌پرداخت')
+    expect(summary.text()).toContain('درصد بیعانه')
     // fa-IR locale formatting renders Persian-Indic digits (AdjustBalanceCard.vue's own
     // toLocaleString('fa-IR') convention) -- 20 -> ۲۰, 30 -> ۳۰.
     expect(summary.text()).toContain('۲۰')
     expect(summary.text()).toContain('۳۰')
-    expect(summary.text()).not.toContain('مهلت لغو رزرو')
+    expect(summary.text()).not.toContain('مهلت لغو نوبت')
 
     fetchMock.mockResolvedValueOnce({ data: null, error: null })
     await wrapper.get('[data-testid="config-confirm-submit"]').trigger('click')
@@ -82,7 +82,7 @@ describe('ConfigView', () => {
   it('shows the toman-denominated row comma-grouped in Farsi digits, both in the field and the confirm summary', async () => {
     const wrapper = await mountView()
 
-    const tomanInput = wrapper.get('[aria-label="حداقل پیش‌پرداخت"]')
+    const tomanInput = wrapper.get('[aria-label="حداقل بیعانه"]')
     expect((tomanInput.element as HTMLInputElement).value).toBe('۵۰٬۰۰۰')
     expect((tomanInput.element as HTMLInputElement).type).toBe('text')
 
@@ -257,6 +257,86 @@ describe('ConfigView', () => {
       await wrapper.findAll('input[type="number"]')[0].setValue(2.5)
       expect(wrapper.get('[data-testid="config-save-button"]').attributes('disabled')).toBeDefined()
       expect(wrapper.text()).toContain('یک عدد صحیح وارد کنید')
+    })
+  })
+
+  describe('booking abuse limits and no-show grace', () => {
+    async function mountLimits(extra: { key: string; value: number | boolean }[] = []) {
+      fetchMock.mockResolvedValueOnce({
+        data: [
+          { key: 'booking_max_active_per_user', value: 5 },
+          { key: 'booking_max_active_per_salon_per_user', value: 2 },
+          { key: 'no_show_grace_minutes', value: 30 },
+          ...extra,
+        ],
+        error: null,
+      })
+      const wrapper = mount(ConfigView)
+      await flushPromises()
+      return wrapper
+    }
+    const save = (w: Awaited<ReturnType<typeof mountLimits>>) => w.get('[data-testid="config-save-button"]').attributes('disabled')
+
+    it('labels the three keys in Persian rather than showing raw key names', async () => {
+      const wrapper = await mountLimits()
+      expect(wrapper.text()).toContain('سقف نوبت‌های فعال هر مشتری')
+      expect(wrapper.text()).toContain('مهلت ثبت عدم حضور')
+      expect(wrapper.text()).not.toContain('booking_max_active_per_user')
+    })
+
+    it.each([
+      [0, 0, true],
+      [51, 0, true],
+      [1, 0, false],
+      [50, 0, false],
+    ])('per-user cap %s is %s', async (value, _i, blocked) => {
+      const wrapper = await mountLimits()
+      await wrapper.findAll('input[type="number"]')[0]!.setValue(value)
+      expect(save(wrapper) !== undefined).toBe(blocked)
+    })
+
+    it.each([
+      [0, true],
+      [21, true],
+      [20, false],
+    ])('per-salon cap %s is blocked=%s (1-20)', async (value, blocked) => {
+      const wrapper = await mountLimits()
+      await wrapper.findAll('input[type="number"]')[1]!.setValue(value)
+      expect(save(wrapper) !== undefined).toBe(blocked)
+    })
+
+    it.each([
+      [0, false],
+      [1440, false],
+      [1441, true],
+      [-1, true],
+      [2.5, true],
+    ])('no-show grace %s is blocked=%s (0-1440, integer)', async (value, blocked) => {
+      const wrapper = await mountLimits()
+      await wrapper.findAll('input[type="number"]')[2]!.setValue(value)
+      expect(save(wrapper) !== undefined).toBe(blocked)
+    })
+
+    it('shows the inline range message for an out-of-range grace value', async () => {
+      const wrapper = await mountLimits()
+      await wrapper.findAll('input[type="number"]')[2]!.setValue(1441)
+      expect(wrapper.text()).toContain('باید بین 0 تا 1440')
+    })
+
+    it('never lists or submits a feature flag, even if the list endpoint returned one', async () => {
+      const wrapper = await mountLimits([{ key: 'feature_reviews_enabled', value: true }])
+      expect(wrapper.text()).not.toContain('feature_reviews_enabled')
+
+      await wrapper.findAll('input[type="number"]')[0]!.setValue(6)
+      await wrapper.get('[data-testid="config-save-button"]').trigger('click')
+      fetchMock.mockResolvedValueOnce({ data: [], error: null })
+      await wrapper.get('[data-testid="config-confirm-submit"]').trigger('click')
+      await flushPromises()
+
+      const patch = fetchMock.mock.calls.find((c) => c[1]?.method === 'PATCH')!
+      const keys = (patch[1].body.updates as { key: string }[]).map((u) => u.key)
+      expect(keys).not.toContain('feature_reviews_enabled')
+      expect(keys).toContain('booking_max_active_per_user')
     })
   })
 })

@@ -48,10 +48,10 @@ describe('SalonBookingSettingsCard', () => {
     const wrapper = await mountCard()
 
     expect(fetchMock).toHaveBeenCalledWith('/admin/salons/s1/booking-settings', { silent: true })
-    expect(wrapper.get('[data-testid="booking-settings-mode"]').text()).toContain('تایید دستی آرایشگاه')
+    expect(wrapper.get('[data-testid="booking-settings-mode"]').text()).toContain('تایید دستی سالن')
     // HARD product rule: the owner picks the mode. Nothing here may edit it.
     expect(wrapper.findAll('select')).toHaveLength(0)
-    expect(wrapper.text()).toContain('حالت تایید را آرایشگاه‌دار انتخاب می‌کند')
+    expect(wrapper.text()).toContain('حالت تایید را سالن‌دار انتخاب می‌کند')
   })
 
   it('shows each effective value with its provenance', async () => {
@@ -243,7 +243,7 @@ describe('SalonBookingSettingsCard', () => {
     await nextTick()
     await flushPromises()
 
-    expect(document.activeElement?.textContent).toContain('این تغییرات روی مهلت‌های رزروهای بعدی')
+    expect(document.activeElement?.textContent).toContain('این تغییرات روی مهلت‌های نوبت‌های بعدی')
 
     await wrapper.get('[data-testid="booking-settings-confirm-cancel"]').trigger('click')
     await nextTick()

@@ -168,16 +168,14 @@ watch(page, load)
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">نام آرایشگاه</label>
+          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">نام سالن</label>
           <AppInput v-model="salonNameFilter" icon="search" placeholder="جست‌وجو…" class="w-52" />
         </div>
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">وضعیت</label>
-          <AppSelect v-model="statusFilter" :options="STATUS_OPTIONS" width="10rem" />
+          <AppSelect label="وضعیت" v-model="statusFilter" :options="STATUS_OPTIONS" width="10rem" />
         </div>
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">امتیاز</label>
-          <AppSelect v-model="ratingFilter" :options="RATING_OPTIONS" width="9rem" />
+          <AppSelect label="امتیاز" v-model="ratingFilter" :options="RATING_OPTIONS" width="9rem" />
         </div>
         <!-- The deep-linked salon-id filter has no input of its own -- surface it as a
              removable chip so the operator can see why the list is narrowed and undo it. -->
@@ -283,7 +281,7 @@ watch(page, load)
         <p v-if="review.comment" class="mt-3 text-sm leading-6 text-(--color-text)">{{ review.comment }}</p>
 
         <div v-if="review.salonReply" class="mt-3 rounded-xl bg-(--color-border-soft) p-3">
-          <p class="mb-1 text-xs font-semibold text-(--color-text-muted)">پاسخ آرایشگاه</p>
+          <p class="mb-1 text-xs font-semibold text-(--color-text-muted)">پاسخ سالن</p>
           <p class="text-sm text-(--color-text)">{{ review.salonReply }}</p>
         </div>
 

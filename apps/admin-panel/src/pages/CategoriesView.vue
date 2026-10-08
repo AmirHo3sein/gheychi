@@ -178,7 +178,7 @@ onMounted(load)
             <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
               <th scope="col" class="px-5 py-3 font-semibold">آیکون</th>
               <th scope="col" class="px-5 py-3 font-semibold">نام دسته‌بندی</th>
-              <th scope="col" class="px-5 py-3"></th>
+              <th scope="col" class="px-5 py-3"><span class="sr-only">عملیات</span></th>
             </tr>
           </thead>
           <tbody>

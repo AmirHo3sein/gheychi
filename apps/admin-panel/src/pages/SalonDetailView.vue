@@ -1,10 +1,12 @@
 <!-- apps/admin-panel/src/pages/SalonDetailView.vue -->
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useApi } from '@/composables/useApi'
+import SalonApprovalChecklist from '@/components/salons/SalonApprovalChecklist.vue'
 import SalonBookingSettingsCard from '@/components/salons/SalonBookingSettingsCard.vue'
 import SalonHandleCard from '@/components/salons/SalonHandleCard.vue'
+import SalonReviewPanel from '@/components/salons/SalonReviewPanel.vue'
 import SalonStatusActions from '@/components/salons/SalonStatusActions.vue'
 import SalonSubscriptionCard from '@/components/salons/SalonSubscriptionCard.vue'
 import ShowcaseStatusActions from '@/components/salons/ShowcaseStatusActions.vue'
@@ -13,9 +15,10 @@ import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
+import { isChecklistComplete, type SalonReviewData } from '@/utils/salon-review'
 import { genderTargetLabel, salonStatusLabel, showcaseStatusLabel } from '@/utils/labels'
 
-interface SalonDetail {
+interface SalonDetail extends Partial<SalonReviewData> {
   id: string
   name: string
   slug: string
@@ -67,6 +70,17 @@ const notFound = ref(false)
 // (see the comment in load() below).
 const loadError = ref(false)
 const loading = ref(false)
+
+// Review checklist ticks live only in this component instance: reloading the page (or
+// opening another salon) starts every approval from unticked, by design.
+const checklist = ref<Record<string, boolean>>({})
+const checklistComplete = computed(() => isChecklistComplete(checklist.value))
+// The admin endpoint is expected to send the whole review payload; a partial response (older
+// API during a rolling deploy) simply hides the panel rather than rendering half-empty rows.
+const reviewData = computed(() => {
+  const s = salon.value
+  return s && s.owner && s.photos && s.services && s.hours && s.riskSummary ? (s as SalonDetail & SalonReviewData) : null
+})
 
 const activeTab = ref<Tab>('info')
 // Per-tab status, not just null/array -- distinguishes "never opened" from "loading" from
@@ -173,7 +187,7 @@ onMounted(load)
       <AppIcon name="spinner" :size="28" class="animate-spin text-(--color-accent-text)" />
     </div>
 
-    <EmptyState v-else-if="notFound" icon="warning" message="آرایشگاه یافت نشد." />
+    <EmptyState v-else-if="notFound" icon="warning" message="سالن یافت نشد." />
 
     <AppCard
       v-else-if="loadError"
@@ -184,13 +198,13 @@ onMounted(load)
       <div class="flex h-12 w-12 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)">
         <AppIcon name="warning" :size="22" />
       </div>
-      <p class="text-sm text-(--color-text-muted)">بارگذاری اطلاعات آرایشگاه با خطا مواجه شد.</p>
+      <p class="text-sm text-(--color-text-muted)">بارگذاری اطلاعات سالن با خطا مواجه شد.</p>
       <AppButton data-testid="salon-load-retry" type="button" variant="secondary" @click="load">تلاش مجدد</AppButton>
     </AppCard>
 
     <template v-else-if="salon">
       <AppCard :padded="false" class="p-2">
-        <div ref="tablist" role="tablist" aria-label="بخش‌های آرایشگاه" class="flex flex-wrap gap-1.5">
+        <div ref="tablist" role="tablist" aria-label="بخش‌های سالن" class="flex flex-wrap gap-1.5">
           <AppButton
             v-for="(tab, index) in TABS"
             :id="`salon-tab-${tab.key}`"
@@ -269,9 +283,13 @@ onMounted(load)
           >
             <AppIcon name="warning" :size="17" class="mt-0.5 shrink-0 text-(--tone-warning-text)" />
             <p class="text-sm text-(--tone-warning-text)">
-              این آرایشگاه به دلیل تعلیق حساب مالک آن معلق شده است و با رفع تعلیق مالک، به‌صورت خودکار به حالت تایید بازمی‌گردد.
+              این سالن به دلیل تعلیق حساب مالک آن معلق شده است و با رفع تعلیق مالک، به‌صورت خودکار به حالت تایید بازمی‌گردد.
             </p>
           </div>
+        </AppCard>
+
+        <AppCard v-if="reviewData">
+          <SalonReviewPanel :salon="reviewData" />
         </AppCard>
 
         <!-- Fetches its own settings on mount (a separate admin endpoint from the salon
@@ -281,7 +299,8 @@ onMounted(load)
 
         <SalonSubscriptionCard :salon-id="salon.id" />
 
-        <AppCard>
+        <AppCard class="space-y-5">
+          <SalonApprovalChecklist v-if="salon.status === 'pending'" v-model="checklist" />
           <!-- suspendedCause is passed through so the actions can refuse to offer a
                reapprove the backend would 409: an owner-suspension cascade is undone by
                reactivating the owner, not from here. -->
@@ -289,6 +308,7 @@ onMounted(load)
             :salon-id="salon.id"
             :status="salon.status"
             :suspended-cause="salon.suspendedCause"
+            :approve-blocked="!checklistComplete"
             @updated="onUpdated"
           />
         </AppCard>
@@ -315,14 +335,14 @@ onMounted(load)
         <EmptyState
           v-else-if="stories.length === 0"
           icon="sparkles"
-          message="استوری‌ای برای این آرایشگاه ثبت نشده است."
+          message="استوری‌ای برای این سالن ثبت نشده است."
         />
 
         <div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <AppCard v-for="story in stories" :key="story.id" data-testid="story-card" :padded="false" class="overflow-hidden">
             <img
               :src="story.url"
-              :alt="story.caption || 'تصویر استوری آرایشگاه در انتظار بررسی'"
+              :alt="story.caption || 'تصویر استوری سالن در انتظار بررسی'"
               class="h-48 w-full shrink-0 object-cover"
             />
             <div class="p-4">
@@ -361,14 +381,14 @@ onMounted(load)
         <EmptyState
           v-else-if="portfolioItems.length === 0"
           icon="brush"
-          message="نمونه کاری برای این آرایشگاه ثبت نشده است."
+          message="نمونه کاری برای این سالن ثبت نشده است."
         />
 
         <div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <AppCard v-for="item in portfolioItems" :key="item.id" data-testid="portfolio-card" :padded="false" class="overflow-hidden">
             <img
               :src="item.url"
-              :alt="item.caption || 'تصویر نمونه کار آرایشگاه در انتظار بررسی'"
+              :alt="item.caption || 'تصویر نمونه کار سالن در انتظار بررسی'"
               class="h-48 w-full shrink-0 object-cover"
             />
             <div class="p-4">

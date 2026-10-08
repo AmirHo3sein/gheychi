@@ -20,9 +20,9 @@ test('log in as admin, approve a pending salon', async ({ page, request }) => {
 
   await expect(page).toHaveURL('/')
 
-  // exact: true -- the dashboard's quick-link cards also contain "آرایشگاه‌ها" as a
+  // exact: true -- the dashboard's quick-link cards also contain "سالن‌ها" as a
   // substring of a longer label, which would otherwise match this selector too.
-  await page.getByRole('link', { name: 'آرایشگاه‌ها', exact: true }).click()
+  await page.getByRole('link', { name: 'سالن‌ها', exact: true }).click()
   await expect(page).toHaveURL('/salons')
 
   await page.getByRole('link', { name: 'سالن در انتظار تایید', exact: true }).click()
@@ -31,6 +31,10 @@ test('log in as admin, approve a pending salon', async ({ page, request }) => {
 
   // Approving is confirm-before-commit (same treatment reject/suspend already had, minus the
   // reason field): the first click only opens the confirm strip, `approve-confirm` commits.
+  // Approve stays disabled until the written review checklist is fully ticked.
+  for (const key of ['identity', 'location', 'photos', 'call', 'services']) {
+    await page.getByTestId(`check-${key}`).check()
+  }
   await page.getByTestId('approve-button').click()
   await page.getByTestId('approve-confirm').click()
 

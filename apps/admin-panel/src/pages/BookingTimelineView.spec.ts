@@ -78,9 +78,9 @@ describe('BookingTimelineView', () => {
     const rows = wrapper.findAll('[data-testid="timeline-event"]')
     expect(rows).toHaveLength(4)
     // Event types render through the Farsi label map, never as the raw SCREAMING_CASE enum.
-    expect(rows[0]!.text()).toContain('ایجاد رزرو')
+    expect(rows[0]!.text()).toContain('ایجاد نوبت')
     expect(rows[1]!.text()).toContain('ارسال درخواست تایید')
-    expect(rows[2]!.text()).toContain('تایید توسط آرایشگاه')
+    expect(rows[2]!.text()).toContain('تایید توسط سالن')
     expect(rows[3]!.text()).toContain('آزادسازی نوبت')
     expect(wrapper.text()).not.toContain('BOOKING_CREATED')
   })
@@ -91,7 +91,7 @@ describe('BookingTimelineView', () => {
     const wrapper = await mountWithRouter()
     const rows = wrapper.findAll('[data-testid="timeline-event"]')
 
-    expect(rows[2]!.text()).toContain('آرایشگاه‌دار')
+    expect(rows[2]!.text()).toContain('سالن‌دار')
     expect(rows[2]!.get('[data-testid="event-actor-id"]').text()).toBe('u2')
     // A cron-driven event genuinely has no human actor -- it must read as the system, and
     // no id line may be invented for it.
@@ -107,8 +107,8 @@ describe('BookingTimelineView', () => {
 
     const created = rows[0]!.get('[data-testid="event-metadata"]').text()
     expect(created).toContain('حالت تایید')
-    expect(created).toContain('تایید دستی آرایشگاه')
-    expect(created).toContain('مبلغ پیش‌پرداخت')
+    expect(created).toContain('تایید دستی سالن')
+    expect(created).toContain('مبلغ بیعانه')
     expect(created).toContain('۵۰٬۰۰۰ تومان')
     expect(created).not.toContain('confirmationMode')
 
@@ -154,7 +154,7 @@ describe('BookingTimelineView', () => {
 
     const wrapper = await mountWithRouter()
 
-    expect(wrapper.text()).toContain('رد توسط آرایشگاه')
+    expect(wrapper.text()).toContain('رد توسط سالن')
     expect(wrapper.get('[data-testid="event-metadata"]').text()).toContain('در آن ساعت آرایشگر در دسترس نیست')
   })
 
@@ -173,7 +173,7 @@ describe('BookingTimelineView', () => {
 
     expect(wrapper.find('[data-testid="timeline-error"]').exists()).toBe(true)
     // A failed fetch must never be repainted as "nothing ever happened to this booking".
-    expect(wrapper.text()).not.toContain('رویدادی برای این رزرو ثبت نشده است')
+    expect(wrapper.text()).not.toContain('رویدادی برای این نوبت ثبت نشده است')
 
     fetchMock.mockResolvedValueOnce({ data: events, error: null })
     await wrapper.get('[data-testid="timeline-retry"]').trigger('click')
@@ -188,7 +188,32 @@ describe('BookingTimelineView', () => {
 
     const wrapper = await mountWithRouter()
 
-    expect(wrapper.text()).toContain('رویدادی برای این رزرو ثبت نشده است؛ شناسه رزرو را بررسی کنید.')
+    expect(wrapper.text()).toContain('رویدادی برای این نوبت ثبت نشده است؛ شناسه نوبت را بررسی کنید.')
     expect(wrapper.find('[data-testid="timeline-event"]').exists()).toBe(false)
+  })
+
+  it('renders who cancelled through the actor label map, not the raw enum', async () => {
+    fetchMock.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'e9',
+          bookingId: 'b1',
+          eventType: 'BOOKING_CANCELLED',
+          actorType: 'admin',
+          actorId: 'a1',
+          metadata: { cancelledBy: 'admin', refundOwed: true, reason: 'تعطیلی سالن' },
+          createdAt: '2026-08-01T09:00:00.000Z',
+        },
+      ],
+      error: null,
+    })
+
+    const wrapper = await mountWithRouter()
+    const text = wrapper.get('[data-testid="event-metadata"]').text()
+
+    expect(text).toContain('لغو توسط')
+    expect(text).toContain('مدیر')
+    expect(text).not.toMatch(/\badmin\b/)
+    expect(text).toContain('تعطیلی سالن')
   })
 })

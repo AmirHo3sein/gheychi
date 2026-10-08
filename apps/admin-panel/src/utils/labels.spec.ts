@@ -15,6 +15,9 @@ import {
   bookingEventTypeLabel,
   bookingStatusLabel,
   configKeyMeta,
+  notificationTypeMeta,
+  pricingTypeLabel,
+  weekdayLabel,
   invoicePaymentMethodLabel,
   invoiceStatusLabel,
   jalaliMonthLabel,
@@ -56,7 +59,7 @@ describe('auditActionLabel', () => {
     // slipped through undetected in the first place.
     // This length guard is deliberate: adding a backend @AuditAction without a Farsi label
     // must fail here.
-    expect(AUDIT_ACTION_KEYS).toHaveLength(50)
+    expect(AUDIT_ACTION_KEYS).toHaveLength(51)
     for (const action of AUDIT_ACTION_KEYS) {
       const entry = auditActionLabel(action)
       // A mapped entry never falls back to the raw dotted action name.
@@ -199,8 +202,8 @@ describe('bookingStatusLabel', () => {
       expect(entry.label).not.toBe(status)
       expect(entry.label.length).toBeGreaterThan(0)
     }
-    expect(bookingStatusLabel('pending_approval')).toEqual({ label: 'در انتظار تایید آرایشگاه', tone: 'warning' })
-    expect(bookingStatusLabel('rejected_by_salon')).toEqual({ label: 'رد شده توسط آرایشگاه', tone: 'danger' })
+    expect(bookingStatusLabel('pending_approval')).toEqual({ label: 'در انتظار تایید سالن', tone: 'warning' })
+    expect(bookingStatusLabel('rejected_by_salon')).toEqual({ label: 'رد شده توسط سالن', tone: 'danger' })
     // The two "someone cancelled" statuses must stay distinguishable, not collapse into
     // one label -- who cancelled is the whole point of the split on the backend.
     expect(bookingStatusLabel('cancelled_by_user').label).not.toBe(bookingStatusLabel('cancelled_by_salon').label)
@@ -219,7 +222,7 @@ describe('bookingStatusLabel', () => {
 describe('bookingConfirmationModeLabel', () => {
   it('maps the two owner-selected confirmation modes', () => {
     expect(bookingConfirmationModeLabel('automatic')).toEqual({ label: 'تایید خودکار', tone: 'success' })
-    expect(bookingConfirmationModeLabel('manual_approval')).toEqual({ label: 'تایید دستی آرایشگاه', tone: 'info' })
+    expect(bookingConfirmationModeLabel('manual_approval')).toEqual({ label: 'تایید دستی سالن', tone: 'info' })
   })
 
   it('falls back to the raw value for an unknown mode', () => {
@@ -250,7 +253,7 @@ describe('bookingEventTypeLabel', () => {
 describe('bookingEventActorTypeLabel', () => {
   it('maps the four actor types, keeping the cron-driven one non-human', () => {
     expect(bookingEventActorTypeLabel('customer')).toBe('مشتری')
-    expect(bookingEventActorTypeLabel('salon_owner')).toBe('آرایشگاه‌دار')
+    expect(bookingEventActorTypeLabel('salon_owner')).toBe('سالن‌دار')
     expect(bookingEventActorTypeLabel('admin')).toBe('مدیر')
     expect(bookingEventActorTypeLabel('system')).toBe('سامانه')
   })
@@ -402,8 +405,8 @@ describe('jalaliMonthLabel', () => {
 describe('analyticsEventLabel', () => {
   it('maps every event_name the backend currently tracks to a Farsi label', () => {
     expect(analyticsEventLabel('booking_started')).toBe('شروع رزرو')
-    expect(analyticsEventLabel('booking_confirmed')).toBe('تایید رزرو')
-    expect(analyticsEventLabel('booking_cancelled')).toBe('لغو رزرو')
+    expect(analyticsEventLabel('booking_confirmed')).toBe('تایید نوبت')
+    expect(analyticsEventLabel('booking_cancelled')).toBe('لغو نوبت')
     expect(analyticsEventLabel('payment_succeeded')).toBe('پرداخت موفق')
     expect(analyticsEventLabel('user_registered')).toBe('ثبت‌نام کاربر')
     expect(analyticsEventLabel('salon_submitted')).toBe('ثبت سالن')
@@ -412,5 +415,48 @@ describe('analyticsEventLabel', () => {
 
   it('falls back to the raw event name for an unknown event', () => {
     expect(analyticsEventLabel('weird_event')).toBe('weird_event')
+  })
+})
+
+describe('trust & launch readiness labels', () => {
+  it('labels the platform-cancel status in danger tone', () => {
+    expect(bookingStatusLabel('cancelled_by_admin')).toEqual({ label: 'لغو توسط پشتیبانی', tone: 'danger' })
+    expect(auditActionLabel('booking.cancelled_by_admin').label).toBe('لغو نوبت توسط پشتیبانی')
+    expect(bookingEventCauseLabel('cancelled_by_admin')).toBe('لغو توسط پشتیبانی')
+  })
+
+  it('describes the commission as a share of the captured deposit, not of every booking', () => {
+    const { hint } = configKeyMeta('commission_percent')
+    expect(hint).toContain('بیعانه')
+    expect(hint).not.toContain('هر رزرو')
+  })
+
+  it.each([
+    ['booking_max_active_per_user', 'نوبت'],
+    ['booking_max_active_per_salon_per_user', 'نوبت'],
+    ['no_show_grace_minutes', 'دقیقه'],
+  ])('gives %s a Persian label, hint and unit', (key, unit) => {
+    const meta = configKeyMeta(key)
+    expect(meta.label).not.toBe(key)
+    expect(meta.hint.length).toBeGreaterThan(0)
+    expect(meta.unit).toBe(unit)
+  })
+
+  it('maps the salon_material_edit notification and falls back for unknown types', () => {
+    expect(notificationTypeMeta('salon_material_edit')).toEqual({ label: 'تغییر مهم در اطلاعات سالن', icon: 'pencil' })
+    expect(notificationTypeMeta('something_new').icon).toBe('bell')
+  })
+
+  it('labels pricing types and weekdays (0 = Sunday)', () => {
+    expect(pricingTypeLabel('quote')).toBe('پس از استعلام')
+    expect(pricingTypeLabel('odd')).toBe('odd')
+    expect(weekdayLabel(0)).toBe('یکشنبه')
+    expect(weekdayLabel(6)).toBe('شنبه')
+  })
+
+  it('uses the glossary words in visible strings', () => {
+    expect(configKeyMeta('deposit_percent').label).toBe('درصد بیعانه')
+    expect(bookingEventTypeLabel('BOOKING_CANCELLED').label).toBe('لغو نوبت')
+    expect(bookingEventMetadataKeyLabel('cancelledBy')).toBe('لغو توسط')
   })
 })

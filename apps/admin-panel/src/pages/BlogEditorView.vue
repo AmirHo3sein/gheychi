@@ -502,7 +502,7 @@ async function confirmRemoveCover() {
             <div class="grid grid-cols-2 gap-3">
               <div class="min-w-0">
                 <label class="mb-1 block text-xs text-(--color-text-muted)">دسته‌بندی</label>
-                <AppSelect v-model="categoryId" :options="categoryOptions" width="100%" />
+                <AppSelect v-model="categoryId" aria-label="دسته‌بندی" :options="categoryOptions" width="100%" />
               </div>
               <div class="min-w-0">
                 <label class="mb-1 block text-xs text-(--color-text-muted)" for="post-author">نویسنده</label>

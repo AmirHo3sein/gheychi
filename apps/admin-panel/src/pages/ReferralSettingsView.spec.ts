@@ -88,6 +88,20 @@ describe('ReferralSettingsView', () => {
     expect(text).toContain('غیرفعال')
   })
 
+  it('gives every form control on every row an accessible name', async () => {
+    const wrapper = await mountView()
+
+    const controls = wrapper.findAll('input, [role="combobox"]')
+    expect(controls.length).toBeGreaterThan(0)
+    for (const el of controls) {
+      const named =
+        el.attributes('aria-label') ||
+        el.attributes('aria-labelledby') ||
+        (el.attributes('id') && wrapper.find(`label[for="${el.attributes('id')}"]`).exists())
+      expect(named, el.html().slice(0, 120)).toBeTruthy()
+    }
+  })
+
   it('toggling the switch for one type flips only that type\'s badge locally', async () => {
     const wrapper = await mountView()
 

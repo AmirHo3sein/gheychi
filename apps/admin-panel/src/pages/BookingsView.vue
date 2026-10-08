@@ -4,14 +4,15 @@
      UUID obtained outside the product, which made handling a dispute or chasing a stuck
      refund effectively impossible. Every row here links into that timeline.
 
-     Read-only, deliberately and permanently -- GET /admin/bookings is the only admin
-     booking route, because every transition is guarded by invariants in the backend's
-     booking state machine that a generic admin write would bypass. Nothing on this page
-     should ever grow an action button. -->
+     The single write is the platform cancel (POST /admin/bookings/:id/cancel). It goes
+     through the backend's booking state machine -- hold release, refund, events, audit --
+     so it is safe to expose; any further admin write must be modelled the same way, never as
+     a generic status edit. -->
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useApi } from '@/composables/useApi'
+import CancelBookingAction from '@/components/bookings/CancelBookingAction.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -51,6 +52,9 @@ interface BookingRow {
   attributionSource: string | null
   priceSnapshot: number
   depositAmount: number
+  // True only when a Payment actually reached paid/refund_pending/refunded. depositAmount is
+  // the deposit the booking was PRICED with; it says nothing about money having moved.
+  depositPaid: boolean
   createdAt: string
   salonId: string
   salonName: string | null
@@ -77,13 +81,14 @@ interface BookingListResponse {
 
 const STATUS_OPTIONS = [
   { value: '', label: 'همه وضعیت‌ها' },
-  { value: 'pending_approval', label: 'در انتظار تایید آرایشگاه' },
+  { value: 'pending_approval', label: 'در انتظار تایید سالن' },
   { value: 'pending_payment', label: 'در انتظار پرداخت' },
   { value: 'confirmed', label: 'تایید شده' },
   { value: 'completed', label: 'انجام شده' },
   { value: 'cancelled_by_user', label: 'لغو شده توسط مشتری' },
-  { value: 'cancelled_by_salon', label: 'لغو شده توسط آرایشگاه' },
-  { value: 'rejected_by_salon', label: 'رد شده توسط آرایشگاه' },
+  { value: 'cancelled_by_salon', label: 'لغو شده توسط سالن' },
+  { value: 'cancelled_by_admin', label: 'لغو توسط پشتیبانی' },
+  { value: 'rejected_by_salon', label: 'رد شده توسط سالن' },
   { value: 'expired', label: 'منقضی شده' },
   { value: 'no_show', label: 'عدم حضور' },
 ]
@@ -98,17 +103,20 @@ const PAYMENT_STATUS_OPTIONS = [
 const SOURCE_OPTIONS = [
   { value: '', label: 'همه منابع' },
   { value: 'online', label: 'رزرو آنلاین' },
-  { value: 'manual', label: 'ثبت توسط آرایشگاه' },
+  { value: 'manual', label: 'ثبت توسط سالن' },
 ]
 const MODE_OPTIONS = [
   { value: '', label: 'همه حالت‌ها' },
   { value: 'automatic', label: 'تایید خودکار' },
-  { value: 'manual_approval', label: 'تایید دستی آرایشگاه' },
+  { value: 'manual_approval', label: 'تایید دستی سالن' },
 ]
 
 // The backend validates salonId/userId as real UUIDs and 400s anything else, so a
 // half-typed id must not be sent at all -- otherwise every keystroke of a pasted id would
 // paint the error state before the paste finishes.
+// Statuses the backend's platform cancel accepts; anything terminal has nothing left to undo.
+const CANCELLABLE_STATUSES = new Set(['pending_approval', 'pending_payment', 'confirmed'])
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const route = useRoute()
@@ -229,14 +237,14 @@ watch(page, load)
   <div class="space-y-5 p-4 sm:p-6 lg:p-8">
     <AppCard :padded="false" class="p-4">
       <div class="flex flex-wrap items-end gap-3">
-        <AppSelect v-model="statusFilter" :options="STATUS_OPTIONS" label="وضعیت رزرو" width="13rem" />
+        <AppSelect v-model="statusFilter" :options="STATUS_OPTIONS" label="وضعیت نوبت" width="13rem" />
         <div data-testid="payment-status-filter">
           <AppSelect v-model="paymentStatusFilter" :options="PAYMENT_STATUS_OPTIONS" label="وضعیت پرداخت" width="12rem" />
         </div>
         <AppSelect v-model="sourceFilter" :options="SOURCE_OPTIONS" label="منبع ثبت" width="11rem" />
         <AppSelect v-model="modeFilter" :options="MODE_OPTIONS" label="حالت تایید" width="11rem" />
         <div class="w-56">
-          <AppInput v-model="salonIdFilter" label="شناسه آرایشگاه" placeholder="UUID" />
+          <AppInput v-model="salonIdFilter" label="شناسه سالن" placeholder="UUID" />
         </div>
         <div class="w-56">
           <AppInput v-model="userIdFilter" label="شناسه مشتری" placeholder="UUID" />
@@ -269,11 +277,11 @@ watch(page, load)
       <div class="flex h-12 w-12 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)">
         <AppIcon name="warning" :size="22" />
       </div>
-      <p class="text-sm text-(--color-text-muted)">خطا در دریافت فهرست رزروها.</p>
+      <p class="text-sm text-(--color-text-muted)">خطا در دریافت فهرست نوبت‌ها.</p>
       <AppButton type="button" variant="secondary" data-testid="retry-load" @click="load">تلاش دوباره</AppButton>
     </AppCard>
 
-    <EmptyState v-else-if="!loading && bookings.length === 0" icon="calendar" message="رزروی با این فیلترها یافت نشد." />
+    <EmptyState v-else-if="!loading && bookings.length === 0" icon="calendar" message="نوبتی با این فیلترها یافت نشد." />
 
     <AppCard v-else :padded="false" class="overflow-hidden">
       <div class="relative">
@@ -288,19 +296,19 @@ watch(page, load)
              wide table, and AppCard's overflow-hidden (there for the rounded corners) would
              CLIP the trailing columns -- including the timeline link -- rather than let the
              operator reach them. -->
-        <ScrollTable label="فهرست رزروها">
+        <ScrollTable label="فهرست نوبت‌ها">
           <table class="w-full text-start text-sm transition-opacity" :class="{ 'opacity-50': loading }">
             <thead>
               <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
                 <th scope="col" class="px-5 py-3 font-semibold">مشتری</th>
-                <th scope="col" class="px-5 py-3 font-semibold">آرایشگاه</th>
+                <th scope="col" class="px-5 py-3 font-semibold">سالن</th>
                 <th scope="col" class="px-5 py-3 font-semibold">خدمت</th>
                 <th scope="col" class="px-5 py-3 font-semibold">زمان نوبت</th>
                 <th scope="col" class="px-5 py-3 font-semibold">وضعیت</th>
-                <th scope="col" class="px-5 py-3 font-semibold">مبلغ / پیش‌پرداخت</th>
+                <th scope="col" class="px-5 py-3 font-semibold">مبلغ / بیعانه</th>
                 <th scope="col" class="px-5 py-3 font-semibold">پرداخت</th>
                 <th scope="col" class="px-5 py-3 font-semibold">کارمزد</th>
-                <th scope="col" class="px-5 py-3"></th>
+                <th scope="col" class="px-5 py-3"><span class="sr-only">عملیات</span></th>
               </tr>
             </thead>
             <tbody>
@@ -340,7 +348,9 @@ watch(page, load)
                 </td>
                 <td class="tnum px-5 py-3.5 text-(--color-text-muted)">
                   <p class="text-(--color-text)">{{ toman(booking.priceSnapshot) }}</p>
-                  <p class="mt-0.5 text-xs">پیش‌پرداخت {{ toman(booking.depositAmount) }}</p>
+                  <p v-if="booking.depositPaid" data-testid="deposit-paid" class="mt-0.5 text-xs">
+                    بیعانه پرداخت‌شده {{ toman(booking.depositAmount) }}
+                  </p>
                 </td>
                 <td class="px-5 py-3.5">
                   <template v-if="booking.payment">
@@ -358,14 +368,22 @@ watch(page, load)
                   {{ booking.commissionAmount === null ? '—' : toman(booking.commissionAmount) }}
                 </td>
                 <td class="px-5 py-3.5">
-                  <RouterLink
-                    :to="{ name: 'booking-timeline', params: { id: booking.id } }"
-                    data-testid="timeline-link"
-                    class="inline-flex items-center gap-1.5 text-xs font-semibold text-(--color-accent-text) hover:underline"
-                  >
-                    <AppIcon name="history" :size="14" />
-                    تاریخچه
-                  </RouterLink>
+                  <div class="flex flex-wrap items-center gap-x-3">
+                    <RouterLink
+                      :to="{ name: 'booking-timeline', params: { id: booking.id } }"
+                      data-testid="timeline-link"
+                      class="inline-flex min-h-11 items-center gap-1.5 text-xs font-semibold text-(--color-accent-text) hover:underline"
+                    >
+                      <AppIcon name="history" :size="14" />
+                      تاریخچه
+                    </RouterLink>
+                    <CancelBookingAction
+                      v-if="CANCELLABLE_STATUSES.has(booking.status)"
+                      :booking-id="booking.id"
+                      @cancelled="load"
+                      @refresh="load"
+                    />
+                  </div>
                 </td>
               </tr>
             </tbody>

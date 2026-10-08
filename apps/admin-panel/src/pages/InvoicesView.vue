@@ -200,7 +200,7 @@ function formatDateTime(iso: string): string {
                 <th scope="col" class="px-5 py-3 font-semibold">خالص قابل‌پرداخت</th>
                 <th scope="col" class="px-5 py-3 font-semibold">پرداخت‌شده</th>
                 <th scope="col" class="px-5 py-3 font-semibold">وضعیت</th>
-                <th scope="col" class="px-5 py-3"></th>
+                <th scope="col" class="px-5 py-3"><span class="sr-only">عملیات</span></th>
               </tr>
             </thead>
             <tbody>
@@ -238,7 +238,7 @@ function formatDateTime(iso: string): string {
                     </p>
                     <div v-else class="space-y-4">
                       <div>
-                        <p class="mb-2 text-xs font-semibold text-(--color-text-muted)">اقلام این صورتحساب ({{ detailItems.length.toLocaleString('fa-IR') }} رزرو)</p>
+                        <p class="mb-2 text-xs font-semibold text-(--color-text-muted)">اقلام این صورتحساب ({{ detailItems.length.toLocaleString('fa-IR') }} نوبت)</p>
                         <ul v-if="detailItems.length" class="tnum space-y-1 text-xs text-(--color-text-muted)">
                           <li v-for="item in detailItems" :key="item.id">
                             {{ formatDateTime(item.createdAt) }} — ناخالص {{ toman(item.grossAmount) }}، کارمزد {{ toman(item.commissionAmount) }}، خالص {{ toman(item.netAmount) }}

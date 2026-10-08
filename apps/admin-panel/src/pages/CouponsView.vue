@@ -367,7 +367,7 @@ onMounted(load)
                 <th scope="col" class="px-5 py-3 font-semibold">سقف استفاده</th>
                 <th scope="col" class="px-5 py-3 font-semibold">تعداد استفاده‌شده</th>
                 <th scope="col" class="px-5 py-3 font-semibold">وضعیت</th>
-                <th scope="col" class="px-5 py-3"></th>
+                <th scope="col" class="px-5 py-3"><span class="sr-only">عملیات</span></th>
               </tr>
             </thead>
             <tbody>

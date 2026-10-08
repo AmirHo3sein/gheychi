@@ -62,7 +62,7 @@ describe('AnalyticsView', () => {
 
     // Raw snake_case event names never reach the page -- only their Farsi labels do.
     expect(wrapper.text()).toContain('شروع رزرو')
-    expect(wrapper.text()).toContain('تایید رزرو')
+    expect(wrapper.text()).toContain('تایید نوبت')
     expect(wrapper.text()).toContain('پرداخت موفق')
     expect(wrapper.text()).toContain('جستجو')
     expect(wrapper.text()).not.toContain('booking_started')

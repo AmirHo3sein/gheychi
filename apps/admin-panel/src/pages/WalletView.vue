@@ -32,8 +32,8 @@ const TYPE_OPTIONS = [
   { value: 'admin_adjustment', label: 'تعدیل دستی' },
   { value: 'referral_reward', label: 'پاداش معرفی' },
   { value: 'referral_reversal', label: 'برگشت پاداش معرفی' },
-  { value: 'booking_spend', label: 'استفاده در رزرو' },
-  { value: 'booking_spend_reversal', label: 'برگشت وجه رزرو' },
+  { value: 'booking_spend', label: 'استفاده در نوبت' },
+  { value: 'booking_spend_reversal', label: 'برگشت وجه نوبت' },
 ]
 
 type WalletTransactionType =
@@ -212,8 +212,7 @@ watch(page, load)
         </div>
 
         <div>
-          <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">نوع تراکنش</label>
-          <AppSelect v-model="typeFilter" :options="TYPE_OPTIONS" width="12rem" />
+          <AppSelect label="نوع تراکنش" v-model="typeFilter" :options="TYPE_OPTIONS" width="12rem" />
         </div>
 
         <div class="min-w-0">

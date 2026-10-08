@@ -29,11 +29,11 @@ const GROUPS: NavGroup[] = [
   },
   {
     id: 'salons',
-    heading: 'آرایشگاه‌ها و رزروها',
+    heading: 'سالن‌ها و نوبت‌ها',
     links: [
-      { to: '/salons', label: 'آرایشگاه‌ها', icon: 'salons' },
+      { to: '/salons', label: 'سالن‌ها', icon: 'salons' },
       { to: '/featured', label: 'سالن‌های ویژه', icon: 'crown' },
-      { to: '/bookings', label: 'رزروها', icon: 'calendar' },
+      { to: '/bookings', label: 'نوبت‌ها', icon: 'calendar' },
     ],
   },
   {

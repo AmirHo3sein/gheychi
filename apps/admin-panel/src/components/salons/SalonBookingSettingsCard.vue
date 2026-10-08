@@ -53,7 +53,7 @@ const FIELDS = [
     key: 'approval' as const,
     bodyKey: 'approvalTimeoutMinutes' as const,
     label: 'مهلت تایید درخواست',
-    hint: 'فرصت آرایشگاه برای تایید یا رد یک درخواست رزرو',
+    hint: 'فرصت سالن برای تایید یا رد یک درخواست رزرو',
   },
   {
     key: 'payment' as const,
@@ -268,7 +268,7 @@ onMounted(load)
       <div class="flex h-12 w-12 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)">
         <AppIcon name="warning" :size="22" />
       </div>
-      <p class="text-sm text-(--color-text-muted)">بارگذاری تنظیمات رزرو این آرایشگاه با خطا مواجه شد.</p>
+      <p class="text-sm text-(--color-text-muted)">بارگذاری تنظیمات رزرو این سالن با خطا مواجه شد.</p>
       <AppButton type="button" variant="secondary" data-testid="booking-settings-retry" @click="load">تلاش مجدد</AppButton>
     </div>
 
@@ -280,7 +280,7 @@ onMounted(load)
           </div>
           <div class="min-w-0">
             <h3 class="text-base font-bold text-(--color-text)">تنظیمات رزرو</h3>
-            <p class="mt-0.5 text-xs text-(--color-text-muted)">حالت تایید را آرایشگاه‌دار انتخاب می‌کند؛ مهلت‌ها را پلتفرم تعیین می‌کند.</p>
+            <p class="mt-0.5 text-xs text-(--color-text-muted)">حالت تایید را سالن‌دار انتخاب می‌کند؛ مهلت‌ها را پلتفرم تعیین می‌کند.</p>
           </div>
         </div>
         <!-- Read-only by design: this badge reports the owner's own choice, it is not a
@@ -300,7 +300,7 @@ onMounted(load)
       >
         <AppIcon name="warning" :size="17" class="mt-0.5 shrink-0 text-(--color-text-muted)" />
         <p class="text-sm text-(--color-text-muted)">
-          این آرایشگاه روی تایید خودکار است، بنابراین مهلت تایید درخواست فعلا استفاده نمی‌شود؛ مقدار آن برای زمانی که آرایشگاه‌دار حالت را تغییر دهد نگه داشته می‌شود.
+          این سالن روی تایید خودکار است، بنابراین مهلت تایید درخواست فعلا استفاده نمی‌شود؛ مقدار آن برای زمانی که سالن‌دار حالت را تغییر دهد نگه داشته می‌شود.
         </p>
       </div>
 
@@ -344,7 +344,7 @@ onMounted(load)
         </div>
 
         <p class="mt-4 text-xs text-(--color-text-muted)">
-          خالی گذاشتن هر مقدار یعنی این آرایشگاه از پیش‌فرض سراسری پیروی کند. مهلت‌های ثبت‌شده روی رزروهای موجود تغییر نمی‌کنند و فقط رزروهای بعدی را متاثر می‌کنند.
+          خالی گذاشتن هر مقدار یعنی این سالن از پیش‌فرض سراسری پیروی کند. مهلت‌های ثبت‌شده روی نوبت‌های موجود تغییر نمی‌کنند و فقط نوبت‌های بعدی را متاثر می‌کنند.
         </p>
 
         <div class="mt-4">
@@ -362,7 +362,7 @@ onMounted(load)
 
       <div v-else class="mt-5 space-y-3.5 border-t border-(--color-border-soft) pt-4">
         <p ref="confirmHeadingEl" tabindex="-1" class="text-sm font-semibold text-(--tone-warning-text) focus:outline-none">
-          این تغییرات روی مهلت‌های رزروهای بعدی این آرایشگاه اثر می‌گذارد. لطفا موارد زیر را بررسی و تایید کنید:
+          این تغییرات روی مهلت‌های نوبت‌های بعدی این سالن اثر می‌گذارد. لطفا موارد زیر را بررسی و تایید کنید:
         </p>
         <AppCard :padded="false" data-testid="booking-settings-confirm-summary">
           <div

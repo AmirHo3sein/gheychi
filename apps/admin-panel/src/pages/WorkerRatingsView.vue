@@ -126,7 +126,7 @@ watch(page, load)
         <AppInput
           v-model="salonIdFilter"
           icon="search"
-          label="شناسه آرایشگاه (UUID)"
+          label="شناسه سالن (UUID)"
           placeholder="شناسه کامل را وارد کنید"
           dir="ltr"
           class="w-52"
@@ -178,7 +178,7 @@ watch(page, load)
             <thead>
               <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
                 <th scope="col" class="px-5 py-3 font-semibold">کارمند</th>
-                <th scope="col" class="px-5 py-3 font-semibold">آرایشگاه</th>
+                <th scope="col" class="px-5 py-3 font-semibold">سالن</th>
                 <th scope="col" class="px-5 py-3 font-semibold">امتیاز</th>
                 <th scope="col" class="px-5 py-3 font-semibold">وضعیت</th>
                 <th scope="col" class="px-5 py-3 font-semibold">اقدام</th>

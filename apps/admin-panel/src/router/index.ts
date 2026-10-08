@@ -13,17 +13,17 @@ const routes = [
     children: [
       { path: '', name: 'dashboard', component: () => import('@/pages/DashboardView.vue'), meta: { title: 'داشبورد' } },
       { path: 'analytics', name: 'analytics', component: () => import('@/pages/AnalyticsView.vue'), meta: { title: 'آمار و تحلیل' } },
-      { path: 'salons', name: 'salons', component: () => import('@/pages/SalonsView.vue'), meta: { title: 'آرایشگاه‌ها' } },
-      { path: 'salons/:id', name: 'salon-detail', component: () => import('@/pages/SalonDetailView.vue'), meta: { title: 'جزئیات آرایشگاه' } },
+      { path: 'salons', name: 'salons', component: () => import('@/pages/SalonsView.vue'), meta: { title: 'سالن‌ها' } },
+      { path: 'salons/:id', name: 'salon-detail', component: () => import('@/pages/SalonDetailView.vue'), meta: { title: 'جزئیات سالن' } },
       { path: 'featured', name: 'featured', component: () => import('@/pages/FeaturedView.vue'), meta: { title: 'سالن‌های ویژه' } },
-      { path: 'bookings', name: 'bookings', component: () => import('@/pages/BookingsView.vue'), meta: { title: 'رزروها' } },
+      { path: 'bookings', name: 'bookings', component: () => import('@/pages/BookingsView.vue'), meta: { title: 'نوبت‌ها' } },
       // No SidebarNav entry of its own: it is addressed by booking id, reached from a row
       // in the bookings list above (or deep-linked with an id from a support ticket).
       {
         path: 'bookings/:id',
         name: 'booking-timeline',
         component: () => import('@/pages/BookingTimelineView.vue'),
-        meta: { title: 'تاریخچه رزرو' },
+        meta: { title: 'تاریخچه نوبت' },
       },
       { path: 'reviews', name: 'reviews', component: () => import('@/pages/ReviewsView.vue'), meta: { title: 'نظرات' } },
       { path: 'worker-ratings', name: 'worker-ratings', component: () => import('@/pages/WorkerRatingsView.vue'), meta: { title: 'امتیاز کارمندان' } },

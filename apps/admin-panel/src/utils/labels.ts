@@ -38,7 +38,7 @@ const USER_STATUS: Record<string, LabelEntry> = {
 
 const USER_ROLE: Record<string, string> = {
   customer: 'مشتری',
-  provider: 'آرایشگاه‌دار',
+  provider: 'سالن‌دار',
   admin: 'مدیر',
 }
 
@@ -92,8 +92,8 @@ const WALLET_TRANSACTION_TYPE: Record<string, LabelEntry> = {
   admin_adjustment: { label: 'تعدیل دستی', tone: 'info' },
   referral_reward: { label: 'پاداش معرفی', tone: 'success' },
   referral_reversal: { label: 'برگشت پاداش معرفی', tone: 'danger' },
-  booking_spend: { label: 'استفاده در رزرو', tone: 'info' },
-  booking_spend_reversal: { label: 'برگشت وجه رزرو', tone: 'success' },
+  booking_spend: { label: 'استفاده در نوبت', tone: 'info' },
+  booking_spend_reversal: { label: 'برگشت وجه نوبت', tone: 'success' },
 }
 
 export function walletTransactionTypeLabel(type: string): LabelEntry {
@@ -177,13 +177,14 @@ export function blogPostStatusLabel(status: string): LabelEntry {
 // the other seven occur in both modes. A 'pending_approval' booking has NO payment behind
 // it yet -- the wording must never imply money has moved.
 const BOOKING_STATUS: Record<string, LabelEntry> = {
-  pending_approval: { label: 'در انتظار تایید آرایشگاه', tone: 'warning' },
+  pending_approval: { label: 'در انتظار تایید سالن', tone: 'warning' },
   pending_payment: { label: 'در انتظار پرداخت', tone: 'warning' },
   confirmed: { label: 'تایید شده', tone: 'success' },
   completed: { label: 'انجام شده', tone: 'success' },
   cancelled_by_user: { label: 'لغو شده توسط مشتری', tone: 'neutral' },
-  cancelled_by_salon: { label: 'لغو شده توسط آرایشگاه', tone: 'danger' },
-  rejected_by_salon: { label: 'رد شده توسط آرایشگاه', tone: 'danger' },
+  cancelled_by_salon: { label: 'لغو شده توسط سالن', tone: 'danger' },
+  cancelled_by_admin: { label: 'لغو توسط پشتیبانی', tone: 'danger' },
+  rejected_by_salon: { label: 'رد شده توسط سالن', tone: 'danger' },
   expired: { label: 'منقضی شده', tone: 'neutral' },
   no_show: { label: 'عدم حضور', tone: 'danger' },
 }
@@ -195,7 +196,7 @@ export function bookingStatusLabel(status: string): LabelEntry {
 // Salon.bookingConfirmationMode. Owner-controlled -- this app only ever displays it.
 const BOOKING_CONFIRMATION_MODE: Record<string, LabelEntry> = {
   automatic: { label: 'تایید خودکار', tone: 'success' },
-  manual_approval: { label: 'تایید دستی آرایشگاه', tone: 'info' },
+  manual_approval: { label: 'تایید دستی سالن', tone: 'info' },
 }
 
 export function bookingConfirmationModeLabel(mode: string): LabelEntry {
@@ -221,7 +222,7 @@ export function paymentStatusLabel(status: string): LabelEntry {
 // attributionSource below). 'manual' is the owner recording a walk-in or phone customer.
 const BOOKING_SOURCE: Record<string, string> = {
   online: 'رزرو آنلاین',
-  manual: 'ثبت توسط آرایشگاه',
+  manual: 'ثبت توسط سالن',
 }
 
 export function bookingSourceLabel(source: string): string {
@@ -245,20 +246,20 @@ export function bookingAttributionSourceLabel(source: string): string {
 // booking-event.entity.ts), so several of these describe things happening *around* a
 // status change and have no BOOKING_STATUS counterpart.
 const BOOKING_EVENT_TYPE: Record<string, LabelEntry> = {
-  BOOKING_CREATED: { label: 'ایجاد رزرو', tone: 'info' },
+  BOOKING_CREATED: { label: 'ایجاد نوبت', tone: 'info' },
   APPROVAL_REQUESTED: { label: 'ارسال درخواست تایید', tone: 'warning' },
-  SALON_APPROVED: { label: 'تایید توسط آرایشگاه', tone: 'success' },
-  SALON_REJECTED: { label: 'رد توسط آرایشگاه', tone: 'danger' },
+  SALON_APPROVED: { label: 'تایید توسط سالن', tone: 'success' },
+  SALON_REJECTED: { label: 'رد توسط سالن', tone: 'danger' },
   APPROVAL_EXPIRED: { label: 'اتمام مهلت تایید', tone: 'neutral' },
   PAYMENT_WINDOW_STARTED: { label: 'شروع مهلت پرداخت', tone: 'info' },
   PAYMENT_INITIATED: { label: 'آغاز پرداخت', tone: 'info' },
   PAYMENT_SUCCEEDED: { label: 'پرداخت موفق', tone: 'success' },
   PAYMENT_FAILED: { label: 'پرداخت ناموفق', tone: 'danger' },
   PAYMENT_EXPIRED: { label: 'اتمام مهلت پرداخت', tone: 'neutral' },
-  BOOKING_CONFIRMED: { label: 'قطعی شدن رزرو', tone: 'success' },
+  BOOKING_CONFIRMED: { label: 'قطعی شدن نوبت', tone: 'success' },
   SLOT_RELEASED: { label: 'آزادسازی نوبت', tone: 'neutral' },
-  BOOKING_CANCELLED: { label: 'لغو رزرو', tone: 'danger' },
-  BOOKING_COMPLETED: { label: 'تکمیل رزرو', tone: 'success' },
+  BOOKING_CANCELLED: { label: 'لغو نوبت', tone: 'danger' },
+  BOOKING_COMPLETED: { label: 'تکمیل نوبت', tone: 'success' },
   BOOKING_NO_SHOW: { label: 'عدم حضور مشتری', tone: 'danger' },
 }
 
@@ -270,7 +271,7 @@ export function bookingEventTypeLabel(eventType: string): LabelEntry {
 // expiry) -- genuinely no human actor, and it must not read as one.
 const BOOKING_EVENT_ACTOR_TYPE: Record<string, string> = {
   customer: 'مشتری',
-  salon_owner: 'آرایشگاه‌دار',
+  salon_owner: 'سالن‌دار',
   admin: 'مدیر',
   system: 'سامانه',
 }
@@ -284,7 +285,7 @@ export function bookingEventActorTypeLabel(actorType: string): string {
 // than being hidden, since a support timeline must never silently drop context).
 const BOOKING_EVENT_METADATA_KEY: Record<string, string> = {
   confirmationMode: 'حالت تایید',
-  depositAmount: 'مبلغ پیش‌پرداخت',
+  depositAmount: 'مبلغ بیعانه',
   approvalTimeoutMinutes: 'مهلت تایید',
   approvalExpiresAt: 'پایان مهلت تایید',
   paymentTimeoutMinutes: 'مهلت پرداخت',
@@ -293,6 +294,7 @@ const BOOKING_EVENT_METADATA_KEY: Record<string, string> = {
   cause: 'علت',
   fromStatus: 'وضعیت پیشین',
   refundOwed: 'مبلغ قابل استرداد',
+  cancelledBy: 'لغو توسط',
 }
 
 export function bookingEventMetadataKeyLabel(key: string): string {
@@ -303,9 +305,10 @@ export function bookingEventMetadataKeyLabel(key: string): string {
 const BOOKING_EVENT_CAUSE: Record<string, string> = {
   approval_expired: 'اتمام مهلت تایید',
   payment_expired: 'اتمام مهلت پرداخت',
-  salon_rejected: 'رد توسط آرایشگاه',
-  cancelled: 'لغو رزرو',
-  zero_deposit: 'بدون نیاز به پیش‌پرداخت',
+  salon_rejected: 'رد توسط سالن',
+  cancelled: 'لغو نوبت',
+  cancelled_by_admin: 'لغو توسط پشتیبانی',
+  zero_deposit: 'بدون نیاز به بیعانه',
 }
 
 export function bookingEventCauseLabel(cause: string): string {
@@ -314,7 +317,7 @@ export function bookingEventCauseLabel(cause: string): string {
 
 // Keys must stay in sync with the backend's @AuditAction() names (audit.decorator.ts).
 const AUDIT_ACTION: Record<string, LabelEntry> = {
-  'salon.status.set': { label: 'تغییر وضعیت آرایشگاه', tone: 'warning' },
+  'salon.status.set': { label: 'تغییر وضعیت سالن', tone: 'warning' },
   'salon.featured.set': { label: 'تغییر نشان ویژه', tone: 'info' },
   'salon.story.status.set': { label: 'تعدیل استوری', tone: 'warning' },
   'salon.portfolio.status.set': { label: 'تعدیل نمونه کار', tone: 'warning' },
@@ -348,18 +351,19 @@ const AUDIT_ACTION: Record<string, LabelEntry> = {
   'worker-rating.moderate': { label: 'تعدیل ارزیابی کارمند', tone: 'warning' },
   'booking.approval.approved': { label: 'تایید درخواست رزرو', tone: 'success' },
   'booking.approval.rejected': { label: 'رد درخواست رزرو', tone: 'danger' },
+  'booking.cancelled_by_admin': { label: 'لغو نوبت توسط پشتیبانی', tone: 'danger' },
   'booking.rescheduled': { label: 'جابه‌جایی زمان نوبت', tone: 'info' },
   'booking-settings.update': { label: 'ویرایش تنظیمات رزرو سالن', tone: 'info' },
   'feature-flags.update': { label: 'تغییر قابلیت‌های پلتفرم', tone: 'warning' },
   'invoice.payment.record': { label: 'ثبت پرداخت صورتحساب', tone: 'success' },
-  'salon.handle.set': { label: 'تغییر شناسه عمومی آرایشگاه', tone: 'info' },
+  'salon.handle.set': { label: 'تغییر شناسه عمومی سالن', tone: 'info' },
   // Monetization initiative (plans, subscriptions, subscription coupons, billing periods).
   'plan.create': { label: 'ایجاد پلن اشتراک', tone: 'success' },
   'plan.update': { label: 'ویرایش پلن اشتراک', tone: 'info' },
   'plan.delete': { label: 'حذف پلن اشتراک', tone: 'danger' },
-  'subscription.plan.set': { label: 'تغییر پلن اشتراک آرایشگاه', tone: 'info' },
-  'subscription.cancel': { label: 'لغو اشتراک آرایشگاه', tone: 'danger' },
-  'subscription.overrides.set': { label: 'تغییر استثنای امکانات آرایشگاه', tone: 'warning' },
+  'subscription.plan.set': { label: 'تغییر پلن اشتراک سالن', tone: 'info' },
+  'subscription.cancel': { label: 'لغو اشتراک سالن', tone: 'danger' },
+  'subscription.overrides.set': { label: 'تغییر استثنای امکانات سالن', tone: 'warning' },
   'subscription.billing-period.create': { label: 'ایجاد دوره صورتحساب اشتراک', tone: 'success' },
   'subscription.billing-period.status.set': { label: 'تسویه دوره صورتحساب اشتراک', tone: 'warning' },
   'subscription-coupon.create': { label: 'ایجاد کد تخفیف اشتراک', tone: 'success' },
@@ -372,7 +376,7 @@ const AUDIT_ACTION: Record<string, LabelEntry> = {
 export const AUDIT_ACTION_KEYS = Object.keys(AUDIT_ACTION)
 
 const AUDIT_TARGET_TYPE: Record<string, string> = {
-  salon: 'آرایشگاه',
+  salon: 'سالن',
   user: 'کاربر',
   review: 'نظر',
   story: 'استوری',
@@ -393,7 +397,7 @@ const AUDIT_TARGET_TYPE: Record<string, string> = {
   'feature-flags': 'قابلیت‌های پلتفرم',
   invoice: 'صورتحساب',
   plan: 'پلن اشتراک',
-  'salon-subscription': 'اشتراک آرایشگاه',
+  'salon-subscription': 'اشتراک سالن',
   'subscription-billing-period': 'دوره صورتحساب اشتراک',
   'subscription-coupon': 'کد تخفیف اشتراک',
 }
@@ -437,11 +441,11 @@ interface ConfigMeta {
 }
 
 const CONFIG_META: Record<string, ConfigMeta> = {
-  deposit_percent: { label: 'درصد پیش‌پرداخت', hint: 'سهم پیش‌پرداخت از قیمت نهایی خدمت', unit: '%', icon: 'invoice' },
-  deposit_min_toman: { label: 'حداقل پیش‌پرداخت', hint: 'کف مبلغ پیش‌پرداخت، صرف‌نظر از درصد', unit: 'تومان', icon: 'wallet' },
-  cancellation_window_hours: { label: 'مهلت لغو رزرو', hint: 'حداقل فاصله زمانی مجاز برای لغو رایگان', unit: 'ساعت', icon: 'history' },
-  commission_percent: { label: 'درصد کمیسیون پلتفرم', hint: 'سهم پلتفرم از هر رزرو موفق', unit: '%', icon: 'invoice' },
-  booking_hold_ttl_minutes: { label: 'مهلت نگه‌داری رزرو', hint: 'زمان قفل‌شدن نوبت تا پرداخت', unit: 'دقیقه', icon: 'calendar' },
+  deposit_percent: { label: 'درصد بیعانه', hint: 'سهم بیعانه از قیمت نهایی خدمت', unit: '%', icon: 'invoice' },
+  deposit_min_toman: { label: 'حداقل بیعانه', hint: 'کف مبلغ بیعانه، صرف‌نظر از درصد', unit: 'تومان', icon: 'wallet' },
+  cancellation_window_hours: { label: 'مهلت لغو نوبت', hint: 'حداقل فاصله زمانی مجاز برای لغو رایگان', unit: 'ساعت', icon: 'history' },
+  commission_percent: { label: 'درصد کمیسیون پلتفرم', hint: 'درصدی از بیعانه‌ای که واقعاً دریافت شده؛ نوبت بدون پرداخت آنلاین کمیسیونی ندارد', unit: '%', icon: 'invoice' },
+  booking_hold_ttl_minutes: { label: 'مهلت نگه‌داری نوبت', hint: 'زمان قفل‌شدن نوبت تا پرداخت', unit: 'دقیقه', icon: 'calendar' },
   reminder_lead_hours: { label: 'یادآوری قبل از نوبت', hint: 'چند ساعت قبل، پیامک یادآوری ارسال شود', unit: 'ساعت', icon: 'bell' },
   review_edit_window_hours: { label: 'مهلت ویرایش نظر', hint: 'مدت زمانی که کاربر می‌تواند نظر ثبت‌شده را ویرایش یا حذف کند', unit: 'ساعت', icon: 'history' },
   // The GLOBAL default for the manual-approval workflow; a single salon can be given its
@@ -451,9 +455,54 @@ const CONFIG_META: Record<string, ConfigMeta> = {
   booking_approval_timeout_minutes: { label: 'مهلت تایید درخواست رزرو', hint: 'فرصت سالن برای تایید یا رد درخواست رزرو', unit: 'دقیقه', icon: 'history' },
   // Beauty guide: each analysis is a paid external AI call, so the two daily caps are the
   // cost breaker. 0 blocks new analyses entirely (per user / platform-wide).
+  // Abuse limits on online booking creation (admin-config.dto.ts bounds: 1-50 / 1-20).
+  booking_max_active_per_user: { label: 'سقف نوبت‌های فعال هر مشتری', hint: 'حداکثر نوبت آینده (در انتظار تایید، پرداخت یا تاییدشده) که یک مشتری هم‌زمان می‌تواند داشته باشد', unit: 'نوبت', icon: 'calendar' },
+  booking_max_active_per_salon_per_user: { label: 'سقف نوبت‌های فعال هر مشتری در یک سالن', hint: 'حداکثر نوبت آینده یک مشتری نزد یک سالن', unit: 'نوبت', icon: 'calendar' },
+  no_show_grace_minutes: { label: 'مهلت ثبت عدم حضور', hint: 'چند دقیقه پس از شروع نوبت، ثبت «عدم حضور» ممکن می‌شود (۰ تا ۱۴۴۰)', unit: 'دقیقه', icon: 'history' },
   beauty_guide_daily_limit_per_user: { label: 'سقف روزانه راهنمای زیبایی برای هر کاربر', hint: 'حداکثر تعداد تحلیل تصویر هر کاربر در یک روز (۰ = مسدود)', unit: 'تحلیل', icon: 'sparkles' },
   beauty_guide_daily_limit_global: { label: 'سقف روزانه کل راهنماهای زیبایی (کنترل هزینه)', hint: 'حداکثر تعداد کل تحلیل‌های پلتفرم در یک روز؛ هر تحلیل یک فراخوانی پولی سرویس هوش مصنوعی است', unit: 'تحلیل', icon: 'sparkles' },
   beauty_guide_retention_days: { label: 'مدت نگهداری تصاویر راهنمای زیبایی (روز)', hint: 'پس از این مدت، راهنما و تصویر مشتری حذف می‌شود (مگر به نوبت آینده‌ای متصل باشد)', unit: 'روز', icon: 'history' },
+}
+
+/**
+ * Pricing shapes of a salon service (salon_services.pricing_type). Only 'fixed' is
+ * bookable online; the others are catalog-display prices the salon quotes itself.
+ */
+const PRICING_TYPE: Record<string, string> = {
+  fixed: 'ثابت',
+  from: 'از',
+  range: 'بازه‌ای',
+  quote: 'پس از استعلام',
+}
+
+export function pricingTypeLabel(type: string): string {
+  return PRICING_TYPE[type] ?? type
+}
+
+/** 0 = Sunday .. 6 = Saturday -- JS Date.getDay(), the numbering working_hours.weekday uses. */
+const WEEKDAY = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه']
+
+export function weekdayLabel(day: number): string {
+  return WEEKDAY[day] ?? String(day)
+}
+
+interface NotificationTypeMeta {
+  label: string
+  icon: IconName
+}
+
+/**
+ * admin_notifications.type. Title/body/link are server-composed, so this only adds the
+ * glyph and a fallback title; an unmapped type still renders with the generic bell.
+ */
+const NOTIFICATION_TYPE: Record<string, NotificationTypeMeta> = {
+  salon_resubmitted: { label: 'ارسال مجدد سالن', icon: 'salons' },
+  report_created: { label: 'گزارش جدید', icon: 'flag' },
+  salon_material_edit: { label: 'تغییر مهم در اطلاعات سالن', icon: 'pencil' },
+}
+
+export function notificationTypeMeta(type: string): NotificationTypeMeta {
+  return NOTIFICATION_TYPE[type] ?? { label: 'اعلان', icon: 'bell' }
 }
 
 /** Falls back to the raw key as its own label -- new config keys stay editable, just less pretty. */
@@ -503,8 +552,8 @@ export function jalaliMonthLabel(year: number, month: number): string {
 // raw snake_case string for a known event.
 const ANALYTICS_EVENT: Record<string, string> = {
   booking_started: 'شروع رزرو',
-  booking_confirmed: 'تایید رزرو',
-  booking_cancelled: 'لغو رزرو',
+  booking_confirmed: 'تایید نوبت',
+  booking_cancelled: 'لغو نوبت',
   payment_succeeded: 'پرداخت موفق',
   user_registered: 'ثبت‌نام کاربر',
   salon_submitted: 'ثبت سالن',

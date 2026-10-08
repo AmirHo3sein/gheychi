@@ -56,6 +56,15 @@ describe('FeaturedView', () => {
     expect(rows[1]!.find('[data-testid="featured-badge"]').text()).toBe('بله')
   })
 
+  it('gives the actions column header an accessible name', async () => {
+    stub([SALON_NOT_FEATURED])
+    const wrapper = await mountView()
+
+    const emptyHeaders = wrapper.findAll('th').filter((th) => th.text() === '')
+    expect(emptyHeaders).toHaveLength(0)
+    expect(wrapper.find('th .sr-only').text()).toBe('عملیات')
+  })
+
   it('shows an empty state when there are no salons', async () => {
     stub([])
     const wrapper = await mountView()

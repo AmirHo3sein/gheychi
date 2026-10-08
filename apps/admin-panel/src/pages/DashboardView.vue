@@ -98,12 +98,12 @@ const stats = computed<Stat[]>(() => [
 ])
 
 const QUICK_LINKS: { to: string; label: string; icon: IconName; desc: string }[] = [
-  { to: '/salons', label: 'آرایشگاه‌ها', icon: 'salons', desc: 'بررسی، تایید و رد درخواست‌ها' },
+  { to: '/salons', label: 'سالن‌ها', icon: 'salons', desc: 'بررسی، تایید و رد درخواست‌ها' },
   { to: '/reviews', label: 'نظرات', icon: 'reviews', desc: 'مدیریت و تعدیل نظرات کاربران' },
   { to: '/reports', label: 'گزارش‌ها', icon: 'flag', desc: 'رسیدگی به گزارش‌های کاربران' },
   { to: '/categories', label: 'دسته‌بندی‌ها', icon: 'categories', desc: 'افزودن و ویرایش خدمات' },
   { to: '/users', label: 'کاربران', icon: 'users', desc: 'جست‌وجو و مدیریت وضعیت کاربران' },
-  { to: '/config', label: 'تنظیمات پلتفرم', icon: 'config', desc: 'مقادیر پیش‌پرداخت، کمیسیون و...' },
+  { to: '/config', label: 'تنظیمات پلتفرم', icon: 'config', desc: 'مقادیر بیعانه، کمیسیون و...' },
 ]
 
 const baseTextStyle = computed(() => ({ fontFamily: FONT, color: isDark.value ? '#F7F4F2' : '#2D2D2D' }))
@@ -302,11 +302,11 @@ onMounted(async () => {
     </div>
 
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
-      <ChartCard title="وضعیت آرایشگاه‌ها" subtitle="توزیع آرایشگاه‌ها بر اساس وضعیت بررسی" :loading="loading" :error="loadError" :empty="!hasSalonData">
+      <ChartCard title="وضعیت سالن‌ها" subtitle="توزیع سالن‌ها بر اساس وضعیت بررسی" :loading="loading" :error="loadError" :empty="!hasSalonData">
         <VChart :option="salonStatusChart" autoresize class="!h-64" />
       </ChartCard>
 
-      <ChartCard title="مخاطب آرایشگاه‌ها" subtitle="سهم آرایشگاه‌های بانوان و آقایان" :loading="loading" :error="loadError" :empty="!hasSalonData">
+      <ChartCard title="مخاطب سالن‌ها" subtitle="سهم سالن‌های بانوان و آقایان" :loading="loading" :error="loadError" :empty="!hasSalonData">
         <VChart :option="genderChart" autoresize class="!h-64" />
       </ChartCard>
 

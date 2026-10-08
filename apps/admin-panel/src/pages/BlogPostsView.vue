@@ -220,12 +220,10 @@ watch(page, load)
         <div class="flex flex-wrap items-end gap-3">
           <AppInput v-model="titleFilter" icon="search" label="جست‌وجو" placeholder="عنوان مطلب" class="w-52" />
           <div data-testid="status-filter">
-            <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">وضعیت</label>
-            <AppSelect v-model="statusFilter" :options="STATUS_OPTIONS" width="11rem" />
+            <AppSelect label="وضعیت" v-model="statusFilter" :options="STATUS_OPTIONS" width="11rem" />
           </div>
           <div data-testid="category-filter">
-            <label class="mb-1.5 block text-xs font-semibold text-(--color-text-muted)">دسته‌بندی</label>
-            <AppSelect v-model="categoryFilter" :options="categoryOptions" width="12rem" :searchable="true" />
+            <AppSelect label="دسته‌بندی" v-model="categoryFilter" :options="categoryOptions" width="12rem" :searchable="true" />
           </div>
           <AppButton
             v-if="hasActiveFilters"

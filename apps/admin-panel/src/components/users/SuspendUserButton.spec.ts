@@ -76,7 +76,7 @@ describe('SuspendUserButton', () => {
 
     await wrapper.get('[data-testid="suspend-user"]').trigger('click')
 
-    expect(wrapper.text()).toContain('آرایشگاه تاییدشدهٔ او (در صورت وجود)')
+    expect(wrapper.text()).toContain('سالن تاییدشدهٔ او (در صورت وجود)')
   })
 
   it('toasts the salon cascade when suspending a provider', async () => {
@@ -87,7 +87,7 @@ describe('SuspendUserButton', () => {
     await wrapper.get('[data-testid="suspend-user-confirm"]').trigger('click')
     await flushPromises()
 
-    expect(pushMock).toHaveBeenCalledWith('کاربر معلق شد؛ آرایشگاه تاییدشدهٔ او (در صورت وجود) نیز از دسترس عموم خارج شد.')
+    expect(pushMock).toHaveBeenCalledWith('کاربر معلق شد؛ سالن تاییدشدهٔ او (در صورت وجود) نیز از دسترس عموم خارج شد.')
   })
 
   it('toasts the salon restore when reactivating a provider', async () => {
@@ -98,7 +98,7 @@ describe('SuspendUserButton', () => {
     await wrapper.get('[data-testid="unsuspend-user-confirm"]').trigger('click')
     await flushPromises()
 
-    expect(pushMock).toHaveBeenCalledWith('کاربر فعال شد؛ آرایشگاهی که به دلیل تعلیق او معلق شده بود (در صورت وجود) بازگردانده شد.')
+    expect(pushMock).toHaveBeenCalledWith('کاربر فعال شد؛ سالنی که به دلیل تعلیق او معلق شده بود (در صورت وجود) بازگردانده شد.')
   })
 
   it('uses a plain toast without cascade wording for non-providers', async () => {

@@ -63,7 +63,7 @@ describe('SidebarNav', () => {
     const groups = wrapper.findAll('[data-testid="nav-group"]')
     expect(groups.map((g) => g.find('p').text())).toEqual([
       'نمای کلی',
-      'آرایشگاه‌ها و رزروها',
+      'سالن‌ها و نوبت‌ها',
       'نظارت',
       'کاتالوگ',
       'مالی',

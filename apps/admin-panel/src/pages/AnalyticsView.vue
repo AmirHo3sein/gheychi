@@ -210,7 +210,7 @@ watch([fromDate, toDate], load)
               <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
                 <th scope="col" class="px-5 py-3 font-semibold">تاریخ</th>
                 <th scope="col" class="px-5 py-3 font-semibold">شروع رزرو</th>
-                <th scope="col" class="px-5 py-3 font-semibold">تایید رزرو</th>
+                <th scope="col" class="px-5 py-3 font-semibold">تایید نوبت</th>
                 <th scope="col" class="px-5 py-3 font-semibold">پرداخت موفق</th>
                 <th scope="col" class="px-5 py-3 font-semibold">نرخ تبدیل شروع به تایید</th>
                 <th scope="col" class="px-5 py-3 font-semibold">نرخ تبدیل تایید به پرداخت</th>

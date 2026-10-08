@@ -12,6 +12,10 @@ const props = defineProps<{
   // account put it here, and the backend 409s any approve while that owner is still
   // suspended -- so the reapprove control is disabled rather than offered and rejected.
   suspendedCause?: 'admin' | 'owner_suspended' | null
+  // The first approval of a pending salon is gated by the written review checklist (owned by
+  // the page, since it sits beside the details being checked). Reject/suspend and the
+  // suspended -> approved reinstatement are never gated by it.
+  approveBlocked?: boolean
 }>()
 
 const blockedByOwnerSuspension = computed(
@@ -74,12 +78,12 @@ async function submitReason() {
         data-testid="approve-button"
         type="button"
         variant="primary"
-        :disabled="submitting"
+        :disabled="submitting || approveBlocked"
         :loading="submitting"
         @click="confirmingApprove = true"
       >
         <template #icon><AppIcon name="check" :size="16" /></template>
-        تایید آرایشگاه
+        تایید سالن
       </AppButton>
       <AppButton
         v-if="status === 'pending'"
@@ -103,7 +107,7 @@ async function submitReason() {
         @click="openReason('suspended')"
       >
         <template #icon><AppIcon name="warning" :size="16" /></template>
-        تعلیق آرایشگاه
+        تعلیق سالن
       </AppButton>
       <div v-if="status === 'suspended'" class="space-y-2">
         <AppButton
@@ -118,10 +122,13 @@ async function submitReason() {
           رفع تعلیق و تایید مجدد
         </AppButton>
         <p v-if="blockedByOwnerSuspension" data-testid="reapprove-blocked-hint" class="text-sm text-(--color-text-muted)">
-          تا زمانی که حساب مالک معلق است، تایید این آرایشگاه ممکن نیست. ابتدا از صفحهٔ کاربران، تعلیق حساب مالک را
-          بردارید؛ آرایشگاه به‌صورت خودکار به حالت تایید بازمی‌گردد.
+          تا زمانی که حساب مالک معلق است، تایید این سالن ممکن نیست. ابتدا از صفحهٔ کاربران، تعلیق حساب مالک را
+          بردارید؛ سالن به‌صورت خودکار به حالت تایید بازمی‌گردد.
         </p>
       </div>
+      <p v-if="status === 'pending' && approveBlocked" data-testid="approve-blocked-hint" class="w-full text-sm text-(--color-text-muted)">
+        برای فعال شدن «تایید سالن»، همه موارد فهرست بررسی را علامت بزنید.
+      </p>
       <p v-if="status === 'rejected'" class="text-sm text-(--color-text-muted)">
         اقدامی برای این وضعیت لازم نیست.
       </p>
@@ -129,7 +136,7 @@ async function submitReason() {
 
     <div v-else-if="confirmingApprove" class="flex flex-wrap items-center gap-2.5 text-sm">
       <span class="text-(--color-text)">
-        {{ status === 'suspended' ? 'رفع تعلیق و تایید مجدد این آرایشگاه انجام شود؟ پس از تایید، آرایشگاه بلافاصله در دسترس عموم قرار می‌گیرد.' : 'این آرایشگاه تایید شود؟ پس از تایید، بلافاصله در دسترس عموم قرار می‌گیرد.' }}
+        {{ status === 'suspended' ? 'رفع تعلیق و تایید مجدد این سالن انجام شود؟ پس از تایید، سالن بلافاصله در دسترس عموم قرار می‌گیرد.' : 'این سالن تایید شود؟ پس از تایید، بلافاصله در دسترس عموم قرار می‌گیرد.' }}
       </span>
       <AppButton
         :data-testid="status === 'suspended' ? 'reapprove-confirm' : 'approve-confirm'"
@@ -139,7 +146,7 @@ async function submitReason() {
         :loading="submitting"
         @click="approve"
       >
-        {{ status === 'suspended' ? 'رفع تعلیق و تایید مجدد' : 'تایید آرایشگاه' }}
+        {{ status === 'suspended' ? 'رفع تعلیق و تایید مجدد' : 'تایید سالن' }}
       </AppButton>
       <AppButton
         :data-testid="status === 'suspended' ? 'reapprove-cancel' : 'approve-cancel'"
@@ -165,7 +172,7 @@ async function submitReason() {
       <textarea
         v-model="reason"
         data-testid="reason-input"
-        placeholder="برای اطلاع آرایشگاه‌دار، دلیل را واضح بنویسید…"
+        placeholder="برای اطلاع سالن‌دار، دلیل را واضح بنویسید…"
         rows="3"
         class="w-full rounded-xl border border-(--color-text-muted) p-3 text-sm"
       />

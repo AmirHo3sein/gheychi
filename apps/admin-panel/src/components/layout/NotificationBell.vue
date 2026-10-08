@@ -1,9 +1,10 @@
 <!-- apps/admin-panel/src/components/layout/NotificationBell.vue -->
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import { notificationTypeMeta } from '@/utils/labels'
 
 interface AdminNotification {
   id: string
@@ -33,6 +34,9 @@ const open = ref(false)
 const count = ref(0)
 const notifications = ref<AdminNotification[]>([])
 const loadingList = ref(false)
+// One string drives both the visible badge and the accessible name (WCAG 2.5.3: the
+// visible text must be contained in the name).
+const badgeText = computed(() => (count.value > 99 ? '۹۹+' : count.value.toLocaleString('fa-IR')))
 
 const panel = ref<HTMLElement | null>(null)
 // Horizontal correction applied to the open panel so it can never sit outside the viewport.
@@ -159,7 +163,7 @@ onUnmounted(() => {
       data-testid="notification-bell"
       type="button"
       title="اعلان‌ها"
-      :aria-label="count > 0 ? `اعلان‌ها، ${count.toLocaleString('fa-IR')} خوانده‌نشده` : 'اعلان‌ها'"
+      :aria-label="count > 0 ? `اعلان‌ها، ${badgeText} خوانده‌نشده` : 'اعلان‌ها'"
       aria-haspopup="true"
       :aria-expanded="open"
       aria-controls="notification-panel"
@@ -172,7 +176,7 @@ onUnmounted(() => {
         data-testid="unread-badge"
         class="tnum absolute -end-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-(--color-danger-strong) px-1 text-[10px] font-bold text-(--color-fill-text)"
       >
-        {{ count > 99 ? '۹۹+' : count.toLocaleString('fa-IR') }}
+        {{ badgeText }}
       </span>
     </button>
 
@@ -215,7 +219,8 @@ onUnmounted(() => {
                  panel past the clamp above. -->
             <span class="flex w-full min-w-0 items-center gap-2">
               <span v-if="!notification.readAt" class="h-1.5 w-1.5 shrink-0 rounded-full bg-(--color-accent)" />
-              <span class="min-w-0 break-words text-sm font-semibold text-(--color-text)">{{ notification.title }}</span>
+              <AppIcon :name="notificationTypeMeta(notification.type).icon" :size="14" class="shrink-0 text-(--color-text-muted)" />
+              <span class="min-w-0 break-words text-sm font-semibold text-(--color-text)">{{ notification.title || notificationTypeMeta(notification.type).label }}</span>
             </span>
             <span v-if="notification.body" class="w-full break-words text-xs leading-5 text-(--color-text-muted)">{{ notification.body }}</span>
             <span class="tnum text-[11px] text-(--color-text-muted)">{{ formatTime(notification.createdAt) }}</span>

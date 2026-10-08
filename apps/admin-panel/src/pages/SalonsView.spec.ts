@@ -184,7 +184,7 @@ describe('SalonsView', () => {
 
     expect(wrapper.find('[data-testid="load-error"]').exists()).toBe(true)
     // Never conflated with the genuine-empty-results copy.
-    expect(wrapper.text()).not.toContain('آرایشگاهی با این فیلترها یافت نشد.')
+    expect(wrapper.text()).not.toContain('سالنی با این فیلترها یافت نشد.')
 
     salonsResponse = { data: { items: [{ ...salon }], total: 1, page: 1, pageSize: 20 }, error: null }
     await wrapper.get('[data-testid="retry-load"]').trigger('click')
@@ -202,7 +202,7 @@ describe('SalonsView', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="load-error"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('آرایشگاهی با این فیلترها یافت نشد.')
+    expect(wrapper.text()).toContain('سالنی با این فیلترها یافت نشد.')
   })
 
   it('a later successful load clears a prior error state', async () => {

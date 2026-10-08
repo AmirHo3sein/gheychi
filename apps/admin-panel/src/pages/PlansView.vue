@@ -337,7 +337,7 @@ async function toggleSalonsList(plan: Plan) {
           <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
             <div class="min-w-0">
               <div class="flex flex-wrap items-center gap-2">
-                <h3 class="break-words text-base font-bold text-(--color-text)">{{ plan.name }}</h3>
+                <h2 class="break-words text-base font-bold text-(--color-text)">{{ plan.name }}</h2>
                 <StatusBadge v-if="plan.isDefault" data-testid="default-badge" label="پیش‌فرض" tone="info" />
                 <StatusBadge :label="plan.isActive ? 'فعال' : 'غیرفعال'" :tone="plan.isActive ? 'success' : 'neutral'" />
               </div>
@@ -354,7 +354,7 @@ async function toggleSalonsList(plan: Plan) {
 
           <button
             type="button"
-            class="mt-2 text-xs font-semibold text-(--color-accent) hover:underline"
+            class="mt-2 text-xs font-semibold text-(--color-accent-text) hover:underline"
             :data-testid="`toggle-salons-${plan.key}`"
             @click="toggleSalonsList(plan)"
           >

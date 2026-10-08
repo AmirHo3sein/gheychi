@@ -31,7 +31,14 @@ const EXPLICIT_BOUNDS: Record<string, { min: number; max: number }> = {
   beauty_guide_daily_limit_per_user: { min: 0, max: 1000 },
   beauty_guide_daily_limit_global: { min: 0, max: 1000000 },
   beauty_guide_retention_days: { min: 1, max: 3650 },
+  booking_max_active_per_user: { min: 1, max: 50 },
+  booking_max_active_per_salon_per_user: { min: 1, max: 20 },
+  no_show_grace_minutes: { min: 0, max: 1440 },
 }
+// Boolean feature flags have their own screen and endpoint; the numeric PATCH rejects them
+// (a flag value fails @IsNumber and, worse, a typo'd key used to brick boot). They must never
+// be listed or submitted from this form even if the list endpoint ever returns one.
+const isNumericConfigKey = (key: string) => !key.startsWith('feature_')
 function boundsFor(key: string): { min: number; max: number | null; integer: boolean } {
   if (EXPLICIT_BOUNDS[key]) return { ...EXPLICIT_BOUNDS[key], integer: true }
   return PERCENT_KEYS.has(key) ? { min: 0, max: 100, integer: false } : { min: 0, max: null, integer: false }
@@ -66,10 +73,11 @@ async function load() {
     loading.value = false
     return
   }
-  rows.value = data.map((r) => ({ ...r }))
-  originalRows.value = data.map((r) => ({ ...r }))
-  rowText.value = Object.fromEntries(data.map((r) => [r.key, String(r.value)]))
-  rowInvalid.value = Object.fromEntries(data.map((r) => [r.key, false]))
+  const numeric = data.filter((r) => isNumericConfigKey(r.key))
+  rows.value = numeric.map((r) => ({ ...r }))
+  originalRows.value = numeric.map((r) => ({ ...r }))
+  rowText.value = Object.fromEntries(numeric.map((r) => [r.key, String(r.value)]))
+  rowInvalid.value = Object.fromEntries(numeric.map((r) => [r.key, false]))
   loading.value = false
 }
 
@@ -144,7 +152,7 @@ async function confirmSave() {
   saving.value = true
   const { error } = await apiFetch('/admin/config', {
     method: 'PATCH',
-    body: { updates: rows.value.map((r) => ({ key: r.key, value: r.value })) },
+    body: { updates: rows.value.filter((r) => isNumericConfigKey(r.key)).map((r) => ({ key: r.key, value: r.value })) },
   })
   saving.value = false
   if (!error) {

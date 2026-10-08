@@ -20,7 +20,7 @@ import { userRoleLabel, userStatusLabel } from '@/utils/labels'
 const ROLE_OPTIONS = [
   { value: '', label: 'همه نقش‌ها' },
   { value: 'customer', label: 'مشتری' },
-  { value: 'provider', label: 'آرایشگاه‌دار' },
+  { value: 'provider', label: 'سالن‌دار' },
   { value: 'admin', label: 'مدیر' },
 ]
 
@@ -203,7 +203,7 @@ watch(page, load)
                 <th scope="col" class="px-5 py-3 font-semibold">نقش</th>
                 <th scope="col" class="px-5 py-3 font-semibold">تاریخ عضویت</th>
                 <th scope="col" class="px-5 py-3 font-semibold">وضعیت</th>
-                <th scope="col" class="px-5 py-3"></th>
+                <th scope="col" class="px-5 py-3"><span class="sr-only">عملیات</span></th>
               </tr>
             </thead>
             <tbody>

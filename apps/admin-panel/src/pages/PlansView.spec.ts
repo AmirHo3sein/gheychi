@@ -53,6 +53,23 @@ describe('PlansView', () => {
     expect(cards[1]!.text()).toContain('smsMonthlyQuota')
   })
 
+  it('titles each plan card with an h2 so headings never skip a level below the page h1', async () => {
+    fetchMock.mockResolvedValueOnce({ data: [freePlan(), plusPlan()], error: null })
+    const wrapper = await mountView()
+
+    expect(wrapper.findAll('h3')).toHaveLength(0)
+    expect(wrapper.findAll('[data-testid="plan-card"] h2')).toHaveLength(2)
+  })
+
+  it('uses the accessible accent-text token, not the raw peach accent, for the subscribers toggle', async () => {
+    fetchMock.mockResolvedValueOnce({ data: [freePlan()], error: null })
+    const wrapper = await mountView()
+
+    const toggle = wrapper.get('[data-testid^="toggle-salons-"]')
+    expect(toggle.classes()).toContain('text-(--color-accent-text)')
+    expect(toggle.classes()).not.toContain('text-(--color-accent)')
+  })
+
   it('shows a retryable error state when the initial load fails', async () => {
     fetchMock.mockResolvedValueOnce({ data: null, error: { status: 500, message: 'boom' } })
     const wrapper = await mountView()

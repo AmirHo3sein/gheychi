@@ -30,6 +30,7 @@ const paidBooking = {
   attributionSource: 'qr',
   priceSnapshot: 1_000_000,
   depositAmount: 200_000,
+  depositPaid: true,
   createdAt: '2026-08-30T09:00:00.000Z',
   salonId: SALON_ID,
   salonName: 'سالن نمونه',
@@ -57,6 +58,7 @@ const manualBooking = {
   status: 'pending_approval',
   confirmationMode: 'manual_approval',
   source: 'manual',
+  depositPaid: false,
   attributionSource: null,
   workerId: null,
   workerName: null,
@@ -102,7 +104,7 @@ describe('BookingsView', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="no-payment"]').text()).toBe('بدون پرداخت آنلاین')
-    expect(wrapper.text()).toContain('ثبت توسط آرایشگاه')
+    expect(wrapper.text()).toContain('ثبت توسط سالن')
     // The commission cell (last numeric column) shows an em dash for "no ledger row",
     // never a formatted zero.
     const cells = wrapper.get('[data-testid="booking-row"]').findAll('td')
@@ -167,7 +169,7 @@ describe('BookingsView', () => {
     const wrapper = mount(BookingsView, mountOptions)
     await flushPromises()
 
-    expect(wrapper.text()).toContain('رزروی با این فیلترها یافت نشد.')
+    expect(wrapper.text()).toContain('نوبتی با این فیلترها یافت نشد.')
     expect(wrapper.find('[data-testid="load-error"]').exists()).toBe(false)
   })
 
@@ -179,7 +181,7 @@ describe('BookingsView', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="load-error"]').exists()).toBe(true)
-    expect(wrapper.text()).not.toContain('رزروی با این فیلترها یافت نشد.')
+    expect(wrapper.text()).not.toContain('نوبتی با این فیلترها یافت نشد.')
 
     respondWith([paidBooking])
     await wrapper.get('[data-testid="retry-load"]').trigger('click')
@@ -208,5 +210,63 @@ describe('BookingsView', () => {
 
     expect(wrapper.text()).toContain('مشتری حضوری')
     expect(wrapper.text()).not.toContain('زهرا')
+  })
+
+  describe('deposit honesty', () => {
+    it('says the deposit was paid only when depositPaid is true', async () => {
+      respondWith([paidBooking])
+      const wrapper = mount(BookingsView, mountOptions)
+      await flushPromises()
+
+      expect(wrapper.get('[data-testid="deposit-paid"]').text()).toContain('بیعانه پرداخت‌شده')
+    })
+
+    it('shows no deposit-collected line for a booking whose deposit was never captured', async () => {
+      // depositAmount is still 200,000 here -- the priced deposit -- but no money moved.
+      respondWith([{ ...manualBooking, status: 'confirmed', depositAmount: 200_000, depositPaid: false }])
+      const wrapper = mount(BookingsView, mountOptions)
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="deposit-paid"]').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('بیعانه پرداخت‌شده')
+    })
+  })
+
+  describe('platform cancel', () => {
+    const rowFor = async (status: string) => {
+      respondWith([{ ...paidBooking, status }])
+      const wrapper = mount(BookingsView, mountOptions)
+      await flushPromises()
+      return wrapper
+    }
+
+    it.each(['pending_approval', 'pending_payment', 'confirmed'])('offers the cancel action for %s', async (status) => {
+      const wrapper = await rowFor(status)
+      expect(wrapper.find('[data-testid="cancel-booking-button"]').exists()).toBe(true)
+    })
+
+    it.each(['completed', 'cancelled_by_user', 'cancelled_by_salon', 'cancelled_by_admin', 'rejected_by_salon', 'expired', 'no_show'])(
+      'does not offer the cancel action for terminal status %s',
+      async (status) => {
+        const wrapper = await rowFor(status)
+        expect(wrapper.find('[data-testid="cancel-booking-button"]').exists()).toBe(false)
+      },
+    )
+
+    it('renders cancelled_by_admin with its own label and offers it as a status filter', async () => {
+      const wrapper = await rowFor('cancelled_by_admin')
+      expect(wrapper.get('[data-testid="booking-row"]').text()).toContain('لغو توسط پشتیبانی')
+      const statusSelect = wrapper.findAllComponents(AppSelect)[0]!
+      expect((statusSelect.props('options') as { value: string }[]).map((o) => o.value)).toContain('cancelled_by_admin')
+    })
+
+    it('reloads the list after a successful cancel', async () => {
+      const wrapper = await rowFor('confirmed')
+      fetchMock.mockClear()
+      fetchMock.mockResolvedValue({ data: { items: [], total: 0, page: 1, pageSize: 20 }, error: null })
+      wrapper.findComponent({ name: 'CancelBookingAction' }).vm.$emit('cancelled')
+      await flushPromises()
+      expect(fetchMock).toHaveBeenCalledWith('/admin/bookings?page=1&pageSize=20', { silent: true })
+    })
   })
 })
