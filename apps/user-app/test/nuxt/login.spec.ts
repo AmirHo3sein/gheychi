@@ -319,7 +319,8 @@ describe('login page - OTP expiry and resend budget', () => {
 
     const expiry = wrapper.find('[data-testid="code-expiry"]')
     expect(expiry.exists()).toBe(true)
-    expect(expiry.text()).toContain('2:00')
+    // Persian digits on screen (2026-10 redesign; formatCountdown itself stays ASCII).
+    expect(expiry.text()).toContain('۲:۰۰')
     expect(wrapper.find('[data-testid="code-expired"]').exists()).toBe(false)
   })
 

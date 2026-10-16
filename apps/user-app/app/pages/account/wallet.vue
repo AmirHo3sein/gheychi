@@ -104,7 +104,7 @@ useSeoMeta({ title: 'کیف پول — قیچی' })
 </script>
 
 <template>
-  <div class="mx-auto max-w-2xl p-4 space-y-6">
+  <div class="mx-auto max-w-2xl space-y-6 p-4 lg:max-w-3xl lg:p-6">
     <div class="flex items-center gap-2">
       <NuxtLink
         to="/profile"
@@ -135,13 +135,13 @@ useSeoMeta({ title: 'کیف پول — قیچی' })
         <BaseButton variant="secondary" data-testid="transactions-retry-button" :loading="transactionsPending" @click="refreshTransactions()">تلاش دوباره</BaseButton>
       </BaseCard>
 
-      <p
+      <EmptyState
         v-else-if="!transactions.items.length"
         data-testid="empty-state"
-        class="py-6 text-center text-sm text-(--color-text-muted)"
-      >
-        هنوز تراکنشی در کیف پول شما ثبت نشده است
-      </p>
+        pose="happy"
+        compact
+        title="هنوز تراکنشی در کیف پول شما ثبت نشده است"
+      />
 
       <div v-else class="space-y-2 transition-opacity" :class="{ 'pointer-events-none opacity-60': transactionsPending }">
         <BaseCard v-for="tx in transactions.items" :key="tx.id" data-testid="wallet-transaction">

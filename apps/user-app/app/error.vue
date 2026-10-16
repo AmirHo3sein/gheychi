@@ -10,6 +10,8 @@ const props = defineProps<{ error: NuxtError }>()
 
 const isNotFound = computed(() => props.error?.statusCode === 404)
 const isForbidden = computed(() => props.error?.statusCode === 403)
+// curious = "can't find it", thinking = "something's off on our side". Decorative only.
+const pose = computed(() => (isNotFound.value || isForbidden.value ? 'curious' : 'thinking'))
 
 const heading = computed(() => {
   if (isNotFound.value) return 'صفحه‌ای که دنبالش بودید پیدا نشد'
@@ -35,21 +37,26 @@ useSeoMeta({
 </script>
 
 <template>
-  <main class="flex min-h-dvh flex-col items-center justify-center gap-6 bg-(--color-surface) p-6 text-center text-(--color-text)">
+  <main class="flex min-h-dvh flex-col items-center justify-center gap-6 bg-(--color-surface) px-4 py-10 text-center text-(--color-text)">
     <NuxtLink to="/" class="flex items-center gap-2.5" aria-label="قیچی — صفحه اصلی" @click.prevent="go('/')">
-      <img src="/brand-icon.png" alt="" class="h-10 w-10 shrink-0 rounded-xl" />
-      <span class="text-lg font-bold">قیچی</span>
+      <img src="/brand-icon.png" alt="" width="40" height="40" class="h-10 w-10 shrink-0 rounded-xl" />
+      <span class="text-xl font-extrabold tracking-tight">قیچی</span>
     </NuxtLink>
 
-    <div class="max-w-md space-y-3" role="alert" data-testid="error-page">
-      <p v-if="isNotFound" class="tnum text-5xl font-extrabold text-(--color-accent-text)" aria-hidden="true">۴۰۴</p>
-      <h1 class="text-xl font-bold" data-testid="error-heading">{{ heading }}</h1>
-      <p class="text-sm leading-7 text-(--color-text-muted)">{{ description }}</p>
-    </div>
+    <div class="flex w-full max-w-md flex-col items-center gap-4 rounded-[20px] border border-(--color-border) bg-(--color-surface-card) px-5 py-8 shadow-(--shadow-sm)">
+      <span class="flex h-28 w-28 items-center justify-center overflow-hidden rounded-3xl bg-(--color-mascot-tile)" data-testid="error-mascot">
+        <img :src="`/mascot/${pose}.webp`" alt="" width="112" height="112" class="h-full w-full object-contain" />
+      </span>
+      <div class="space-y-2" role="alert" data-testid="error-page">
+        <p v-if="isNotFound" class="tnum text-4xl font-extrabold text-(--color-accent-text)" aria-hidden="true">۴۰۴</p>
+        <h1 class="text-xl font-bold" data-testid="error-heading">{{ heading }}</h1>
+        <p class="text-sm leading-7 text-(--color-text-muted)">{{ description }}</p>
+      </div>
 
-    <div class="flex w-full max-w-xs flex-col gap-2">
-      <BaseButton block size="lg" data-testid="error-home" @click="go('/')">بازگشت به خانه</BaseButton>
-      <BaseButton variant="secondary" block data-testid="error-salons" @click="go('/salons')">سالن‌های زیبایی</BaseButton>
+      <div class="flex w-full max-w-xs flex-col gap-2 pt-2">
+        <BaseButton block size="lg" data-testid="error-home" @click="go('/')">بازگشت به خانه</BaseButton>
+        <BaseButton variant="secondary" block data-testid="error-salons" @click="go('/salons')">سالن‌های زیبایی</BaseButton>
+      </div>
     </div>
   </main>
 </template>

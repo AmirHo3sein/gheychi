@@ -51,7 +51,7 @@ const tabs = computed<Tab[]>(() => {
           :to="tab.to"
           :aria-current="tab.match(route.path) ? 'page' : undefined"
           class="flex min-h-14 flex-col items-center justify-center gap-0.5 px-1 text-xs font-medium transition-colors"
-          :class="tab.match(route.path) ? 'text-(--color-accent-text)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
+          :class="tab.match(route.path) ? 'font-semibold text-(--color-accent-text)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
         >
           <span
             class="flex h-7 w-12 items-center justify-center rounded-full transition-colors"

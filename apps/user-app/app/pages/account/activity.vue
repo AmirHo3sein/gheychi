@@ -93,9 +93,9 @@ const REVIEW_STATUS_LABELS: Record<ReviewDetail['status'], string> = {
 }
 const TYPE_META: Record<ActivityType, { icon: IconName; iconClass: string }> = {
   booking: { icon: 'calendar', iconClass: 'bg-(--color-accent-soft) text-(--color-text)' },
-  wallet_transaction: { icon: 'wallet', iconClass: 'bg-(--color-success)/10 text-(--color-success)' },
+  wallet_transaction: { icon: 'wallet', iconClass: 'bg-(--color-success-soft) text-(--color-success-text)' },
   review: { icon: 'star', iconClass: 'bg-(--color-accent-soft) text-(--color-text)' },
-  referral_reward: { icon: 'gift', iconClass: 'bg-(--color-success)/10 text-(--color-success)' },
+  referral_reward: { icon: 'gift', iconClass: 'bg-(--color-success-soft) text-(--color-success-text)' },
 }
 
 const items = ref<ActivityItem[]>([])
@@ -156,7 +156,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="mx-auto max-w-2xl p-4 space-y-6">
+  <div class="mx-auto max-w-2xl space-y-6 p-4 lg:max-w-3xl lg:p-6">
     <div class="flex items-center gap-2">
       <NuxtLink
         to="/profile"
@@ -178,9 +178,13 @@ onMounted(load)
       <BaseButton variant="secondary" data-testid="activity-retry-button" @click="load">تلاش دوباره</BaseButton>
     </BaseCard>
 
-    <p v-else-if="!items.length" data-testid="activity-empty-state" class="py-6 text-center text-sm text-(--color-text-muted)">
-      هنوز فعالیتی ثبت نشده است
-    </p>
+    <EmptyState
+      v-else-if="!items.length"
+      data-testid="activity-empty-state"
+      pose="calendar"
+      title="هنوز فعالیتی ثبت نشده است"
+      description="نوبت‌ها، تراکنش‌ها، نظرات و پاداش‌هایت اینجا جمع می‌شوند."
+    />
 
     <div v-else class="space-y-2">
       <BaseCard v-for="item in items" :key="`${item.type}-${item.id}`" data-testid="activity-item" class="flex items-start gap-3">

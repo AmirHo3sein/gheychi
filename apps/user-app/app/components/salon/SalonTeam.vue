@@ -1,5 +1,7 @@
 <!-- apps/user-app/app/components/salon/SalonTeam.vue -->
 <script setup lang="ts">
+import { workerDisplayLabels } from '../../utils/worker-label'
+
 interface WorkerItem {
   id: string
   name: string
@@ -7,7 +9,10 @@ interface WorkerItem {
   ratingCount: number
 }
 
-defineProps<{ workers: WorkerItem[] }>()
+const props = defineProps<{ workers: WorkerItem[] }>()
+
+// Owner-typed placeholders («عضو ۱») become «متخصص سالن» -- see utils/worker-label.ts.
+const labels = computed(() => workerDisplayLabels(props.workers))
 </script>
 
 <template>
@@ -16,7 +21,7 @@ defineProps<{ workers: WorkerItem[] }>()
       <BaseIcon name="user" :size="17" class="text-(--color-text-muted)" />
       تیم سالن
     </h2>
-    <ul class="space-y-2">
+    <ul class="grid gap-2 sm:grid-cols-2">
       <li
         v-for="worker in workers"
         :key="worker.id"
@@ -30,14 +35,15 @@ defineProps<{ workers: WorkerItem[] }>()
         </span>
         <!-- A worker name comes from the salon owner and can be long; the rating is short
              and fixed-width, so the name is the side that gives (min-w-0 + break-words)
-             and the rating is the side that stays whole (shrink-0 + nowrap). Without the
-             gap the two used to be able to touch at 320px. -->
-        <span class="min-w-0 flex-1 break-words">{{ worker.name }}</span>
+             and the rating is the side that stays whole (shrink-0 + nowrap). -->
+        <span class="min-w-0 flex-1 break-words text-(--color-text)" data-testid="salon-team-member-name">{{ labels[worker.id] }}</span>
+        <!-- Only a real rating is shown. «بدون امتیاز» next to a person read as a verdict on
+             them rather than "nobody has rated yet", so a worker without ratings simply has
+             no rating line. -->
         <span v-if="worker.ratingCount" class="flex shrink-0 items-center gap-1 whitespace-nowrap text-(--color-text-muted)">
-          <BaseIcon name="star" :size="14" />
+          <BaseIcon name="star" :size="14" class="text-(--color-premium)" />
           {{ Number(worker.ratingAvg).toLocaleString('fa-IR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }} ({{ worker.ratingCount.toLocaleString('fa-IR') }})
         </span>
-        <span v-else class="shrink-0 text-(--color-text-muted)">بدون امتیاز</span>
       </li>
     </ul>
   </section>

@@ -9,87 +9,112 @@
 @theme static {
   --font-sans: 'Vazirmatn Variable', ui-sans-serif, system-ui, sans-serif;
 
-  /* Light mode -- exact palette handed down from the brand's design-system spec, same
-     derivation as provider-panel/admin-panel's identical token set (see provider-panel's
-     main.css for the full WCAG-contrast derivation notes and the --color-fill-text
-     rationale: most of the spec's own hex values are pastel and fail as a fill under white
-     text, so those fills keep the spec's exact hex and the text drawn on them switches to
-     dark graphite instead). */
-  --color-surface: #FFF8F5;
+  /* Light mode -- the canonical قیچی brand sheet (blush #F7E6E2, peach #FFC0B6, gold #D4AF37,
+     silver #BDBDBD, charcoal #2D2D2D), with derived text shades wherever a brand hex fails
+     WCAG as text. Same values as provider-panel/admin-panel. Ratios below are against white
+     unless stated. The pastel brand colours are FILLS only: text drawn on peach/gold is always
+     --color-fill-text (charcoal, 8.83 / 6.55), never white (1.56 on peach). */
+  --color-surface: #FBF5F3;          /* page: blush tint, charcoal 12.76 */
   --color-surface-card: #FFFFFF;
-  --color-surface-subtle: #FFF3EF;
-  --color-text: #2D2D2D;
-  /* #666666, not the spec's literal #777777 "Secondary": that only reaches 4.48:1
-     on white -- failing AA by a hair -- and drops to 3.67:1 on --color-border-soft,
-     which is where muted text actually sits (ghost-button hover, table headers).
-     This clears 4.5:1 on every light surface in the system. */
-  --color-text-muted: #666666;
-  --color-border: #E2D7D3;
-  --color-accent: #FFB6A3;
-  --color-accent-strong: #FFB6A3;
-  --color-accent-deep: #F59C86;
-  --color-accent-pressed: #E98871;
-  --color-accent-soft: #FFF1EC;
-  --color-accent-text: #8F4335;
+  --color-surface-subtle: #F7E6E2;   /* brand blush: chips, section fills, placeholders */
+  --color-text: #2D2D2D;             /* 13.77 */
+  --color-text-muted: #5E5552;       /* 7.25 white / 6.72 page / 6.00 blush */
+  /* Two borders: a soft decorative hairline for cards/separators, and a control border that
+     clears WCAG 1.4.11 (3:1) for anything whose outline IS the affordance (inputs, selects). */
+  --color-border: #EADBD6;
+  --color-border-soft: #EADBD6;
+  --color-border-control: #8C8280;   /* 3.74 white / 3.46 page */
+  --color-accent: #FFC0B6;           /* brand peach -- fill only */
+  --color-accent-strong: #FFC0B6;
+  --color-accent-deep: #FFAD9F;      /* hover, charcoal 7.69 */
+  --color-accent-pressed: #FF9F90;
+  --color-accent-soft: #FFE3DD;      /* tinted backgrounds, active nav pill */
+  --color-accent-text: #A8473A;      /* links, icon accents, focus ring: 5.79 white / 4.79 blush */
+  --color-accent-text-strong: #94392D; /* small accent text sitting on blush: 6.03 */
   --color-fill-text: #2D2D2D;
-  /* "Featured salon" accent -- mapped to the mascot's gold bowtie detail (#D4AF37, the
-     spec's own "Premium/Rewards" color) rather than a shade of the primary coral, so a
-     "ویژه" badge reads as a distinct premium tier next to accent-colored primary actions.
-     Text drawn on top uses --color-fill-text (graphite, 6.55:1), same as every other fill. */
+  /* Gold is the premium/featured tier (the mascot's bowtie). Fill with charcoal text, or the
+     darker --color-gold-text when gold has to be the text colour (#D4AF37 as text is 2.10). */
+  --color-gold: #D4AF37;
+  --color-gold-text: #7A5F0E;        /* 6.05 white / 5.61 page */
   --color-ad: #D4AF37;
   --color-ad-strong: #D4AF37;
-  /* Danger stays crimson, not coral -- kept clearly distinct from the new peach accent so a
-     destructive action never reads as just a duller "primary" button. */
-  /* Darkened a shade off #DA2525 so danger copy also clears AA on its own tinted
-     backdrop (--color-danger-soft / --color-accent-soft), not just on white. */
-  --color-danger: #D12424;
-  --color-danger-strong: #E76F6F;
-  --color-danger-soft: #FCEAEA;
-  --color-success: #1E9E6B;
-
   --color-premium: #D4AF37;
+  /* Decorative dividers only -- 1.88:1, never text and never an input border. */
+  --color-silver: #BDBDBD;
+  /* Danger stays crimson, not coral, so a destructive action never reads as a duller primary. */
+  --color-danger: #B42318;           /* 6.57 */
+  --color-danger-text: #B42318;
+  --color-danger-strong: #E76F6F;    /* fill, charcoal text */
+  --color-danger-soft: #FCEAEA;
+  /* Status text tokens, each AA on white and on its own -soft tint. --color-success was a
+     3.41:1 green that failed as the "completed" badge's text; it now IS the text shade. */
+  --color-success: #287347;          /* 5.78 white / 5.35 page / 5.02 on success-soft */
+  --color-success-text: #287347;
+  --color-success-soft: #E6F2EA;
+  --color-warning-text: #8A5A00;     /* 5.93 */
+  --color-warning-soft: #FBF0DA;
+  --color-info-text: #1F5F99;        /* 6.66 */
+  --color-info-soft: #E4EEF8;
+  /* The /mascot/*.webp pose tiles are cut on exactly this colour; their container must match
+     so the tile edges disappear. Same value in dark mode -- it is an image background. */
+  --color-mascot-tile: #FBF6F2;
+
   --color-wallet: #5EC9A3;
   --color-ai: #A78BFA;
   --color-reports: #6FA8FF;
 
-  /* Shadows are neutral graphite per the spec (not brand-hue-tinted) -- rgb(45,45,45) is
-     literally #2D2D2D, hence hue 0 / sat 0% / light 18%. */
+  /* Warm charcoal shadows (rgb 45,45,45 = #2D2D2D): subtle for cards, stronger only for
+     overlays. */
   --shadow-color: 0 0% 18%;
-  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.04), 0 1px 1px hsl(var(--shadow-color) / 0.03);
-  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.08), 0 2px 6px -2px hsl(var(--shadow-color) / 0.06);
-  --shadow-lg: 0 24px 48px -16px hsl(var(--shadow-color) / 0.12), 0 8px 16px -4px hsl(var(--shadow-color) / 0.08);
+  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.06), 0 1px 3px hsl(var(--shadow-color) / 0.04);
+  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.10), 0 2px 6px -2px hsl(var(--shadow-color) / 0.06);
+  --shadow-lg: 0 24px 48px -16px hsl(var(--shadow-color) / 0.14), 0 8px 16px -4px hsl(var(--shadow-color) / 0.08);
 }
 
-/* Dark mode -- warm charcoal, not an inverted black-and-white, same derivation as
-   provider-panel/admin-panel's identical token set. --color-fill-text isn't redefined here
-   -- every fill it sits on (accent, danger-strong) is still light/pastel in dark mode too
-   ("glow slightly", not invert), so the light mode value (constant graphite) still applies. */
+/* Dark mode -- warm charcoal, not an inverted black-and-white. Peach and gold are light
+   enough to work directly as text here (9.60 / 7.12 on the card colour), so the -text tokens
+   collapse onto the brand hexes. --color-fill-text stays charcoal: every fill it sits on
+   (peach, gold, danger-strong) is still pastel in dark mode. */
 .dark {
-  --color-surface: #171616;
-  --color-surface-card: #262323;
-  --color-surface-subtle: #1F1D1D;
-  --color-text: #F7F4F2;
-  --color-text-muted: #B8B0AB;
-  --color-border: #494444;
-  --color-accent: #FFB6A3;
-  --color-accent-strong: #FFB6A3;
-  --color-accent-deep: #FF9F87;
-  --color-accent-pressed: #FF8D72;
-  --color-accent-soft: #3F2018;
-  --color-accent-text: #FFB6A3;
+  --color-surface: #1F1C1B;
+  --color-surface-card: #2A2625;
+  --color-surface-subtle: #342F2D;
+  --color-text: #F3ECEA;             /* 14.5 */
+  --color-text-muted: #B8ADA9;       /* 6.84 on card */
+  --color-border: #433C3A;
+  --color-border-soft: #3A3432;
+  --color-border-control: #7A6F6C;
+  --color-accent: #FFC0B6;
+  --color-accent-strong: #FFC0B6;
+  --color-accent-deep: #FFAD9F;
+  --color-accent-pressed: #FF9F90;
+  --color-accent-soft: #48302B;
+  --color-accent-text: #FFC0B6;
+  --color-accent-text-strong: #FFC0B6;
+  --color-gold: #D4AF37;
+  --color-gold-text: #D4AF37;
   --color-ad: #D4AF37;
   --color-ad-strong: #D4AF37;
-  --color-danger: #E66B6B;
+  --color-premium: #D4AF37;
+  --color-silver: #5C5553;
+  --color-danger: #F0877C;
+  --color-danger-text: #F0877C;
   --color-danger-strong: #E76F6F;
   --color-danger-soft: #3A2229;
-  --color-success: #3FC98A;
+  --color-success: #6BCB94;
+  --color-success-text: #6BCB94;
+  --color-success-soft: #1F3328;
+  --color-warning-text: #E2B656;
+  --color-warning-soft: #3A2F17;
+  --color-info-text: #8EBDEE;
+  --color-info-soft: #1D2B3A;
+  --color-mascot-tile: #FBF6F2;
 
-  --color-premium: #D4AF37;
   --color-wallet: #5EC9A3;
   --color-ai: #A78BFA;
   --color-reports: #6FA8FF;
 
-  /* Pure black per the spec's dark shadows (rgba(0,0,0,...)), not graphite-tinted. */
+  /* Pure black for dark shadows, not graphite-tinted. */
   --shadow-color: 0 0% 0%;
   --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.35), 0 1px 1px hsl(var(--shadow-color) / 0.25);
   --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.45), 0 2px 6px -2px hsl(var(--shadow-color) / 0.35);
@@ -115,14 +140,13 @@ html, body {
 
 /* vue-multiselect brand + RTL overrides -- identical to provider-panel/admin-panel's
    .app-select block, kept as a separate copy per the cross-app isolation convention.
-   --color-border-soft doesn't exist in this app's token set (see color list above), so
-   selected/hover option rows use --color-surface-subtle instead -- the equivalent
-   "recessed fill" token here. */
+   Selected option rows use --color-surface-subtle (the blush "recessed fill"); the field's own
+   outline is --color-border-control, since that outline is what identifies it as a field. */
 .app-select .multiselect__tags {
   min-height: 44px;
   padding: 0.6rem 0.75rem 0.6rem 2.5rem;
   border-radius: 0.75rem;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-control);
   background: var(--color-surface-card);
   font-size: 0.9rem;
   text-align: right;
@@ -277,10 +301,6 @@ html, body {
   background-size: 200% 100%;
   animation: skeleton-sheen 1.6s linear infinite;
 }
-
-/* Route change: a short opacity fade only. mode="out-in" means the old page leaves before the
-   new one mounts (no two layouts in the DOM at once), so each leg is kept to 90ms -- the
-   transition must never feel like waiting. */
 
 /* Honour the OS "reduce motion" setting everywhere: no transforms/animations/transitions
    (state changes stay instant), no smooth scrolling. Spinners are exempt -- a frozen spinner

@@ -17,12 +17,15 @@ withDefaults(
     :type="type"
     :disabled="disabled || loading"
     :aria-busy="loading || disabled"
-    class="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl font-semibold transition-all duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100"
+    class="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl font-semibold transition-[background-color,box-shadow,transform] duration-150 ease-out active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100"
     :class="[
       block ? 'w-full' : '',
       size === 'lg' ? 'px-5 py-3.5 text-base' : 'px-4 py-2.5 text-sm',
-      variant === 'primary' && 'bg-(--color-accent-strong) text-(--color-fill-text) shadow-(--shadow-sm) hover:bg-(--color-accent-deep) hover:shadow-(--shadow-md) active:bg-(--color-accent-pressed)',
-      variant === 'secondary' && 'border border-(--color-border) bg-(--color-surface-subtle) text-(--color-text) hover:bg-(--color-border)',
+      // The one primary style across the app: brand peach with charcoal text (8.83:1; white
+      // on peach is 1.56 and never used). Focus is the global :focus-visible ring in
+      // --color-accent-text, which a pastel fill alone could not provide.
+      variant === 'primary' && 'bg-(--color-accent) text-(--color-fill-text) shadow-(--shadow-sm) hover:bg-(--color-accent-deep) active:bg-(--color-accent-pressed)',
+      variant === 'secondary' && 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text) hover:bg-(--color-surface-subtle)',
       variant === 'ghost' && 'bg-transparent text-(--color-text-muted) hover:bg-(--color-surface-subtle) hover:text-(--color-text)',
       variant === 'danger' && 'bg-(--color-danger-strong) text-(--color-fill-text) hover:opacity-90',
     ]"

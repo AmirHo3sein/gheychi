@@ -58,7 +58,9 @@ test('inspiration photo → beauty guide → real service → existing booking f
   await page.waitForURL(new RegExp(`/booking/e2e-test-salon/[0-9a-f-]{36}\\?beautyGuideId=${guideId}`), { timeout: 30_000 })
 
   await page.getByTestId('slot-button').first().click()
-  await page.getByTestId('confirm-booking-button').click()
+  // One submit per viewport: the confirm card's button on phones, the sticky summary's on
+  // desktop -- click whichever the user actually sees, by its accessible name.
+  await page.getByRole('button', { name: 'پرداخت و رزرو' }).click()
   // prepare-db.cjs turns online payment on; MockPaymentGateway redirects straight back with Status=OK.
   await expect(page).toHaveURL(/\/booking\/callback\?status=success/, { timeout: 30_000 })
   await expect(page.getByText('پرداخت با موفقیت انجام شد')).toBeVisible({ timeout: 30_000 })

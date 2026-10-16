@@ -10,7 +10,13 @@ const props = withDefaults(defineProps<{
   headingLevel?: 2 | 3
   /** The first card on a page is usually the largest paint: load its photo eagerly at high priority instead of lazily. */
   priority?: boolean
-}>(), { headingLevel: 2, priority: false })
+  /**
+   * Show `distanceKm`. Only when the search was centred on the customer's real position: the
+   * API always measures from the query's lat/lng, which is otherwise a city centroid, and
+   * «۰٫۰ کیلومتر» from a centroid tells a customer nothing about how far the salon is from them.
+   */
+  showDistance?: boolean
+}>(), { headingLevel: 2, priority: false, showDistance: false })
 
 // Caps at 2 visible badges + a "+N" overflow chip -- a salon can carry many tags (Part 1's
 // multi-category support) and the card is a fixed-height scanning unit in a grid, so more
@@ -74,8 +80,10 @@ const hiddenCategoryCount = computed(() => Math.max(0, props.salon.categories.le
       <p class="mt-0.5 flex items-center gap-1 text-xs text-(--color-text-muted)">
         <BaseIcon name="map-pin" :size="12" />
         <span class="min-w-0 truncate">{{ salon.city }}</span>
-        <span aria-hidden="true">·</span>
-        <span class="whitespace-nowrap">{{ salon.distanceKm.toLocaleString('fa-IR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }} کیلومتر</span>
+        <template v-if="showDistance">
+          <span aria-hidden="true">·</span>
+          <span data-testid="salon-card-distance" class="whitespace-nowrap">{{ salon.distanceKm.toLocaleString('fa-IR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }} کیلومتر</span>
+        </template>
       </p>
 
       <div v-if="salon.categories.length" class="mt-2 flex flex-wrap items-center gap-1">

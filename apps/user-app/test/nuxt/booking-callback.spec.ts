@@ -19,8 +19,12 @@ describe('booking callback page', () => {
     const wrapper = await mountWithQuery({ status: 'success', bookingId: 'b1' })
 
     expect(wrapper.find('[data-testid="callback-title"]').text()).toBe('پرداخت با موفقیت انجام شد')
-    expect(wrapper.html()).not.toMatch(/[\u{1F300}-\u{1FAFF}✀-➿]/u) // no emoji, icons only
-    expect(wrapper.find('svg').exists()).toBe(true)
+    expect(wrapper.html()).not.toMatch(/[\u{1F300}-\u{1FAFF}✀-➿]/u) // no emoji
+    // Intentional (wave 2): the success outcome -- the one celebratory moment -- shows the
+    // «done» mascot tile instead of a check icon; decorative, so alt="".
+    const mascot = wrapper.get('[data-testid="callback-success-mascot"] img')
+    expect(mascot.attributes('src')).toBe('/mascot/done.webp')
+    expect(mascot.attributes('alt')).toBe('')
 
     const viewBookingLink = wrapper.find('[data-testid="view-booking-button"]')
     expect(viewBookingLink.exists()).toBe(true)

@@ -28,7 +28,7 @@ useSeoMeta({ title: 'سالن‌های ذخیره‌شده — قیچی' })
 </script>
 
 <template>
-  <div class="mx-auto max-w-2xl p-4 space-y-6">
+  <div class="mx-auto max-w-2xl space-y-6 p-4 lg:max-w-4xl lg:p-6">
     <div class="flex items-center gap-2">
       <NuxtLink
         to="/profile"
@@ -48,15 +48,17 @@ useSeoMeta({ title: 'سالن‌های ذخیره‌شده — قیچی' })
       <p class="text-sm text-(--color-text-muted)">سالن‌های ذخیره‌شده بارگذاری نشد.</p>
       <BaseButton variant="secondary" data-testid="favorites-retry-button" :loading="pending" @click="refresh()">تلاش دوباره</BaseButton>
     </BaseCard>
-    <p
+    <EmptyState
       v-else-if="!favorites?.length"
       data-testid="empty-state"
-      class="py-6 text-center text-sm text-(--color-text-muted)"
-    >
-      هنوز سالنی ذخیره نکرده‌اید. با زدن آیکون قلب روی صفحه هر سالن، آن را اینجا نگه دارید.
-    </p>
+      pose="happy"
+      title="هنوز سالنی ذخیره نکرده‌اید."
+      description="با زدن آیکون قلب روی صفحه هر سالن، آن را اینجا نگه دارید."
+      action-to="/salons"
+      action-label="مرور سالن‌ها"
+    />
 
-    <div v-else class="space-y-3 transition-opacity" :class="{ 'pointer-events-none opacity-60': pending }">
+    <div v-else class="grid gap-3 transition-opacity sm:grid-cols-2" :class="{ 'pointer-events-none opacity-60': pending }">
       <NuxtLink
         v-for="salon in favorites"
         :key="salon.id"

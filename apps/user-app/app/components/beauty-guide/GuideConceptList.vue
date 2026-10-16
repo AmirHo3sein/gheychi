@@ -41,8 +41,8 @@ function submitPicker() {
 <template>
   <section class="space-y-3" aria-labelledby="guide-concepts-title">
     <div class="flex items-center gap-2">
-      <BaseIcon name="sparkles" :size="18" class="text-(--color-ai)" />
-      <h2 id="guide-concepts-title" class="font-bold text-(--color-text)">چه چیزی تشخیص دادیم</h2>
+      <BaseIcon name="sparkles" :size="18" class="text-(--color-accent-text)" />
+      <h3 id="guide-concepts-title" class="font-bold text-(--color-text)">چه چیزی تشخیص دادیم</h3>
     </div>
 
     <p v-if="!active.length" data-testid="concepts-empty" class="text-sm text-(--color-text-muted)">
@@ -59,7 +59,8 @@ function submitPicker() {
       >
         <div class="flex items-start justify-between gap-2">
           <div class="min-w-0">
-            <p class="text-xs font-semibold text-(--color-ai)" data-testid="concept-confidence">{{ confidenceLabel(concept) }}</p>
+            <!-- accent-text, not --color-ai: the violet is 2.7:1 on white, below AA for 12px text. -->
+            <p class="text-xs font-semibold text-(--color-accent-text)" data-testid="concept-confidence">{{ confidenceLabel(concept) }}</p>
             <p class="break-words font-bold text-(--color-text)">{{ conceptLabel(concept) }}</p>
           </div>
           <button

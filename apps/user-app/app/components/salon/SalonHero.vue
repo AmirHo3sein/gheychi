@@ -33,6 +33,9 @@ const heroPhotos = computed<Photo[]>(() => {
   return []
 })
 
+// Desktop mosaic only: the two photos after the cover (hidden below lg).
+const sidePhotos = computed(() => heroPhotos.value.slice(1, 3))
+
 const activeIndex = ref<number | null>(null)
 const lightboxOpen = computed(() => activeIndex.value !== null)
 
@@ -77,24 +80,60 @@ const { titleId } = useDialog(dialogRoot as unknown as Ref<HTMLElement | null>, 
 
 <template>
   <div class="relative">
-    <button
+    <!-- Phones: one hero photo, unchanged. Desktop (lg): a compact mosaic -- the cover plus up
+         to two more photos stacked beside it -- at a shorter height than the old 26rem single
+         image, so the salon's name and the booking aside are visible without scrolling and the
+         page leads with more of the salon than one cropped photo. Every tile opens the same
+         lightbox at its own index. -->
+    <div
       v-if="heroPhotos.length"
-      type="button"
-      data-testid="salon-hero-photo"
-      class="block h-64 w-full overflow-hidden rounded-2xl sm:h-80 lg:h-[26rem]"
-      :aria-label="`مشاهده گالری تصاویر ${salonName}`"
-      @click="openLightbox(0)"
+      class="lg:grid lg:h-[22rem] lg:gap-2"
+      :class="sidePhotos.length ? 'lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]' : ''"
     >
-      <SafeImage
-        :src="heroPhotos[0]!.url"
-        width="1024"
-        height="416"
-        fetchpriority="high"
-        class="h-full w-full object-cover"
-        :alt="`تصویر اصلی ${salonName}`"
-      />
-    </button>
-    <div v-else data-testid="salon-hero-photo" class="h-64 w-full sm:h-80 lg:h-[26rem]">
+      <button
+        type="button"
+        data-testid="salon-hero-photo"
+        class="block h-64 w-full overflow-hidden rounded-2xl sm:h-80 lg:h-full"
+        :aria-label="`مشاهده گالری تصاویر ${salonName}`"
+        @click="openLightbox(0)"
+      >
+        <SafeImage
+          :src="heroPhotos[0]!.url"
+          width="1024"
+          height="416"
+          fetchpriority="high"
+          class="h-full w-full object-cover"
+          :alt="`تصویر اصلی ${salonName}`"
+        />
+      </button>
+      <div
+        v-if="sidePhotos.length"
+        class="hidden min-h-0 gap-2 lg:grid"
+        :class="sidePhotos.length > 1 ? 'grid-rows-2' : ''"
+      >
+        <button
+          v-for="(photo, i) in sidePhotos"
+          :key="photo.id"
+          type="button"
+          data-testid="salon-hero-side-photo"
+          class="block min-h-0 overflow-hidden rounded-2xl"
+          :aria-label="`مشاهده تصویر ${(i + 2).toLocaleString('fa-IR')} از گالری ${salonName}`"
+          @click="openLightbox(i + 1)"
+        >
+          <SafeImage
+            :src="photo.url"
+            width="480"
+            height="340"
+            loading="lazy"
+            class="h-full w-full object-cover transition-transform duration-200 hover:scale-[1.02] motion-reduce:transition-none motion-reduce:hover:scale-100"
+            alt=""
+          />
+        </button>
+      </div>
+    </div>
+    <!-- No photo at all: a shorter branded band on wider screens -- a 22rem empty tile above the
+         fold says nothing the salon name below doesn't. -->
+    <div v-else data-testid="salon-hero-photo" class="h-48 w-full sm:h-56">
       <SalonImagePlaceholder :icon-size="40" />
     </div>
 
@@ -131,7 +170,7 @@ const { titleId } = useDialog(dialogRoot as unknown as Ref<HTMLElement | null>, 
       @keydown="onKeydown"
       @click.self="closeLightbox"
     >
-      <div ref="dialogRoot" role="dialog" aria-modal="true" :aria-labelledby="titleId" tabindex="-1" class="m-auto w-full max-w-lg outline-none">
+      <div ref="dialogRoot" role="dialog" aria-modal="true" :aria-labelledby="titleId" tabindex="-1" class="m-auto w-full max-w-lg outline-none lg:max-w-3xl">
         <h2 :id="titleId" class="sr-only">گالری تصاویر {{ salonName }}</h2>
         <div class="relative">
           <SafeImage

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { SessionUser } from '~/stores/session'
-import { toEnglishDigits } from '../utils/digits'
+import { toEnglishDigits, toPersianDigits } from '../utils/digits'
 import { GENDER_OPTIONS } from '../utils/gender-map'
 import { sanitizeRedirect } from '../utils/safe-redirect'
 
@@ -213,10 +213,15 @@ const STEP_HINT: Record<typeof step.value, string> = {
 </script>
 
 <template>
-  <!-- One centred composition, identical in structure across all three apps (provider-panel
-       and admin-panel carry the same markup with their own copy) -- login is the one screen
-       every product shares, so it is the one that should read the same. -->
-  <main class="login-bg relative flex min-h-dvh items-center justify-center p-6">
+  <!-- One composition at every width: the form card is always the anchor. On phones the mascot
+       stands above it, tucked behind the card's top edge; from `lg` the card itself splits in
+       two, with the mascot and the brand promise on a blush panel at the card's end side. The
+       split lives INSIDE one bounded card (max-w-4xl), not across the viewport -- an earlier
+       full-screen 50/50 layout left two large empty halves around a small form.
+       No fixed heights anywhere: min-h-dvh + a growing column means that when a phone
+       keyboard shrinks the viewport, the page scrolls instead of trapping the form, and a
+       max-height query shrinks the mascot so the field stays in view. -->
+  <main class="login-bg relative flex min-h-dvh items-center justify-center px-4 py-6 sm:p-6">
     <!-- Decoration lives in its own absolutely-positioned, clipped layer: putting
          `overflow-hidden` on the scrolling parent instead would clip the card itself on a
          short viewport, where this app's tallest step (profile) needs to scroll. -->
@@ -225,25 +230,53 @@ const STEP_HINT: Record<typeof step.value, string> = {
       <div class="mesh-b absolute -bottom-32 -end-24 h-96 w-96 rounded-full bg-(--color-accent-deep) opacity-30 blur-3xl" />
     </div>
 
-    <div class="relative w-full max-w-md">
-      <!-- The mascot stands BEHIND the card: it is earlier in the DOM and unpositioned, while
-           the card below is `relative z-10` with an opaque background, so the negative margin
-           tucks the character's legs neatly behind the card's top edge instead of leaving it
-           floating in its own empty band. -->
-      <div class="login-stagger relative -mb-20 flex justify-center" style="animation-delay: 0s">
-        <div class="login-glow pointer-events-none absolute bottom-4 h-40 w-56 opacity-70" aria-hidden="true" />
-        <img src="/mascot-full.webp" alt="" width="267" height="480" fetchpriority="high" decoding="async" class="relative h-60 w-auto" />
+    <div class="relative w-full max-w-md lg:grid lg:max-w-4xl lg:grid-cols-2 lg:overflow-hidden lg:rounded-[20px] lg:border lg:border-(--color-border) lg:bg-(--color-surface-card) lg:shadow-(--shadow-lg)">
+      <!-- Brand side. Decorative for assistive tech except the wordmark, which the form side
+           repeats as its own heading context anyway. Phones: just the mascot, behind the card
+           (earlier in the DOM and unpositioned, while the card is `relative z-10` and opaque).
+           Desktop: a full blush panel at the end (left) side. -->
+      <div
+        class="login-stagger relative -mb-16 flex justify-center [@media(max-height:620px)]:-mb-8 lg:order-last lg:mb-0 lg:flex-col lg:items-center lg:justify-center lg:gap-6 lg:bg-(--color-surface-subtle) lg:px-10 lg:py-12"
+        style="animation-delay: 0s"
+      >
+        <div class="login-glow pointer-events-none absolute bottom-4 h-40 w-56 opacity-70 lg:bottom-auto lg:top-1/4 lg:h-72 lg:w-72" aria-hidden="true" />
+        <img
+          src="/mascot-full.webp"
+          alt=""
+          width="267"
+          height="480"
+          fetchpriority="high"
+          decoding="async"
+          class="relative h-48 w-auto [@media(max-height:620px)]:h-28 lg:h-80 lg:[@media(max-height:620px)]:h-56"
+        />
+        <div class="relative hidden text-center lg:block">
+          <p class="text-3xl font-extrabold tracking-tight text-(--color-text)">قیچی</p>
+          <p class="mt-2 text-sm leading-7 text-(--color-text-muted)">نوبت سالن زیبایی‌ات را آنلاین و بی‌دردسر رزرو کن.</p>
+          <ul class="mt-5 space-y-2 text-start text-sm text-(--color-text)">
+            <li class="flex items-center gap-2">
+              <BaseIcon name="map-pin" :size="16" class="text-(--color-accent-text)" />
+              سالن‌های نزدیک تو، با نظر مشتریان واقعی
+            </li>
+            <li class="flex items-center gap-2">
+              <BaseIcon name="calendar" :size="16" class="text-(--color-accent-text)" />
+              زمان خالی را ببین و همان‌جا رزرو کن
+            </li>
+            <li class="flex items-center gap-2">
+              <BaseIcon name="clock" :size="16" class="text-(--color-accent-text)" />
+              یادآوری پیش از نوبت با پیامک و اعلان
+            </li>
+          </ul>
+        </div>
       </div>
 
-      <div class="login-stagger relative z-10" style="animation-delay: 0.1s">
-        <BaseCard padding="lg">
-          <!-- Inside the card, matching the two panels -- above it, this row would land in
-               the band the mascot overlaps and collide with the character. A link, unlike
-               the panels': this is the public site, so the mark doubles as the way back to
-               the storefront. -->
-          <NuxtLink to="/" class="mb-5 flex items-center justify-center gap-2.5">
-            <img src="/brand-icon.png" alt="" class="h-9 w-9 shrink-0 rounded-xl" />
-            <span class="text-base font-bold">قیچی</span>
+      <div class="login-stagger relative z-10 lg:flex lg:flex-col lg:justify-center" style="animation-delay: 0.1s">
+        <div class="rounded-[20px] border border-(--color-border) bg-(--color-surface-card) p-6 shadow-(--shadow-md) sm:p-8 lg:rounded-none lg:border-0 lg:p-10 lg:shadow-none">
+          <!-- A link, unlike the panels': this is the public site, so the mark doubles as the
+               way back to the storefront. Phones only -- from `lg` the brand panel beside the
+               form already carries the wordmark. -->
+          <NuxtLink to="/" class="mb-5 flex items-center justify-center gap-2.5 lg:hidden" data-testid="login-brand">
+            <img src="/brand-icon.png" alt="" width="40" height="40" class="h-10 w-10 shrink-0 rounded-xl" />
+            <span class="text-xl font-extrabold tracking-tight">قیچی</span>
           </NuxtLink>
 
           <!-- Step indicator -->
@@ -252,7 +285,7 @@ const STEP_HINT: Record<typeof step.value, string> = {
               v-for="(s, i) in STEP_ORDER"
               :key="s"
               class="h-1.5 flex-1 rounded-full transition-colors duration-300"
-              :class="i <= stepIndex ? 'bg-(--color-accent)' : 'bg-(--color-border)'"
+              :class="i <= stepIndex ? 'bg-(--color-accent-text)' : 'bg-(--color-border)'"
             />
           </div>
 
@@ -269,7 +302,7 @@ const STEP_HINT: Record<typeof step.value, string> = {
               </button>
               <h1 class="text-xl font-bold">{{ STEP_LABEL[step] }}</h1>
             </div>
-            <p class="mt-1.5 text-sm text-(--color-text-muted)">{{ STEP_HINT[step] }}</p>
+            <p class="mt-1.5 text-sm leading-6 text-(--color-text-muted)">{{ STEP_HINT[step] }}</p>
           </div>
 
           <Transition name="step-fade" mode="out-in">
@@ -317,7 +350,7 @@ const STEP_HINT: Record<typeof step.value, string> = {
                 aria-live="polite"
                 class="tnum text-center text-sm text-(--color-text-muted)"
               >
-                اعتبار کد: {{ formatCountdown(codeExpiresIn) }}
+                اعتبار کد: <span dir="ltr" class="inline-block">{{ toPersianDigits(formatCountdown(codeExpiresIn)) }}</span>
               </p>
               <p
                 v-else-if="codeExpired"
@@ -385,24 +418,20 @@ const STEP_HINT: Record<typeof step.value, string> = {
             </form>
           </Transition>
 
-          <p v-if="formError" class="mt-4 flex items-center justify-center gap-1.5 text-sm text-(--color-danger)">
+          <p v-if="formError" role="alert" class="mt-4 flex items-center justify-center gap-1.5 text-sm text-(--color-danger)">
             <BaseIcon name="alert-circle" :size="16" />
             {{ formError }}
           </p>
-        </BaseCard>
 
-        <!-- Quiet consent line, not a checkbox: using the service is the acceptance. -->
-        <p data-testid="login-legal" class="login-stagger mt-4 text-center text-xs leading-6 text-(--color-text-muted)" style="animation-delay: 0.15s">
-          با ورود یا ثبت‌نام،
-          <NuxtLink to="/terms" class="inline-block py-2 underline underline-offset-2 hover:text-(--color-text)">شرایط استفاده</NuxtLink>
-          و
-          <NuxtLink to="/privacy" class="inline-block py-2 underline underline-offset-2 hover:text-(--color-text)">حریم خصوصی</NuxtLink>
-          را می‌پذیرید.
-        </p>
-
-        <p class="login-stagger mt-2 text-center text-xs text-(--color-text-muted)" style="animation-delay: 0.2s">
-          © {{ new Date().getFullYear() }} قیچی
-        </p>
+          <!-- Quiet consent line, not a checkbox: using the service is the acceptance. -->
+          <p data-testid="login-legal" class="mt-6 text-center text-xs leading-6 text-(--color-text-muted)">
+            با ورود یا ثبت‌نام،
+            <NuxtLink to="/terms" class="inline-block py-2 underline underline-offset-2 hover:text-(--color-text)">شرایط استفاده</NuxtLink>
+            و
+            <NuxtLink to="/privacy" class="inline-block py-2 underline underline-offset-2 hover:text-(--color-text)">حریم خصوصی</NuxtLink>
+            را می‌پذیرید.
+          </p>
+        </div>
       </div>
     </div>
   </main>

@@ -279,7 +279,7 @@ useSeoMeta({ title: 'دعوت از دوستان — قیچی' })
 </script>
 
 <template>
-  <div class="mx-auto max-w-2xl p-4 space-y-6">
+  <div class="mx-auto max-w-2xl space-y-6 p-4 lg:max-w-4xl lg:p-6">
     <div class="flex items-center gap-2">
       <NuxtLink
         to="/profile"
@@ -322,13 +322,14 @@ useSeoMeta({ title: 'دعوت از دوستان — قیچی' })
         <BaseButton variant="secondary" data-testid="referrals-retry-button" :loading="referralsPending" @click="refreshReferrals()">تلاش دوباره</BaseButton>
       </BaseCard>
 
-      <p
+      <EmptyState
         v-else-if="!referrals.items.length"
         data-testid="empty-state"
-        class="py-6 text-center text-sm text-(--color-text-muted)"
-      >
-        هنوز کسی با کد معرفی تو ثبت‌نام نکرده است
-      </p>
+        pose="phone"
+        compact
+        title="هنوز کسی با کد معرفی تو ثبت‌نام نکرده است"
+        description="کد یا لینک بالا را برای دوستانت بفرست."
+      />
 
       <div v-else class="space-y-2 transition-opacity" :class="{ 'pointer-events-none opacity-60': referralsPending }">
         <BaseCard v-for="r in referrals.items" :key="r.id" data-testid="referral-item">
@@ -381,13 +382,13 @@ useSeoMeta({ title: 'دعوت از دوستان — قیچی' })
         <BaseButton variant="secondary" data-testid="rewards-retry-button" :loading="rewardsPending" @click="refreshRewards()">تلاش دوباره</BaseButton>
       </BaseCard>
 
-      <p
+      <EmptyState
         v-else-if="!rewards.items.length"
         data-testid="rewards-empty-state"
-        class="py-6 text-center text-sm text-(--color-text-muted)"
-      >
-        هنوز پاداشی برای تو ثبت نشده است
-      </p>
+        pose="wink"
+        compact
+        title="هنوز پاداشی برای تو ثبت نشده است"
+      />
 
       <div v-else class="space-y-2 transition-opacity" :class="{ 'pointer-events-none opacity-60': rewardsPending }">
         <BaseCard v-for="rw in rewards.items" :key="rw.id" data-testid="reward-item">

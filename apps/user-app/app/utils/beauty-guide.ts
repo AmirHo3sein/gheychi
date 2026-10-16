@@ -50,6 +50,9 @@ export interface MatchedService {
   conceptKeys: string[]
   keywordMatch: boolean
   bookableOnline: boolean
+  // The service's optional primary photo (salon_services.image_url). Optional so an older
+  // API payload without the field reads as "no image" rather than breaking the list.
+  imageUrl?: string | null
 }
 
 export interface GuideMatches {

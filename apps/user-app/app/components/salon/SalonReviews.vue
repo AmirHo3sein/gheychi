@@ -3,8 +3,14 @@ import { formatRelativeDate } from '../../utils/relative-date'
 
 interface ReviewItem { id: string; rating: number; comment: string | null; salonReply: string | null; createdAt: string }
 
-defineProps<{ reviews: ReviewItem[]; canReport: boolean }>()
-const emit = defineEmits<{ report: [reviewId: string] }>()
+// `total` (from the paginated API) drives «نمایش نظرات بیشتر»; omitted = everything is shown.
+const props = withDefaults(defineProps<{ reviews: ReviewItem[]; canReport: boolean; total?: number; loadingMore?: boolean }>(), {
+  total: undefined,
+  loadingMore: false,
+})
+const emit = defineEmits<{ report: [reviewId: string]; 'load-more': [] }>()
+
+const hasMore = computed(() => props.total !== undefined && props.reviews.length < props.total)
 
 function flagReview(reviewId: string) {
   emit('report', reviewId)
@@ -16,8 +22,17 @@ function flagReview(reviewId: string) {
     <h2 class="mb-2 flex items-center gap-1.5 text-xl font-bold text-(--color-text)">
       <BaseIcon name="star" :size="17" class="text-(--color-text-muted)" />
       نظرات
+      <span v-if="total" class="text-sm font-medium text-(--color-text-muted)">({{ total.toLocaleString('fa-IR') }})</span>
     </h2>
-    <p v-if="!reviews.length" class="text-sm text-(--color-text-muted)">هنوز نظری ثبت نشده است</p>
+    <EmptyState
+      v-if="!reviews.length"
+      data-testid="reviews-empty"
+      pose="curious"
+      compact
+      title="هنوز نظری ثبت نشده است"
+      description="نظرها را فقط مشتریانی می‌نویسند که نوبتشان در این سالن انجام شده است."
+      class="rounded-2xl border border-(--color-border) bg-(--color-surface-card)"
+    />
     <ul v-else class="space-y-3">
       <li
         v-for="review in reviews"
@@ -29,12 +44,15 @@ function flagReview(reviewId: string) {
             <!-- Discrete filled/unfilled star row, matching ReviewPromptModal.vue's own
                  rating-display convention -- a bare "4 —" number read as a raw data dump,
                  not a rating a customer would recognize as "their" star scale. -->
-            <div role="img" class="flex items-center gap-0.5" :aria-label="`${review.rating.toLocaleString('fa-IR')} از ۵ ستاره`">
+            <!-- Filled vs. outline, not colour alone: a stroke-colour difference between two
+                 outline stars is invisible to colour-blind readers and in bright light. -->
+            <div role="img" data-testid="review-stars" class="flex items-center gap-0.5" :aria-label="`${review.rating.toLocaleString('fa-IR')} از ۵ ستاره`">
               <BaseIcon
                 v-for="n in 5"
                 :key="n"
                 name="star"
                 :size="14"
+                :fill="n <= review.rating ? 'currentColor' : 'none'"
                 :class="n <= review.rating ? 'text-(--color-accent-text)' : 'text-(--color-border)'"
                 aria-hidden="true"
               />
@@ -70,5 +88,10 @@ function flagReview(reviewId: string) {
         </p>
       </li>
     </ul>
+    <div v-if="reviews.length && hasMore" class="mt-3 text-center">
+      <BaseButton variant="secondary" data-testid="reviews-load-more" :loading="loadingMore" @click="emit('load-more')">
+        نمایش نظرات بیشتر
+      </BaseButton>
+    </div>
   </section>
 </template>

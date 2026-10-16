@@ -96,13 +96,19 @@ useSeoMeta({ title: 'راهنمای زیبایی — قیچی', robots: 'noindex
 <template>
   <div class="mx-auto max-w-2xl space-y-5 p-4">
     <div class="flex items-center gap-2">
-      <BaseIcon name="sparkles" :size="22" class="text-(--color-ai)" />
+      <BaseIcon name="sparkles" :size="22" class="text-(--color-accent-text)" />
       <h1 class="text-xl font-bold text-(--color-text)">راهنمای زیبایی</h1>
     </div>
 
-    <BaseCard v-if="!featureFlags.beautyGuideEnabled" data-testid="guide-unavailable" class="text-sm text-(--color-text-muted)">
-      این قابلیت در حال حاضر در دسترس نیست.
-    </BaseCard>
+    <EmptyState
+      v-if="!featureFlags.beautyGuideEnabled"
+      data-testid="guide-unavailable"
+      pose="curious"
+      title="این قابلیت در حال حاضر در دسترس نیست."
+      description="تا آن زمان می‌توانید سالن‌ها و نمونه‌کارهایشان را مستقیم ببینید."
+      action-to="/"
+      action-label="دیدن سالن‌ها"
+    />
 
     <template v-else>
       <p class="text-sm leading-7 text-(--color-text-muted)">
@@ -110,14 +116,37 @@ useSeoMeta({ title: 'راهنمای زیبایی — قیچی', robots: 'noindex
         قیچی آن را انجام می‌دهند.
       </p>
 
+      <!-- Analysis in progress: the «thinking» mascot is the one brand moment on this page --
+           the wait is real (a vision model call), and a character visibly "thinking" says that
+           better than a spinner. The rotating hint is the live status; motion is limited to a
+           soft pulse that the reduced-motion preference turns off. -->
       <div v-if="submitting" data-testid="guide-analyzing" class="space-y-4 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-6 text-center" role="status" aria-live="polite">
-        <img v-if="previewUrl" :src="previewUrl" alt="" class="mx-auto max-h-64 rounded-xl object-contain opacity-80" />
-        <BaseIcon name="spinner" :size="28" class="mx-auto animate-spin text-(--color-ai)" />
+        <div class="flex items-center justify-center gap-4">
+          <span class="flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-3xl bg-(--color-mascot-tile)" data-testid="guide-thinking-mascot">
+            <img src="/mascot/thinking.webp" alt="" width="96" height="96" decoding="async" class="h-full w-full animate-pulse object-contain [animation-duration:2.4s] motion-reduce:animate-none" />
+          </span>
+          <img v-if="previewUrl" :src="previewUrl" alt="" class="max-h-32 rounded-xl object-contain opacity-90" />
+        </div>
         <p class="text-sm font-medium text-(--color-text)">{{ ANALYZING_HINTS[hintIndex] }}</p>
         <p class="text-xs text-(--color-text-muted)">این کار ممکن است چند ثانیه طول بکشد.</p>
       </div>
 
       <form v-else class="space-y-4" @submit.prevent="submit">
+        <!-- What makes the analysis work, said before the upload rather than after a failed one. -->
+        <ul data-testid="guide-photo-tips" class="grid gap-2 text-xs text-(--color-text-muted) sm:grid-cols-3">
+          <li class="flex items-start gap-1.5 rounded-xl bg-(--color-surface-subtle) p-2.5">
+            <BaseIcon name="camera" :size="14" class="mt-0.5 shrink-0 text-(--color-accent-text)" />
+            یک عکس واضح و نزدیک از مو، رنگ مو یا ناخن
+          </li>
+          <li class="flex items-start gap-1.5 rounded-xl bg-(--color-surface-subtle) p-2.5">
+            <BaseIcon name="sun" :size="14" class="mt-0.5 shrink-0 text-(--color-accent-text)" />
+            نور روز یا نور کافی، بدون فیلتر سنگین
+          </li>
+          <li class="flex items-start gap-1.5 rounded-xl bg-(--color-surface-subtle) p-2.5">
+            <BaseIcon name="sparkles" :size="14" class="mt-0.5 shrink-0 text-(--color-accent-text)" />
+            فقط یک استایل در هر عکس
+          </li>
+        </ul>
         <label
           for="guide-upload"
           class="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-(--color-border) bg-(--color-surface-card) p-6 text-center transition-colors hover:border-(--color-accent)"
@@ -149,7 +178,7 @@ useSeoMeta({ title: 'راهنمای زیبایی — قیچی', robots: 'noindex
         </p>
       </form>
 
-      <NuxtLink to="/account/beauty-guides" class="inline-flex items-center gap-1 text-sm font-medium text-(--color-accent-text) hover:underline">
+      <NuxtLink to="/account/beauty-guides" class="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-(--color-accent-text) hover:underline">
         راهنماهای قبلی من
         <BaseIcon name="chevron-back" :size="14" />
       </NuxtLink>

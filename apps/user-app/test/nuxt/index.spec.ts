@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mockComponent, mountSuspended } from '@nuxt/test-utils/runtime'
-import { flushPromises } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises } from '@vue/test-utils'
 import Multiselect from 'vue-multiselect'
 import IndexPage from '../../app/pages/index.vue'
 import { useSessionStore } from '../../app/stores/session'
+import { FEATURE_FLAGS_STATE_KEY } from '../../app/composables/useFeatureFlags'
 
 // Same pattern as profile.spec.ts / login.spec.ts: `$fetch` is a real globalThis binding,
 // not an unimport-tracked auto-import, so it's stubbed directly.
@@ -17,6 +18,15 @@ const fetchStub = Object.assign((...args: unknown[]) => fetchMock(...args), {
 // leaflet/src/core/Util.js -- an intermittent unhandled rejection that failed the whole run).
 mockComponent('SalonMap', { template: '<div data-testid="salon-map-stub" />' })
 
+function salon(id: string, name = `سالن ${id}`) {
+  return { id, slug: id, name, city: 'تهران', coverPhoto: null, ratingAvg: 0, ratingCount: 0, distanceKm: 1, minPrice: 100000, categories: [], isFeatured: false, hasActiveStory: false }
+}
+
+function setBeautyGuide(on: boolean) {
+  const flags = useState<Record<string, boolean>>(FEATURE_FLAGS_STATE_KEY)
+  flags.value = { ...(flags.value ?? {}), beautyGuideEnabled: on }
+}
+
 const USER = { id: 'u1', phone: '09120000000', name: 'Test', gender: 'female' as const, role: 'customer' as const }
 
 function stub() {
@@ -27,6 +37,10 @@ function stub() {
     throw new Error(`unexpected fetch path in test: ${path}`)
   })
 }
+
+// Each test switches the session user; a previous test's still-mounted page would re-render
+// against that shared store after its DOM is gone (the hero/heading branches swap on login).
+enableAutoUnmount(afterEach)
 
 describe('home page', () => {
   beforeEach(() => {
@@ -266,5 +280,179 @@ describe('home page', () => {
     await wrapper.get('[data-testid="categories-scroll-back"]').trigger('click')
 
     expect(scrollBySpy).toHaveBeenCalledWith({ left: 225, behavior: 'smooth' })
+  })
+
+  // --- 2026-10 redesign: hero, salon-name search, "بیشتر" pagination ---
+
+  it('greets a logged-out visitor with the hero and a search field, and a customer without the hero', async () => {
+    useSessionStore().setUser(null)
+    stub()
+    const anonymous = await mountSuspended(IndexPage)
+    await flushPromises()
+    expect(anonymous.find('[data-testid="home-hero"]').exists()).toBe(true)
+    expect(anonymous.find('[data-testid="home-search-input"]').exists()).toBe(true)
+
+    clearNuxtData('home-initial-search')
+    useSessionStore().setUser(USER)
+    const customer = await mountSuspended(IndexPage)
+    await flushPromises()
+    expect(customer.find('[data-testid="home-hero"]').exists()).toBe(false)
+    expect(customer.find('[data-testid="home-search-input"]').exists()).toBe(true)
+  })
+
+  it('sends the typed salon name as the API\'s `q` param on submit (trimmed), not on every keystroke', async () => {
+    stub()
+    const wrapper = await mountSuspended(IndexPage)
+    await flushPromises()
+    fetchMock.mockClear()
+
+    await wrapper.get('[data-testid="home-search-input"]').setValue('  ستاره ')
+    await flushPromises()
+    expect(fetchMock.mock.calls.filter(([p]) => p === '/search')).toHaveLength(0)
+
+    await wrapper.get('[data-testid="home-search"]').trigger('submit')
+    await flushPromises()
+    const searches = fetchMock.mock.calls.filter(([p]) => p === '/search')
+    expect(searches).toHaveLength(1)
+    expect(searches[0]![1]).toMatchObject({ query: expect.objectContaining({ q: 'ستاره', gender: 'women' }) })
+    expect(wrapper.get('[data-testid="home-search-active"]').text()).toContain('ستاره')
+  })
+
+  it('names the search in the empty state and clearing it re-runs the search without `q`', async () => {
+    stub()
+    const wrapper = await mountSuspended(IndexPage)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="home-search-input"]').setValue('ناموجود')
+    await wrapper.get('[data-testid="home-search"]').trigger('submit')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="salons-empty"]').text()).toContain('«ناموجود»')
+
+    fetchMock.mockClear()
+    await wrapper.get('[data-testid="home-search-clear"]').trigger('click')
+    await flushPromises()
+    const searches = fetchMock.mock.calls.filter(([p]) => p === '/search')
+    expect(searches).toHaveLength(1)
+    expect((searches[0]![1] as { query: Record<string, unknown> }).query.q).toBeUndefined()
+    expect((wrapper.get('[data-testid="home-search-input"]').element as HTMLInputElement).value).toBe('')
+  })
+
+  it('offers «بیشتر» only when the API reports another page, and appends that page with the same filters plus the cursor', async () => {
+    fetchMock.mockImplementation(async (path: string, opts: { query: Record<string, unknown> }) => {
+      if (path === '/categories') return []
+      if (path === '/cities') return [{ name: 'تهران', lat: 35.6892, lng: 51.389 }]
+      if (path === '/search') {
+        return opts.query.cursor === 'c2'
+          ? { items: [salon('s2'), salon('s3')], nextCursor: null, hasMore: false }
+          : { items: [salon('s1'), salon('s2')], nextCursor: 'c2', hasMore: true }
+      }
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    const wrapper = await mountSuspended(IndexPage)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('سالن s1')
+    const more = wrapper.get('[data-testid="load-more"]')
+    expect(more.text()).toBe('بیشتر')
+
+    await more.trigger('click')
+    await flushPromises()
+
+    const pageTwo = fetchMock.mock.calls.filter(([p]) => p === '/search').at(-1)!
+    expect(pageTwo[1]).toMatchObject({ query: expect.objectContaining({ cursor: 'c2', gender: 'women', sort: 'distance' }) })
+    // Appended, and the salon that appeared on both pages is not rendered twice.
+    expect(wrapper.text()).toContain('سالن s3')
+    expect(wrapper.text().split('سالن s2').length - 1).toBe(1)
+    // Last page: the button goes away.
+    expect(wrapper.find('[data-testid="load-more"]').exists()).toBe(false)
+  })
+
+  it('keeps the shown salons and offers a retry when the next page fails', async () => {
+    fetchMock.mockImplementation(async (path: string, opts: { query: Record<string, unknown> }) => {
+      if (path === '/categories') return []
+      if (path === '/cities') return [{ name: 'تهران', lat: 35.6892, lng: 51.389 }]
+      if (path === '/search') {
+        if (opts.query.cursor) throw { response: { status: 500 } }
+        return { items: [salon('s1')], nextCursor: 'c2', hasMore: true }
+      }
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    const wrapper = await mountSuspended(IndexPage)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="load-more"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('سالن s1')
+    expect(wrapper.find('[data-testid="load-more-error"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="load-more"]').text()).toBe('تلاش دوباره')
+  })
+
+  it('drops a late «بیشتر» page when the filters changed while it was loading', async () => {
+    useSessionStore().setUser(null) // anonymous: the gender switch is the filter change used below
+    let resolvePageTwo: (value: unknown) => void = () => {}
+    fetchMock.mockImplementation((path: string, opts: { query: Record<string, unknown> }) => {
+      if (path === '/categories') return Promise.resolve([])
+      if (path === '/cities') return Promise.resolve([{ name: 'تهران', lat: 35.6892, lng: 51.389 }])
+      if (path === '/search') {
+        if (opts.query.cursor) return new Promise((resolve) => { resolvePageTwo = resolve })
+        if (opts.query.gender === 'men') return Promise.resolve({ items: [salon('m1')], nextCursor: null, hasMore: false })
+        return Promise.resolve({ items: [salon('w1')], nextCursor: 'c2', hasMore: true })
+      }
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    const wrapper = await mountSuspended(IndexPage)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="load-more"]').trigger('click') // left in flight
+    await wrapper.findAll('[data-testid="anon-gender"] button').find((b) => b.text() === 'آقایان')!.trigger('click')
+    await flushPromises()
+    resolvePageTwo({ items: [salon('w2')], nextCursor: null, hasMore: false })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('سالن m1')
+    expect(wrapper.text()).not.toContain('سالن w2')
+  })
+
+  it('shows the Beauty Guide entry only while its feature flag is on', async () => {
+    stub()
+    setBeautyGuide(false)
+    const off = await mountSuspended(IndexPage)
+    await flushPromises()
+    expect(off.find('[data-testid="beauty-guide-cta"]').exists()).toBe(false)
+
+    clearNuxtData('home-initial-search')
+    setBeautyGuide(true)
+    const on = await mountSuspended(IndexPage)
+    await flushPromises()
+    expect(on.get('[data-testid="beauty-guide-cta"]').attributes('href')).toBe('/beauty-guide')
+    setBeautyGuide(false)
+  })
+
+  // Distance is measured from the query's lat/lng. Without the customer's own position that is
+  // the city centre, and «۰٫۰ کیلومتر» from a centroid means nothing to them -- so it only
+  // appears once they have shared where they are («نزدیک من»).
+  it('shows salon distance only for results searched from the customer real location', async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/categories') return []
+      if (path === '/cities') return [{ name: 'تهران', lat: 35.6892, lng: 51.389 }]
+      if (path === '/search') return { items: [salon('s1')], nextCursor: null, hasMore: false }
+      throw new Error(`unexpected fetch path in test: ${path}`)
+    })
+    const getCurrentPosition = vi.fn((ok: (p: { coords: { latitude: number; longitude: number } }) => void) =>
+      ok({ coords: { latitude: 35.7, longitude: 51.4 } }))
+    vi.stubGlobal('navigator', { ...navigator, geolocation: { getCurrentPosition } })
+    const wrapper = await mountSuspended(IndexPage)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="salon-card-distance"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('کیلومتر')
+
+    const nearMe = wrapper.findAll('button').find((b) => b.text().includes('نزدیک من'))!
+    await nearMe.trigger('click')
+    await flushPromises()
+
+    expect(getCurrentPosition).toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledWith('/search', expect.objectContaining({ query: expect.objectContaining({ lat: 35.7, lng: 51.4 }) }))
+    expect(wrapper.get('[data-testid="salon-card-distance"]').text()).toContain('کیلومتر')
   })
 })

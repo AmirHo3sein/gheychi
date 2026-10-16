@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import type { IconName } from '~/components/ui/BaseIcon.vue'
 import { formatAppointment } from '../../utils/format-date'
+import { formatToman } from '../../utils/format-toman'
+import { parseBookingsTab, splitBookings, type BookingsTab } from '../../utils/booking-tabs'
+import { workerDisplayName } from '../../utils/worker-label'
 
 interface BookingItem {
   id: string
@@ -106,7 +109,7 @@ const STATUS_META: Record<BookingItem['status'], { label: string; icon: IconName
   pending_approval: { label: 'در انتظار تایید سالن', icon: 'clock', badgeClass: 'bg-(--color-accent-soft) text-(--color-text)' },
   pending_payment: { label: 'در انتظار پرداخت', icon: 'clock', badgeClass: 'bg-(--color-accent-soft) text-(--color-text)' },
   confirmed: { label: 'تایید شده', icon: 'check-circle', badgeClass: 'bg-(--color-accent-soft) text-(--color-text)' },
-  completed: { label: 'انجام شده', icon: 'check-circle', badgeClass: 'bg-(--color-success)/10 text-(--color-success)' },
+  completed: { label: 'انجام شده', icon: 'check-circle', badgeClass: 'bg-(--color-success-soft) text-(--color-success-text)' },
   cancelled_by_user: { label: 'لغو شده توسط شما', icon: 'x', badgeClass: 'bg-(--color-danger-soft) text-(--color-danger)' },
   cancelled_by_salon: { label: 'لغو شده توسط سالن', icon: 'x', badgeClass: 'bg-(--color-danger-soft) text-(--color-danger)' },
   // Cancelled by the platform, not the customer or the salon -- the customer is never at fault.
@@ -154,6 +157,50 @@ async function load() {
 }
 
 onMounted(load)
+
+// «پیش‌رو / گذشته». The split is computed once per load against the clock at that moment (a
+// card never jumps tabs while the customer is looking at it). The active tab is mirrored into
+// ?tab= so the view can be linked to and survives a refresh; with no explicit tab the page
+// opens on «پیش‌رو», unless there is nothing coming up and there is history to show.
+const route = useRoute()
+const router = useRouter()
+const loadedAt = ref(new Date())
+watch(bookings, () => { loadedAt.value = new Date() })
+const split = computed(() => splitBookings(bookings.value, loadedAt.value))
+const activeTab = computed<BookingsTab>(() => {
+  const fromUrl = parseBookingsTab(route.query.tab)
+  if (fromUrl) return fromUrl
+  return split.value.upcoming.length === 0 && split.value.past.length > 0 ? 'past' : 'upcoming'
+})
+function selectTab(tab: BookingsTab) {
+  if (tab === activeTab.value && route.query.tab === tab) return
+  router.replace({ query: { ...route.query, tab } })
+}
+const TABS: Array<{ key: BookingsTab; label: string }> = [
+  { key: 'upcoming', label: 'پیش‌رو' },
+  { key: 'past', label: 'گذشته' },
+]
+// Arrow-key movement between the two tabs (WAI-ARIA tabs pattern). In RTL the visual "next"
+// tab is to the LEFT, so ArrowLeft moves forward.
+function onTabKeydown(event: KeyboardEvent) {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+  event.preventDefault()
+  const next: BookingsTab = event.key === 'Home' ? 'upcoming' : event.key === 'End' ? 'past' : activeTab.value === 'upcoming' ? 'past' : 'upcoming'
+  selectTab(next)
+  nextTick(() => document.getElementById(`bookings-tab-${next}`)?.focus())
+}
+
+// Rescheduling is judged against the ORIGINAL start (BookingsService.reschedule): once the
+// appointment is inside its own frozen cancellation window -- or already in the past -- the
+// API can only refuse, so the button isn't offered. Unknown window (terms failed to load and
+// none frozen on the row) keeps today's behaviour and lets the API decide.
+function canReschedule(booking: BookingItem): boolean {
+  if (!CANCELLABLE_STATUSES.includes(booking.status)) return false
+  const hoursUntilStart = (new Date(booking.startsAt).getTime() - loadedAt.value.getTime()) / 3_600_000
+  if (hoursUntilStart <= 0) return false
+  const windowHours = termsFor(booking)?.cancellationWindowHours
+  return typeof windowHours !== 'number' || hoursUntilStart >= windowHours
+}
 
 function reviewFor(bookingId: string): MyReview | null {
   return reviewByBookingId.value[bookingId] ?? null
@@ -258,7 +305,7 @@ const { titleId: rescheduleTitleId } = useDialog(rescheduleDialogRoot as unknown
 </script>
 
 <template>
-  <div class="mx-auto max-w-2xl space-y-4 p-4">
+  <div class="mx-auto max-w-2xl space-y-4 p-4 lg:max-w-3xl lg:p-6">
     <h1 class="text-xl font-bold text-(--color-text)">نوبت‌های من</h1>
 
     <p v-if="loading" class="flex items-center justify-center gap-2 py-8 text-sm text-(--color-text-muted)">
@@ -269,146 +316,203 @@ const { titleId: rescheduleTitleId } = useDialog(rescheduleDialogRoot as unknown
       <p class="text-sm text-(--color-text-muted)">نوبت‌ها بارگذاری نشد.</p>
       <BaseButton variant="secondary" data-testid="bookings-retry-button" @click="load">تلاش دوباره</BaseButton>
     </BaseCard>
-    <p
+    <EmptyState
       v-else-if="!bookings.length"
       data-testid="bookings-empty"
-      class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-6 text-center text-sm text-(--color-text-muted)"
-    >
-      نوبتی ثبت نشده است
-    </p>
+      pose="calendar"
+      title="نوبتی ثبت نشده است"
+      description="سالن دلخواهت را پیدا کن و اولین نوبتت را رزرو کن."
+      action-to="/"
+      action-label="پیدا کردن سالن"
+    />
 
-    <BaseCard v-for="booking in bookings" :key="booking.id" data-testid="booking-card" class="space-y-3 text-sm">
-      <div class="flex items-start justify-between gap-3">
-        <div class="min-w-0">
-          <!-- The status badge is shrink-0 and up to ~135px wide ("لغو شده توسط سالن"),
-               leaving this line ~110px at 320px -- both halves are provider-authored, so
-               break-words is what keeps a long one inside the card. -->
-          <p class="font-bold break-words text-(--color-text)">{{ booking.salonName }} — {{ booking.serviceName }}</p>
-          <p class="mt-1 flex items-center gap-1 text-(--color-text-muted)">
-            <BaseIcon name="calendar" :size="14" />
-            {{ formatAppointment(booking.startsAt) }}
-          </p>
-        </div>
-        <span
-          data-testid="booking-status-badge"
-          class="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-xs font-bold"
-          :class="STATUS_META[booking.status].badgeClass"
-        >
-          <BaseIcon :name="STATUS_META[booking.status].icon" :size="13" />
-          {{ STATUS_META[booking.status].label }}
-        </span>
-      </div>
-
-      <!-- Manual-approval mode: the request is with the salon and there is deliberately NO
-           call to action here. Nothing has been charged yet, so offering a "pay" button
-           would both fail (the API has no payment session for a pending_approval booking)
-           and imply the appointment is already theirs. Muted surface rather than the
-           danger-soft one pending_payment uses: waiting on someone else is not a problem
-           the customer has to fix. -->
+    <template v-else>
+      <!-- Segmented tabs, full width on phones. Counts are the real list sizes. -->
       <div
-        v-if="booking.status === 'pending_approval'"
-        data-testid="pending-approval-strip"
-        class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-xl bg-(--color-surface-subtle) p-3"
+        role="tablist"
+        aria-label="نوبت‌ها"
+        data-testid="bookings-tabs"
+        class="grid grid-cols-2 gap-1 rounded-2xl bg-(--color-surface-subtle) p-1 sm:inline-grid sm:w-80"
+        @keydown="onTabKeydown"
       >
-        <span class="flex min-w-0 items-start gap-1.5 text-(--color-text)">
-          <BaseIcon name="clock" :size="15" class="mt-0.5 shrink-0" />
-          درخواست شما ثبت شد و در انتظار تایید سالن است؛ هنوز مبلغی پرداخت نشده است
-        </span>
-        <span v-if="booking.approvalExpiresAt" class="text-xs text-(--color-text-muted)">
-          مهلت پاسخ سالن: <RemainingTime :expires-at="booking.approvalExpiresAt" />
-        </span>
+        <button
+          v-for="tab in TABS"
+          :id="`bookings-tab-${tab.key}`"
+          :key="tab.key"
+          type="button"
+          role="tab"
+          :data-testid="`bookings-tab-${tab.key}`"
+          :aria-selected="activeTab === tab.key"
+          :aria-controls="`bookings-panel-${tab.key}`"
+          :tabindex="activeTab === tab.key ? 0 : -1"
+          class="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-semibold transition-colors duration-150"
+          :class="activeTab === tab.key
+            ? 'bg-(--color-surface-card) text-(--color-text) shadow-(--shadow-sm)'
+            : 'text-(--color-text-muted) hover:text-(--color-text)'"
+          @click="selectTab(tab.key)"
+        >
+          {{ tab.label }}
+          <span class="tnum rounded-full px-1.5 text-xs" :class="activeTab === tab.key ? 'bg-(--color-accent-soft)' : ''">{{ split[tab.key].length.toLocaleString('fa-IR') }}</span>
+        </button>
       </div>
 
-      <!-- Platform cancellation: state that the customer did nothing wrong, and (only when money
-           really moved) that it is all returned. Muted surface -- informative, not alarming. -->
-      <p
-        v-if="booking.status === 'cancelled_by_admin'"
-        data-testid="admin-cancelled-note"
-        class="rounded-xl bg-(--color-surface-subtle) p-3 text-(--color-text-muted)"
+      <!-- v-show, not v-if: both panels stay in the DOM (a tab switch never refetches or loses
+           an open dialog's target), and the hidden one is display:none for everyone. -->
+      <div
+        v-for="tab in TABS"
+        v-show="activeTab === tab.key"
+        :id="`bookings-panel-${tab.key}`"
+        :key="tab.key"
+        role="tabpanel"
+        :aria-labelledby="`bookings-tab-${tab.key}`"
+        :data-testid="`bookings-panel-${tab.key}`"
+        class="space-y-3"
       >
-        قیچی این نوبت را لغو کرد؛ این لغو به دلیل مشکلی از سمت شما نبود.
-        <template v-if="hasOnlineDeposit(booking)">بیعانه‌ی پرداخت‌شده به‌طور کامل به شما بازگردانده می‌شود.</template>
-      </p>
+        <EmptyState
+          v-if="!split[tab.key].length && tab.key === 'upcoming'"
+          data-testid="bookings-upcoming-empty"
+          pose="calendar"
+          compact
+          title="نوبت پیش‌رویی ندارید"
+          description="نوبت‌های قبلی‌تان در «گذشته» است."
+          action-to="/"
+          action-label="رزرو نوبت تازه"
+        />
+        <p v-else-if="!split[tab.key].length" data-testid="bookings-past-empty" class="py-8 text-center text-sm text-(--color-text-muted)">
+          هنوز نوبتی در گذشته ندارید.
+        </p>
 
-      <!-- flex-wrap + shrink-0 on the button: at 320px this row has ~230px for a ~195px
-           warning and a ~100px call to action. Without wrapping the button is the item
-           that gives, and "تکمیل پرداخت" breaks across two lines -- the one control on the
-           card that recovers an unpaid booking, rendered as the least legible thing on it.
-           Wrapping drops it onto its own full-width-ish line instead. -->
-      <div v-if="booking.status === 'pending_payment'" class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-xl bg-(--color-danger-soft) p-3">
-        <span class="flex min-w-0 items-start gap-1.5 text-(--color-danger)">
-          <BaseIcon name="alert-circle" :size="15" class="mt-0.5 shrink-0" />
-          <span class="min-w-0">
-            پرداخت این نوبت کامل نشده است
-            <!-- The payment window is finite and the customer had no way to see that here.
-                 Display only: the button below stays clickable past the deadline and the
-                 API's own 409 is what refuses a too-late retry. -->
-            <span v-if="booking.paymentExpiresAt" class="block text-xs">
-              مهلت پرداخت: <RemainingTime :expires-at="booking.paymentExpiresAt" />
+        <BaseCard v-for="booking in split[tab.key]" :key="booking.id" data-testid="booking-card" class="space-y-3 text-sm">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <!-- The status badge is shrink-0 and up to ~135px wide, leaving this line ~110px at
+                   320px -- both halves are provider-authored, so break-words keeps them inside. -->
+              <p class="font-bold break-words text-(--color-text)">{{ booking.salonName }} — {{ booking.serviceName }}</p>
+              <p class="mt-1 flex items-center gap-1 text-(--color-text-muted)">
+                <BaseIcon name="calendar" :size="14" class="shrink-0" />
+                {{ formatAppointment(booking.startsAt) }}
+              </p>
+              <p v-if="booking.workerName" class="mt-0.5 flex items-center gap-1 text-(--color-text-muted)">
+                <BaseIcon name="user" :size="14" class="shrink-0" />
+                {{ workerDisplayName(booking.workerName) }}
+              </p>
+            </div>
+            <span
+              data-testid="booking-status-badge"
+              class="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-xs font-bold"
+              :class="STATUS_META[booking.status].badgeClass"
+            >
+              <BaseIcon :name="STATUS_META[booking.status].icon" :size="13" />
+              {{ STATUS_META[booking.status].label }}
             </span>
-          </span>
-        </span>
-        <BaseButton
-          size="md"
-          class="shrink-0"
-          data-testid="retry-payment-button"
-          :loading="retryingId === booking.id"
-          @click="retryPayment(booking.id)"
-        >
-          تکمیل پرداخت
-        </BaseButton>
-      </div>
+          </div>
 
-      <div class="flex flex-wrap items-center gap-2 border-t border-(--color-border) pt-3">
-        <BaseButton
-          v-if="CANCELLABLE_STATUSES.includes(booking.status)"
-          variant="danger"
-          data-testid="cancel-booking-button"
-          @click="openCancelConfirm(booking)"
-        >
-          <!-- There is no appointment to cancel yet while the salon hasn't answered -- the
-               customer is withdrawing a request, and the label says so. -->
-          {{ booking.status === 'pending_approval' ? 'لغو درخواست' : 'لغو نوبت' }}
-        </BaseButton>
-
-        <!-- Same eligible statuses as the cancel button above (CANCELLABLE_STATUSES mirrors
-             the API's own SLOT_BLOCKING_STATUSES) -- anything that can still be cancelled can
-             also be moved instead. -->
-        <BaseButton
-          v-if="CANCELLABLE_STATUSES.includes(booking.status)"
-          variant="secondary"
-          data-testid="reschedule-booking-button"
-          @click="openRescheduleDialog(booking)"
-        >
-          تغییر زمان نوبت
-        </BaseButton>
-
-        <template v-if="booking.status === 'completed'">
-          <!-- A review already on file stays viewable/editable even with the flag off,
-               only net-new "ثبت نظر" is hidden -- same reasoning as bookings/[id].vue. -->
-          <BaseButton
-            v-if="reviewFor(booking.id)?.status !== 'withdrawn' && (reviewFor(booking.id) || (featureFlags.reviewsEnabled && booking.reviewable !== false))"
-            variant="secondary"
-            data-testid="review-booking-button"
-            @click="reviewingBooking = booking"
+          <!-- Manual-approval mode: the request is with the salon and there is deliberately NO
+               call to action here. Nothing has been charged yet, so offering a "pay" button
+               would both fail and imply the appointment is already theirs. Muted surface:
+               waiting on someone else is not a problem the customer has to fix. -->
+          <div
+            v-if="booking.status === 'pending_approval'"
+            data-testid="pending-approval-strip"
+            class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-xl bg-(--color-surface-subtle) p-3"
           >
-            {{ reviewButtonLabel(booking.id) }}
-          </BaseButton>
-          <p v-else-if="reviewFor(booking.id)?.status === 'withdrawn'" data-testid="review-withdrawn-note" class="text-(--color-text-muted)">
-            نظر شما برای این نوبت حذف شده است
-          </p>
-        </template>
+            <span class="flex min-w-0 items-start gap-1.5 text-(--color-text)">
+              <BaseIcon name="clock" :size="15" class="mt-0.5 shrink-0" />
+              درخواست شما ثبت شد و در انتظار تایید سالن است؛ هنوز مبلغی پرداخت نشده است
+            </span>
+            <span v-if="booking.approvalExpiresAt" class="text-xs text-(--color-text-muted)">
+              مهلت پاسخ سالن: <RemainingTime :expires-at="booking.approvalExpiresAt" />
+            </span>
+          </div>
 
-        <NuxtLink
-          :to="`/bookings/${booking.id}`"
-          data-testid="booking-detail-link"
-          class="ms-auto inline-flex items-center gap-1 text-(--color-accent-text) hover:underline"
-        >
-          جزئیات
-          <BaseIcon name="chevron-back" :size="14" />
-        </NuxtLink>
+          <!-- Platform cancellation: state that the customer did nothing wrong, and (only when money
+               really moved) that it is all returned. Muted surface -- informative, not alarming. -->
+          <p
+            v-if="booking.status === 'cancelled_by_admin'"
+            data-testid="admin-cancelled-note"
+            class="rounded-xl bg-(--color-surface-subtle) p-3 text-(--color-text-muted)"
+          >
+            قیچی این نوبت را لغو کرد؛ این لغو به دلیل مشکلی از سمت شما نبود.
+            <template v-if="hasOnlineDeposit(booking)">بیعانه‌ی پرداخت‌شده به‌طور کامل به شما بازگردانده می‌شود.</template>
+          </p>
+
+          <!-- flex-wrap + shrink-0 on the button: at 320px "تکمیل پرداخت" would otherwise break
+               across two lines. Display-only deadline: the button stays clickable past it and
+               the API's own 409 refuses a too-late retry. -->
+          <div v-if="booking.status === 'pending_payment'" class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-xl bg-(--color-danger-soft) p-3">
+            <span class="flex min-w-0 items-start gap-1.5 text-(--color-danger)">
+              <BaseIcon name="alert-circle" :size="15" class="mt-0.5 shrink-0" />
+              <span class="min-w-0">
+                پرداخت این نوبت کامل نشده است
+                <span v-if="booking.paymentExpiresAt" class="block text-xs">
+                  مهلت پرداخت: <RemainingTime :expires-at="booking.paymentExpiresAt" />
+                </span>
+              </span>
+            </span>
+            <BaseButton
+              size="md"
+              class="shrink-0"
+              data-testid="retry-payment-button"
+              :loading="retryingId === booking.id"
+              @click="retryPayment(booking.id)"
+            >
+              تکمیل پرداخت
+            </BaseButton>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2 border-t border-(--color-border) pt-3">
+            <BaseButton
+              v-if="CANCELLABLE_STATUSES.includes(booking.status)"
+              variant="danger"
+              data-testid="cancel-booking-button"
+              @click="openCancelConfirm(booking)"
+            >
+              <!-- There is no appointment to cancel yet while the salon hasn't answered -- the
+                   customer is withdrawing a request, and the label says so. -->
+              {{ booking.status === 'pending_approval' ? 'لغو درخواست' : 'لغو نوبت' }}
+            </BaseButton>
+
+            <!-- Only while the API can actually accept it -- see canReschedule(). -->
+            <BaseButton
+              v-if="canReschedule(booking)"
+              variant="secondary"
+              data-testid="reschedule-booking-button"
+              @click="openRescheduleDialog(booking)"
+            >
+              تغییر زمان نوبت
+            </BaseButton>
+
+            <template v-if="booking.status === 'completed'">
+              <!-- A review already on file stays viewable/editable even with the flag off,
+                   only net-new "ثبت نظر" is hidden -- same reasoning as bookings/[id].vue. -->
+              <BaseButton
+                v-if="reviewFor(booking.id)?.status !== 'withdrawn' && (reviewFor(booking.id) || (featureFlags.reviewsEnabled && booking.reviewable !== false))"
+                variant="secondary"
+                data-testid="review-booking-button"
+                @click="reviewingBooking = booking"
+              >
+                {{ reviewButtonLabel(booking.id) }}
+              </BaseButton>
+              <p v-else-if="reviewFor(booking.id)?.status === 'withdrawn'" data-testid="review-withdrawn-note" class="text-(--color-text-muted)">
+                نظر شما برای این نوبت حذف شده است
+              </p>
+            </template>
+
+            <span class="ms-auto flex items-center gap-3">
+              <span class="hidden text-xs text-(--color-text-muted) sm:inline"><span dir="ltr" class="tnum">{{ formatToman(booking.priceSnapshot) }}</span> تومان</span>
+              <NuxtLink
+                :to="`/bookings/${booking.id}`"
+                data-testid="booking-detail-link"
+                class="inline-flex min-h-11 items-center gap-1 font-semibold text-(--color-accent-text) hover:underline"
+              >
+                جزئیات
+                <BaseIcon name="chevron-back" :size="14" />
+              </NuxtLink>
+            </span>
+          </div>
+        </BaseCard>
       </div>
-    </BaseCard>
+    </template>
 
     <ReviewPromptModal
       v-if="reviewingBooking"

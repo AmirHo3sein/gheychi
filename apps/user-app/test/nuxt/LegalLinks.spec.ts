@@ -27,4 +27,11 @@ describe('AppFooter', () => {
     expect(wrapper.find('[data-testid="legal-links"]').exists()).toBe(true)
     expect(wrapper.get('footer').classes()).toContain('print:hidden')
   })
+
+  it('gives every footer nav link a 44px touch target', async () => {
+    const wrapper = await mountSuspended(AppFooter)
+    const links = wrapper.get('nav[aria-label="ناوبری فوتر"]').findAll('a')
+    expect(links.length).toBeGreaterThan(0)
+    for (const a of links) expect(a.classes()).toContain('min-h-11')
+  })
 })

@@ -59,4 +59,29 @@ describe('SalonReviews', () => {
     // createdAt actually reaches the rendered card, which it did not before this redesign.
     expect(wrapper.text()).toMatch(/پیش|دیروز|گذشته|همین دقیقه/)
   })
+
+  it('offers «نمایش نظرات بیشتر» only while the API reports more reviews than are shown', async () => {
+    const more = await mountSuspended(SalonReviews, { props: { reviews, canReport: false, total: 5 } })
+    const button = more.get('[data-testid="reviews-load-more"]')
+    await button.trigger('click')
+    expect(more.emitted('load-more')).toHaveLength(1)
+    expect(more.text()).toContain('(۵)')
+
+    const all = await mountSuspended(SalonReviews, { props: { reviews, canReport: false, total: 2 } })
+    expect(all.find('[data-testid="reviews-load-more"]').exists()).toBe(false)
+
+    const unknown = await mountSuspended(SalonReviews, { props: { reviews, canReport: false } })
+    expect(unknown.find('[data-testid="reviews-load-more"]').exists()).toBe(false)
+  })
+
+  // Filled vs. outline stars, not a stroke-colour difference alone, plus a text equivalent.
+  it('fills exactly the earned stars and labels the row «N از ۵ ستاره»', async () => {
+    const wrapper = await mountSuspended(SalonReviews, { props: { reviews, canReport: false } })
+    const rows = wrapper.findAll('[data-testid="review-stars"]')
+    expect(rows).toHaveLength(2)
+    expect(rows[1]!.attributes('role')).toBe('img')
+    expect(rows[1]!.attributes('aria-label')).toBe('۲ از ۵ ستاره')
+    const fills = rows[1]!.findAll('svg').map((s) => s.attributes('fill'))
+    expect(fills).toEqual(['currentColor', 'currentColor', 'none', 'none', 'none'])
+  })
 })

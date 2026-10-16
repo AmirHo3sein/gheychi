@@ -10,16 +10,34 @@ describe('AppHeader', () => {
     useSessionStore().$reset()
   })
 
-  it('shows the account links and logout icon only once logged in', async () => {
+  it('shows the account links only once logged in', async () => {
     const anonymous = await mountSuspended(AppHeader)
     expect(anonymous.text()).not.toContain('نوبت‌های من')
-    expect(anonymous.find('[data-testid="header-logout"]').exists()).toBe(false)
 
     useSessionStore().setUser(USER)
     const loggedIn = await mountSuspended(AppHeader)
     expect(loggedIn.text()).toContain('نوبت‌های من')
     expect(loggedIn.text()).toContain('پروفایل')
-    expect(loggedIn.find('[data-testid="header-logout"]').exists()).toBe(true)
+  })
+
+  // Intentional change (2026-10 redesign): logout used to be a one-tap icon in this bar on
+  // every screen. It now lives only on the profile page (see profile.spec.ts), so the header
+  // must never offer it, logged in or not.
+  it('never carries a logout control -- that lives on the profile page', async () => {
+    useSessionStore().setUser(USER)
+    const loggedIn = await mountSuspended(AppHeader)
+    expect(loggedIn.find('[data-testid="header-logout"]').exists()).toBe(false)
+    expect(loggedIn.find('[aria-label="خروج از حساب"]').exists()).toBe(false)
+  })
+
+  it('carries the قیچی brand lockup (face mark + wordmark) linking home', async () => {
+    const wrapper = await mountSuspended(AppHeader)
+    const brand = wrapper.get('[data-testid="header-brand"]')
+    expect(brand.attributes('href')).toBe('/')
+    expect(brand.find('img[src="/brand-icon.png"]').exists()).toBe(true)
+    expect(brand.text()).toBe('قیچی')
+    // The 36px mark alone was a sub-40px tap target on phones.
+    expect(brand.classes()).toContain('min-h-11')
   })
 
   // The header used to wrap onto a second row below ~370px (logo on one line, two text links,
@@ -49,9 +67,4 @@ describe('AppHeader', () => {
     expect(loggedIn.find('[data-testid="header-login"]').exists()).toBe(false)
   })
 
-  it('labels the icon-only logout button for assistive tech (title alone is unreliable)', async () => {
-    useSessionStore().setUser(USER)
-    const wrapper = await mountSuspended(AppHeader)
-    expect(wrapper.get('[data-testid="header-logout"]').attributes('aria-label')).toBe('خروج از حساب')
-  })
 })

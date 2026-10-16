@@ -213,6 +213,8 @@ describe('profile page', () => {
 
     const logoutButton = wrapper.findAll('button').find((b) => b.text() === 'خروج از حساب')
     expect(logoutButton).toBeTruthy()
+    // The app's only logout control since the header icon was removed.
+    expect(logoutButton!.attributes('data-testid')).toBe('profile-logout')
     // Danger-toned TEXT on a ghost button (not a solid red fill competing with the page above it).
     expect(logoutButton!.classes().join(' ')).toContain('text-(--color-danger)')
     expect(logoutButton!.classes().join(' ')).not.toContain('--color-ad')

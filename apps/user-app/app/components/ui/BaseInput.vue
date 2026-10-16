@@ -57,7 +57,7 @@ const inputId = useId()
         :class="[
           icon ? 'ps-11 pe-4' : 'px-4',
           align === 'center' ? 'text-center tracking-[0.4em]' : '',
-          error ? 'border-(--color-danger) focus:border-(--color-danger)' : 'border-(--color-border) focus:border-(--color-accent-text)',
+          error ? 'border-(--color-danger) focus:border-(--color-danger)' : 'border-(--color-border-control) focus:border-(--color-accent-text)',
         ]"
       />
     </div>

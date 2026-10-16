@@ -9,3 +9,14 @@ export function isPublicRoute(path: string): boolean {
   if (LEGAL_PATHS.has(path)) return true
   return false
 }
+
+/**
+ * Whether the marketing footer (AppFooter) belongs on this route. Only the public, crawlable
+ * surfaces get it -- its job is internal links for search engines (see AppFooter.vue). App
+ * screens (bookings, profile, account, checkout, Beauty Guide) are noindex/auth-gated, and a
+ * link block stacked above the phone tab bar there made the app read like a website.
+ * /login is public but has its own bare layout, so it is excluded explicitly.
+ */
+export function showsSiteFooter(path: string): boolean {
+  return path !== '/login' && isPublicRoute(path)
+}

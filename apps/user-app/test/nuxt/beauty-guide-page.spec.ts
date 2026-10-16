@@ -106,6 +106,56 @@ describe('beauty guide page', () => {
     expect(wrapper.findAll('[data-testid="guide-portfolio-item"]')).toHaveLength(1)
   })
 
+  describe('matched-service images', () => {
+    function withImage(imageUrl: string | null | undefined) {
+      const [match] = MATCHES.salons
+      return {
+        ...MATCHES,
+        salons: [{ ...match!, services: match!.services.map((s) => (s.id === 'svc-fixed' ? { ...s, imageUrl } : s)) }],
+      }
+    }
+
+    it('shows a thumbnail column when a matched service has a photo, placeholders for the rest, and changes no link or price', async () => {
+      stub(GUIDE, withImage('http://cdn/salons/s1/services/svc-fixed/a.jpg'))
+      const wrapper = await mountSuspended(GuidePage)
+      await flushPromises()
+
+      const book = wrapper.get('[data-testid="guide-service-book"]')
+      const bookThumb = book.get('[data-testid="guide-service-thumb"]')
+      const img = bookThumb.get('img')
+      expect(img.attributes('src')).toContain('salons/s1/services/svc-fixed/a.jpg')
+      expect(img.attributes('alt')).toBe('بالیاژ')
+      expect(img.attributes('loading')).toBe('lazy')
+      expect(img.attributes('width')).toBeDefined()
+      expect(img.attributes('height')).toBeDefined()
+      expect(bookThumb.classes()).toContain('size-14')
+      expect(book.attributes('href')).toBe('/booking/color-salon/svc-fixed?beautyGuideId=g1')
+      expect(book.text()).toContain('۲٬۵۰۰٬۰۰۰')
+
+      // The image-less sibling in the same salon block gets the placeholder so names align.
+      const quote = wrapper.get('[data-testid="guide-service-coordinate"]')
+      const quoteThumb = quote.get('[data-testid="guide-service-thumb"]')
+      expect(quoteThumb.find('img').exists()).toBe(false)
+      expect(quoteThumb.find('[data-testid="salon-image-placeholder"]').exists()).toBe(true)
+      expect(quote.attributes('href')).toBe('/salons/color-salon')
+      expect(quote.text()).toContain('قیمت توافقی')
+      // Order unchanged.
+      const rows = wrapper.findAll('[data-testid="guide-service-book"], [data-testid="guide-service-coordinate"]')
+      expect(rows.map((r) => r.attributes('data-testid'))).toEqual(['guide-service-book', 'guide-service-coordinate'])
+    })
+
+    it('keeps the plain layout when no matched service has a photo (null or an older payload without the field)', async () => {
+      for (const payload of [withImage(null), MATCHES]) {
+        clearNuxtData()
+        stub(GUIDE, payload)
+        const wrapper = await mountSuspended(GuidePage)
+        await flushPromises()
+        expect(wrapper.findAll('[data-testid="guide-service-book"]')).toHaveLength(1)
+        expect(wrapper.find('[data-testid="guide-service-thumb"]').exists()).toBe(false)
+      }
+    })
+  })
+
   it('persists a correction and re-runs matching', async () => {
     stub(GUIDE)
     const wrapper = await mountSuspended(GuidePage)

@@ -39,6 +39,10 @@ export type IconName =
   | 'gift'
   | 'home'
   | 'book-open'
+  | 'share'
+  | 'copy'
+  | 'calendar-plus'
+  | 'navigation'
 
 const props = withDefaults(defineProps<{ name: IconName; size?: number }>(), { size: 20 })
 </script>
@@ -207,6 +211,23 @@ const props = withDefaults(defineProps<{ name: IconName; size?: number }>(), { s
       <rect x="3.5" y="9.5" width="17" height="10" rx="1.5" />
       <path d="M3.5 9.5h17M12 9.5V20" />
       <path d="M12 9.5C9.5 9.5 8 8 8 6.3A2.3 2.3 0 0 1 10.3 4c1.7 0 1.7 3.2 1.7 5.5ZM12 9.5c2.5 0 4-1.5 4-3.2A2.3 2.3 0 0 0 13.7 4c-1.7 0-1.7 3.2-1.7 5.5Z" />
+    </template>
+    <template v-else-if="name === 'share'">
+      <circle cx="18" cy="5.5" r="2.5" />
+      <circle cx="6" cy="12" r="2.5" />
+      <circle cx="18" cy="18.5" r="2.5" />
+      <path d="m8.2 10.8 7.6-4.1M8.2 13.2l7.6 4.1" />
+    </template>
+    <template v-else-if="name === 'copy'">
+      <rect x="8.5" y="8.5" width="12" height="12" rx="2" />
+      <path d="M15.5 8.5V5.5a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3" />
+    </template>
+    <template v-else-if="name === 'calendar-plus'">
+      <rect x="3.5" y="5" width="17" height="16" rx="2.5" />
+      <path d="M8 3v4M16 3v4M3.5 10h17M12 13v5M9.5 15.5h5" />
+    </template>
+    <template v-else-if="name === 'navigation'">
+      <path d="M12 2.5 19.5 20 12 16l-7.5 4L12 2.5Z" />
     </template>
   </svg>
 </template>

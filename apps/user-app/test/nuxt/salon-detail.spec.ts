@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
+import { flushPromises } from '@vue/test-utils'
 import SalonDetailPage from '../../app/pages/salons/[slug].vue'
 
 // Same pattern as blog-article.spec.ts / booking-confirm.spec.ts: `$fetch` is a real
@@ -260,6 +261,83 @@ describe('salon detail page', () => {
     expect(wrapper.text()).toContain('این زمان تقریبی است و ممکن است بیشتر طول بکشد')
     const secondRow = wrapper.findAll('li').find((r: { text: () => string }) => r.text().includes('رنگ مو'))!
     expect(secondRow.text()).not.toContain('تقریبی')
+  })
+
+  // Optional per-service photo: one aligned thumbnail column once ANY service has a photo
+  // (placeholders fill the gaps so names stay aligned), and the plain text menu otherwise.
+  describe('service images', () => {
+    const svc = (id: string, name: string, imageUrl: string | null) =>
+      ({ id, name, description: null, pricingType: 'fixed', price: 300000, priceMax: null, durationMin: 45, durationMax: null, discountPercent: null, imageUrl })
+    const serviceRows = () => wrapper!.findAll('#services li')
+    const rowFor = (name: string) => serviceRows().find((r: { text: () => string }) => r.text().includes(name))!
+
+    it('renders the service photo inside its own row, with the service name as alt text', async () => {
+      mockEndpoints({ services: [svc('svc1', 'کوتاهی مو', 'http://cdn.example/svc1.jpg')] })
+      wrapper = await mountSuspended(SalonDetailPage)
+
+      const img = rowFor('کوتاهی مو').get('[data-testid="service-thumb"] img')
+      expect(img.attributes('alt')).toBe('کوتاهی مو')
+      expect(img.attributes('src')).toContain('svc1.jpg')
+      expect(img.attributes('loading')).toBe('lazy')
+    })
+
+    it('fills the column with a placeholder only for the rows that have no photo', async () => {
+      mockEndpoints({
+        services: [
+          svc('svc1', 'کوتاهی مو', 'http://cdn.example/svc1.jpg'),
+          svc('svc2', 'رنگ مو', null),
+          svc('svc3', 'براشینگ', null),
+        ],
+      })
+      wrapper = await mountSuspended(SalonDetailPage)
+
+      expect(wrapper.findAll('[data-testid="service-thumb"]')).toHaveLength(3)
+      expect(rowFor('کوتاهی مو').find('[data-testid="salon-image-placeholder"]').exists()).toBe(false)
+      for (const name of ['رنگ مو', 'براشینگ']) {
+        const row = rowFor(name)
+        expect(row.find('[data-testid="service-thumb"] [data-testid="salon-image-placeholder"]').exists()).toBe(true)
+        expect(row.find('img').exists()).toBe(false)
+      }
+    })
+
+    it('keeps each photo in its own row when only a later row has one', async () => {
+      mockEndpoints({
+        services: [
+          svc('svc1', 'کوتاهی مو', null),
+          svc('svc2', 'رنگ مو', 'http://cdn.example/svc2.jpg'),
+          svc('svc3', 'براشینگ', 'http://cdn.example/svc3.jpg'),
+        ],
+      })
+      wrapper = await mountSuspended(SalonDetailPage)
+
+      expect(rowFor('کوتاهی مو').find('img').exists()).toBe(false)
+      expect(rowFor('رنگ مو').get('img').attributes('src')).toContain('svc2.jpg')
+      expect(rowFor('رنگ مو').get('img').attributes('alt')).toBe('رنگ مو')
+      expect(rowFor('براشینگ').get('img').attributes('src')).toContain('svc3.jpg')
+    })
+
+    it('swaps a photo that fails to load for the placeholder, inside the same fixed thumbnail box', async () => {
+      mockEndpoints({ services: [svc('svc1', 'کوتاهی مو', 'http://cdn.example/broken.jpg')] })
+      wrapper = await mountSuspended(SalonDetailPage)
+
+      await rowFor('کوتاهی مو').get('[data-testid="service-thumb"] img').trigger('error')
+
+      const thumb = rowFor('کوتاهی مو').get('[data-testid="service-thumb"]')
+      expect(thumb.find('img').exists()).toBe(false)
+      expect(thumb.get('[data-testid="salon-image-placeholder"]').attributes('aria-label')).toBe('کوتاهی مو')
+    })
+
+    it('keeps the plain text list, with no thumbnail column, when no service has a photo', async () => {
+      // One row predates the field entirely (older API), the other is an explicit null.
+      const { imageUrl: _omit, ...legacy } = svc('svc1', 'کوتاهی مو', null)
+      mockEndpoints({ services: [legacy, svc('svc2', 'رنگ مو', null)] })
+      wrapper = await mountSuspended(SalonDetailPage)
+
+      expect(serviceRows()).toHaveLength(2)
+      expect(wrapper.find('[data-testid="service-thumb"]').exists()).toBe(false)
+      expect(wrapper.find('#services img').exists()).toBe(false)
+      expect(wrapper.find('#services [data-testid="salon-image-placeholder"]').exists()).toBe(false)
+    })
   })
 
   describe('pricing types', () => {
@@ -608,5 +686,33 @@ describe('salon detail page', () => {
 
       expect(wrapper.get('[data-testid="hours-open-status"]').text()).toBe('باز است')
     })
+  })
+
+  it('loads the first page of reviews with a page size, and appends the next page on «نمایش نظرات بیشتر»', async () => {
+    const review = (id: string) => ({ id, rating: 5, comment: `نظر ${id}`, salonReply: null, createdAt: '2026-07-01T10:00:00Z' })
+    mockEndpoints()
+    const base = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (path: string, opts?: { query?: { page?: number } }) => {
+      if (path === '/salons/s1/reviews') {
+        return opts?.query?.page === 2
+          ? { items: [review('r3')], total: 3, page: 2, pageSize: 10 }
+          : { items: [review('r1'), review('r2')], total: 3, page: 1, pageSize: 10 }
+      }
+      return base(path, opts)
+    })
+    wrapper = await mountSuspended(SalonDetailPage)
+
+    expect(fetchMock.mock.calls.find(([p]) => p === '/salons/s1/reviews')?.[1]).toMatchObject({ query: { page: 1, pageSize: 10 } })
+    await wrapper.get('[data-testid="reviews-load-more"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('نظر r3')
+    expect(wrapper.find('[data-testid="reviews-load-more"]').exists()).toBe(false)
+  })
+
+  it('offers a share action on the salon page', async () => {
+    mockEndpoints()
+    wrapper = await mountSuspended(SalonDetailPage)
+    expect(wrapper.find('[data-testid="salon-share-button"]').exists()).toBe(true)
   })
 })

@@ -49,7 +49,7 @@ function stubPageLoad(
   couponValidateResponse?: unknown,
   // Overrides the single service the page resolves, for tests that need a different price
   // (e.g. one below depositMinToman). Defaults to the shared SERVICE fixture.
-  service: typeof SERVICE = SERVICE,
+  service: typeof SERVICE & { imageUrl?: string | null } = SERVICE,
   // 0 (the default) matches every pre-wallet-feature test's implicit behavior: the page's
   // own /wallet/mine lookup uses redirectOn401:false + silent:true, so even an unstubbed
   // path here (which the catch-all below throws on) is swallowed by apiFetch into a quiet
@@ -186,6 +186,23 @@ describe('booking confirm page', () => {
 
     expect(wrapper.text()).toContain(SERVICE.durationMin.toLocaleString('fa-IR'))
     expect(wrapper.text()).toContain('این زمان تقریبی است و ممکن است بیشتر طول بکشد')
+  })
+
+  it('shows the service photo as a small header thumbnail, with the service name as alt text', async () => {
+    stubPageLoad('success', undefined, { ...SERVICE, imageUrl: 'http://cdn.example/svc-1.jpg' })
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    const img = wrapper.get('[data-testid="booking-service-thumb"] img')
+    expect(img.attributes('alt')).toBe(SERVICE.name)
+    expect(img.attributes('src')).toContain('svc-1.jpg')
+  })
+
+  it('renders no thumbnail (and no placeholder) when the service has no photo', async () => {
+    stubPageLoad('success', undefined, { ...SERVICE, imageUrl: null })
+    wrapper = await mountSuspended(BookingConfirmPage)
+
+    expect(wrapper.find('[data-testid="booking-service-thumb"]').exists()).toBe(false)
+    expect(wrapper.find('img').exists()).toBe(false)
   })
 
   it('omits the duration note when the provider did not set one', async () => {
@@ -793,7 +810,7 @@ describe('booking confirm page', () => {
 
     await pickSlotAndSubmit(wrapper)
 
-    expect(navigateToMock).toHaveBeenCalledWith('/bookings/b-request')
+    expect(navigateToMock).toHaveBeenCalledWith('/bookings/b-request?created=1')
     expect(navigateToMock).not.toHaveBeenCalledWith(expect.stringContaining('http'), expect.anything())
   })
 
@@ -877,7 +894,7 @@ describe('booking confirm page', () => {
     await wrapper.get('[data-testid="confirm-booking-button"]').trigger('click')
     await flushPromises()
 
-    expect(navigateToMock).toHaveBeenCalledWith('/bookings/b-free')
+    expect(navigateToMock).toHaveBeenCalledWith('/bookings/b-free?created=1')
   })
 
   it('links the booking policy next to the cancellation wording, with payments on or off', async () => {
@@ -977,5 +994,72 @@ describe('booking confirm page', () => {
     } finally {
       Element.prototype.scrollIntoView = original
     }
+  })
+
+  describe('wave-2 structure', () => {
+    it('labels an owner-typed placeholder worker («عضو ۱») as «متخصص سالن» on its chip', async () => {
+      stubPageLoad('success', undefined, SERVICE, 0, [{ id: 'w1', name: 'عضو ۱', ratingAvg: 0, ratingCount: 0 }])
+      wrapper = await mountSuspended(BookingConfirmPage)
+
+      expect(wrapper.text()).not.toContain('عضو ۱')
+      const chip = wrapper.findAll('button').find((b: DOMWrapper<Element>) => b.text() === 'متخصص سالن')
+      expect(chip).toBeDefined()
+      await chip!.trigger('click')
+      expect(wrapper.findComponent(SlotPicker).props('workerId')).toBe('w1')
+    })
+
+    it('shows the step structure, with the staff step only when the salon lists staff', async () => {
+      stubPageLoad('success')
+      wrapper = await mountSuspended(BookingConfirmPage)
+      expect(wrapper.get('[data-testid="booking-steps"]').text()).not.toContain('متخصص')
+      expect(wrapper.get('[data-testid="booking-steps"]').text()).toContain('زمان')
+    })
+
+    it('reveals a sticky summary bar with the chosen time, the real price and the same submit action once a slot is picked', async () => {
+      stubPageLoad('success')
+      wrapper = await mountSuspended(BookingConfirmPage)
+      expect(wrapper.find('[data-testid="booking-sticky-bar"]').exists()).toBe(false)
+
+      await wrapper.findComponent(SlotPicker).vm.$emit('select', SLOT_ISO)
+      await nextTick()
+
+      const bar = wrapper.get('[data-testid="booking-sticky-bar"]')
+      expect(bar.text()).toContain((300_000).toLocaleString('fa-IR'))
+      const barButton = bar.get('[data-testid="sticky-confirm-booking-button"]')
+      expect(barButton.text()).toBe('پرداخت و رزرو')
+      await barButton.trigger('click')
+      await flushPromises()
+      expect(navigateToMock).toHaveBeenCalledWith('http://gateway.example/pay', { external: true })
+    })
+
+    it('explains up front that a manual-approval salon receives a REQUEST with a reply deadline, before any slot is picked', async () => {
+      stubManualApprovalPageLoad()
+      wrapper = await mountSuspended(BookingConfirmPage)
+
+      const explainer = wrapper.get('[data-testid="manual-approval-explainer"]')
+      expect(explainer.text()).toContain('درخواست رزرو')
+      expect(explainer.text()).toContain('مهلت')
+      expect(explainer.text()).toContain('اکنون مبلغی پرداخت نمی‌کنید')
+    })
+
+    it('never shows a fabricated exact price or a submit action for a non-fixed (quote) service', async () => {
+      stubPageLoad('success', undefined, { ...SERVICE, pricingType: 'quote', price: null } as unknown as typeof SERVICE)
+      wrapper = await mountSuspended(BookingConfirmPage)
+
+      expect(wrapper.find('[data-testid="booking-not-online"]').exists()).toBe(true)
+      expect(wrapper.text()).toContain('قیمت توافقی')
+      expect(wrapper.findComponent(SlotPicker).exists()).toBe(false)
+      expect(wrapper.find('[data-testid="aside-confirm-booking-button"]').exists()).toBe(false)
+    })
+
+    it('shows a RANGE service with its real ceiling, never a dropped/blank upper bound', async () => {
+      stubPageLoad('success', undefined, { ...SERVICE, pricingType: 'range', price: 300_000, priceMax: 500_000 } as unknown as typeof SERVICE)
+      wrapper = await mountSuspended(BookingConfirmPage)
+
+      expect(wrapper.find('[data-testid="booking-not-online"]').exists()).toBe(true)
+      const range = wrapper.get('[data-testid="price-range"]')
+      expect(range.text()).toContain((300_000).toLocaleString('fa-IR'))
+      expect(range.text()).toContain((500_000).toLocaleString('fa-IR'))
+    })
   })
 })

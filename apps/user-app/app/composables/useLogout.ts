@@ -7,8 +7,9 @@
 // log out regardless of what the service worker is doing.
 const PUSH_UNBIND_TIMEOUT_MS = 2000
 
-// Shared by AppHeader.vue's header icon and profile.vue's own logout button -- both need
-// the exact same push-unbind-then-logout sequence, not two copies that could drift.
+// The push-unbind-then-logout sequence behind profile.vue's logout button (the only logout
+// control since the header icon moved there), kept as a composable so any future entry point
+// reuses the exact sequence instead of a copy that could drift.
 export function useLogout() {
   const session = useSessionStore()
   const { apiFetch } = useApi()

@@ -113,11 +113,12 @@ export default defineNuxtConfig({
       description: 'رزرو آنلاین نوبت سالن‌های زیبایی',
       lang: 'fa',
       dir: 'rtl',
-      // Brand palette, not the pre-rebrand teal these were left on: theme_color tints the
-      // browser/OS chrome, background_color paints the launch splash before the app itself
-      // paints -- so it must match --color-surface or the first frame flashes the wrong hue.
-      theme_color: '#FFB6A3',
-      background_color: '#FFF8F5',
+      // theme_color tints the installed app's title bar, so it matches the header it sits
+      // directly above (--color-surface-card, white) rather than a peach band over a white bar.
+      // background_color paints the launch splash before the app itself paints, so it must
+      // match --color-surface (blush tint) or the first frame flashes the wrong hue.
+      theme_color: '#FFFFFF',
+      background_color: '#FBF5F3',
       display: 'standalone',
       icons: [
         { src: '/pwa-192.png', sizes: '192x192', type: 'image/png' },
@@ -133,6 +134,13 @@ export default defineNuxtConfig({
     pageTransition: false,
     head: {
       htmlAttrs: { lang: 'fa', dir: 'rtl' },
+      // Browser chrome colour, matched to the header surface in each OS scheme (the PWA
+      // manifest's theme_color only applies once installed). Follows the OS scheme, not the
+      // in-app toggle: the toggle is a cookie the anti-flash script reads after <head> parses.
+      meta: [
+        { name: 'theme-color', content: '#FFFFFF', media: '(prefers-color-scheme: light)' },
+        { name: 'theme-color', content: '#2A2625', media: '(prefers-color-scheme: dark)' },
+      ],
       link: [
         { rel: 'icon', type: 'image/png', href: '/favicon.png' },
         { rel: 'apple-touch-icon', href: '/pwa-192.png' },

@@ -4,7 +4,7 @@
 // endpoint, and booking itself goes through the existing booking page.
 import type { SelectOption } from '../../components/ui/AppSelect.client.vue'
 import {
-  conceptLabel, failureMessage, formatDurationEstimate, guideImageUrl, UNSUITABLE_MESSAGE,
+  conceptLabel, failureMessage, formatDurationEstimate, guideImageUrl, isDrivingMatch, UNSUITABLE_MESSAGE,
   type BeautyGuide, type GuideMatches,
 } from '../../utils/beauty-guide'
 
@@ -39,6 +39,10 @@ const conceptNames = computed(() =>
   Object.fromEntries((guide.value?.concepts ?? []).map((c) => [c.key, c.nameFa])),
 )
 const activeConcepts = computed(() => (guide.value?.concepts ?? []).filter((c) => !c.removed))
+// The AI found things but is unsure of every one: nothing drives salon matching until the
+// customer confirms a guess, so say that up front instead of letting an empty salon list
+// look like "nobody does this".
+const lowConfidence = computed(() => activeConcepts.value.length > 0 && !activeConcepts.value.some(isDrivingMatch))
 
 async function loadMatches() {
   if (guide.value?.status !== 'ready') return
@@ -151,7 +155,7 @@ useSeoMeta({ title: 'راهنمای زیبایی من — قیچی', robots: 'no
 </script>
 
 <template>
-  <div class="mx-auto max-w-2xl space-y-6 p-4 lg:max-w-3xl">
+  <div class="mx-auto max-w-2xl space-y-6 p-4 lg:max-w-4xl lg:p-6">
     <div class="flex items-center gap-2">
       <NuxtLink
         to="/account/beauty-guides"
@@ -171,126 +175,184 @@ useSeoMeta({ title: 'راهنمای زیبایی من — قیچی', robots: 'no
     </BaseCard>
 
     <template v-else>
-      <img
-        :src="guideImageUrl(config.public.apiBase as string, guide.imagePath)"
-        alt="تصویر الهام شما"
-        data-testid="guide-image"
-        class="mx-auto max-h-96 w-full rounded-2xl object-contain bg-(--color-surface-subtle)"
-      />
+      <!-- The inspiration photo beside the AI's reading of it on desktop; stacked on phones. -->
+      <div class="space-y-6 lg:grid lg:grid-cols-[18rem_minmax(0,1fr)] lg:items-start lg:gap-8 lg:space-y-0">
+        <img
+          :src="guideImageUrl(config.public.apiBase as string, guide.imagePath)"
+          alt="تصویر الهام شما"
+          data-testid="guide-image"
+          class="mx-auto max-h-96 w-full rounded-2xl bg-(--color-surface-subtle) object-contain lg:sticky lg:top-20"
+        />
 
-      <div v-if="guide.status === 'processing'" data-testid="guide-processing" role="status" class="flex items-center gap-2 text-sm text-(--color-text-muted)">
-        <BaseIcon name="spinner" :size="18" class="animate-spin" /> در حال آماده‌سازی راهنما…
+        <div class="min-w-0 space-y-6">
+          <!-- Still being analysed (e.g. the analysing request dropped and we are polling). -->
+          <div v-if="guide.status === 'processing'" data-testid="guide-processing" role="status" class="flex items-center gap-4 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4">
+            <span class="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-(--color-mascot-tile)">
+              <img src="/mascot/thinking.webp" alt="" width="80" height="80" decoding="async" class="h-full w-full animate-pulse object-contain [animation-duration:2.4s] motion-reduce:animate-none" />
+            </span>
+            <div class="space-y-1 text-sm">
+              <p class="font-semibold text-(--color-text)">در حال آماده‌سازی راهنما…</p>
+              <p class="text-xs text-(--color-text-muted)">این صفحه خودش به‌روز می‌شود.</p>
+            </div>
+          </div>
+
+          <BaseCard v-else-if="guide.status === 'unsuitable'" data-testid="guide-unsuitable" class="space-y-3 text-sm">
+            <p class="text-(--color-text)">{{ UNSUITABLE_MESSAGE }}</p>
+            <NuxtLink to="/beauty-guide" class="inline-flex min-h-11 items-center font-medium text-(--color-accent-text) hover:underline">ارسال تصویر دیگر</NuxtLink>
+          </BaseCard>
+
+          <BaseCard v-else-if="guide.status === 'failed'" data-testid="guide-failed" class="space-y-3 text-sm">
+            <p class="flex items-start gap-1.5 text-(--color-text)">
+              <BaseIcon name="alert-circle" :size="16" class="mt-0.5 shrink-0 text-(--color-warning-text)" />
+              {{ failureMessage(guide.failureCode) }}
+            </p>
+            <BaseButton :loading="retrying" data-testid="guide-retry" @click="retry">تلاش دوباره</BaseButton>
+          </BaseCard>
+
+          <!-- PART 1 -- «برداشت هوش مصنوعی». Everything in this frame is the model's reading of the
+               photo: advisory, hedged, and correctable. A dashed tinted frame + an explicit label
+               keep it visually distinct from the real catalogue data below. -->
+          <section
+            v-else
+            data-testid="guide-ai-section"
+            aria-labelledby="guide-ai-title"
+            class="space-y-5 rounded-3xl border border-dashed border-(--color-border-control) bg-(--color-surface-subtle)/60 p-4 sm:p-5"
+          >
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <h2 id="guide-ai-title" class="flex items-center gap-1.5 font-bold text-(--color-text)">
+                <BaseIcon name="sparkles" :size="18" class="text-(--color-accent-text)" />
+                برداشت هوش مصنوعی
+              </h2>
+              <span class="rounded-full bg-(--color-surface-card) px-2.5 py-1 text-xs font-medium text-(--color-text-muted)">پیشنهادی است، نه قطعی</span>
+            </div>
+
+            <p v-if="guide.lookSummaryFa" data-testid="guide-summary" class="text-base leading-8 text-(--color-text)">{{ guide.lookSummaryFa }}</p>
+
+            <div v-if="lowConfidence" data-testid="guide-low-confidence" role="note" class="flex items-start gap-2 rounded-2xl bg-(--color-surface-card) p-3 text-sm text-(--color-text)">
+              <BaseIcon name="alert-circle" :size="16" class="mt-0.5 shrink-0 text-(--color-warning-text)" />
+              <span>هوش مصنوعی درباره‌ی این تصویر مطمئن نیست. اگر یکی از حدس‌های زیر درست است، آن را تأیید کنید تا سالن‌های مرتبط پیدا شوند.</span>
+            </div>
+
+            <BaseCard v-if="guide.safetyNote === 'medical_concern'" data-testid="guide-safety" class="flex gap-2 text-sm text-(--color-text)">
+              <BaseIcon name="alert-circle" :size="18" class="mt-0.5 shrink-0 text-(--color-danger)" />
+              <span>این راهنما جنبه پزشکی ندارد. اگر نگران وضعیت پوست سر، پوست یا ناخن خود هستید، پیش از هر خدمتی با یک متخصص مشورت کنید.</span>
+            </BaseCard>
+
+            <GuideConceptList
+              :concepts="guide.concepts"
+              :vocabulary="vocabulary"
+              :domain="guide.domain"
+              :busy="busy"
+              @remove="(key) => patch({ removeConceptKeys: [key] })"
+              @restore="(key) => patch({ restoreConceptKeys: [key] })"
+              @confirm="(key) => patch({ addConceptKeys: [key] })"
+              @add="(key) => patch({ addConceptKeys: [key] })"
+            />
+
+            <GuideAttributeEditor
+              :attributes="guide.attributes"
+              :domain="guide.domain"
+              :busy="busy"
+              @change="(key, value) => patch({ attributes: { [key]: value } })"
+            />
+
+            <section v-if="guide.stylistRequestFa" class="space-y-2" data-testid="guide-request">
+              <h3 class="font-bold text-(--color-text)">به آرایشگر بگویید</h3>
+              <BaseCard class="space-y-3">
+                <p class="leading-7 text-(--color-text)">«{{ guide.stylistRequestFa }}»</p>
+                <BaseButton variant="secondary" @click="copyRequest">
+                  <template #icon><BaseIcon name="copy" :size="16" /></template>
+                  {{ copied ? 'کپی شد' : 'کپی متن' }}
+                </BaseButton>
+              </BaseCard>
+            </section>
+
+            <div class="grid gap-3 sm:grid-cols-2">
+              <BaseCard v-if="guide.durationEstimate" data-testid="guide-duration" class="space-y-1">
+                <p class="flex items-center gap-1 text-xs text-(--color-text-muted)"><BaseIcon name="clock" :size="14" /> زمان تقریبی</p>
+                <p class="font-bold text-(--color-text)">{{ formatDurationEstimate(guide.durationEstimate) }}</p>
+                <p class="text-xs text-(--color-text-muted)">تخمینی است؛ زمان نوبت را مدت خدمت هر سالن تعیین می‌کند.</p>
+              </BaseCard>
+              <BaseCard v-if="guide.maintenance.length" data-testid="guide-maintenance" class="space-y-1">
+                <p class="text-xs text-(--color-text-muted)">نگهداری</p>
+                <ul class="list-disc space-y-1 ps-5 text-sm text-(--color-text)">
+                  <li v-for="(item, i) in guide.maintenance" :key="i">{{ item.text }}</li>
+                </ul>
+              </BaseCard>
+            </div>
+
+            <section v-if="guide.discussionPoints.length" class="space-y-2" data-testid="guide-discussion">
+              <h3 class="font-bold text-(--color-text)">با آرایشگر درباره این‌ها صحبت کنید</h3>
+              <ul class="list-disc space-y-1 ps-5 text-sm text-(--color-text)">
+                <li v-for="(point, i) in guide.discussionPoints" :key="i">{{ point }}</li>
+              </ul>
+            </section>
+
+            <p class="text-xs leading-6 text-(--color-text-muted)">
+              این بخش با کمک هوش مصنوعی ساخته شده و جنبه راهنمایی دارد. قیمت، زمان و امکان انجام خدمت را سالن تعیین می‌کند.
+              تشخیص‌ها: {{ activeConcepts.map((c) => conceptLabel(c)).join('، ') || '—' }}
+            </p>
+          </section>
+        </div>
       </div>
 
-      <BaseCard v-else-if="guide.status === 'unsuitable'" data-testid="guide-unsuitable" class="space-y-3 text-sm">
-        <p class="text-(--color-text)">{{ UNSUITABLE_MESSAGE }}</p>
-        <NuxtLink to="/beauty-guide" class="font-medium text-(--color-accent-text) hover:underline">ارسال تصویر دیگر</NuxtLink>
-      </BaseCard>
-
-      <BaseCard v-else-if="guide.status === 'failed'" data-testid="guide-failed" class="space-y-3 text-sm">
-        <p class="text-(--color-text)">{{ failureMessage(guide.failureCode) }}</p>
-        <BaseButton :loading="retrying" data-testid="guide-retry" @click="retry">تلاش دوباره</BaseButton>
-      </BaseCard>
-
-      <template v-else>
-        <p v-if="guide.lookSummaryFa" data-testid="guide-summary" class="text-base leading-8 text-(--color-text)">{{ guide.lookSummaryFa }}</p>
-
-        <BaseCard v-if="guide.safetyNote === 'medical_concern'" data-testid="guide-safety" class="flex gap-2 text-sm text-(--color-text)">
-          <BaseIcon name="alert-circle" :size="18" class="mt-0.5 shrink-0 text-(--color-danger)" />
-          <span>این راهنما جنبه پزشکی ندارد. اگر نگران وضعیت پوست سر، پوست یا ناخن خود هستید، پیش از هر خدمتی با یک متخصص مشورت کنید.</span>
-        </BaseCard>
-
-        <GuideConceptList
-          :concepts="guide.concepts"
-          :vocabulary="vocabulary"
-          :domain="guide.domain"
-          :busy="busy"
-          @remove="(key) => patch({ removeConceptKeys: [key] })"
-          @restore="(key) => patch({ restoreConceptKeys: [key] })"
-          @confirm="(key) => patch({ addConceptKeys: [key] })"
-          @add="(key) => patch({ addConceptKeys: [key] })"
-        />
-
-        <GuideAttributeEditor
-          :attributes="guide.attributes"
-          :domain="guide.domain"
-          :busy="busy"
-          @change="(key, value) => patch({ attributes: { [key]: value } })"
-        />
-
-        <section v-if="guide.stylistRequestFa" class="space-y-2" data-testid="guide-request">
-          <h2 class="font-bold text-(--color-text)">به آرایشگر بگویید</h2>
-          <BaseCard class="space-y-3">
-            <p class="leading-7 text-(--color-text)">«{{ guide.stylistRequestFa }}»</p>
-            <BaseButton variant="secondary" @click="copyRequest">{{ copied ? 'کپی شد' : 'کپی متن' }}</BaseButton>
-          </BaseCard>
-        </section>
-
-        <div class="grid gap-3 sm:grid-cols-2">
-          <BaseCard v-if="guide.durationEstimate" data-testid="guide-duration" class="space-y-1">
-            <p class="flex items-center gap-1 text-xs text-(--color-text-muted)"><BaseIcon name="clock" :size="14" /> زمان تقریبی</p>
-            <p class="font-bold text-(--color-text)">{{ formatDurationEstimate(guide.durationEstimate) }}</p>
-            <p class="text-xs text-(--color-text-muted)">تخمینی است؛ زمان نوبت را مدت خدمت هر سالن تعیین می‌کند.</p>
-          </BaseCard>
-          <BaseCard v-if="guide.maintenance.length" data-testid="guide-maintenance" class="space-y-1">
-            <p class="text-xs text-(--color-text-muted)">نگهداری</p>
-            <ul class="list-disc space-y-1 ps-5 text-sm text-(--color-text)">
-              <li v-for="(item, i) in guide.maintenance" :key="i">{{ item.text }}</li>
-            </ul>
-          </BaseCard>
-        </div>
-
-        <section v-if="guide.discussionPoints.length" class="space-y-2" data-testid="guide-discussion">
-          <h2 class="font-bold text-(--color-text)">با آرایشگر درباره این‌ها صحبت کنید</h2>
-          <ul class="list-disc space-y-1 ps-5 text-sm text-(--color-text)">
-            <li v-for="(point, i) in guide.discussionPoints" :key="i">{{ point }}</li>
-          </ul>
-        </section>
-
-        <section class="space-y-3" aria-labelledby="guide-salons-title">
-          <div class="flex items-center justify-between gap-3">
+      <!-- PART 2 -- «اطلاعات واقعی قیچی». Real salons, real services, catalogue prices, real
+           booking links. Solid card surface and the brand mark: nothing in here is generated. -->
+      <section
+        v-if="guide.status === 'ready'"
+        data-testid="guide-real-section"
+        aria-labelledby="guide-salons-title"
+        class="space-y-4 rounded-3xl border border-(--color-border) bg-(--color-surface-card) p-4 shadow-(--shadow-sm) sm:p-5"
+      >
+        <div class="space-y-1">
+          <p class="flex items-center gap-1.5 text-xs font-semibold text-(--color-accent-text)">
+            <img src="/brand-icon.png" alt="" width="18" height="18" class="rounded-md" />
+            اطلاعات واقعی قیچی
+          </p>
+          <div class="flex flex-wrap items-center justify-between gap-3">
             <h2 id="guide-salons-title" class="font-bold text-(--color-text)">سالن‌هایی که این را انجام می‌دهند</h2>
             <BaseButton variant="ghost" :loading="locating" @click="useMyLocation">
               <template #icon><BaseIcon name="map-pin" :size="16" /></template>
               نزدیک من
             </BaseButton>
           </div>
+          <p class="text-xs text-(--color-text-muted)">خدمات، قیمت‌ها و زمان‌ها همان‌هایی است که خود سالن در قیچی ثبت کرده است.</p>
+        </div>
+        <div class="max-w-xs">
           <AppSelect v-model="selectedCity" label="شهر" :options="cityOptions" placeholder="شهر را انتخاب کنید" />
+        </div>
 
-          <p v-if="matchesLoading" class="text-sm text-(--color-text-muted)">در حال جستجوی سالن‌ها…</p>
-          <BaseCard v-else-if="matchesError" data-testid="guide-matches-error" class="space-y-2 text-sm">
-            <p>جستجوی سالن‌ها ناموفق بود.</p>
-            <BaseButton variant="secondary" @click="loadMatches">تلاش دوباره</BaseButton>
-          </BaseCard>
-          <template v-else-if="matches">
-            <p v-if="matches.emptyReason === 'no_mappable_concepts'" data-testid="guide-matches-unmapped" class="text-sm text-(--color-text-muted)">
-              برای پیدا کردن سالن، حداقل یکی از موارد بالا را تأیید یا انتخاب کنید.
-            </p>
-            <p v-else-if="matches.emptyReason === 'gender_required'" class="text-sm text-(--color-text-muted)">
-              برای نمایش سالن‌ها، جنسیت را در <NuxtLink to="/profile" class="text-(--color-accent-text) hover:underline">پروفایل</NuxtLink> تکمیل کنید.
-            </p>
-            <p v-else-if="!matches.salons.length" data-testid="guide-matches-empty" class="text-sm text-(--color-text-muted)">
-              در این محدوده سالنی با این خدمات پیدا نشد. شهر دیگری را امتحان کنید.
-            </p>
-            <template v-else>
-              <p v-if="activeConcepts.length > 1" class="text-xs text-(--color-text-muted)" data-testid="guide-price-note">
-                هزینه نهایی بسته به خدمات انتخابی و مشاوره سالن متفاوت است.
-              </p>
-              <GuideSalonMatches :salons="matches.salons" :guide-id="guide.id" :concept-names="conceptNames" />
-            </template>
-
-            <section v-if="matches.portfolio.length" class="space-y-2" aria-labelledby="guide-portfolio-title">
-              <h2 id="guide-portfolio-title" class="font-bold text-(--color-text)">نمونه کارهای مشابه</h2>
-              <GuidePortfolioGrid :items="matches.portfolio" />
-            </section>
-          </template>
-        </section>
-
-        <p class="text-xs leading-6 text-(--color-text-muted)">
-          این راهنما با کمک هوش مصنوعی ساخته شده و جنبه راهنمایی دارد. قیمت، زمان و امکان انجام خدمت را سالن تعیین می‌کند.
-          تشخیص‌ها: {{ activeConcepts.map((c) => conceptLabel(c)).join('، ') || '—' }}
+        <p v-if="matchesLoading" class="flex items-center gap-2 text-sm text-(--color-text-muted)">
+          <BaseIcon name="spinner" :size="16" class="animate-spin" />
+          در حال جستجوی سالن‌ها…
         </p>
-      </template>
+        <BaseCard v-else-if="matchesError" data-testid="guide-matches-error" class="space-y-2 text-sm">
+          <p>جستجوی سالن‌ها ناموفق بود.</p>
+          <BaseButton variant="secondary" @click="loadMatches">تلاش دوباره</BaseButton>
+        </BaseCard>
+        <template v-else-if="matches">
+          <p v-if="matches.emptyReason === 'no_mappable_concepts'" data-testid="guide-matches-unmapped" class="text-sm text-(--color-text-muted)">
+            برای پیدا کردن سالن، حداقل یکی از موارد بالا را تأیید یا انتخاب کنید.
+          </p>
+          <p v-else-if="matches.emptyReason === 'gender_required'" class="text-sm text-(--color-text-muted)">
+            برای نمایش سالن‌ها، جنسیت را در <NuxtLink to="/profile" class="text-(--color-accent-text) hover:underline">پروفایل</NuxtLink> تکمیل کنید.
+          </p>
+          <p v-else-if="!matches.salons.length" data-testid="guide-matches-empty" class="text-sm text-(--color-text-muted)">
+            در این محدوده سالنی با این خدمات پیدا نشد. شهر دیگری را امتحان کنید.
+          </p>
+          <template v-else>
+            <p v-if="activeConcepts.length > 1" class="text-xs text-(--color-text-muted)" data-testid="guide-price-note">
+              هزینه نهایی بسته به خدمات انتخابی و مشاوره سالن متفاوت است.
+            </p>
+            <GuideSalonMatches :salons="matches.salons" :guide-id="guide.id" :concept-names="conceptNames" />
+          </template>
+
+          <section v-if="matches.portfolio.length" class="space-y-2" aria-labelledby="guide-portfolio-title">
+            <h3 id="guide-portfolio-title" class="font-bold text-(--color-text)">نمونه کارهای مشابه در سالن‌های قیچی</h3>
+            <GuidePortfolioGrid :items="matches.portfolio" />
+          </section>
+        </template>
+      </section>
 
       <div class="pt-2 text-center">
         <BaseButton variant="ghost" data-testid="guide-delete" @click="confirmingDelete = true">حذف این راهنما</BaseButton>

@@ -30,9 +30,20 @@ defineProps<{ service: PricedService }>()
     <span v-else-if="service.pricingType === 'from'" class="font-bold text-(--color-text) whitespace-nowrap">
       از <span dir="ltr" class="tnum">{{ formatToman(service.price!) }}</span> تومان
     </span>
-    <span v-else-if="service.pricingType === 'range'" class="font-bold text-(--color-text) whitespace-nowrap">
-      <span dir="ltr" class="tnum">{{ formatToman(service.price!) }}</span> تا
-      <span dir="ltr" class="tnum">{{ formatToman(service.priceMax!) }}</span> تومان
+    <!-- A RANGE is the one price that can outgrow a narrow column: at 320px beside a service
+         thumbnail the text column is ~186px, and «۱۰۰٬۰۰۰٬۰۰۰ تا ۱٬۰۰۰٬۰۰۰٬۰۰۰ تومان» on one
+         nowrap line was clipped by the list's overflow-hidden. So it is two unbreakable units
+         («floor تا» and «ceiling تومان») that wrap onto a second line between them when -- and
+         only when -- they don't fit. Never a smaller font, never a break inside an amount. -->
+    <span
+      v-else-if="service.pricingType === 'range'"
+      data-testid="price-range"
+      class="flex flex-wrap items-baseline justify-end gap-x-1 font-bold text-(--color-text)"
+    >
+      <span data-testid="price-range-part" class="whitespace-nowrap"><span dir="ltr" class="tnum">{{ formatToman(service.price!) }}</span> تا</span>
+      <!-- A real space in the text (copy/paste, screen readers); a whitespace-only text run is
+           not a flex item, so the visual gap is still gap-x-1's alone. -->
+      {{ ' ' }}<span data-testid="price-range-part" class="whitespace-nowrap"><span dir="ltr" class="tnum">{{ formatToman(service.priceMax!) }}</span> تومان</span>
     </span>
     <span v-else class="font-bold text-(--color-text) whitespace-nowrap">قیمت توافقی</span>
   </span>

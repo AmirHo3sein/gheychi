@@ -12,7 +12,7 @@ const keys = computed(() => attributeKeysForDomain(props.domain))
 
 <template>
   <section v-if="keys.length" class="space-y-3" aria-labelledby="guide-attributes-title">
-    <h2 id="guide-attributes-title" class="font-bold text-(--color-text)">جزئیات (در صورت نیاز اصلاح کنید)</h2>
+    <h3 id="guide-attributes-title" class="font-bold text-(--color-text)">جزئیات (در صورت نیاز اصلاح کنید)</h3>
     <div v-for="key in keys" :key="key" class="space-y-1.5" :data-testid="`attribute-${key}`">
       <p class="text-xs text-(--color-text-muted)">{{ ATTRIBUTE_LABELS[key]!.label }}</p>
       <div class="flex flex-wrap gap-2" role="radiogroup" :aria-label="ATTRIBUTE_LABELS[key]!.label">

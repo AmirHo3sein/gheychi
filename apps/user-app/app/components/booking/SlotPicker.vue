@@ -93,15 +93,45 @@ function selectDate(date: string) {
   emit('clear')
 }
 
-// Selected-state fill shared by date pills and time-slot buttons: a bold, neutral "chosen"
-// look (not the brand accent) -- this screen's one accent seal is reserved for the final
-// "پرداخت و رزرو" button below, so picking a date or a time never competes with it.
-const CHOSEN_FILL = 'border-transparent bg-(--color-text) text-(--color-surface)'
+// Selected-state treatment shared by date pills and time-slot buttons: the brand's soft peach
+// tint with an accent-text outline. It used to be a solid charcoal fill, which read as a
+// second, heavier "primary" next to the peach submit button; the solid peach fill itself
+// stays reserved for that final "پرداخت و رزرو" action, so choosing never competes with it.
+const CHOSEN_FILL = 'border-(--color-accent-text) bg-(--color-accent-soft) font-bold text-(--color-text) ring-1 ring-(--color-accent-text)'
 const UNCHOSEN_FILL = 'border-(--color-border) bg-(--color-surface-card) text-(--color-text) hover:bg-(--color-surface-subtle)'
 </script>
 
 <template>
-  <div v-if="loading" role="status" class="py-6 text-center text-sm text-(--color-text-muted)">در حال بارگذاری...</div>
+  <!-- Shape-matched skeleton, not a one-line "loading" label. Availability is fetched on the
+       client only (this watch is not awaited during SSR), so the server HTML always holds the
+       loading state; the old ~68px text line then grew into the full date/time picker (~350-500px
+       at 320px) once the fetch landed, pushing everything below it -- including the layout's
+       footer -- down after first paint (CLS ~0.2 at 320x640). Each block below mirrors the
+       loaded markup's own boxes (h2 row + mb-2, a row of h-11 date pills, then two day-part
+       buckets of two h-11 rows in the same 4-column grid), so the swap is close to height-neutral
+       for a typical day. Purely presentational: the fetch, its timing and the slots are unchanged. -->
+  <div v-if="loading" role="status" data-testid="slots-skeleton">
+    <span class="sr-only">در حال بارگذاری...</span>
+    <div aria-hidden="true" class="space-y-5">
+      <section>
+        <div class="mb-2 h-5 w-20 rounded-md bg-(--color-surface-subtle)" />
+        <div class="flex gap-2 overflow-hidden pb-0.5">
+          <div v-for="n in 4" :key="n" class="h-11 w-24 shrink-0 rounded-full bg-(--color-surface-subtle)" />
+        </div>
+      </section>
+      <section>
+        <div class="mb-2 h-5 w-20 rounded-md bg-(--color-surface-subtle)" />
+        <div class="space-y-3">
+          <div v-for="bucket in 2" :key="bucket">
+            <div class="mb-1.5 h-4 w-12 rounded bg-(--color-surface-subtle)" />
+            <div class="grid grid-cols-4 gap-2">
+              <div v-for="n in 8" :key="n" data-testid="slot-skeleton-cell" class="h-11 rounded-xl bg-(--color-surface-subtle)" />
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
   <div v-else-if="hasError" role="alert" class="space-y-3 py-6 text-center text-sm text-(--color-text-muted)">
     <p>بارگذاری نوبت‌ها ممکن نشد؛ دوباره تلاش کنید.</p>
     <button

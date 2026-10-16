@@ -9,6 +9,7 @@ import { formatToman } from '../../utils/format-toman'
 import { toPersianDigits } from '../../utils/digits'
 import { formatContactPhone } from '../../utils/contact-phone'
 import { formatMemberSince } from '../../utils/member-since'
+import { googleMapsUrl, neshanUrl } from '../../utils/map-links'
 
 interface Salon {
   id: string
@@ -38,6 +39,9 @@ interface SalonServiceItem {
   durationMin: number
   durationMax: number | null
   discountPercent: number | null
+  // Optional primary photo (POST /salons/mine/services/:id/image). Optional in the type too so
+  // an older API without the field reads as "no image" rather than breaking the list.
+  imageUrl?: string | null
 }
 // Catalog/display only -- a package is never itself booked; each item links through to its
 // OWN existing single-service booking flow (see public-salon-content.controller.ts's own
@@ -64,6 +68,10 @@ interface WorkerItem { id: string; name: string; ratingAvg: string | number; rat
 // Mirrors booking/[slug]/[serviceId].vue's local interface -- kept in sync with that
 // page's shape rather than shared, matching this codebase's per-file DTO convention.
 interface BookingTerms { depositPercent: number; depositMinToman: number; cancellationWindowHours: number }
+
+// Small enough that the first page of reviews never dominates a phone-length page; the rest
+// load on demand (GET /salons/:id/reviews is paginated server-side, newest first).
+const REVIEWS_PAGE_SIZE = 10
 
 const route = useRoute()
 const slug = route.params.slug as string
@@ -109,7 +117,8 @@ const { data: resolved } = await useAsyncData(`salon-${slug}`, async () => {
     apiFetch<WorkingHourItem[]>(`/salons/${slug}/hours`, { silent: true }),
     apiFetch<SalonExceptionItem[]>(`/salons/${slug}/exceptions`, { silent: true }),
     apiFetch<PhotoItem[]>(`/salons/${slug}/photos`, { silent: true }),
-    apiFetch<ReviewsPage>(`/salons/${salonRes.data.id}/reviews`, { silent: true }),
+    // First page only during SSR; «نمایش نظرات بیشتر» pages the rest in on demand.
+    apiFetch<ReviewsPage>(`/salons/${salonRes.data.id}/reviews`, { query: { page: 1, pageSize: REVIEWS_PAGE_SIZE }, silent: true }),
     apiFetch<SalonPortfolioItem[]>(`/salons/${slug}/portfolio`, { silent: true }),
     apiFetch<WorkerItem[]>(`/salons/${slug}/workers`, { silent: true }),
     apiFetch<BookingTerms>('/platform-config/booking-terms', { silent: true }),
@@ -125,10 +134,8 @@ const { data: resolved } = await useAsyncData(`salon-${slug}`, async () => {
       // Already future-dated (today included) by the API -- see public-salon-content.controller.ts.
       exceptions: exceptionsRes.data ?? [],
       photos: photosRes.data ?? [],
-      // Only the first page is rendered today, matching search's own precedent -- the
-      // default page size (50) matches the old hard cap so this is invisible for the
-      // overwhelming majority of salons.
       reviews: reviewsRes.data?.items ?? [],
+      reviewsTotal: reviewsRes.data?.total ?? 0,
       portfolio: portfolioRes.data ?? [],
       workers: workersRes.data ?? [],
       terms: termsRes.data,
@@ -274,6 +281,33 @@ function closeReport() {
   reportReviewId.value = null
 }
 
+// Reviews beyond the SSR'd first page, appended client-side. Seeded from the payload so the
+// list hydrates identically; a failed page leaves what is already shown in place and the
+// button stays for another try.
+const extraReviews = ref<ReviewItem[]>([])
+const reviewsPage = ref(1)
+const loadingMoreReviews = ref(false)
+const allReviews = computed(() => [...(page.value?.reviews ?? []), ...extraReviews.value])
+
+async function loadMoreReviews() {
+  if (!page.value || loadingMoreReviews.value) return
+  loadingMoreReviews.value = true
+  const next = reviewsPage.value + 1
+  const { data } = await apiFetch<ReviewsPage>(`/salons/${page.value.salon.id}/reviews`, {
+    query: { page: next, pageSize: REVIEWS_PAGE_SIZE },
+    silent: true,
+  })
+  loadingMoreReviews.value = false
+  if (!data) {
+    useToast().push('بارگذاری نظرات بیشتر ممکن نشد؛ دوباره تلاش کنید.', 'error')
+    return
+  }
+  // A review can arrive twice if new ones were published between pages (offset paging).
+  const seen = new Set(allReviews.value.map((r) => r.id))
+  extraReviews.value.push(...data.items.filter((r) => !seen.has(r.id)))
+  reviewsPage.value = next
+}
+
 async function toggleFavorite() {
   favoriteBusy.value = true
   const method = isFavorited.value ? 'DELETE' : 'POST'
@@ -366,6 +400,15 @@ onMounted(() => {
   isOpenNow.value = todayRanges.some((r) => hhmm >= r.openTime.slice(0, 5) && hhmm < r.closeTime.slice(0, 5))
 })
 
+// The desktop booking card's one-line "today" summary, from the same client-only weekday
+// as the open/closed badge (null until mounted, so SSR and hydration agree).
+const todayHoursLabel = computed(() => {
+  if (todayWeekday.value === null) return null
+  const ranges = (page.value?.hours ?? []).filter((h) => h.weekday === todayWeekday.value)
+  if (!ranges.length) return null
+  return ranges.map((r) => `${toPersianDigits(r.openTime.slice(0, 5))} - ${toPersianDigits(r.closeTime.slice(0, 5))}`).join('، ')
+})
+
 // Anchors the sticky footer's "شروع از X تومان" -- the cheapest HONEST floor across every
 // service: FIXED's own discounted price (never the pre-discount price, which no customer
 // would actually pay -- discounting never applies to FROM/RANGE, see
@@ -384,6 +427,11 @@ const minServicePrice = computed(() => {
 // sticky footer. `scrollIntoView` is explicit and doesn't depend on how the browser/Nuxt's
 // router happens to treat a same-page hash change; `href` stays on the tags for keyboard/
 // middle-click/no-JS, this just takes over the primary click path.
+// The thumbnail column appears only when at least one service has a photo: a salon that never
+// uploaded any keeps the plain text menu instead of a column of identical placeholders, while a
+// salon with a few photos gets one aligned column (placeholders fill the gaps so names line up).
+const servicesHaveImages = computed(() => (page.value?.services ?? []).some((s) => !!s.imageUrl))
+
 function scrollToSection(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
@@ -395,7 +443,7 @@ function scrollToSection(id: string) {
        this template with `page` at its pre-fetch value (undefined) before the rejection is
        handled. Without this v-if, that pass throws inside the render function itself (an
        unhandled rejection, not the createError) -- see blog/[slug].vue, which this mirrors. -->
-  <div v-if="page" class="mx-auto max-w-2xl space-y-6 p-4 lg:max-w-5xl lg:p-6" :class="minServicePrice !== null ? 'pb-24 lg:pb-6' : ''">
+  <div v-if="page" class="mx-auto max-w-2xl space-y-6 p-4 lg:max-w-6xl lg:p-6">
     <SalonHero
       :photos="page.photos"
       :fallback-photo="page.portfolio[0]?.url ?? null"
@@ -415,348 +463,400 @@ function scrollToSection(id: string) {
       </template>
     </SalonHero>
 
-    <div class="lg:grid lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-start lg:gap-8">
+    <!-- Desktop: content column + a sticky booking card on the end (left, in RTL) side. The card
+         is the only sticky thing, and it is short, so it can never outgrow the viewport and trap
+         content below its fold (the old aside stuck the map and the whole hours list too).
+         Phones: one column in the same reading order as before; the card is replaced by the
+         fixed bottom bar. -->
+    <div class="lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-8">
       <div class="min-w-0 space-y-6">
-    <div>
-      <div class="flex flex-wrap items-center gap-2">
-        <!-- break-words, not just the wrapper's min-w-0: a provider-authored salon name
-             can be one long unbreakable token, and min-w-0 only lets the BOX shrink --
-             the text inside it still overflows unless it is allowed to break. -->
-        <h1 class="text-xl font-bold break-words text-(--color-text)">{{ page.salon.name }}</h1>
-      </div>
-      <!-- A plain statement of fact we actually hold (the join date) -- approval only means an
-           admin reviewed self-declared data, so nothing here claims the salon is "verified". -->
-      <p v-if="memberSince" data-testid="salon-member-since" class="mt-1 text-xs text-(--color-text-muted)">{{ memberSince }}</p>
-      <p v-if="page.salon.tagline" data-testid="salon-tagline" class="mt-1 text-sm text-(--color-text-muted)">{{ page.salon.tagline }}</p>
-      <a
-        v-if="featureFlags.reviewsEnabled"
-        href="#reviews"
-        class="mt-1 flex min-h-8 w-fit items-center text-sm underline-offset-2 hover:underline"
-        @click.prevent="scrollToSection('reviews')"
-      >
-        <RatingLabel :average="page.salon.ratingAvg" :count="page.salon.ratingCount" />
-      </a>
-      <!-- items-start, unlike the rating row above it: at 320px the name column is
-           ~176px wide and a Persian street address wraps to three lines, which
-           `items-center` would leave the pin floating against the middle of. Same
-           icon-nudge idiom as the policy callout further down. -->
-      <p class="mt-1 flex items-start gap-1 text-sm text-(--color-text-muted)">
-        <BaseIcon name="map-pin" :size="14" class="mt-0.5 shrink-0" />
-        <span class="min-w-0">{{ page.salon.address }}</span>
-      </p>
-      <!-- Phones: the call link sits by the address (the aside, with its own copy for desktop,
-           is far down the page here). Hidden entirely when the salon gave no contact number. -->
-      <a
-        v-if="contact"
-        :href="contact.href"
-        data-testid="salon-contact-mobile"
-        class="mt-1 inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-(--color-accent-text) hover:underline lg:hidden"
-      >
-        <BaseIcon name="phone" :size="14" />
-        تماس با سالن
-        <span dir="ltr" class="tnum text-(--color-text-muted)">{{ contact.display }}</span>
-      </a>
-      <!-- Phones: the map and directions live further down the page (in the aside), so offer a
-           jump straight to them from the address instead of making the customer scroll for them.
-           On desktop the aside is already beside the content. -->
-      <a
-        href="#location"
-        class="mt-1 inline-flex min-h-11 items-center gap-1 text-sm font-medium text-(--color-accent-text) hover:underline lg:hidden"
-        @click.prevent="scrollToSection('location')"
-      >
-        نقشه و مسیریابی
-        <BaseIcon name="chevron-back" :size="14" />
-      </a>
-      <a
-        v-if="page.salon.instagramHandle"
-        :href="`https://instagram.com/${page.salon.instagramHandle}`"
-        target="_blank"
-        rel="noopener nofollow"
-        data-testid="instagram-chip"
-        class="mt-2 inline-flex items-center gap-1.5 rounded-full border border-(--color-border) bg-(--color-surface-card) px-3 py-3.5 text-xs text-(--color-text) transition-colors hover:bg-(--color-surface-subtle)"
-      >
-        <BaseIcon name="instagram" :size="14" />
-        اینستاگرام <span dir="ltr" class="text-(--color-text-muted)">@{{ page.salon.instagramHandle }}</span>
-      </a>
-    </div>
-
-
-    <section v-if="page.salon.about" data-testid="salon-about">
-      <h2 class="mb-2 text-xl font-bold text-(--color-text)">درباره سالن</h2>
-      <!-- Plain text by design: interpolation only (never v-html), line breaks preserved. -->
-      <p class="text-sm whitespace-pre-line">{{ page.salon.about }}</p>
-    </section>
-
-    <section id="services">
-      <h2 class="mb-2 text-xl font-bold text-(--color-text)">خدمات</h2>
-      <!-- Neutral (surface-subtle), not accent-soft -- keeps the surface calm. Both lines reuse data
-           this page already fetches (booking-terms) but the cancellation window previously
-           went completely unshown despite the deposit being real, non-trivial money --
-           PRODUCT.md is explicit that a booking's financial commitment must never feel
-           hidden or ambiguous. The same principle cuts the other way when the platform's
-           online-payment flag is off: the API then confirms every booking with nothing
-           collected (createHold's requiresPayment gating), so stating a deposit "is taken"
-           would be a straight lie -- say what actually happens instead, matching the
-           booking page's own flag-off copy. -->
-      <div data-testid="booking-policy-callout" class="mb-3 space-y-1.5 rounded-xl bg-(--color-surface-subtle) p-3 text-xs text-(--color-text-muted)">
-        <template v-if="featureFlags.onlinePaymentEnabled">
-          <p class="flex items-start gap-1.5">
-            <BaseIcon name="shield" :size="14" class="mt-0.5 shrink-0" />
-            <span v-if="page.terms">
-              برای تضمین نوبت، بیعانه آنلاین معادل ٪{{ page.terms.depositPercent.toLocaleString('fa-IR') }} مبلغ خدمت
-              (حداقل <span dir="ltr" class="tnum">{{ formatToman(page.terms.depositMinToman) }}</span> تومان) دریافت می‌شود.
-            </span>
-            <span v-else>برای تضمین نوبت، بیعانه آنلاین دریافت می‌شود.</span>
-          </p>
-          <p v-if="page.terms" class="flex items-start gap-1.5">
-            <BaseIcon name="clock" :size="14" class="mt-0.5 shrink-0" />
-            <span>لغو رایگان تا {{ page.terms.cancellationWindowHours.toLocaleString('fa-IR') }} ساعت پیش از نوبت امکان‌پذیر است.</span>
-          </p>
-        </template>
-        <p v-else class="flex items-start gap-1.5">
-          <BaseIcon name="shield" :size="14" class="mt-0.5 shrink-0" />
-          <span>بیعانه‌ای دریافت نمی‌شود؛ هزینه خدمت در سالن پرداخت می‌شود.</span>
-        </p>
-      </div>
-      <!-- ONE grouped surface with dividers, not a bordered card per service: a long menu of
-           separate boxes is the "collection of identical cards" the design system warns
-           against, and it is slower to scan than a single list. -->
-      <ul v-if="page.services.length" class="divide-y divide-(--color-border) overflow-hidden rounded-2xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-sm)">
-        <li v-for="service in page.services" :key="service.id">
-          <!-- Only a FIXED-price service can go through the automatic online booking flow
-               (the API rejects a hold attempt against any other pricing type -- see
-               BookingsService.createHoldImpl's pricingType guard), so FROM/RANGE/QUOTE
-               block the click into a flow that would 400 at submission and drop the hover
-               affordance, rather than rendering a plain <div> (which would need duplicating
-               this whole row's markup across two branches just to dodge one click). -->
-          <NuxtLink
-            :to="bookingLink(service.id)"
-            class="block px-4 py-3.5 text-sm transition-colors"
-            :class="service.pricingType === 'fixed' ? 'hover:bg-(--color-surface-subtle) active:bg-(--color-surface-subtle)' : 'cursor-default'"
-            @click="(e: MouseEvent) => { if (service.pricingType !== 'fixed') e.preventDefault() }"
-          >
-            <!-- Same shape as the booking page's price row, and for the same reason: at
-                 320px a provider-authored service name, a discount badge and a
-                 seven-figure price do not fit one 254px line. The name is allowed to
-                 break (it is the only genuinely elastic part), while the badge and each
-                 price stay whole and wrap as units. -->
-            <div class="flex items-center justify-between gap-3">
-              <span class="min-w-0 break-words font-medium text-(--color-text)">
-                {{ service.name }}
-                <span class="font-normal text-(--color-text-muted)">· {{ service.durationMin.toLocaleString('fa-IR') }} دقیقه</span>
-              </span>
-              <ServicePriceTag :service="service" />
+        <div>
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <!-- break-words, not just the wrapper's min-w-0: a provider-authored salon name
+                   can be one long unbreakable token, and min-w-0 only lets the BOX shrink --
+                   the text inside it still overflows unless it is allowed to break. -->
+              <h1 class="text-xl font-bold break-words text-(--color-text) lg:text-2xl">{{ page.salon.name }}</h1>
+              <!-- A plain statement of fact we actually hold (the join date) -- approval only means an
+                   admin reviewed self-declared data, so nothing here claims the salon is "verified". -->
+              <p v-if="memberSince" data-testid="salon-member-since" class="mt-1 text-xs text-(--color-text-muted)">{{ memberSince }}</p>
             </div>
-            <p v-if="service.pricingType !== 'fixed'" class="mt-1 text-xs text-(--color-text-muted)">
-              برای رزرو این خدمت باید ابتدا با سالن هماهنگ کنید.
-            </p>
-            <!-- Provider-authored note on the listed duration (e.g. "may take longer") --
-                 the duration above is a minimum, not a guarantee, and this is where a salon
-                 says so explicitly instead of a customer being surprised mid-appointment. -->
-            <p v-if="service.description" class="mt-1.5 text-xs text-(--color-text-muted)">{{ service.description }}</p>
-            <p v-if="service.pricingType === 'fixed'" class="mt-1.5 flex items-center gap-0.5 text-xs font-semibold text-(--color-accent-text)">
-              انتخاب و رزرو
-              <BaseIcon name="chevron-back" :size="12" />
-            </p>
-          </NuxtLink>
-        </li>
-      </ul>
-      <p
-        v-else
-        data-testid="services-empty"
-        class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-6 text-center text-sm text-(--color-text-muted)"
-      >
-        در حال حاضر خدمتی برای رزرو ثبت نشده است
-      </p>
-    </section>
-
-    <!-- Packages are catalog/display only -- never bookable as one unit (see
-         SalonPackage's own doc comment on the backend). Each listed service links through
-         to its OWN existing single-service entry in the section above; this section exists
-         purely so a bundle like "Bridal Package" reads as one coherent offering. -->
-    <section v-if="page.packages.length" id="packages">
-      <h2 class="mb-2 text-xl font-bold text-(--color-text)">پکیج‌ها</h2>
-      <ul class="space-y-2">
-        <li
-          v-for="pkg in page.packages"
-          :key="pkg.id"
-          class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 text-sm shadow-(--shadow-sm)"
-        >
-          <div class="flex items-center justify-between gap-3">
-            <span class="min-w-0 break-words font-bold text-(--color-text)">{{ pkg.name }}</span>
-            <span class="font-bold whitespace-nowrap text-(--color-text)">
-              <template v-if="pkg.pricingType === 'quote'">قیمت توافقی</template>
-              <template v-else-if="pkg.pricingType === 'range'">
-                <span dir="ltr" class="tnum">{{ formatToman(pkg.price!) }}</span> تا
-                <span dir="ltr" class="tnum">{{ formatToman(pkg.priceMax!) }}</span> تومان
-              </template>
-              <template v-else-if="pkg.pricingType === 'from'">
-                از <span dir="ltr" class="tnum">{{ formatToman(pkg.price!) }}</span> تومان
-              </template>
-              <template v-else>
-                <span dir="ltr" class="tnum">{{ formatToman(pkg.price!) }}</span> تومان
-              </template>
-            </span>
+            <SalonShareButton :slug="slug" :salon-name="page.salon.name" class="shrink-0" />
           </div>
-          <p v-if="pkg.description" class="mt-1 text-xs text-(--color-text-muted)">{{ pkg.description }}</p>
-          <ul class="mt-2 flex flex-wrap gap-1.5">
-            <li
-              v-for="item in pkg.items"
-              :key="item.serviceId"
-              class="rounded-full bg-(--color-surface-subtle) px-2.5 py-1 text-xs text-(--color-text-muted)"
-            >
-              {{ item.name }}
-            </li>
-          </ul>
-        </li>
-      </ul>
-    </section>
-
-    <PortfolioGrid
-      v-if="page.portfolio.length"
-      :items="page.portfolio"
-      :services="page.services"
-      :slug="slug"
-      :salon-id="page.salon.id"
-      :can-report="canReport"
-      :attribution-source="attributionSource"
-    />
-
-    <SalonTeam :workers="page.workers" />
-
-    <SalonReviews v-if="featureFlags.reviewsEnabled" :reviews="page.reviews" :can-report="canReport" @report="openReviewReport" />
-
-    <button
-      v-if="canReport"
-      type="button"
-      data-testid="report-salon-button"
-      class="inline-flex min-h-11 items-center text-xs opacity-70 underline"
-      @click="openSalonReport"
-    >
-      گزارش این سالن
-    </button>
-
-      </div>
-      <aside class="mt-6 min-w-0 space-y-6 lg:sticky lg:top-20 lg:mt-0">
-      <!-- Desktop only: the phone has the sticky bottom bar. The same "from" price and the one
-           action the page exists for, kept in view beside the content while the customer reads. -->
-      <div v-if="minServicePrice !== null" data-testid="booking-summary" class="hidden rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 shadow-(--shadow-sm) lg:block">
-        <p class="text-sm text-(--color-text-muted)">
-          شروع از
-          <span class="block text-lg font-bold text-(--color-text)"><span dir="ltr" class="tnum">{{ formatToman(minServicePrice) }}</span> تومان</span>
-        </p>
-        <a
-          href="#services"
-          class="mt-3 flex min-h-11 items-center justify-center rounded-xl bg-(--color-text) px-5 text-sm font-semibold text-(--color-surface)"
-          @click.prevent="scrollToSection('services')"
-        >
-          مشاهده خدمات
-        </a>
-      </div>
-
-    <a
-        v-if="contact"
-        :href="contact.href"
-        data-testid="salon-contact-desktop"
-        class="hidden min-h-11 items-center justify-center gap-2 rounded-xl border border-(--color-border) bg-(--color-surface-card) px-4 text-sm font-semibold text-(--color-text) transition-colors hover:bg-(--color-surface-subtle) lg:flex"
-      >
-        <BaseIcon name="phone" :size="16" />
-        تماس با سالن
-        <span dir="ltr" class="tnum text-(--color-text-muted)">{{ contact.display }}</span>
-      </a>
-
-    <section id="location" class="scroll-mt-20">
-      <h2 class="sr-only">موقعیت مکانی</h2>
-      <div class="space-y-2">
-        <LazySalonMap
-          compact
-          data-testid="salon-map"
-          :salons="salonMapData.salons"
-          :center="salonMapData.center"
-          :salon-coords="salonMapData.salonCoords"
-        />
-        <!-- Exposed directly here, not just inside the map's own marker popup two taps deep
-             (open the popup, then find the link) -- this is the whole reason a customer would
-             interact with the map at all on a page whose job is booking, not exploring. -->
-        <div class="grid grid-cols-2 gap-2 text-xs font-semibold">
+          <p v-if="page.salon.tagline" data-testid="salon-tagline" class="mt-1 text-sm text-(--color-text-muted)">{{ page.salon.tagline }}</p>
           <a
-            :href="`https://nshn.ir/?lat=${salonMapData.center.lat}&lng=${salonMapData.center.lng}`"
-            target="_blank"
-            rel="noopener"
-            class="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-(--color-border) bg-(--color-surface-card) text-(--color-text) transition-colors hover:bg-(--color-surface-subtle)"
+            v-if="featureFlags.reviewsEnabled"
+            href="#reviews"
+            class="mt-1 flex min-h-11 w-fit items-center text-sm underline-offset-2 hover:underline"
+            @click.prevent="scrollToSection('reviews')"
           >
-            مسیریابی با نشان
+            <RatingLabel :average="page.salon.ratingAvg" :count="page.salon.ratingCount" />
+          </a>
+          <!-- items-start: at 320px a Persian street address wraps to three lines, which
+               `items-center` would leave the pin floating against the middle of. -->
+          <p class="mt-1 flex items-start gap-1 text-sm text-(--color-text-muted)">
+            <BaseIcon name="map-pin" :size="14" class="mt-0.5 shrink-0" />
+            <span class="min-w-0">{{ page.salon.address }}</span>
+          </p>
+          <!-- Phones: the call link sits by the address (desktop has its own copy in the booking
+               card). Hidden entirely when the salon gave no contact number. -->
+          <a
+            v-if="contact"
+            :href="contact.href"
+            data-testid="salon-contact-mobile"
+            class="mt-1 inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-(--color-accent-text) hover:underline lg:hidden"
+          >
+            <BaseIcon name="phone" :size="14" />
+            تماس با سالن
+            <span dir="ltr" class="tnum text-(--color-text-muted)">{{ contact.display }}</span>
+          </a>
+          <!-- Phones: the map and directions live further down the page, so offer a jump
+               straight to them from the address instead of making the customer scroll. -->
+          <a
+            href="#location"
+            class="mt-1 inline-flex min-h-11 items-center gap-1 text-sm font-medium text-(--color-accent-text) hover:underline lg:hidden"
+            @click.prevent="scrollToSection('location')"
+          >
+            نقشه و مسیریابی
+            <BaseIcon name="chevron-back" :size="14" />
           </a>
           <a
-            :href="`https://www.google.com/maps/dir/?api=1&destination=${salonMapData.center.lat},${salonMapData.center.lng}`"
+            v-if="page.salon.instagramHandle"
+            :href="`https://instagram.com/${page.salon.instagramHandle}`"
             target="_blank"
-            rel="noopener"
-            class="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-(--color-border) bg-(--color-surface-card) text-(--color-text) transition-colors hover:bg-(--color-surface-subtle)"
+            rel="noopener nofollow"
+            data-testid="instagram-chip"
+            class="mt-2 inline-flex items-center gap-1.5 rounded-full border border-(--color-border) bg-(--color-surface-card) px-3 py-3.5 text-xs text-(--color-text) transition-colors hover:bg-(--color-surface-subtle)"
           >
-            مسیریابی با گوگل‌مپ
+            <BaseIcon name="instagram" :size="14" />
+            اینستاگرام <span dir="ltr" class="text-(--color-text-muted)">@{{ page.salon.instagramHandle }}</span>
           </a>
         </div>
-      </div>
-    </section>
 
-    <section>
-      <div class="mb-2 flex flex-wrap items-center gap-2">
-        <h2 class="flex items-center gap-1.5 text-xl font-bold text-(--color-text)">
-          <BaseIcon name="clock" :size="17" class="text-(--color-text-muted)" />
-          ساعات کاری
-        </h2>
-        <!-- Computed client-side only (see isOpenNow's own comment) -- absent for one tick
-             after mount rather than ever risking a wrong-then-corrected flash. Neutral
-             colors throughout (no accent, no danger-as-"bad") -- being closed right now is
-             completely normal information, not an error state. -->
-        <span
-          v-if="isOpenNow !== null"
-          data-testid="hours-open-status"
-          class="rounded-full px-2 py-0.5 text-xs font-bold"
-          :class="isOpenNow ? 'bg-(--color-surface-subtle) text-(--color-success)' : 'bg-(--color-surface-subtle) text-(--color-text-muted)'"
-        >
-          {{ isOpenNow ? 'باز است' : 'بسته است' }}
-        </span>
-      </div>
-      <ul v-if="page.hours.length" data-testid="hours-list" class="space-y-1 text-sm text-(--color-text)">
-        <li
-          v-for="day in orderedHours"
-          :key="day.weekday"
-          class="flex items-center justify-between gap-2 rounded-lg px-2 py-1"
-          :class="day.weekday === todayWeekday ? 'bg-(--color-surface-subtle) font-bold' : ''"
-        >
-          <span class="shrink-0">{{ WEEKDAY_NAMES[day.weekday] }}</span>
-          <span class="mx-1 min-w-4 flex-1 self-center border-b border-dotted border-(--color-border)" aria-hidden="true" />
-          <!-- dir="ltr" isn't decorative here: without it, the bidi algorithm reorders this
-               RTL-embedded "09:00 - 20:00" run so open/close visually swap (the exact bug
-               the instagram handle above already had to work around the same way). Applying
-               it to the WHOLE joined string (not per-range) is what keeps a lunch-break split
-               shift's two ranges in their real left-to-right order too, instead of only the
-               first one being protected. -->
-          <span dir="ltr" class="tnum text-end">
-            <template v-for="(dayRange, i) in day.ranges" :key="i">
-              <span v-if="i > 0">، </span>{{ toPersianDigits(dayRange.openTime.slice(0, 5)) }} - {{ toPersianDigits(dayRange.closeTime.slice(0, 5)) }}
+        <section v-if="page.salon.about" data-testid="salon-about">
+          <h2 class="mb-2 text-xl font-bold text-(--color-text)">درباره سالن</h2>
+          <!-- Plain text by design: interpolation only (never v-html), line breaks preserved. -->
+          <p class="text-sm whitespace-pre-line">{{ page.salon.about }}</p>
+        </section>
+
+        <section id="services" class="scroll-mt-20">
+          <h2 class="mb-2 text-xl font-bold text-(--color-text)">خدمات</h2>
+          <!-- Neutral (surface-subtle), not accent-soft -- keeps the surface calm. A booking's
+               financial commitment must never feel hidden or ambiguous; equally, with the
+               platform's online-payment flag off the API confirms every booking with nothing
+               collected, so stating a deposit "is taken" would be a straight lie -- say what
+               actually happens instead, matching the booking page's own flag-off copy. -->
+          <div data-testid="booking-policy-callout" class="mb-3 space-y-1.5 rounded-xl bg-(--color-surface-subtle) p-3 text-xs text-(--color-text-muted)">
+            <template v-if="featureFlags.onlinePaymentEnabled">
+              <p class="flex items-start gap-1.5">
+                <BaseIcon name="shield" :size="14" class="mt-0.5 shrink-0" />
+                <span v-if="page.terms">
+                  برای تضمین نوبت، بیعانه آنلاین معادل ٪{{ page.terms.depositPercent.toLocaleString('fa-IR') }} مبلغ خدمت
+                  (حداقل <span dir="ltr" class="tnum">{{ formatToman(page.terms.depositMinToman) }}</span> تومان) دریافت می‌شود.
+                </span>
+                <span v-else>برای تضمین نوبت، بیعانه آنلاین دریافت می‌شود.</span>
+              </p>
+              <p v-if="page.terms" class="flex items-start gap-1.5">
+                <BaseIcon name="clock" :size="14" class="mt-0.5 shrink-0" />
+                <span>لغو رایگان تا {{ page.terms.cancellationWindowHours.toLocaleString('fa-IR') }} ساعت پیش از نوبت امکان‌پذیر است.</span>
+              </p>
             </template>
-          </span>
-        </li>
-      </ul>
-      <p v-else data-testid="hours-empty" class="text-sm text-(--color-text-muted)">ساعات کاری ثبت نشده است</p>
+            <p v-else class="flex items-start gap-1.5">
+              <BaseIcon name="shield" :size="14" class="mt-0.5 shrink-0" />
+              <span>بیعانه‌ای دریافت نمی‌شود؛ هزینه خدمت در سالن پرداخت می‌شود.</span>
+            </p>
+          </div>
+          <!-- ONE grouped surface with dividers, not a bordered card per service: a long menu of
+               separate boxes is slower to scan than a single list. Service photos live here, on
+               their own rows -- the portfolio further down is the salon's past work, a different
+               thing, and the two are never mixed. -->
+          <ul v-if="page.services.length" class="divide-y divide-(--color-border) overflow-hidden rounded-2xl border border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-sm)">
+            <li v-for="service in page.services" :key="service.id">
+              <!-- Only a FIXED-price service can go through the automatic online booking flow
+                   (the API rejects a hold attempt against any other pricing type -- see
+                   BookingsService.createHoldImpl's pricingType guard), so FROM/RANGE/QUOTE
+                   block the click into a flow that would 400 at submission and drop the hover
+                   affordance. -->
+              <NuxtLink
+                :to="bookingLink(service.id)"
+                class="block px-4 py-3.5 text-sm transition-colors"
+                :class="service.pricingType === 'fixed' ? 'hover:bg-(--color-surface-subtle) active:bg-(--color-surface-subtle)' : 'cursor-default'"
+                @click="(e: MouseEvent) => { if (service.pricingType !== 'fixed') e.preventDefault() }"
+              >
+                <!-- Fixed square thumbnail at the row's start, with explicit width/height so a
+                     lazy photo never shifts the text beside it. -->
+                <div :class="servicesHaveImages ? 'flex items-start gap-3' : undefined">
+                  <div
+                    v-if="servicesHaveImages"
+                    data-testid="service-thumb"
+                    class="size-14 shrink-0 overflow-hidden rounded-xl bg-(--color-surface-subtle) min-[360px]:size-16 sm:size-[72px]"
+                  >
+                    <SafeImage
+                      v-if="service.imageUrl"
+                      :src="service.imageUrl"
+                      :alt="service.name"
+                      :width="144"
+                      :height="144"
+                      loading="lazy"
+                      :placeholder-icon-size="20"
+                      class="h-full w-full object-cover"
+                    />
+                    <SalonImagePlaceholder v-else :icon-size="20" />
+                  </div>
+                  <div :class="servicesHaveImages ? 'min-w-0 flex-1' : undefined">
+                    <!-- At 320px a provider-authored name, a discount badge and a seven-figure
+                         price do not fit one line: the name breaks, the badge and each price
+                         stay whole and wrap as units. -->
+                    <div class="flex items-center justify-between gap-3" :class="servicesHaveImages ? 'flex-wrap gap-y-1' : undefined">
+                      <span class="min-w-0 break-words font-medium text-(--color-text)">
+                        {{ service.name }}
+                        <span class="font-normal text-(--color-text-muted)">· {{ service.durationMin.toLocaleString('fa-IR') }} دقیقه</span>
+                      </span>
+                      <ServicePriceTag :service="service" />
+                    </div>
+                    <p v-if="service.pricingType !== 'fixed'" class="mt-1 text-xs text-(--color-text-muted)">
+                      برای رزرو این خدمت باید ابتدا با سالن هماهنگ کنید.
+                    </p>
+                    <!-- Provider-authored note on the listed duration (e.g. "may take longer"). -->
+                    <p v-if="service.description" class="mt-1.5 text-xs text-(--color-text-muted)">{{ service.description }}</p>
+                    <p v-if="service.pricingType === 'fixed'" class="mt-1.5 flex items-center gap-0.5 text-xs font-semibold text-(--color-accent-text)">
+                      انتخاب و رزرو
+                      <BaseIcon name="chevron-back" :size="12" />
+                    </p>
+                  </div>
+                </div>
+              </NuxtLink>
+            </li>
+          </ul>
+          <p
+            v-else
+            data-testid="services-empty"
+            class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-6 text-center text-sm text-(--color-text-muted)"
+          >
+            در حال حاضر خدمتی برای رزرو ثبت نشده است
+          </p>
+        </section>
 
-      <!-- Purely explanatory -- the booking flow itself already can't offer a slot on a
-           closed day/interval (server-enforced, availability.util.ts), so this list exists
-           only so a customer isn't left guessing why a day (or part of one) has no times.
-           Deliberately inside this section rather than a separate alarming banner, matching
-           PRODUCT.md's "legible trust over polish." -->
-      <div v-if="page.exceptions.length" data-testid="upcoming-closures" class="mt-3 space-y-1 border-t border-(--color-border) pt-3">
-        <p class="text-xs font-semibold text-(--color-text-muted)">تعطیلی‌های پیش رو</p>
-        <p v-for="e in page.exceptions" :key="e.date" class="text-xs text-(--color-text-muted)">
-          {{ formatClosureDate(e.date) }}
-          <span v-if="formatClosureTimeRange(e)">(<span dir="ltr" class="tnum">{{ formatClosureTimeRange(e) }}</span>)</span>
-          <span v-if="e.reason"> — {{ e.reason }}</span>
-        </p>
+        <!-- Packages are catalog/display only -- never bookable as one unit (see
+             SalonPackage's own doc comment on the backend). -->
+        <section v-if="page.packages.length" id="packages">
+          <h2 class="mb-2 text-xl font-bold text-(--color-text)">پکیج‌ها</h2>
+          <ul class="space-y-2">
+            <li
+              v-for="pkg in page.packages"
+              :key="pkg.id"
+              class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 text-sm shadow-(--shadow-sm)"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <span class="min-w-0 break-words font-bold text-(--color-text)">{{ pkg.name }}</span>
+                <span class="font-bold whitespace-nowrap text-(--color-text)">
+                  <template v-if="pkg.pricingType === 'quote'">قیمت توافقی</template>
+                  <template v-else-if="pkg.pricingType === 'range'">
+                    <span dir="ltr" class="tnum">{{ formatToman(pkg.price!) }}</span> تا
+                    <span dir="ltr" class="tnum">{{ formatToman(pkg.priceMax!) }}</span> تومان
+                  </template>
+                  <template v-else-if="pkg.pricingType === 'from'">
+                    از <span dir="ltr" class="tnum">{{ formatToman(pkg.price!) }}</span> تومان
+                  </template>
+                  <template v-else>
+                    <span dir="ltr" class="tnum">{{ formatToman(pkg.price!) }}</span> تومان
+                  </template>
+                </span>
+              </div>
+              <p v-if="pkg.description" class="mt-1 text-xs text-(--color-text-muted)">{{ pkg.description }}</p>
+              <ul class="mt-2 flex flex-wrap gap-1.5">
+                <li
+                  v-for="item in pkg.items"
+                  :key="item.serviceId"
+                  class="rounded-full bg-(--color-surface-subtle) px-2.5 py-1 text-xs text-(--color-text-muted)"
+                >
+                  {{ item.name }}
+                </li>
+              </ul>
+            </li>
+          </ul>
+        </section>
+
+        <PortfolioGrid
+          v-if="page.portfolio.length"
+          :items="page.portfolio"
+          :services="page.services"
+          :slug="slug"
+          :salon-id="page.salon.id"
+          :can-report="canReport"
+          :attribution-source="attributionSource"
+        />
+
+        <SalonTeam :workers="page.workers" />
+
+        <SalonReviews
+          v-if="featureFlags.reviewsEnabled"
+          :reviews="allReviews"
+          :total="page.reviewsTotal"
+          :loading-more="loadingMoreReviews"
+          :can-report="canReport"
+          @report="openReviewReport"
+          @load-more="loadMoreReviews"
+        />
+
+        <!-- Location and hours: one section, side by side on desktop (map | hours) where the
+             column is wide enough, stacked on phones in the same order as before. -->
+        <div class="space-y-6 lg:grid lg:grid-cols-2 lg:items-start lg:gap-6 lg:space-y-0">
+          <section id="location" class="scroll-mt-20">
+            <h2 class="mb-2 flex items-center gap-1.5 text-xl font-bold text-(--color-text)">
+              <BaseIcon name="map-pin" :size="17" class="text-(--color-text-muted)" />
+              موقعیت مکانی
+            </h2>
+            <div class="space-y-2">
+              <LazySalonMap
+                compact
+                data-testid="salon-map"
+                :salons="salonMapData.salons"
+                :center="salonMapData.center"
+                :salon-coords="salonMapData.salonCoords"
+              />
+              <!-- Exposed directly here, not just inside the map's own marker popup two taps deep. -->
+              <div class="grid grid-cols-2 gap-2 text-xs font-semibold">
+                <a
+                  :href="neshanUrl(salonMapData.center.lat, salonMapData.center.lng)"
+                  target="_blank"
+                  rel="noopener"
+                  class="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-(--color-border) bg-(--color-surface-card) text-(--color-text) transition-colors hover:bg-(--color-surface-subtle)"
+                >
+                  مسیریابی با نشان
+                </a>
+                <a
+                  :href="googleMapsUrl(salonMapData.center.lat, salonMapData.center.lng)"
+                  target="_blank"
+                  rel="noopener"
+                  class="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-(--color-border) bg-(--color-surface-card) text-(--color-text) transition-colors hover:bg-(--color-surface-subtle)"
+                >
+                  مسیریابی با گوگل‌مپ
+                </a>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <div class="mb-2 flex flex-wrap items-center gap-2">
+              <h2 class="flex items-center gap-1.5 text-xl font-bold text-(--color-text)">
+                <BaseIcon name="clock" :size="17" class="text-(--color-text-muted)" />
+                ساعات کاری
+              </h2>
+              <!-- Computed client-side only (see isOpenNow's own comment). Neutral colors
+                   throughout -- being closed right now is normal information, not an error. -->
+              <span
+                v-if="isOpenNow !== null"
+                data-testid="hours-open-status"
+                class="rounded-full px-2 py-0.5 text-xs font-bold"
+                :class="isOpenNow ? 'bg-(--color-surface-subtle) text-(--color-success)' : 'bg-(--color-surface-subtle) text-(--color-text-muted)'"
+              >
+                {{ isOpenNow ? 'باز است' : 'بسته است' }}
+              </span>
+            </div>
+            <ul v-if="page.hours.length" data-testid="hours-list" class="space-y-1 text-sm text-(--color-text)">
+              <li
+                v-for="day in orderedHours"
+                :key="day.weekday"
+                class="flex items-center justify-between gap-2 rounded-lg px-2 py-1"
+                :class="day.weekday === todayWeekday ? 'bg-(--color-surface-subtle) font-bold' : ''"
+              >
+                <span class="shrink-0">{{ WEEKDAY_NAMES[day.weekday] }}</span>
+                <span class="mx-1 min-w-4 flex-1 self-center border-b border-dotted border-(--color-border)" aria-hidden="true" />
+                <!-- dir="ltr" isn't decorative: without it the bidi algorithm reorders this
+                     RTL-embedded "09:00 - 20:00" run so open/close visually swap. Applied to the
+                     WHOLE joined string so a split shift's two ranges keep their real order. -->
+                <span dir="ltr" class="tnum text-end">
+                  <template v-for="(dayRange, i) in day.ranges" :key="i">
+                    <span v-if="i > 0">، </span>{{ toPersianDigits(dayRange.openTime.slice(0, 5)) }} - {{ toPersianDigits(dayRange.closeTime.slice(0, 5)) }}
+                  </template>
+                </span>
+              </li>
+            </ul>
+            <p v-else data-testid="hours-empty" class="text-sm text-(--color-text-muted)">ساعات کاری ثبت نشده است</p>
+
+            <!-- Purely explanatory -- the booking flow itself already can't offer a slot on a
+                 closed day/interval (server-enforced, availability.util.ts). -->
+            <div v-if="page.exceptions.length" data-testid="upcoming-closures" class="mt-3 space-y-1 border-t border-(--color-border) pt-3">
+              <p class="text-xs font-semibold text-(--color-text-muted)">تعطیلی‌های پیش رو</p>
+              <p v-for="e in page.exceptions" :key="e.date" class="text-xs text-(--color-text-muted)">
+                {{ formatClosureDate(e.date) }}
+                <span v-if="formatClosureTimeRange(e)">(<span dir="ltr" class="tnum">{{ formatClosureTimeRange(e) }}</span>)</span>
+                <span v-if="e.reason"> — {{ e.reason }}</span>
+              </p>
+            </div>
+          </section>
+        </div>
+
+        <button
+          v-if="canReport"
+          type="button"
+          data-testid="report-salon-button"
+          class="inline-flex min-h-11 items-center text-xs opacity-70 underline"
+          @click="openSalonReport"
+        >
+          گزارش این سالن
+        </button>
       </div>
-    </section>
 
+      <!-- Desktop only. Short by design so `sticky` is safe: price floor, the one action the page
+           exists for, today's status and the phone number -- all real data already on the page. -->
+      <aside class="hidden lg:block">
+        <div class="sticky top-20 space-y-3">
+          <div data-testid="booking-summary" class="space-y-4 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-5 shadow-(--shadow-md)">
+            <div v-if="minServicePrice !== null">
+              <!-- «شروع از»: the cheapest honest floor (see minServicePrice) -- never an exact
+                   price, and never a quote-only service. -->
+              <p class="text-sm text-(--color-text-muted)">شروع از</p>
+              <p class="text-2xl font-bold text-(--color-text)"><span dir="ltr" class="tnum">{{ formatToman(minServicePrice) }}</span> <span class="text-base">تومان</span></p>
+            </div>
+            <p v-else class="text-sm text-(--color-text-muted)">قیمت خدمات این سالن پس از هماهنگی مشخص می‌شود.</p>
+            <a
+              href="#services"
+              class="flex min-h-12 items-center justify-center rounded-xl bg-(--color-accent) px-5 text-sm font-semibold text-(--color-fill-text) shadow-(--shadow-sm) transition-colors duration-150 hover:bg-(--color-accent-deep) active:bg-(--color-accent-pressed)"
+              @click.prevent="scrollToSection('services')"
+            >
+              مشاهده خدمات و رزرو
+            </a>
+            <ul class="space-y-2 border-t border-(--color-border) pt-4 text-sm">
+              <li v-if="featureFlags.reviewsEnabled" class="flex items-center justify-between gap-2">
+                <span class="text-(--color-text-muted)">امتیاز</span>
+                <RatingLabel :average="page.salon.ratingAvg" :count="page.salon.ratingCount" />
+              </li>
+              <li v-if="isOpenNow !== null" class="flex items-center justify-between gap-2" data-testid="summary-today">
+                <span class="text-(--color-text-muted)">امروز</span>
+                <span class="flex items-center gap-2">
+                  <span v-if="todayHoursLabel" dir="ltr" class="tnum text-(--color-text)">{{ todayHoursLabel }}</span>
+                  <span class="font-semibold" :class="isOpenNow ? 'text-(--color-success)' : 'text-(--color-text-muted)'">{{ isOpenNow ? 'باز است' : 'بسته است' }}</span>
+                </span>
+              </li>
+              <li class="flex items-start gap-1.5 text-(--color-text-muted)">
+                <BaseIcon name="shield" :size="14" class="mt-0.5 shrink-0" />
+                <span v-if="featureFlags.onlinePaymentEnabled">برای تضمین نوبت، بیعانه آنلاین دریافت می‌شود.</span>
+                <span v-else>بیعانه‌ای دریافت نمی‌شود؛ هزینه در سالن پرداخت می‌شود.</span>
+              </li>
+            </ul>
+          </div>
+
+          <a
+            v-if="contact"
+            :href="contact.href"
+            data-testid="salon-contact-desktop"
+            class="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-(--color-border) bg-(--color-surface-card) px-4 text-sm font-semibold text-(--color-text) transition-colors hover:bg-(--color-surface-subtle)"
+          >
+            <BaseIcon name="phone" :size="16" />
+            تماس با سالن
+            <span dir="ltr" class="tnum text-(--color-text-muted)">{{ contact.display }}</span>
+          </a>
+          <a
+            href="#location"
+            class="flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-medium text-(--color-accent-text) transition-colors hover:bg-(--color-surface-subtle)"
+            @click.prevent="scrollToSection('location')"
+          >
+            <BaseIcon name="navigation" :size="15" />
+            نقشه و مسیریابی
+          </a>
+        </div>
       </aside>
     </div>
 
@@ -773,12 +873,8 @@ function scrollToSection(id: string) {
       @close="closeStoryViewer"
     />
 
-    <!-- Sticky footer CTA: the only persistent way back to "book" on a page long enough to
-         scroll through photos/map/about/portfolio/hours/team/reviews. Deliberately NOT
-         accent-colored -- a dark, confident neutral fill reads as "the important action"
-         through weight and permanence rather than by competing with the page's accents. Nested inside the
-         max-w-2xl content column (not a true edge-to-edge bar) so it stays visually aligned
-         with the page on wider viewports instead of stretching full-bleed behind it. -->
+    <!-- Phones: sticky footer CTA, the only persistent way back to "book" on a page long enough
+         to scroll through photos/map/about/portfolio/hours/team/reviews. -->
     <div
       v-if="minServicePrice !== null"
       class="fixed inset-x-0 bottom-0 z-40 border-t border-(--color-border) bg-(--color-surface-card) lg:hidden"
@@ -791,7 +887,7 @@ function scrollToSection(id: string) {
         </p>
         <a
           href="#services"
-          class="flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-(--color-text) px-5 text-sm font-semibold text-(--color-surface)"
+          class="flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-(--color-accent) px-5 text-sm font-semibold text-(--color-fill-text) shadow-(--shadow-sm) transition-colors duration-150 hover:bg-(--color-accent-deep) active:bg-(--color-accent-pressed)"
           @click.prevent="scrollToSection('services')"
         >
           مشاهده خدمات

@@ -78,8 +78,29 @@ const cityOptions = computed<SelectOption[]>(() => cities.value.map((c) => ({ va
 const loading = ref(true)
 const searchError = ref(false)
 const locating = ref(false)
+// Whether `coords` is the customer's own position («نزدیک من») or just the selected city's
+// centre. Distance is only shown on cards for the former: «۰٫۰ کیلومتر» measured from a city
+// centroid is meaningless to someone who never shared where they are. `resultsFromMyLocation`
+// is captured when a result set lands, so the cards on screen always match how THEY were searched.
+const usingMyLocation = ref(false)
+const resultsFromMyLocation = ref(false)
 const view = ref<'list' | 'map'>('list')
 const salonCoords = ref<Record<string, { lat: number; lng: number }>>({})
+
+// Salon-name search. /search's `q` is a substring match on the salon's NAME only (see the
+// API's SearchQueryDto), so the field says exactly that rather than promising a service or
+// style search it can't do. `searchInput` is what is typed; `searchQuery` is what the results
+// currently reflect -- the search runs on submit (or clear), not per keystroke, so typing a
+// name costs one request instead of one per letter on a slow connection.
+const SEARCH_MAX_LENGTH = 100 // the DTO's @Length(1, 100)
+const searchInput = ref('')
+const searchQuery = ref('')
+
+// Cursor pagination ("بیشتر"). The cursor is opaque and only valid for the exact parameters
+// that produced it, so it is reset by every fresh search and always sent back with them.
+const nextCursor = ref<string | null>(null)
+const loadingMore = ref(false)
+const loadMoreError = ref(false)
 
 // A logged-in customer's results follow their own gender (mapped to /search's vocabulary).
 // An anonymous visitor has none, and /search REQUIRES one -- the old answer was a login wall
@@ -96,7 +117,24 @@ const needsProfile = computed(() => session.isLoggedIn && !searchGender.value)
 
 let requestSeq = 0
 
+// The full parameter set for the current filters. Shared by a fresh search and by "بیشتر",
+// which must repeat exactly the same parameters for its cursor to mean anything.
+function currentSearchQuery() {
+  return {
+    lat: coords.value.lat,
+    lng: coords.value.lng,
+    gender: searchGender.value,
+    categoryId: selectedCategoryId.value ?? undefined,
+    sort: sort.value,
+    q: searchQuery.value || undefined,
+  }
+}
+
 async function loadSalons() {
+  // Any in-flight "بیشتر" belongs to the previous result set; requestSeq below discards it.
+  loadingMore.value = false
+  loadMoreError.value = false
+  nextCursor.value = null
   if (needsProfile.value) {
     salons.value = []
     searchError.value = false
@@ -106,14 +144,9 @@ async function loadSalons() {
   const seq = ++requestSeq
   loading.value = true
   searchError.value = false
+  const fromMyLocation = usingMyLocation.value
   const { data, error } = await apiFetch<SearchPage>('/search', {
-    query: {
-      lat: coords.value.lat,
-      lng: coords.value.lng,
-      gender: searchGender.value,
-      categoryId: selectedCategoryId.value ?? undefined,
-      sort: sort.value,
-    },
+    query: currentSearchQuery(),
     silent: true,
   })
   // A slower, now-superseded request landing after a newer one -- discard it so a fast
@@ -125,10 +158,9 @@ async function loadSalons() {
     loading.value = false
     return
   }
-  // Only the first page is rendered today (hasMore/nextCursor are unused) -- identical
-  // visible behavior to before this endpoint returned an envelope, since the default
-  // page size (50) matches the old hard cap.
   salons.value = data?.items ?? []
+  resultsFromMyLocation.value = fromMyLocation
+  nextCursor.value = data?.hasMore ? data.nextCursor : null
   loading.value = false
   // A search re-run while already in map view brings in salons whose coordinates were never
   // fetched -- the view watcher below only fires on the list→map flip, so without this the
@@ -154,14 +186,60 @@ const initialSearch = await useAsyncData('home-initial-search', async () => {
 const initialPage = initialSearch.data.value
 if (initialPage) {
   salons.value = initialPage.items ?? []
+  nextCursor.value = initialPage.hasMore ? initialPage.nextCursor : null
   loading.value = false
+}
+
+// Next page, appended. Does NOT bump requestSeq: if the filters change while this is in
+// flight, loadSalons() bumps it and this response is dropped instead of being appended to
+// a result set it doesn't belong to.
+async function loadMore() {
+  if (!nextCursor.value || loadingMore.value) return
+  const seq = requestSeq
+  loadingMore.value = true
+  loadMoreError.value = false
+  const { data, error } = await apiFetch<SearchPage>('/search', {
+    query: { ...currentSearchQuery(), cursor: nextCursor.value },
+    silent: true,
+  })
+  if (seq !== requestSeq) return
+  loadingMore.value = false
+  if (error || !data) {
+    loadMoreError.value = true
+    return
+  }
+  // Pages are computed per request, so a salon can shift across a page boundary between two
+  // calls (a new review moving the rating sort); never render it twice.
+  const seen = new Set(salons.value.map((s) => s.id))
+  salons.value = [...salons.value, ...data.items.filter((s) => !seen.has(s.id))]
+  nextCursor.value = data.hasMore ? data.nextCursor : null
+  if (view.value === 'map') await loadCoordsForMap()
+}
+
+// The type-ahead under the search field searches the same area and gender as the results
+// list, so a suggestion is never a salon the list itself would hide. None while the account
+// still needs a gender (there is no valid search to suggest from).
+const suggestionContext = computed(() =>
+  searchGender.value ? { lat: coords.value.lat, lng: coords.value.lng, gender: searchGender.value } : null,
+)
+
+function submitSearch() {
+  searchQuery.value = searchInput.value.trim().slice(0, SEARCH_MAX_LENGTH)
+}
+
+function clearSearch() {
+  searchInput.value = ''
+  searchQuery.value = ''
 }
 
 // Selecting a city only updates the search coordinates; the coords watch below is the
 // single place that actually re-runs the search, shared with the "near me" geolocation path.
 watch(selectedCity, (name) => {
   const city = cities.value.find((c) => c.name === name)
-  if (city) coords.value = { lat: city.lat, lng: city.lng }
+  if (city) {
+    usingMyLocation.value = false
+    coords.value = { lat: city.lat, lng: city.lng }
+  }
 })
 
 function useMyLocation() {
@@ -169,6 +247,7 @@ function useMyLocation() {
   locating.value = true
   navigator.geolocation.getCurrentPosition(
     (pos) => {
+      usingMyLocation.value = true
       coords.value = { lat: pos.coords.latitude, lng: pos.coords.longitude }
       locating.value = false
     },
@@ -196,7 +275,7 @@ onMounted(async () => {
   await salonsLoaded
 })
 
-watch([selectedCategoryId, sort, coords, anonGender], loadSalons, { deep: true })
+watch([selectedCategoryId, sort, coords, anonGender, searchQuery], loadSalons, { deep: true })
 
 async function loadCoordsForMap() {
   const missing = salons.value.filter((s) => !salonCoords.value[s.id])
@@ -256,20 +335,59 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
 </script>
 
 <template>
-  <div class="mx-auto max-w-2xl space-y-5 p-4 lg:max-w-5xl lg:p-6">
-    <h1 class="text-xl font-bold text-(--color-text) lg:text-2xl">سالن‌های نزدیک شما</h1>
+  <div class="mx-auto max-w-2xl space-y-5 px-4 py-4 lg:max-w-6xl lg:px-6 lg:py-6">
+    <!-- Logged-out hero: what قیچی is, in one line, plus the search. A first-time visitor used to
+         land straight on a filter row with no idea what the site was for. A logged-in customer
+         already knows, so they get the plain heading and the same search instead. -->
+    <section
+      v-if="!session.isLoggedIn"
+      data-testid="home-hero"
+      class="relative rounded-[20px] bg-(--color-surface-subtle) px-5 py-6 sm:px-8 sm:py-8 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-12 lg:px-12 lg:py-10"
+    >
+      <div class="min-w-0 space-y-4">
+        <div class="flex items-start gap-3">
+          <div class="min-w-0 flex-1 space-y-3">
+            <p class="text-sm font-semibold text-(--color-accent-text-strong)">رزرو آنلاین نوبت سالن زیبایی</p>
+            <h1 class="text-2xl leading-snug font-extrabold text-(--color-text) sm:text-3xl lg:text-4xl lg:leading-tight">
+              سالن نزدیکت را پیدا کن، نوبتت را همین حالا بگیر
+            </h1>
+          </div>
+          <!-- Phone-size mascot beside the headline; the large one takes over from `lg`. -->
+          <img src="/mascot-full.webp" alt="" width="267" height="480" decoding="async" class="h-28 w-auto shrink-0 lg:hidden" />
+        </div>
+        <p class="max-w-xl text-sm leading-7 text-(--color-text-muted) sm:text-base sm:leading-8">
+          خدمات و قیمت‌ها، نمونه‌کارها و نظر مشتریانی که واقعاً نوبت گرفته‌اند را ببین و زمان خالی را آنلاین رزرو کن.
+        </p>
+        <SalonNameSearch v-model="searchInput" large :maxlength="SEARCH_MAX_LENGTH" :context="suggestionContext" class="max-w-xl" @submit="submitSearch" />
+      </div>
+      <img
+        src="/mascot-full.webp"
+        alt=""
+        width="267"
+        height="480"
+        decoding="async"
+        class="hidden h-72 w-auto lg:block"
+      />
+    </section>
 
-    <!-- Beauty Guide entry point. Only offered when the feature is on (the flag fails closed),
-         and only for logged-in customers -- the guide page itself is private. A quiet tinted
-         strip rather than a bordered card: it is a secondary path, and the page already has
-         plenty of white boxes (DESIGN.md: no cards-on-cards). -->
+    <template v-else>
+      <h1 class="text-xl font-bold text-(--color-text) lg:text-2xl">سالن‌های نزدیک شما</h1>
+      <SalonNameSearch v-model="searchInput" :maxlength="SEARCH_MAX_LENGTH" :context="suggestionContext" class="lg:max-w-xl" @submit="submitSearch" />
+    </template>
+
+    <!-- Beauty Guide entry point, whenever the feature is on (the flag fails closed). The guide
+         itself is private, so a logged-out visitor following it goes through login and back
+         (auth.global's ?redirect). Its mascot is the "thinking" pose -- the guide is the one
+         analysis moment in the product. -->
     <NuxtLink
-      v-if="featureFlags.beautyGuideEnabled && session.isLoggedIn"
+      v-if="featureFlags.beautyGuideEnabled"
       to="/beauty-guide"
       data-testid="beauty-guide-cta"
-      class="flex items-center gap-3 rounded-2xl bg-(--color-accent-soft) px-4 py-3.5 transition-colors hover:bg-(--color-surface-subtle) active:scale-[0.99] motion-reduce:active:scale-100"
+      class="flex items-center gap-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-3 shadow-(--shadow-sm) transition-shadow duration-150 hover:shadow-(--shadow-md) lg:max-w-xl"
     >
-      <BaseIcon name="sparkles" :size="22" class="shrink-0 text-(--color-ai)" />
+      <span class="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-(--color-mascot-tile)">
+        <img src="/mascot/thinking.webp" alt="" width="64" height="64" loading="lazy" class="h-full w-full object-contain" />
+      </span>
       <span class="min-w-0 flex-1">
         <span class="block font-bold text-(--color-text)">این استایل را پیدا کن</span>
         <span class="block text-xs leading-5 text-(--color-text-muted)">عکس استایل دلخواهت را بفرست؛ می‌گوییم اسمش چیست و کدام سالن‌ها انجامش می‌دهند.</span>
@@ -277,159 +395,181 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
       <BaseIcon name="chevron-back" :size="18" class="shrink-0 text-(--color-text-muted)" />
     </NuxtLink>
 
-    <!-- City picker and "near me" share one row: both answer "where?", and on a phone they used
-         to cost two full-width rows. The label moved onto AppSelect itself (kept for screen
-         readers, not drawn): as a bare sibling <label> it named nothing -- a native `for`
-         can't reach vue-multiselect's combobox div -- so the field read as unlabelled.
-         AppSelect associates it via aria-labelledby. -->
-    <div class="flex items-center gap-2">
-      <AppSelect v-model="selectedCity" class="min-w-0 flex-1" label="شهر" hide-label :options="cityOptions" placeholder="شهر را انتخاب کنید" />
-      <BaseButton variant="secondary" size="md" :loading="locating" class="shrink-0" @click="useMyLocation">
-        <template #icon><BaseIcon name="map-pin" :size="16" /></template>
-        نزدیک من
-      </BaseButton>
-    </div>
+    <h2 v-if="!session.isLoggedIn" class="pt-1 text-lg font-bold text-(--color-text) lg:text-xl">سالن‌های نزدیک شما</h2>
 
-    <!-- snap-x + hidden native scrollbar: the row used to show a bare OS scrollbar with no
-         scroll affordance beyond it. Snapping gives each pill a resting position instead of
-         free-floating mid-scroll, and each pill's own category icon (service_categories.icon,
-         previously unused here) makes the row scannable without reading every label.
-         The two overlaid buttons are load-bearing, not decoration: hiding the scrollbar
-         removed the only signal a mouse-only desktop user had that more pills exist off-
-         screen (no touch drag, and a bare vertical wheel doesn't move a horizontal row) --
-         without them, everything past the fold was genuinely unreachable by mouse. -->
-    <div class="relative -mx-4 px-4" style="mask-image: linear-gradient(to left, transparent, black 24px, black calc(100% - 24px), transparent); -webkit-mask-image: linear-gradient(to left, transparent, black 24px, black calc(100% - 24px), transparent);">
-      <div
-        ref="categoryScrollEl"
-        class="flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        role="group"
-        aria-label="دسته‌بندی خدمات"
-        @scroll="updateCategoryScrollBoundaries"
-      >
-        <button
-          type="button"
-          :aria-pressed="selectedCategoryId === null"
-          class="min-h-10 shrink-0 snap-start whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors"
-          :class="selectedCategoryId === null
-            ? 'bg-(--color-accent-strong) text-(--color-fill-text)'
-            : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) hover:text-(--color-text)'"
-          @click="selectedCategoryId = null"
-        >
-          همه
-        </button>
-        <button
-          v-for="cat in categories"
-          :key="cat.id"
-          type="button"
-          :aria-pressed="selectedCategoryId === cat.id"
-          class="flex min-h-10 shrink-0 snap-start items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors"
-          :class="selectedCategoryId === cat.id
-            ? 'bg-(--color-accent-strong) text-(--color-fill-text)'
-            : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) hover:text-(--color-text)'"
-          @click="selectedCategoryId = cat.id"
-        >
-          <BaseIcon :name="iconForCategory(cat.icon)" :size="15" />
-          {{ cat.name }}
-        </button>
-      </div>
-
+    <!-- Active name search, stated plainly with a way out: the results below are filtered by it. -->
+    <div v-if="searchQuery" data-testid="home-search-active" class="flex flex-wrap items-center gap-2 text-sm">
+      <span class="text-(--color-text-muted)">نتایج برای</span>
+      <span class="font-bold break-all text-(--color-text)">«{{ searchQuery }}»</span>
       <button
-        v-show="!categoryAtStart"
         type="button"
-        aria-label="بازگشت به ابتدای دسته‌بندی‌ها"
-        data-testid="categories-scroll-back"
-        class="absolute start-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) shadow-(--shadow-sm) transition-colors hover:text-(--color-text)"
-        @click="scrollCategories('back')"
+        data-testid="home-search-clear"
+        class="inline-flex min-h-9 items-center gap-1 rounded-full border border-(--color-border) bg-(--color-surface-card) px-3 text-(--color-text-muted) transition-colors hover:text-(--color-text)"
+        @click="clearSearch"
       >
-        <BaseIcon name="chevron-forward" :size="16" />
-      </button>
-      <button
-        v-show="!categoryAtEnd"
-        type="button"
-        aria-label="دیدن دسته‌بندی‌های بیشتر"
-        data-testid="categories-scroll-more"
-        class="absolute end-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) shadow-(--shadow-sm) transition-colors hover:text-(--color-text)"
-        @click="scrollCategories('more')"
-      >
-        <BaseIcon name="chevron-back" :size="16" />
+        <BaseIcon name="x" :size="14" />
+        پاک کردن جستجو
       </button>
     </div>
 
-    <!-- Neutral segmented controls, not accent-filled buttons: the selected category pill
-         above is this screen's one accent-colored element (The One Seal Rule) -- the
-         view/sort toggles are secondary filters, not the primary action, so their active
-         state is a raised surface-card segment (shadow.sm + bold text) instead of a second
-         accent fill. flex-wrap covers 320px, where the groups together no longer fit one
-         row. An anonymous visitor additionally chooses women's/men's salons (a logged-in
-         customer's results follow their profile, so the choice is not offered to them). -->
-    <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-      <div
-        v-if="!session.isLoggedIn"
-        class="inline-flex rounded-full bg-(--color-surface-subtle) p-1"
-        role="group"
-        aria-label="نوع سالن"
-        data-testid="anon-gender"
-      >
-        <button
-          type="button"
-          :aria-pressed="anonGender === 'women'"
-          class="min-h-9 rounded-full px-4 py-1.5 text-sm font-medium transition-colors"
-          :class="anonGender === 'women' ? 'bg-(--color-surface-card) font-semibold text-(--color-text) shadow-(--shadow-sm)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
-          @click="anonGender = 'women'"
+    <!-- Filters. One column on phones in reading order (where, what, how); from `lg` the
+         "where" field and the three toggles share the first row so the desktop width is used,
+         and the category rail spans the full width beneath them. -->
+    <div class="grid gap-5 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] lg:items-center lg:gap-x-6 lg:gap-y-4">
+      <!-- City picker and "near me" share one row: both answer "where?", and on a phone they used
+           to cost two full-width rows. The label moved onto AppSelect itself (kept for screen
+           readers, not drawn): as a bare sibling <label> it named nothing -- a native `for`
+           can't reach vue-multiselect's combobox div -- so the field read as unlabelled.
+           AppSelect associates it via aria-labelledby. -->
+      <div class="flex items-center gap-2 lg:col-start-1 lg:row-start-1">
+        <AppSelect v-model="selectedCity" class="min-w-0 flex-1" label="شهر" hide-label :options="cityOptions" placeholder="شهر را انتخاب کنید" />
+        <BaseButton variant="secondary" size="md" :loading="locating" class="shrink-0" @click="useMyLocation">
+          <template #icon><BaseIcon name="map-pin" :size="16" /></template>
+          نزدیک من
+        </BaseButton>
+      </div>
+
+      <!-- snap-x + hidden native scrollbar: the row used to show a bare OS scrollbar with no
+           scroll affordance beyond it. Snapping gives each pill a resting position instead of
+           free-floating mid-scroll, and each pill's own category icon (service_categories.icon,
+           previously unused here) makes the row scannable without reading every label.
+           The two overlaid buttons are load-bearing, not decoration: hiding the scrollbar
+           removed the only signal a mouse-only desktop user had that more pills exist off-
+           screen (no touch drag, and a bare vertical wheel doesn't move a horizontal row) --
+           without them, everything past the fold was genuinely unreachable by mouse. -->
+      <div class="relative -mx-4 min-w-0 px-4 lg:col-span-2 lg:row-start-2" style="mask-image: linear-gradient(to left, transparent, black 24px, black calc(100% - 24px), transparent); -webkit-mask-image: linear-gradient(to left, transparent, black 24px, black calc(100% - 24px), transparent);">
+        <div
+          ref="categoryScrollEl"
+          class="flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          role="group"
+          aria-label="دسته‌بندی خدمات"
+          @scroll="updateCategoryScrollBoundaries"
         >
-          بانوان
+          <button
+            type="button"
+            :aria-pressed="selectedCategoryId === null"
+            class="min-h-10 shrink-0 snap-start whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors"
+            :class="selectedCategoryId === null
+              ? 'bg-(--color-accent) font-semibold text-(--color-fill-text)'
+              : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) hover:text-(--color-text)'"
+            @click="selectedCategoryId = null"
+          >
+            همه
+          </button>
+          <button
+            v-for="cat in categories"
+            :key="cat.id"
+            type="button"
+            :aria-pressed="selectedCategoryId === cat.id"
+            class="flex min-h-10 shrink-0 snap-start items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors"
+            :class="selectedCategoryId === cat.id
+              ? 'bg-(--color-accent) font-semibold text-(--color-fill-text)'
+              : 'border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) hover:text-(--color-text)'"
+            @click="selectedCategoryId = cat.id"
+          >
+            <BaseIcon :name="iconForCategory(cat.icon)" :size="15" />
+            {{ cat.name }}
+          </button>
+        </div>
+
+        <button
+          v-show="!categoryAtStart"
+          type="button"
+          aria-label="بازگشت به ابتدای دسته‌بندی‌ها"
+          data-testid="categories-scroll-back"
+          class="absolute start-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) shadow-(--shadow-sm) transition-colors hover:text-(--color-text)"
+          @click="scrollCategories('back')"
+        >
+          <BaseIcon name="chevron-forward" :size="16" />
         </button>
         <button
+          v-show="!categoryAtEnd"
           type="button"
-          :aria-pressed="anonGender === 'men'"
-          class="min-h-9 rounded-full px-4 py-1.5 text-sm font-medium transition-colors"
-          :class="anonGender === 'men' ? 'bg-(--color-surface-card) font-semibold text-(--color-text) shadow-(--shadow-sm)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
-          @click="anonGender = 'men'"
+          aria-label="دیدن دسته‌بندی‌های بیشتر"
+          data-testid="categories-scroll-more"
+          class="absolute end-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) shadow-(--shadow-sm) transition-colors hover:text-(--color-text)"
+          @click="scrollCategories('more')"
         >
-          آقایان
+          <BaseIcon name="chevron-back" :size="16" />
         </button>
       </div>
 
-      <div class="inline-flex rounded-full bg-(--color-surface-subtle) p-1" role="group" aria-label="نوع نمایش">
-        <button
-          type="button"
-          :aria-pressed="view === 'list'"
-          class="min-h-9 rounded-full px-4 py-1.5 text-sm font-medium transition-colors"
-          :class="view === 'list' ? 'bg-(--color-surface-card) font-semibold text-(--color-text) shadow-(--shadow-sm)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
-          @click="view = 'list'"
+      <!-- Neutral segmented controls, not accent-filled buttons: the selected category pill
+           above is this screen's one accent-colored element (The One Seal Rule) -- the
+           view/sort toggles are secondary filters, not the primary action, so their active
+           state is a raised surface-card segment (shadow.sm + bold text) instead of a second
+           accent fill. flex-wrap covers 320px, where the groups together no longer fit one
+           row. An anonymous visitor additionally chooses women's/men's salons (a logged-in
+           customer's results follow their profile, so the choice is not offered to them). -->
+      <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 lg:col-start-2 lg:row-start-1 lg:justify-end">
+        <div
+          v-if="!session.isLoggedIn"
+          class="inline-flex rounded-full bg-(--color-surface-subtle) p-1"
+          role="group"
+          aria-label="نوع سالن"
+          data-testid="anon-gender"
         >
-          لیست
-        </button>
-        <button
-          type="button"
-          :aria-pressed="view === 'map'"
-          class="min-h-9 rounded-full px-4 py-1.5 text-sm font-medium transition-colors"
-          :class="view === 'map' ? 'bg-(--color-surface-card) font-semibold text-(--color-text) shadow-(--shadow-sm)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
-          @click="view = 'map'"
-        >
-          نقشه
-        </button>
-      </div>
+          <button
+            type="button"
+            :aria-pressed="anonGender === 'women'"
+            class="min-h-10 rounded-full px-4 py-1.5 text-sm font-medium transition-colors"
+            :class="anonGender === 'women' ? 'bg-(--color-surface-card) font-semibold text-(--color-text) shadow-(--shadow-sm)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
+            @click="anonGender = 'women'"
+          >
+            بانوان
+          </button>
+          <button
+            type="button"
+            :aria-pressed="anonGender === 'men'"
+            class="min-h-10 rounded-full px-4 py-1.5 text-sm font-medium transition-colors"
+            :class="anonGender === 'men' ? 'bg-(--color-surface-card) font-semibold text-(--color-text) shadow-(--shadow-sm)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
+            @click="anonGender = 'men'"
+          >
+            آقایان
+          </button>
+        </div>
 
-      <div class="inline-flex rounded-full bg-(--color-surface-subtle) p-1 text-sm" role="group" aria-label="ترتیب نمایش">
-        <button
-          type="button"
-          :aria-pressed="sort === 'distance'"
-          class="min-h-9 rounded-full px-3.5 py-1.5 transition-colors"
-          :class="sort === 'distance' ? 'bg-(--color-surface-card) font-semibold text-(--color-text) shadow-(--shadow-sm)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
-          @click="sort = 'distance'"
-        >
-          نزدیک‌ترین
-        </button>
-        <button
-          type="button"
-          :aria-pressed="sort === 'rating'"
-          class="min-h-9 rounded-full px-3.5 py-1.5 transition-colors"
-          :class="sort === 'rating' ? 'bg-(--color-surface-card) font-semibold text-(--color-text) shadow-(--shadow-sm)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
-          @click="sort = 'rating'"
-        >
-          بهترین امتیاز
-        </button>
+        <div class="inline-flex rounded-full bg-(--color-surface-subtle) p-1" role="group" aria-label="نوع نمایش">
+          <button
+            type="button"
+            :aria-pressed="view === 'list'"
+            class="min-h-10 rounded-full px-4 py-1.5 text-sm font-medium transition-colors"
+            :class="view === 'list' ? 'bg-(--color-surface-card) font-semibold text-(--color-text) shadow-(--shadow-sm)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
+            @click="view = 'list'"
+          >
+            لیست
+          </button>
+          <button
+            type="button"
+            :aria-pressed="view === 'map'"
+            class="min-h-10 rounded-full px-4 py-1.5 text-sm font-medium transition-colors"
+            :class="view === 'map' ? 'bg-(--color-surface-card) font-semibold text-(--color-text) shadow-(--shadow-sm)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
+            @click="view = 'map'"
+          >
+            نقشه
+          </button>
+        </div>
+
+        <div class="inline-flex rounded-full bg-(--color-surface-subtle) p-1 text-sm" role="group" aria-label="ترتیب نمایش">
+          <button
+            type="button"
+            :aria-pressed="sort === 'distance'"
+            class="min-h-10 rounded-full px-3.5 py-1.5 transition-colors"
+            :class="sort === 'distance' ? 'bg-(--color-surface-card) font-semibold text-(--color-text) shadow-(--shadow-sm)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
+            @click="sort = 'distance'"
+          >
+            نزدیک‌ترین
+          </button>
+          <button
+            type="button"
+            :aria-pressed="sort === 'rating'"
+            class="min-h-10 rounded-full px-3.5 py-1.5 transition-colors"
+            :class="sort === 'rating' ? 'bg-(--color-surface-card) font-semibold text-(--color-text) shadow-(--shadow-sm)' : 'text-(--color-text-muted) hover:text-(--color-text)'"
+            @click="sort = 'rating'"
+          >
+            بهترین امتیاز
+          </button>
+        </div>
       </div>
     </div>
 
@@ -477,21 +617,42 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
       </div>
       <LazySalonMap v-if="view === 'map' && !searchError" :salons="salons" :center="coords" :salon-coords="salonCoords" />
       <template v-else-if="view === 'list' && !loading && !searchError">
-        <div v-if="!salons.length" data-testid="salons-empty" class="flex flex-col items-center gap-2 py-10 text-center">
-          <BaseIcon name="search" :size="28" class="text-(--color-text-muted) opacity-60" />
-          <p class="font-medium text-(--color-text)">سالنی در این منطقه پیدا نشد</p>
-          <p class="max-w-xs text-sm text-(--color-text-muted)">شهر دیگری را امتحان کنید یا دسته‌بندی را روی «همه» بگذارید.</p>
-          <BaseButton v-if="selectedCategoryId !== null" variant="secondary" size="md" @click="selectedCategoryId = null">نمایش همه دسته‌ها</BaseButton>
-        </div>
+        <EmptyState
+          v-if="!salons.length"
+          data-testid="salons-empty"
+          pose="curious"
+          :title="searchQuery ? `سالنی با نام «${searchQuery}» پیدا نشد` : 'سالنی در این منطقه پیدا نشد'"
+          :description="searchQuery ? 'بخشی از نام را امتحان کنید یا جستجو را پاک کنید.' : 'شهر دیگری را امتحان کنید یا دسته‌بندی را روی «همه» بگذارید.'"
+        >
+          <div class="flex flex-wrap justify-center gap-2">
+            <BaseButton v-if="searchQuery" variant="secondary" size="md" @click="clearSearch">پاک کردن جستجو</BaseButton>
+            <BaseButton v-if="selectedCategoryId !== null" variant="secondary" size="md" @click="selectedCategoryId = null">نمایش همه دسته‌ها</BaseButton>
+          </div>
+        </EmptyState>
         <template v-else>
           <h2 class="sr-only">نتایج جستجو</h2>
           <!-- Single column stays the true default (mobile-primary per PRODUCT.md); the card is
                image-first, so two columns from `sm` keeps each photo a useful size. -->
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <SalonCard v-for="(salon, i) in salons" :key="salon.id" :salon="salon" :heading-level="3" :priority="i === 0" />
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
+            <SalonCard v-for="(salon, i) in salons" :key="salon.id" :salon="salon" :heading-level="3" :priority="i === 0" :show-distance="resultsFromMyLocation" />
           </div>
         </template>
       </template>
+
+      <!-- "بیشتر": only when the API says there is a next page. Shared by list and map views
+           (the map gets the new pins too). A failed page keeps what is already shown. -->
+      <div v-if="!loading && !searchError && (nextCursor || loadMoreError)" class="flex flex-col items-center gap-2 pt-1">
+        <p v-if="loadMoreError" role="alert" data-testid="load-more-error" class="text-sm text-(--color-danger)">بارگذاری سالن‌های بیشتر انجام نشد.</p>
+        <BaseButton
+          variant="secondary"
+          :loading="loadingMore"
+          data-testid="load-more"
+          class="min-w-40"
+          @click="loadMore"
+        >
+          {{ loadMoreError ? 'تلاش دوباره' : 'بیشتر' }}
+        </BaseButton>
+      </div>
     </template>
 
     <!-- Rendered unconditionally (not behind the results): the results list is client-loaded, so

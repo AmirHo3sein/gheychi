@@ -22,8 +22,20 @@ describe('SalonTeam', () => {
     expect(wrapper.text()).toContain('(۱۲)')
   })
 
-  it('shows a no-rating placeholder for a worker with zero ratings', async () => {
+  // Intentional behaviour change (wave 2): «بدون امتیاز» read as a verdict on the person, so
+  // a worker with no ratings now has no rating line at all.
+  it('shows no rating line (and no «بدون امتیاز») for a worker with zero ratings', async () => {
     const wrapper = await mountSuspended(SalonTeam, { props: { workers } })
-    expect(wrapper.text()).toContain('بدون امتیاز')
+    expect(wrapper.text()).not.toContain('بدون امتیاز')
+    const second = wrapper.findAll('[data-testid="salon-team-member"]')[1]!
+    expect(second.text()).toBe('نگار احمدی')
+  })
+
+  it('labels an owner-typed placeholder name («عضو ۱») as «متخصص سالن»', async () => {
+    const wrapper = await mountSuspended(SalonTeam, {
+      props: { workers: [{ id: 'w9', name: 'عضو ۱', ratingAvg: '0.00', ratingCount: 0 }] },
+    })
+    expect(wrapper.get('[data-testid="salon-team-member-name"]').text()).toBe('متخصص سالن')
+    expect(wrapper.text()).not.toContain('عضو ۱')
   })
 })

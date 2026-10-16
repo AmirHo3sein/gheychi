@@ -38,7 +38,7 @@ const COPY: Record<Outcome, {
     title: 'پرداخت با موفقیت انجام شد',
     body: 'نوبت شما با دریافت بیعانه ثبت شد.',
     icon: 'check-circle',
-    badgeClass: 'bg-(--color-success)/10 text-(--color-success)',
+    badgeClass: 'bg-(--color-success-soft) text-(--color-success-text)',
     bookingLinkLabel: 'مشاهده جزئیات نوبت',
   },
   // Neutral, not danger: the money is accounted for and the fix is already running, so this
@@ -70,7 +70,17 @@ useSeoMeta({ title: view.seoTitle })
 <template>
   <div class="flex min-h-screen items-center justify-center p-6">
     <BaseCard padding="lg" class="w-full max-w-sm space-y-4 text-center">
-      <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full" :class="view.badgeClass">
+      <!-- The one celebratory moment in the payment flow gets the «done» mascot; the refunding
+           and failed outcomes keep a plain status icon -- a cheerful character next to "your
+           payment failed" would read as tone-deaf. -->
+      <span
+        v-if="outcome === 'success'"
+        data-testid="callback-success-mascot"
+        class="mx-auto flex size-28 items-center justify-center overflow-hidden rounded-3xl bg-(--color-mascot-tile)"
+      >
+        <img src="/mascot/done.webp" alt="" width="112" height="112" decoding="async" class="h-full w-full object-contain" />
+      </span>
+      <div v-else class="mx-auto flex h-16 w-16 items-center justify-center rounded-full" :class="view.badgeClass">
         <BaseIcon :name="view.icon" :size="32" />
       </div>
 

@@ -20,4 +20,11 @@ describe('RatingLabel', () => {
     expect(label.attributes('aria-label')).toContain('۴٫۶')
     expect(wrapper.find('[data-testid="rating-new"]').exists()).toBe(false)
   })
+
+  it('draws a filled star and states the score out of five', async () => {
+    const wrapper = await mountSuspended(RatingLabel, { props: { average: 4, count: 3 } })
+    const label = wrapper.get('[data-testid="rating-label"]')
+    expect(label.get('svg').attributes('fill')).toBe('currentColor')
+    expect(label.attributes('aria-label')).toBe('امتیاز ۴٫۰ از ۵، ۳ نظر')
+  })
 })

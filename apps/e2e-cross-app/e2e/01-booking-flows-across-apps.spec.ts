@@ -130,7 +130,9 @@ test('a booking created by a customer in user-app is visible and actionable by t
   await ownerPage.getByRole('link', { name: 'نوبت‌ها', exact: true }).click()
   await expect(ownerPage).toHaveURL('http://localhost:3004/bookings')
 
-  const bookingCard = ownerPage.locator('[data-testid^="booking-"]').filter({ hasText: customerPhone })
+  // The provider panel renders the phone in Persian digits (still LTR-isolated).
+  const customerPhoneFa = customerPhone.replace(/[0-9]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]!)
+  const bookingCard = ownerPage.locator('[data-testid^="booking-"]').filter({ hasText: customerPhoneFa })
   await expect(bookingCard).toHaveCount(1)
   await expect(bookingCard).toContainText('مشتری کراس‌اپ')
 

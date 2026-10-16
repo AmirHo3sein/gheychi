@@ -20,6 +20,10 @@ const props = withDefaults(
   { loading: undefined, width: undefined, height: undefined, placeholderIconSize: 28 },
 )
 
+// Same sizing rule as SalonImagePlaceholder: ~1.25x the icon size, capped, so a failed tiny
+// thumb gets a tiny mark and a failed hero never gets a giant one.
+const markSize = computed(() => Math.min(56, Math.max(18, Math.round(props.placeholderIconSize * 1.25))))
+
 const failed = ref(false)
 const imgRef = ref<{ $el?: HTMLImageElement } | null>(null)
 
@@ -35,8 +39,23 @@ onMounted(() => {
 </script>
 
 <template>
-  <div v-if="failed" v-bind="$attrs" role="img" :aria-label="alt" data-testid="salon-image-placeholder" class="flex items-center justify-center bg-(--color-surface-subtle) text-(--color-text-muted)">
-    <BaseIcon name="scissors" :size="placeholderIconSize" class="opacity-50" />
+  <!-- Same branded treatment as SalonImagePlaceholder (blush -> peach wash + faded قیچی mark)
+       instead of a grey scissors that read as "broken". The mark is a CSS background, never an
+       <img>, so the box's own role="img" + aria-label stays the only accessible image here. -->
+  <div
+    v-if="failed"
+    v-bind="$attrs"
+    role="img"
+    :aria-label="alt"
+    data-testid="salon-image-placeholder"
+    class="flex items-center justify-center bg-linear-to-br from-(--color-surface-subtle) to-(--color-accent-soft) text-(--color-text-muted)"
+  >
+    <span
+      aria-hidden="true"
+      data-testid="placeholder-brand-mark"
+      class="block rounded-[28%] bg-cover bg-center opacity-55 mix-blend-multiply saturate-[.8] dark:opacity-40 dark:mix-blend-normal"
+      :style="{ width: `${markSize}px`, height: `${markSize}px`, backgroundImage: 'url(/brand-icon.png)' }"
+    />
   </div>
   <NuxtImg
     v-else

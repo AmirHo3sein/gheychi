@@ -33,7 +33,7 @@ useSeoMeta({ title: 'راهنماهای زیبایی من — قیچی', robots:
 </script>
 
 <template>
-  <div class="mx-auto max-w-2xl space-y-6 p-4">
+  <div class="mx-auto max-w-2xl space-y-6 p-4 lg:max-w-3xl lg:p-6">
     <div class="flex items-center gap-2">
       <NuxtLink
         to="/profile"
@@ -61,9 +61,13 @@ useSeoMeta({ title: 'راهنماهای زیبایی من — قیچی', robots:
       <p class="text-sm text-(--color-text-muted)">راهنماهای زیبایی بارگذاری نشد.</p>
       <BaseButton variant="secondary" data-testid="guides-retry-button" :loading="pending" @click="refresh()">تلاش دوباره</BaseButton>
     </BaseCard>
-    <p v-else-if="!guides?.length" data-testid="empty-state" class="py-6 text-center text-sm text-(--color-text-muted)">
-      هنوز راهنمایی نساخته‌اید.
-    </p>
+    <EmptyState
+      v-else-if="!guides?.length"
+      data-testid="empty-state"
+      pose="thinking"
+      title="هنوز راهنمایی نساخته‌اید."
+      description="عکس استایل دلخواهت را بفرست تا بگوییم اسمش چیست و کدام سالن‌ها انجامش می‌دهند."
+    />
 
     <div v-else class="space-y-3">
       <NuxtLink

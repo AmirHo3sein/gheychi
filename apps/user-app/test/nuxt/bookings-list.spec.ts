@@ -161,7 +161,9 @@ describe('bookings list page', () => {
     expect(badges[0]!.classes()).toContain('text-(--color-text)')
 
     expect(badges[1]!.text()).toContain('انجام شده')
-    expect(badges[1]!.classes()).toContain('text-(--color-success)')
+    // AA success text on its soft tint (2026-10 redesign: the old 10%-tint badge failed contrast).
+    expect(badges[1]!.classes()).toContain('text-(--color-success-text)')
+    expect(badges[1]!.classes()).toContain('bg-(--color-success-soft)')
 
     expect(badges[2]!.text()).toContain('لغو شده توسط شما')
     expect(badges[2]!.classes()).toContain('text-(--color-danger)')

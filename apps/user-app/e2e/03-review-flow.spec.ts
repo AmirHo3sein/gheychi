@@ -85,7 +85,8 @@ test('completed booking -> submit review with rating, comment, and worker rating
   await page.getByRole('button', { name: 'تایید' }).click()
 
   await expect(page).toHaveURL('/')
-  await page.goto('/bookings')
+  // Finished bookings live under the «گذشته» tab of the redesigned bookings page.
+  await page.goto('/bookings?tab=past')
 
   // Scoped to the specific card for the booking just inserted (status badge text), not
   // just "the first card" -- 01-happy-path.spec.ts's own booking (status 'confirmed')

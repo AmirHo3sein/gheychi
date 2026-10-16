@@ -123,4 +123,15 @@ describe('SalonCard', () => {
     expect(first.get('img').attributes('loading')).toBe('eager')
     expect(first.get('img').attributes('fetchpriority')).toBe('high')
   })
+
+  // distanceKm is measured from the search's lat/lng -- usually a city centroid -- so the card
+  // only shows it when the page says it came from the customer's own position.
+  it('hides the distance unless the page says it was measured from the customer', async () => {
+    const hidden = await mountSuspended(SalonCard, { props: { salon: baseSalon } })
+    expect(hidden.find('[data-testid="salon-card-distance"]').exists()).toBe(false)
+    expect(hidden.text()).not.toContain('کیلومتر')
+
+    const shown = await mountSuspended(SalonCard, { props: { salon: baseSalon, showDistance: true } })
+    expect(shown.get('[data-testid="salon-card-distance"]').text()).toBe('۱٫۲ کیلومتر')
+  })
 })

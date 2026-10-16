@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isPublicRoute } from '../../app/utils/route-guard'
+import { isPublicRoute, showsSiteFooter } from '../../app/utils/route-guard'
 
 describe('isPublicRoute', () => {
   it('treats /login as public', () => {
@@ -49,4 +49,20 @@ describe('isPublicRoute', () => {
     expect(isPublicRoute('/terms/extra')).toBe(false)
     expect(isPublicRoute('/booking')).toBe(false)
   })
+})
+
+describe('showsSiteFooter', () => {
+  it.each(['/', '/salons', '/salons/some-salon', '/blog', '/blog/a-post', '/terms', '/privacy', '/booking-policy'])(
+    'keeps the marketing footer on the public page %s',
+    (path) => {
+      expect(showsSiteFooter(path)).toBe(true)
+    },
+  )
+
+  it.each(['/bookings', '/bookings/abc', '/profile', '/account/wallet', '/booking/s/svc', '/beauty-guide', '/beauty-guide/g1', '/login'])(
+    'drops it on the app screen %s',
+    (path) => {
+      expect(showsSiteFooter(path)).toBe(false)
+    },
+  )
 })

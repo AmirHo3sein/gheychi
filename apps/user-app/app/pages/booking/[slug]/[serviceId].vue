@@ -3,7 +3,8 @@ import type { ApiError } from '~/composables/useApi'
 import { applyDiscount } from '../../../utils/discount'
 import { formatToman } from '../../../utils/format-toman'
 import { isUuid } from '../../../utils/beauty-guide'
-import { formatAppointment } from '../../../utils/format-date'
+import { formatAppointment, formatDateTime } from '../../../utils/format-date'
+import { workerDisplayLabels } from '../../../utils/worker-label'
 
 // `bookingConfirmationMode` is on the public GET /salons/:slug payload (findPublicBySlug
 // returns the whole salon row), which is what lets this page tell the customer BEFORE they
@@ -11,7 +12,10 @@ import { formatAppointment } from '../../../utils/format-date'
 // server-side at creation time -- this field is only ever used for pre-submit copy, never
 // to decide what the page does with the response (that's `paymentRequired`, below).
 interface Salon { id: string; name: string; address: string; bookingConfirmationMode: 'automatic' | 'manual_approval' }
-interface SalonServiceItem { id: string; name: string; description: string | null; price: number; durationMin: number; discountPercent: number | null }
+// imageUrl: the service's optional primary photo -- optional in the type so an older API
+// without the field simply renders no thumbnail.
+// pricingType: optional so an older payload (and the fixed-only fixtures) read as 'fixed'.
+interface SalonServiceItem { id: string; name: string; description: string | null; price: number; durationMin: number; discountPercent: number | null; imageUrl?: string | null; pricingType?: 'fixed' | 'from' | 'range' | 'quote'; priceMax?: number | null }
 interface BookingTerms { depositPercent: number; depositMinToman: number; cancellationWindowHours: number }
 // GET /salons/:slug/workers (PublicSalonContentController) -- active workers only,
 // the same minimal projection the public worker-ratings page already relies on.
@@ -78,8 +82,39 @@ if (!page.value) {
 // unchanged, pay-now wording rather than silently telling everyone they're only requesting.
 const manualApproval = computed(() => page.value?.salon.bookingConfirmationMode === 'manual_approval')
 
+// Only a FIXED-price service can be booked online (BookingsService.createHoldImpl rejects any
+// other pricing type), and the salon page already blocks the click into this page for them --
+// this is the backstop for a typed/old URL, so a FROM/RANGE/QUOTE service is never shown with
+// a fabricated exact price and a submit button that can only 400.
+const bookableOnline = computed(() => !page.value?.service.pricingType || page.value.service.pricingType === 'fixed')
+
 // null = "any available staff", exactly today's unchanged default.
 const selectedWorkerId = ref<string | null>(null)
+// Owner-typed placeholder names («عضو ۱») read as «متخصص سالن» -- see utils/worker-label.ts.
+const workerLabels = computed(() => workerDisplayLabels(page.value?.workers ?? []))
+const selectedWorkerLabel = computed(() => (selectedWorkerId.value ? workerLabels.value[selectedWorkerId.value] : 'هر متخصص در دسترس'))
+
+// The visible step structure: خدمت → متخصص (only when the salon lists staff) → زمان → بررسی.
+const steps = computed(() => [
+  { key: 'service', label: 'خدمت' },
+  ...(page.value?.workers.length ? [{ key: 'staff', label: 'متخصص' }] : []),
+  { key: 'time', label: 'زمان' },
+  { key: 'review', label: 'تایید' },
+])
+function stepNumber(key: string): string {
+  return (steps.value.findIndex((s) => s.key === key) + 1).toLocaleString('fa-IR')
+}
+const currentStep = computed(() => (selectedSlot.value ? 'review' : 'time'))
+function stepState(key: string): 'done' | 'current' | 'todo' {
+  const order = steps.value.map((s) => s.key)
+  const at = order.indexOf(currentStep.value)
+  const i = order.indexOf(key)
+  return i < at ? 'done' : i === at ? 'current' : 'todo'
+}
+
+const submitLabel = computed(() =>
+  manualApproval.value ? 'ثبت درخواست رزرو' : (featureFlags.value.onlinePaymentEnabled ? 'پرداخت و رزرو' : 'رزرو'),
+)
 
 // This route isn't in isPublicRoute()'s list, so auth.global.ts already redirected any
 // anonymous visitor to /login before this script ever runs -- the customer is guaranteed
@@ -122,6 +157,25 @@ watch(selectedSlot, async (slot, previous) => {
   const reduceMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
   el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'nearest' })
 })
+
+// Phones: a bottom bar with the chosen time, the price and the submit action appears once a
+// slot is picked -- and steps aside while the confirm card's own button is on screen, so the
+// same action is never shown twice in one view.
+const confirmButtonEl = ref<HTMLElement | null>(null)
+const confirmButtonInView = ref(false)
+let confirmObserver: IntersectionObserver | undefined
+watch(confirmButtonEl, (el) => {
+  confirmObserver?.disconnect()
+  confirmButtonInView.value = false
+  if (!el || typeof IntersectionObserver === 'undefined') return
+  confirmObserver = new IntersectionObserver(([entry]) => {
+    confirmButtonInView.value = !!entry?.isIntersecting
+  })
+  // Same vue-tsc template-ref inference quirk as useDialog.ts: el really is an Element.
+  confirmObserver.observe(el as unknown as Element)
+})
+onBeforeUnmount(() => confirmObserver?.disconnect())
+const showStickyBar = computed(() => !!selectedSlot.value && !confirmButtonInView.value)
 
 const couponCode = ref('')
 const couponApplying = ref(false)
@@ -359,8 +413,10 @@ async function confirmBooking() {
   // be thrown off by a FRONTEND_BASE_URL that doesn't match the origin we're actually served
   // from. Checked with `=== false` so an API response without the field keeps the old,
   // unconditional external behaviour.
+  // `?created=1` lets the booking page greet this one arrival with its success state, once
+  // (it drops the flag from the URL right away, so a refresh or a later visit doesn't).
   if (data.paymentRequired === false) {
-    await navigateTo(`/bookings/${data.booking.id}`)
+    await navigateTo(`/bookings/${data.booking.id}?created=1`)
     return
   }
   await navigateTo(data.paymentUrl, { external: true })
@@ -373,7 +429,7 @@ async function confirmBooking() {
        this template with `page` at its pre-fetch value (undefined) before the rejection is
        handled. Without this v-if, that pass throws inside the render function itself (an
        unhandled rejection, not the createError) -- see blog/[slug].vue, which this mirrors. -->
-  <div v-if="page" class="mx-auto max-w-2xl space-y-5 p-4">
+  <div v-if="page" class="mx-auto max-w-2xl p-4 lg:max-w-5xl lg:p-6" :class="selectedSlot ? 'pb-28 lg:pb-6' : ''">
     <div class="flex items-center gap-2">
       <NuxtLink
         :to="`/salons/${slug}`"
@@ -388,219 +444,392 @@ async function confirmBooking() {
       </div>
     </div>
 
-    <div class="flex items-start gap-1.5 rounded-2xl bg-(--color-surface-subtle) p-3 text-xs text-(--color-text-muted)">
-      <BaseIcon name="clock" :size="14" class="mt-0.5 shrink-0" />
-      <span>
-        مدت زمان: {{ page.service.durationMin.toLocaleString('fa-IR') }} دقیقه
-        <!-- Provider-authored note on the listed duration (e.g. "may take longer") -- the
-             figure above is a minimum, not a guarantee. -->
-        <template v-if="page.service.description"> — {{ page.service.description }}</template>
-      </span>
+    <!-- Where the customer is in the flow. Purely a map of this one page (every step is on
+         screen); "done" steps get a check, the step needing attention is highlighted. -->
+    <ol v-if="bookableOnline" aria-label="مراحل رزرو" data-testid="booking-steps" class="mt-3 flex items-center gap-1.5 overflow-x-auto pb-0.5 text-xs">
+      <li v-for="(step, i) in steps" :key="step.key" class="flex shrink-0 items-center gap-1.5">
+        <span
+          class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-semibold"
+          :class="{
+            'bg-(--color-accent-soft) text-(--color-text)': stepState(step.key) === 'current',
+            'text-(--color-success-text)': stepState(step.key) === 'done',
+            'text-(--color-text-muted)': stepState(step.key) === 'todo',
+          }"
+          :aria-current="stepState(step.key) === 'current' ? 'step' : undefined"
+        >
+          <BaseIcon v-if="stepState(step.key) === 'done'" name="check" :size="13" />
+          <span v-else class="tnum">{{ (i + 1).toLocaleString('fa-IR') }}</span>
+          <!-- Narrow phones: only the current step keeps its label visible, so all steps fit. -->
+          <span :class="stepState(step.key) === 'current' ? '' : 'max-[399px]:sr-only'">{{ step.label }}</span>
+        </span>
+        <BaseIcon v-if="i < steps.length - 1" name="chevron-back" :size="12" class="text-(--color-text-muted)" />
+      </li>
+    </ol>
+
+    <!-- A salon that reviews requests by hand: say so BEFORE the customer picks anything, in
+         plain words, because what they submit here is a request -- not a confirmed booking and
+         not a payment. The deadline concept is explained without a number: the timeout is
+         admin configuration the public API deliberately doesn't expose, and the booking page
+         shows the real countdown the moment the request exists. -->
+    <div
+      v-if="manualApproval && bookableOnline"
+      data-testid="manual-approval-explainer"
+      class="mt-4 space-y-1.5 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 text-sm"
+    >
+      <p class="flex items-center gap-1.5 font-bold text-(--color-text)">
+        <BaseIcon name="clock" :size="16" class="text-(--color-accent-text)" />
+        رزرو در این سالن با تایید سالن قطعی می‌شود
+      </p>
+      <p class="leading-6 text-(--color-text-muted)">
+        با ثبت، یک «درخواست رزرو» برای سالن فرستاده می‌شود و تا وقتی سالن آن را تایید نکند، نوبت قطعی نیست.
+        سالن فقط مهلت کوتاهی برای پاسخ دارد؛ اگر در این مهلت پاسخ ندهد، درخواست خودبه‌خود منتفی می‌شود.
+        مهلت دقیق را پس از ثبت، در صفحه‌ی همان نوبت می‌بینید.
+      </p>
+      <p class="leading-6 text-(--color-text-muted)">
+        {{ featureFlags.onlinePaymentEnabled
+          ? 'اکنون مبلغی پرداخت نمی‌کنید؛ پس از تایید سالن، برای پرداخت بیعانه مهلت محدودی خواهید داشت.'
+          : 'در هیچ مرحله‌ای پرداخت آنلاین لازم نیست؛ هزینه در سالن دریافت می‌شود.' }}
+      </p>
     </div>
 
-    <!-- Optional -- omitted (selectedWorkerId stays null) means "any available staff",
-         unchanged from before this picker existed. Placed before SlotPicker because the
-         choice narrows which slots are even offered, not just who shows up for one
-         already picked. Selected fill is neutral (bg-(--color-text)), not the brand accent
-         -- this page's one accent seal is reserved for the final submit button ("پرداخت و
-         رزرو", or "ثبت درخواست رزرو" in a manual-approval salon), so picking a worker never
-         competes with it (The One Seal Rule). -->
-    <section v-if="page.workers.length">
-      <h2 class="mb-2 flex items-center gap-1.5 text-sm font-bold text-(--color-text)">
-        <BaseIcon name="user" :size="16" class="text-(--color-text-muted)" />
-        چه کسی؟
-      </h2>
-      <div class="flex gap-2 overflow-x-auto pb-0.5">
-        <button
-          type="button"
-          :aria-pressed="selectedWorkerId === null"
-          class="inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-full border px-4 text-sm font-medium transition-colors"
-          :class="selectedWorkerId === null
-            ? 'border-transparent bg-(--color-text) text-(--color-surface)'
-            : 'border-(--color-border) bg-(--color-surface-card) text-(--color-text) hover:bg-(--color-surface-subtle)'"
-          @click="selectedWorkerId = null"
-        >
-          هر متخصص در دسترس
-        </button>
-        <button
-          v-for="worker in page.workers"
-          :key="worker.id"
-          type="button"
-          :aria-pressed="selectedWorkerId === worker.id"
-          class="inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-full border px-4 text-sm font-medium transition-colors"
-          :class="selectedWorkerId === worker.id
-            ? 'border-transparent bg-(--color-text) text-(--color-surface)'
-            : 'border-(--color-border) bg-(--color-surface-card) text-(--color-text) hover:bg-(--color-surface-subtle)'"
-          @click="selectedWorkerId = worker.id"
-        >
-          {{ worker.name }}
-        </button>
-      </div>
-    </section>
-
-    <!-- selected-slot feeds SlotPicker's own selectedSlot prop so it can render which slot is
-         actually selected (aria-pressed + chosen fill) rather than only emitting 'select'
-         with no feedback loop back in. -->
-    <SlotPicker
-      :salon-id="page.salon.id"
-      :service-id="serviceId"
-      :worker-id="selectedWorkerId"
-      :selected-slot="selectedSlot"
-      @select="selectedSlot = $event"
-      @clear="selectedSlot = null"
-    />
-
-    <!-- Fills the gap between "here are the times" and the confirm card below, which only
-         mounts once a slot is picked -- without this the page just stops, an unexplained
-         blank stretch under the grid on any screen taller than its content. -->
-    <p v-if="!selectedSlot" class="text-center text-xs text-(--color-text-muted)">
-      یک زمان را انتخاب کنید تا رزرو خود را نهایی کنید
-    </p>
-
-    <div v-if="selectedSlot" ref="confirmCardEl" class="scroll-mb-4">
-    <BaseCard class="space-y-4 text-sm">
-      <!-- Restates exactly which time is about to be booked, so a customer who has scrolled
-           past the picker can still see (and trust) what the button below will submit. -->
-      <p data-testid="selected-slot-summary" class="flex items-center gap-1.5 font-bold text-(--color-text)">
-        <BaseIcon name="calendar" :size="16" class="shrink-0 text-(--color-text-muted)" />
-        {{ formatAppointment(selectedSlot) }}
-      </p>
-      <!-- At 320px the label, the discount badge and a seven-figure price want ~265px of
-           the card's 254px content box, so something has to give -- and it must not be the
-           numbers. whitespace-nowrap keeps the badge and each price atomic (a price broken
-           between its digits and "تومان", or a badge reading "٪۳۰" over "تخفیف", is the
-           money figure rendered as noise); the gap and the label absorb the difference,
-           with flex-wrap on the price group as the last resort if that still isn't enough. -->
-      <div class="flex items-center justify-between gap-2">
-        <span>قیمت کامل</span>
-        <span class="flex flex-wrap items-center justify-end gap-2">
-          <span
-            v-if="activeDiscountPercent"
-            class="whitespace-nowrap rounded-full bg-(--color-danger-soft) px-2 py-0.5 text-xs font-bold text-(--color-danger)"
-          >
-            ٪{{ activeDiscountPercent.toLocaleString('fa-IR') }} تخفیف
-          </span>
-          <span class="flex flex-col items-end whitespace-nowrap leading-tight">
-            <span v-if="activeDiscountPercent" dir="ltr" class="tnum text-xs text-(--color-text-muted) line-through">
-              {{ formatToman(page.service.price) }}
-            </span>
-            <span class="font-bold text-(--color-text)"><span dir="ltr" class="tnum">{{ formatToman(displayPrice) }}</span> تومان</span>
-          </span>
-        </span>
-      </div>
-      <!-- Only offered when there's an actual balance to spend -- an unauthenticated
-           guest gets walletBalanceToman: 0 from the quiet (redirectOn401: false) lookup
-           above, so the checkbox simply never appears for them rather than nudging a
-           guest toward a login they haven't asked for yet. -->
-      <!-- All four of these are specifically about an ONLINE deposit -- collecting it,
-           applying wallet credit toward it, and its refund window. With the platform's
-           online-payment flag off the API never opens a payment session or debits wallet
-           (createHold's own requiresPayment/wallet-debit gating), so showing any of this
-           would promise a step that isn't going to happen. -->
-      <label
-        v-if="walletBalanceToman && featureFlags.onlinePaymentEnabled"
-        class="flex items-center gap-2 rounded-xl border border-(--color-border) px-3 py-2 text-(--color-text)"
-      >
-        <input v-model="applyWalletBalance" type="checkbox" class="h-4 w-4 shrink-0" />
-        <span>استفاده از موجودی کیف پول (<span dir="ltr" class="tnum">{{ formatToman(walletBalanceToman) }}</span> تومان)</span>
-      </label>
-      <p v-if="depositDueOnline !== null && featureFlags.onlinePaymentEnabled">
-        {{ manualApproval ? 'بیعانه آنلاین (پس از تایید سالن)' : 'بیعانه آنلاین' }}:
-        <span dir="ltr" class="tnum">{{ formatToman(depositDueOnline) }}</span> تومان
-        <span v-if="walletAmountToApply > 0" class="text-(--color-text-muted)">
-          (<span dir="ltr" class="tnum">{{ formatToman(walletAmountToApply) }}</span> تومان از کیف پول)
-        </span>
-      </p>
-      <p v-if="page.terms && featureFlags.onlinePaymentEnabled" class="text-(--color-text-muted)">لغو رایگان تا {{ page.terms.cancellationWindowHours.toLocaleString('fa-IR') }} ساعت قبل از نوبت</p>
-      <!-- Non-refundable-by-default disclosure (Product Principle #3) -- calm/muted, not
-           danger-red: this informs what happens after the free-cancel window, it doesn't
-           alarm. Numbers still come exclusively from /platform-config/booking-terms above. -->
-      <p v-if="page.terms && featureFlags.onlinePaymentEnabled" class="text-(--color-text-muted)">بعد از این زمان، بیعانه قابل بازگشت نیست</p>
-      <!-- Always shown (not behind the payment flag): the cancellation policy applies to a free booking too. -->
-      <NuxtLink
-        to="/booking-policy"
-        data-testid="booking-policy-link"
-        class="inline-flex min-h-11 items-center text-(--color-accent-text) underline underline-offset-2 hover:text-(--color-text)"
-      >
-        قوانین رزرو و لغو نوبت
-      </NuxtLink>
-
-      <div v-if="featureFlags.couponsEnabled" class="space-y-2 border-t border-(--color-border) pt-4">
-        <div class="flex items-end gap-2">
-          <!-- role="alert" scoped to just the field (label+input+BaseInput's own error
-               message), not the whole row, so an invalid-coupon message is announced to
-               screen readers without also re-announcing the adjacent "اعمال" button.
-               min-w-0 is required, not cosmetic: a flex item's automatic minimum size is
-               its min-content width, and an <input>'s min-content width is its intrinsic
-               size attribute default (~180px in Chrome), NOT the `w-full` it's styled
-               with -- percentages resolve to auto during intrinsic sizing. So this wrapper
-               refuses to shrink past ~210px, which together with the 72px "اعمال" button
-               overflows the card's 254px content box at 320px. min-w-0 lets it shrink to
-               the width actually available; shrink-0 keeps the button at its full label
-               width instead of letting "اعمال" get squeezed. -->
-          <div role="alert" aria-live="assertive" class="min-w-0 flex-1">
-            <BaseInput
-              v-model="couponCode"
-              type="text"
-              label="کد تخفیف دارید؟"
-              placeholder="کد تخفیف (اختیاری)"
-              :error="couponError"
-            />
+    <div class="mt-5 lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start lg:gap-8">
+      <div class="min-w-0 space-y-6">
+        <!-- Step: the service. A modest thumbnail, never a hero: on a phone the slot picker
+             is the page's real job and must stay near the top. Fixed box + explicit
+             width/height, so a lazy photo never shifts the header. -->
+        <section aria-labelledby="step-service">
+          <h2 id="step-service" class="mb-2 flex items-center gap-2 text-sm font-bold text-(--color-text)">
+            <span class="step-num">{{ stepNumber('service') }}</span>
+            خدمت
+          </h2>
+          <div class="flex items-start gap-3 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-3 shadow-(--shadow-sm)">
+            <div
+              v-if="page.service.imageUrl"
+              data-testid="booking-service-thumb"
+              class="size-14 shrink-0 overflow-hidden rounded-xl bg-(--color-surface-subtle)"
+            >
+              <SafeImage
+                :src="page.service.imageUrl"
+                :alt="page.service.name"
+                :width="112"
+                :height="112"
+                :placeholder-icon-size="18"
+                class="h-full w-full object-cover"
+              />
+            </div>
+            <div class="min-w-0 flex-1 space-y-1 text-sm">
+              <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                <span class="min-w-0 break-words font-bold text-(--color-text)">{{ page.service.name }}</span>
+                <ServicePriceTag v-if="!bookableOnline" :service="{ ...page.service, pricingType: page.service.pricingType!, priceMax: page.service.priceMax ?? null }" />
+                <span v-else class="font-bold whitespace-nowrap text-(--color-text)"><span dir="ltr" class="tnum">{{ formatToman(displayPrice) }}</span> تومان</span>
+              </div>
+              <p class="flex items-start gap-1.5 text-xs text-(--color-text-muted)">
+                <BaseIcon name="clock" :size="14" class="mt-0.5 shrink-0" />
+                <span>
+                  مدت زمان: {{ page.service.durationMin.toLocaleString('fa-IR') }} دقیقه
+                  <!-- Provider-authored note on the listed duration (e.g. "may take longer") -- the
+                       figure above is a minimum, not a guarantee. -->
+                  <template v-if="page.service.description"> — {{ page.service.description }}</template>
+                </span>
+              </p>
+            </div>
           </div>
+        </section>
+
+        <BaseCard v-if="!bookableOnline" data-testid="booking-not-online" class="space-y-3 text-sm">
+          <p class="text-(--color-text)">قیمت این خدمت ثابت نیست، به همین دلیل رزرو آنلاین آن ممکن نیست. برای هماهنگی با سالن تماس بگیرید.</p>
+          <NuxtLink :to="`/salons/${slug}`" class="inline-flex min-h-11 items-center font-semibold text-(--color-accent-text) hover:underline">
+            بازگشت به صفحه سالن
+          </NuxtLink>
+        </BaseCard>
+
+        <template v-else>
+          <!-- Step: who. Optional -- omitted (selectedWorkerId stays null) means "any available
+               staff". Placed before the time because the choice narrows which slots are even
+               offered. Selected = soft peach tint + accent outline; the solid peach fill stays
+               reserved for the final submit button, so choosing never competes with it. -->
+          <section v-if="page.workers.length" aria-labelledby="step-staff">
+            <h2 id="step-staff" class="mb-2 flex items-center gap-2 text-sm font-bold text-(--color-text)">
+              <span class="step-num">{{ stepNumber('staff') }}</span>
+              چه کسی؟
+            </h2>
+            <div class="flex gap-2 overflow-x-auto pb-0.5">
+              <button
+                type="button"
+                :aria-pressed="selectedWorkerId === null"
+                class="inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-full border px-4 text-sm font-medium transition-colors"
+                :class="selectedWorkerId === null
+                  ? 'border-(--color-accent-text) bg-(--color-accent-soft) font-bold text-(--color-text) ring-1 ring-(--color-accent-text)'
+                  : 'border-(--color-border) bg-(--color-surface-card) text-(--color-text) hover:bg-(--color-surface-subtle)'"
+                @click="selectedWorkerId = null"
+              >
+                هر متخصص در دسترس
+              </button>
+              <button
+                v-for="worker in page.workers"
+                :key="worker.id"
+                type="button"
+                :aria-pressed="selectedWorkerId === worker.id"
+                class="inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-full border px-4 text-sm font-medium transition-colors"
+                :class="selectedWorkerId === worker.id
+                  ? 'border-(--color-accent-text) bg-(--color-accent-soft) font-bold text-(--color-text) ring-1 ring-(--color-accent-text)'
+                  : 'border-(--color-border) bg-(--color-surface-card) text-(--color-text) hover:bg-(--color-surface-subtle)'"
+                @click="selectedWorkerId = worker.id"
+              >
+                {{ workerLabels[worker.id] }}
+              </button>
+            </div>
+          </section>
+
+          <!-- Step: when. selected-slot feeds SlotPicker's own selectedSlot prop so it can render
+               which slot is actually selected rather than only emitting 'select'. -->
+          <section aria-labelledby="step-time">
+            <h2 id="step-time" class="mb-3 flex items-center gap-2 text-sm font-bold text-(--color-text)">
+              <span class="step-num">{{ stepNumber('time') }}</span>
+              زمان
+            </h2>
+            <SlotPicker
+              :salon-id="page.salon.id"
+              :service-id="serviceId"
+              :worker-id="selectedWorkerId"
+              :selected-slot="selectedSlot"
+              @select="selectedSlot = $event"
+              @clear="selectedSlot = null"
+            />
+          </section>
+
+          <!-- Fills the gap between "here are the times" and the confirm card below, which only
+               mounts once a slot is picked. -->
+          <p v-if="!selectedSlot" class="text-center text-xs text-(--color-text-muted)">
+            یک زمان را انتخاب کنید تا رزرو خود را نهایی کنید
+          </p>
+
+          <section v-if="selectedSlot" ref="confirmCardEl" aria-labelledby="step-review" class="scroll-mb-4">
+            <h2 id="step-review" class="mb-2 flex items-center gap-2 text-sm font-bold text-(--color-text)">
+              <span class="step-num">{{ stepNumber('review') }}</span>
+              {{ manualApproval ? 'بررسی و ارسال درخواست' : 'بررسی و تایید' }}
+            </h2>
+            <BaseCard class="space-y-4 text-sm">
+              <!-- Restates exactly which time is about to be booked, so a customer who has scrolled
+                   past the picker can still see (and trust) what the button below will submit. -->
+              <p data-testid="selected-slot-summary" class="flex items-center gap-1.5 font-bold text-(--color-text)">
+                <BaseIcon name="calendar" :size="16" class="shrink-0 text-(--color-text-muted)" />
+                {{ formatAppointment(selectedSlot) }}
+              </p>
+              <p v-if="page.workers.length" class="flex items-center gap-1.5 text-(--color-text-muted)">
+                <BaseIcon name="user" :size="16" class="shrink-0" />
+                {{ selectedWorkerLabel }}
+              </p>
+              <!-- whitespace-nowrap keeps the badge and each price atomic (a price broken between
+                   its digits and "تومان" is the money figure rendered as noise); the label absorbs
+                   the difference, with flex-wrap on the price group as the last resort. -->
+              <div class="flex items-center justify-between gap-2">
+                <span>قیمت کامل</span>
+                <span class="flex flex-wrap items-center justify-end gap-2">
+                  <span
+                    v-if="activeDiscountPercent"
+                    class="whitespace-nowrap rounded-full bg-(--color-danger-soft) px-2 py-0.5 text-xs font-bold text-(--color-danger)"
+                  >
+                    ٪{{ activeDiscountPercent.toLocaleString('fa-IR') }} تخفیف
+                  </span>
+                  <span class="flex flex-col items-end whitespace-nowrap leading-tight">
+                    <span v-if="activeDiscountPercent" dir="ltr" class="tnum text-xs text-(--color-text-muted) line-through">
+                      {{ formatToman(page.service.price) }}
+                    </span>
+                    <span class="font-bold text-(--color-text)"><span dir="ltr" class="tnum">{{ formatToman(displayPrice) }}</span> تومان</span>
+                  </span>
+                </span>
+              </div>
+              <!-- All four of these are specifically about an ONLINE deposit -- collecting it,
+                   applying wallet credit toward it, and its refund window. With the platform's
+                   online-payment flag off the API never opens a payment session or debits wallet
+                   (createHold's own requiresPayment/wallet-debit gating), so showing any of this
+                   would promise a step that isn't going to happen. The wallet checkbox only
+                   appears when there's an actual balance to spend. -->
+              <label
+                v-if="walletBalanceToman && featureFlags.onlinePaymentEnabled"
+                class="flex items-center gap-2 rounded-xl border border-(--color-border) px-3 py-2 text-(--color-text)"
+              >
+                <input v-model="applyWalletBalance" type="checkbox" class="h-4 w-4 shrink-0" />
+                <span>استفاده از موجودی کیف پول (<span dir="ltr" class="tnum">{{ formatToman(walletBalanceToman) }}</span> تومان)</span>
+              </label>
+              <p v-if="depositDueOnline !== null && featureFlags.onlinePaymentEnabled">
+                {{ manualApproval ? 'بیعانه آنلاین (پس از تایید سالن)' : 'بیعانه آنلاین' }}:
+                <span dir="ltr" class="tnum">{{ formatToman(depositDueOnline) }}</span> تومان
+                <span v-if="walletAmountToApply > 0" class="text-(--color-text-muted)">
+                  (<span dir="ltr" class="tnum">{{ formatToman(walletAmountToApply) }}</span> تومان از کیف پول)
+                </span>
+              </p>
+              <p v-if="page.terms && featureFlags.onlinePaymentEnabled" class="text-(--color-text-muted)">لغو رایگان تا {{ page.terms.cancellationWindowHours.toLocaleString('fa-IR') }} ساعت قبل از نوبت</p>
+              <!-- Non-refundable-by-default disclosure -- calm/muted, not danger-red. Numbers come
+                   exclusively from /platform-config/booking-terms above. -->
+              <p v-if="page.terms && featureFlags.onlinePaymentEnabled" class="text-(--color-text-muted)">بعد از این زمان، بیعانه قابل بازگشت نیست</p>
+              <!-- Always shown (not behind the payment flag): the cancellation policy applies to a free booking too. -->
+              <NuxtLink
+                to="/booking-policy"
+                data-testid="booking-policy-link"
+                class="inline-flex min-h-11 items-center text-(--color-accent-text) underline underline-offset-2 hover:text-(--color-text)"
+              >
+                قوانین رزرو و لغو نوبت
+              </NuxtLink>
+
+              <div v-if="featureFlags.couponsEnabled" class="space-y-2 border-t border-(--color-border) pt-4">
+                <div class="flex items-end gap-2">
+                  <!-- role="alert" scoped to just the field so an invalid-coupon message is announced
+                       without also re-announcing the adjacent "اعمال" button. min-w-0 is required:
+                       an <input>'s min-content width would otherwise overflow the card at 320px. -->
+                  <div role="alert" aria-live="assertive" class="min-w-0 flex-1">
+                    <BaseInput
+                      v-model="couponCode"
+                      type="text"
+                      label="کد تخفیف دارید؟"
+                      placeholder="کد تخفیف (اختیاری)"
+                      :error="couponError"
+                    />
+                  </div>
+                  <BaseButton
+                    type="button"
+                    variant="secondary"
+                    class="shrink-0"
+                    :loading="couponApplying"
+                    :disabled="!couponCode.trim()"
+                    @click="applyCoupon"
+                  >
+                    اعمال
+                  </BaseButton>
+                </div>
+                <!-- Two honest outcomes for a VALID coupon: it beat the service's own discount
+                     (success green, with the amount it saved), or it didn't (muted, stating plainly
+                     that the price is unchanged). Both inside one aria-live region. -->
+                <p
+                  v-if="appliedCoupon"
+                  aria-live="polite"
+                  class="flex items-start gap-1 text-xs"
+                  :class="couponSavings ? 'text-(--color-success)' : 'text-(--color-text-muted)'"
+                >
+                  <BaseIcon :name="couponSavings ? 'check-circle' : 'alert-circle'" :size="14" class="shrink-0" />
+                  <span v-if="couponSavings">شما <span dir="ltr" class="tnum">{{ formatToman(couponSavings) }}</span> تومان صرفه‌جویی کردید</span>
+                  <span v-else>این کد تخفیف معتبر است، اما از تخفیف فعلی این خدمت بیشتر نیست؛ قیمت تغییری نمی‌کند</span>
+                </p>
+              </div>
+
+              <!-- The button must not promise what the next tap actually does. In a manual-approval
+                   salon this submits a REQUEST and opens no payment at all, so "پرداخت و رزرو" would
+                   be wrong on both halves. Muted, sitting directly on the button it qualifies. -->
+              <p v-if="manualApproval" data-testid="manual-approval-note" class="flex items-start gap-1.5 text-xs text-(--color-text-muted)">
+                <BaseIcon name="clock" :size="14" class="mt-0.5 shrink-0" />
+                {{ featureFlags.onlinePaymentEnabled
+                  ? 'این سالن نوبت‌ها را دستی تایید می‌کند؛ اکنون مبلغی پرداخت نمی‌کنید و پس از تایید سالن پرداخت انجام می‌شود.'
+                  : 'این سالن نوبت‌ها را دستی تایید می‌کند؛ هزینه به صورت نقدی در سالن دریافت می‌شود.' }}
+              </p>
+
+              <!-- Desktop submits from the sticky summary beside the page (one submit per view). -->
+              <div ref="confirmButtonEl" class="lg:hidden">
+                <BaseButton block size="lg" data-testid="confirm-booking-button" :loading="submitting" @click="confirmBooking">
+                  {{ submitLabel }}
+                </BaseButton>
+              </div>
+            </BaseCard>
+          </section>
+
+          <!-- Deliberately outside the `selectedSlot` block above: confirmBooking() resets
+          selectedSlot to null in the same branch that sets this message (a 409, or any non-coupon
+          failure), so nesting it inside that v-if would make the error disappear the instant it's
+          set. The coupon-rejected-at-submit branch keeps the slot, so its message renders here
+          with the confirm sheet still open above it. -->
+          <p v-if="submitError" role="alert" aria-live="assertive" class="text-(--color-danger) text-sm">{{ submitError }}</p>
+        </template>
+      </div>
+
+      <!-- Desktop: the booking summary, sticky beside the steps -- what is about to be booked,
+           at what price, and the one submit action. Short enough never to outgrow the viewport. -->
+      <aside v-if="bookableOnline" class="hidden lg:block">
+        <div data-testid="booking-aside" class="sticky top-20 space-y-4 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-5 text-sm shadow-(--shadow-md)">
+          <h2 class="font-bold text-(--color-text)">خلاصه رزرو</h2>
+          <dl class="space-y-2.5">
+            <div class="flex justify-between gap-3">
+              <dt class="text-(--color-text-muted)">سالن</dt>
+              <dd class="min-w-0 break-words text-end text-(--color-text)">{{ page.salon.name }}</dd>
+            </div>
+            <div class="flex justify-between gap-3">
+              <dt class="text-(--color-text-muted)">خدمت</dt>
+              <dd class="min-w-0 break-words text-end text-(--color-text)">{{ page.service.name }}</dd>
+            </div>
+            <div v-if="page.workers.length" class="flex justify-between gap-3">
+              <dt class="text-(--color-text-muted)">متخصص</dt>
+              <dd class="min-w-0 break-words text-end text-(--color-text)">{{ selectedWorkerLabel }}</dd>
+            </div>
+            <div class="flex justify-between gap-3">
+              <dt class="text-(--color-text-muted)">زمان</dt>
+              <dd class="text-end" :class="selectedSlot ? 'font-semibold text-(--color-text)' : 'text-(--color-text-muted)'">
+                {{ selectedSlot ? formatAppointment(selectedSlot) : 'هنوز انتخاب نشده' }}
+              </dd>
+            </div>
+            <div class="flex justify-between gap-3 border-t border-(--color-border) pt-2.5">
+              <dt class="text-(--color-text-muted)">قیمت</dt>
+              <dd class="font-bold whitespace-nowrap text-(--color-text)"><span dir="ltr" class="tnum">{{ formatToman(displayPrice) }}</span> تومان</dd>
+            </div>
+            <div v-if="depositDueOnline !== null && featureFlags.onlinePaymentEnabled" class="flex justify-between gap-3">
+              <dt class="text-(--color-text-muted)">{{ manualApproval ? 'بیعانه (پس از تایید)' : 'بیعانه' }}</dt>
+              <dd class="whitespace-nowrap text-(--color-text)"><span dir="ltr" class="tnum">{{ formatToman(depositDueOnline) }}</span> تومان</dd>
+            </div>
+          </dl>
+          <p v-if="!featureFlags.onlinePaymentEnabled" class="text-xs text-(--color-text-muted)">بیعانه‌ای دریافت نمی‌شود؛ هزینه در سالن پرداخت می‌شود.</p>
           <BaseButton
-            type="button"
-            variant="secondary"
-            class="shrink-0"
-            :loading="couponApplying"
-            :disabled="!couponCode.trim()"
-            @click="applyCoupon"
+            block
+            size="lg"
+            data-testid="aside-confirm-booking-button"
+            :disabled="!selectedSlot"
+            :loading="submitting"
+            @click="confirmBooking"
           >
-            اعمال
+            {{ selectedSlot ? submitLabel : 'ابتدا زمان را انتخاب کنید' }}
+          </BaseButton>
+          <p v-if="submitError" class="text-xs text-(--color-danger)">{{ submitError }}</p>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Phones: once a time is picked, the chosen time, the real price and the submit action stay
+         at the bottom edge (this route has no tab bar), except while the confirm card's own
+         button is visible. Same action, same label, same handler as that button. -->
+    <Transition
+      enter-active-class="transition-transform duration-200 ease-out motion-reduce:transition-none"
+      enter-from-class="translate-y-full"
+      leave-active-class="transition-transform duration-150 ease-in motion-reduce:transition-none"
+      leave-to-class="translate-y-full"
+    >
+      <div
+        v-if="bookableOnline && showStickyBar"
+        data-testid="booking-sticky-bar"
+        class="fixed inset-x-0 bottom-0 z-40 border-t border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-lg) lg:hidden"
+        style="padding-bottom: env(safe-area-inset-bottom)"
+      >
+        <div class="mx-auto flex max-w-2xl items-center justify-between gap-3 px-4 py-3">
+          <div class="min-w-0 text-sm">
+            <p class="truncate font-semibold text-(--color-text)">{{ formatDateTime(selectedSlot!) }}</p>
+            <p class="text-(--color-text-muted)"><span dir="ltr" class="tnum font-bold text-(--color-text)">{{ formatToman(displayPrice) }}</span> تومان</p>
+          </div>
+          <BaseButton class="shrink-0" data-testid="sticky-confirm-booking-button" :loading="submitting" @click="confirmBooking">
+            {{ submitLabel }}
           </BaseButton>
         </div>
-        <!-- Two honest outcomes for a VALID coupon, and the color carries which one it is:
-             it beat the service's own discount (success green, with the amount it saved), or
-             it didn't (muted, stating plainly that the price is unchanged). The old fallback
-             here said "کد تخفیف با موفقیت اعمال شد" for the second case, which -- next to a
-             price that hadn't moved -- read as either a bug or a broken promise. Both stay
-             inside the one aria-live region so the swap is announced, not just recolored. -->
-        <p
-          v-if="appliedCoupon"
-          aria-live="polite"
-          class="flex items-start gap-1 text-xs"
-          :class="couponSavings ? 'text-(--color-success)' : 'text-(--color-text-muted)'"
-        >
-          <BaseIcon :name="couponSavings ? 'check-circle' : 'alert-circle'" :size="14" class="shrink-0" />
-          <span v-if="couponSavings">شما <span dir="ltr" class="tnum">{{ formatToman(couponSavings) }}</span> تومان صرفه‌جویی کردید</span>
-          <span v-else>این کد تخفیف معتبر است، اما از تخفیف فعلی این خدمت بیشتر نیست؛ قیمت تغییری نمی‌کند</span>
-        </p>
       </div>
-
-      <!-- The button must not promise what the next tap actually does. In a manual-approval
-           salon this submits a REQUEST and opens no payment at all, so "پرداخت و رزرو" would
-           be wrong on both halves. The line above it states the trade plainly (nothing is
-           charged now; payment comes after the salon says yes) rather than leaving the
-           customer to discover it on the booking page afterwards. Muted, sitting directly on
-           the button it qualifies -- it's a condition of the action, not a warning. -->
-      <p v-if="manualApproval" data-testid="manual-approval-note" class="flex items-start gap-1.5 text-xs text-(--color-text-muted)">
-        <BaseIcon name="clock" :size="14" class="mt-0.5 shrink-0" />
-        {{ featureFlags.onlinePaymentEnabled
-          ? 'این سالن نوبت‌ها را دستی تایید می‌کند؛ اکنون مبلغی پرداخت نمی‌کنید و پس از تایید سالن پرداخت انجام می‌شود.'
-          : 'این سالن نوبت‌ها را دستی تایید می‌کند؛ هزینه به صورت نقدی در سالن دریافت می‌شود.' }}
-      </p>
-
-      <BaseButton block size="lg" data-testid="confirm-booking-button" :loading="submitting" @click="confirmBooking">
-        {{ manualApproval ? 'ثبت درخواست رزرو' : (featureFlags.onlinePaymentEnabled ? 'پرداخت و رزرو' : 'رزرو') }}
-      </BaseButton>
-    </BaseCard>
-    </div>
-
-    <!-- Deliberately outside the `selectedSlot` block above: confirmBooking() resets
-    selectedSlot to null in the same branch that sets this message (a 409, or any non-coupon
-    failure), so nesting it inside that v-if would make the error disappear the instant it's
-    set. The coupon-rejected-at-submit branch keeps the slot, so its message renders here
-    with the confirm sheet still open above it -- which is the point: the retry is one tap
-    away and no longer needs the code. -->
-    <p v-if="submitError" role="alert" aria-live="assertive" class="text-(--color-danger) text-sm">{{ submitError }}</p>
+    </Transition>
   </div>
 </template>
+
+<style scoped>
+.step-num {
+  display: inline-flex;
+  height: 1.5rem;
+  width: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--color-surface-subtle);
+  color: var(--color-text);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+</style>

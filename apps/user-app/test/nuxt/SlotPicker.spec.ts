@@ -46,12 +46,13 @@ describe('SlotPicker', () => {
     })
     const buttons = wrapper.findAll('[data-testid="slot-button"]')
 
-    // Neutral "chosen" fill, not the brand accent -- this page's one accent seal is
-    // reserved for the final "پرداخت و رزرو" button, never a date/time pick along the way.
+    // Soft peach "chosen" tint (2026-10 redesign: was a solid charcoal fill), never the solid
+    // brand fill -- that stays reserved for the final "پرداخت و رزرو" button.
     expect(buttons[0]!.attributes('aria-pressed')).toBe('true')
-    expect(buttons[0]!.classes()).toContain('bg-(--color-text)')
+    expect(buttons[0]!.classes()).toContain('bg-(--color-accent-soft)')
+    expect(buttons[0]!.classes()).not.toContain('bg-(--color-accent)')
     expect(buttons[1]!.attributes('aria-pressed')).toBe('false')
-    expect(buttons[1]!.classes()).not.toContain('bg-(--color-text)')
+    expect(buttons[1]!.classes()).not.toContain('bg-(--color-accent-soft)')
   })
 
   it('has no selected time button, and aria-pressed=false on every one, when selectedSlot is unset', async () => {
@@ -64,11 +65,11 @@ describe('SlotPicker', () => {
 
     for (const button of buttons) {
       expect(button.attributes('aria-pressed')).toBe('false')
-      expect(button.classes()).not.toContain('bg-(--color-text)')
+      expect(button.classes()).not.toContain('bg-(--color-accent-soft)')
     }
   })
 
-  it('marks the selected date pill with aria-pressed and the neutral chosen fill, unselected pills false', async () => {
+  it('marks the selected date pill with aria-pressed and the soft chosen tint, unselected pills false', async () => {
     fetchMock.mockResolvedValue([
       { date: '2026-07-11', slots: ['2026-07-11T09:00:00.000Z'] },
       { date: '2026-07-12', slots: ['2026-07-12T10:00:00.000Z'] },
@@ -78,9 +79,9 @@ describe('SlotPicker', () => {
     const dateChips = wrapper.findAll('button').filter((b) => !b.attributes('data-testid'))
 
     expect(dateChips[0]!.attributes('aria-pressed')).toBe('true')
-    expect(dateChips[0]!.classes()).toContain('bg-(--color-text)')
+    expect(dateChips[0]!.classes()).toContain('bg-(--color-accent-soft)')
     expect(dateChips[1]!.attributes('aria-pressed')).toBe('false')
-    expect(dateChips[1]!.classes()).not.toContain('bg-(--color-text)')
+    expect(dateChips[1]!.classes()).not.toContain('bg-(--color-accent-soft)')
 
     await dateChips[1]!.trigger('click')
     expect(dateChips[0]!.attributes('aria-pressed')).toBe('false')
@@ -254,5 +255,28 @@ describe('SlotPicker', () => {
     expect(wrapper.findAll('[data-testid="slot-button"]')).toHaveLength(1)
     expect(wrapper.text()).toContain('۱۲:۳۰')
     expect(wrapper.text()).not.toContain('۱۳:۳۰')
+  })
+
+  // CLS guard: availability is client-fetched, so the SSR HTML always holds the loading state.
+  // It must reserve roughly the loaded picker's height (date-pill row + slot grid rows of the
+  // same h-11 boxes), not a single text line that later balloons and pushes the footer down.
+  it('reserves the picker\'s shape with a skeleton while availability is loading', async () => {
+    let resolveFetch!: (v: unknown) => void
+    fetchMock.mockReturnValue(new Promise((r) => { resolveFetch = r }))
+    const wrapper = await mountSuspended(SlotPicker, { props: { salonId: 's1', serviceId: 'sv1' } })
+
+    const skeleton = wrapper.find('[data-testid="slots-skeleton"]')
+    expect(skeleton.exists()).toBe(true)
+    expect(skeleton.attributes('role')).toBe('status')
+    expect(skeleton.text()).toContain('در حال بارگذاری')
+    const cells = wrapper.findAll('[data-testid="slot-skeleton-cell"]')
+    expect(cells.length).toBeGreaterThanOrEqual(8)
+    for (const cell of cells) expect(cell.classes()).toContain('h-11')
+    expect(skeleton.find('.grid-cols-4').exists()).toBe(true)
+
+    resolveFetch([{ date: '2026-07-11', slots: ['2026-07-11T09:00:00.000Z'] }])
+    await flushPromises()
+    expect(wrapper.find('[data-testid="slots-skeleton"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="slot-button"]')).toHaveLength(1)
   })
 })

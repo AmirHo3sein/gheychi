@@ -26,6 +26,23 @@ describe('SafeImage', () => {
     expect(placeholder.attributes('aria-label')).toBe('سالن ستاره')
   })
 
+  // The failure box used to be a grey scissors glyph, which read as "image failed". It now uses
+  // the same branded blush wash + faded brand mark as SalonImagePlaceholder -- as a decorative
+  // CSS background, so assistive tech still sees exactly one labelled image (the box itself).
+  it('shows the branded wash and a decorative brand mark (not a scissors icon, not an <img>) on failure', async () => {
+    const wrapper = await mountSuspended(SafeImage, { props: { ...props, placeholderIconSize: 24 } })
+    await wrapper.get('img').trigger('error')
+
+    const placeholder = wrapper.get('[data-testid="salon-image-placeholder"]')
+    expect(placeholder.classes()).toContain('to-(--color-accent-soft)')
+    expect(placeholder.find('svg').exists()).toBe(false)
+    expect(placeholder.find('img').exists()).toBe(false)
+    const mark = placeholder.get('[data-testid="placeholder-brand-mark"]')
+    expect(mark.attributes('aria-hidden')).toBe('true')
+    expect(mark.attributes('style')).toContain('brand-icon.png')
+    expect(mark.attributes('style')).toContain('width: 30px')
+  })
+
   it('retries with a fresh attempt when given a new source (e.g. the next photo in a lightbox)', async () => {
     const wrapper = await mountSuspended(SafeImage, { props })
     await wrapper.get('img').trigger('error')

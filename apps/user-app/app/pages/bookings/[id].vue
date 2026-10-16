@@ -2,6 +2,10 @@
 import type { IconName } from '~/components/ui/BaseIcon.vue'
 import { formatToman } from '../../utils/format-toman'
 import { formatAppointment } from '../../utils/format-date'
+import { buildIcs, downloadIcs } from '../../utils/ics'
+import { googleMapsUrl, neshanUrl } from '../../utils/map-links'
+import { formatContactPhone } from '../../utils/contact-phone'
+import { workerDisplayName } from '../../utils/worker-label'
 
 interface BookingDetail {
   id: string
@@ -11,6 +15,16 @@ interface BookingDetail {
   serviceName: string
   workerName: string | null
   startsAt: string
+  /** The Booking row's own end instant (startsAt + the service duration at booking time). */
+  endsAt?: string
+  salonId?: string
+  // Salon context for the "where / how to reach them" card, sent by GET /bookings/:id
+  // (BookingsService.salonContactFor; salonSlug is null while the salon isn't approved). Each
+  // piece still renders only when present, so nothing here is ever guessed.
+  salonSlug?: string | null
+  salonAddress?: string | null
+  salonLocation?: { type: 'Point'; coordinates: [number, number] } | null
+  salonContactPhone?: string | null
   priceSnapshot: number
   depositAmount: number
   walletAmountUsed: number | null
@@ -64,7 +78,7 @@ const STATUS_META: Record<BookingDetail['status'], { label: string; icon: IconNa
   pending_approval: { label: 'در انتظار تایید سالن', icon: 'clock', badgeClass: 'bg-(--color-accent-soft) text-(--color-text)' },
   pending_payment: { label: 'در انتظار پرداخت', icon: 'clock', badgeClass: 'bg-(--color-accent-soft) text-(--color-text)' },
   confirmed: { label: 'تایید شده', icon: 'check-circle', badgeClass: 'bg-(--color-accent-soft) text-(--color-text)' },
-  completed: { label: 'انجام شده', icon: 'check-circle', badgeClass: 'bg-(--color-success)/10 text-(--color-success)' },
+  completed: { label: 'انجام شده', icon: 'check-circle', badgeClass: 'bg-(--color-success-soft) text-(--color-success-text)' },
   cancelled_by_user: { label: 'لغو شده توسط شما', icon: 'x', badgeClass: 'bg-(--color-danger-soft) text-(--color-danger)' },
   cancelled_by_salon: { label: 'لغو شده توسط سالن', icon: 'x', badgeClass: 'bg-(--color-danger-soft) text-(--color-danger)' },
   cancelled_by_admin: { label: 'لغو شده توسط قیچی', icon: 'x', badgeClass: 'bg-(--color-danger-soft) text-(--color-danger)' },
@@ -74,6 +88,7 @@ const STATUS_META: Record<BookingDetail['status'], { label: string; icon: IconNa
 }
 
 const route = useRoute()
+const router = useRouter()
 const { apiFetch } = useApi()
 const { flags: featureFlags } = useFeatureFlags()
 
@@ -195,6 +210,54 @@ const showDepositLine = computed(() => {
   return hasOnlineDeposit.value
 })
 
+// The booking flow lands here with ?created=1 right after a request/booking is submitted
+// (booking/[slug]/[serviceId].vue). That one arrival gets the success moment -- the «done»
+// mascot -- and the flag is dropped from the URL straight away, so a refresh, a shared link or
+// a later visit from the list shows the plain page.
+const justCreated = ref(route.query?.created === '1')
+onMounted(() => {
+  if (!justCreated.value) return
+  const { created: _created, ...rest } = route.query ?? {}
+  router.replace({ query: rest })
+})
+
+// Where/how to reach the salon -- only from fields the API actually sent (see the interface).
+const contact = computed(() => formatContactPhone(booking.value?.salonContactPhone))
+const salonCoords = computed(() => {
+  const c = booking.value?.salonLocation?.coordinates
+  return c && Number.isFinite(c[0]) && Number.isFinite(c[1]) ? { lat: c[1], lng: c[0] } : null
+})
+const hasSalonCard = computed(() => !!(booking.value?.salonAddress || salonCoords.value || contact.value || booking.value?.salonSlug))
+
+// «افزودن به تقویم»: only for an appointment that is actually confirmed and still ahead -- a
+// request awaiting the salon, an unpaid hold or a finished booking is not something to put in
+// a calendar as if it were happening. Needs the real end instant; never invents a duration.
+// Derived from the live booking (so a cancel on this page, or a retried load, updates it) and a
+// clock that is only read after mount (null during SSR/hydration, so the server and the client
+// render the same markup).
+const mountedAt = ref<number | null>(null)
+onMounted(() => { mountedAt.value = Date.now() })
+const canAddToCalendar = computed(() => {
+  const b = booking.value
+  return mountedAt.value !== null && !!b && b.status === 'confirmed' && !!b.endsAt && new Date(b.startsAt).getTime() > mountedAt.value
+})
+const hasAside = computed(() => hasSalonCard.value || canAddToCalendar.value)
+function addToCalendar() {
+  const b = booking.value
+  if (!b?.endsAt) return
+  const ics = buildIcs({
+    uid: `booking-${b.id}@gheychi`,
+    title: `${b.serviceName} — ${b.salonName}`,
+    start: b.startsAt,
+    end: b.endsAt,
+    location: b.salonAddress ? `${b.salonName}، ${b.salonAddress}` : b.salonName,
+    description: `نوبت شما در قیچی${b.workerName ? ` — ${workerDisplayName(b.workerName)}` : ''}`,
+    url: `${window.location.origin}/bookings/${b.id}`,
+    alarmMinutesBefore: 60,
+  })
+  downloadIcs(`gheychi-booking-${b.id.slice(0, 8)}.ics`, ics)
+}
+
 // A withdrawn review has no label -- reviews_booking_uidx keeps that booking
 // permanently un-reviewable, so the template shows a note instead of a button.
 const reviewButtonLabel = computed(() => {
@@ -209,159 +272,253 @@ const reviewButtonLabel = computed(() => {
        this template with `booking` at its pre-fetch value (undefined) before the rejection is
        handled. Without this v-if, that pass throws inside the render function itself (an
        unhandled rejection, not the createError) -- see salons/[slug].vue, which this mirrors. -->
-  <div v-if="booking" class="mx-auto max-w-2xl space-y-4 p-4">
-    <!-- break-words on the card, not per line: overflow-wrap inherits, and every field in
-         here (salon name, service name, worker name) is provider-authored free text that
-         can arrive as one unbreakable token. -->
-    <BaseCard class="space-y-2 text-sm break-words">
-      <!-- The heading and the badge share a row, with the badge shrink-0: the salon name is
-           provider-authored free text and must be the half that wraps, never the status. -->
-      <div class="flex items-start justify-between gap-3">
-        <h1 class="min-w-0 text-lg font-bold text-(--color-text)">{{ booking.salonName }}</h1>
-        <span
-          data-testid="booking-status-badge"
-          class="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-xs font-bold whitespace-nowrap"
-          :class="STATUS_META[booking.status].badgeClass"
-        >
-          <BaseIcon :name="STATUS_META[booking.status].icon" :size="13" />
-          {{ STATUS_META[booking.status].label }}
-        </span>
-      </div>
-      <p class="text-(--color-text)">{{ booking.serviceName }}</p>
-      <p v-if="booking.workerName" class="text-(--color-text-muted)">کارمند: {{ booking.workerName }}</p>
-      <p class="flex items-center gap-1.5 text-(--color-text-muted)">
-        <BaseIcon name="calendar" :size="14" />
-        {{ formatAppointment(booking.startsAt) }}
-      </p>
-      <div class="space-y-1 border-t border-(--color-border) pt-2">
-        <p>مبلغ کل: <span dir="ltr" class="tnum">{{ formatToman(booking.priceSnapshot) }}</span> تومان</p>
-        <!-- The label carries the tense. On a pending_approval booking this figure is what
-             WILL be due if the salon says yes, and reading it as a paid amount is exactly
-             the misunderstanding this whole flow has to avoid. Absent entirely when no
-             money moved (see showDepositLine): depositAmount is recorded on every row for
-             CRM/reporting even when the platform collected nothing, so printing it as
-             "بیعانه: X تومان" would invent a payment. -->
-        <p v-if="showDepositLine" data-testid="deposit-line">
-          {{ booking.status === 'pending_approval' ? 'بیعانه پس از تایید سالن' : 'بیعانه' }}:
-          <span dir="ltr" class="tnum">{{ formatToman(booking.depositAmount) }}</span> تومان
-        </p>
-        <!-- Tense-neutral on purpose: true of a live booking (paid at the salon), a
-             cancelled one, and a rejected request alike. -->
-        <p v-else data-testid="no-deposit-line" class="text-(--color-text-muted)">بیعانه‌ای به‌صورت آنلاین دریافت نشده است</p>
-        <!-- depositAmount above is already what's charged online (post-wallet) --
-             this line exists only so the reduction is traceable back to the wallet,
-             mirroring booking.entity.ts's own walletAmountUsed doc comment. -->
-        <p v-if="booking.walletAmountUsed" class="text-(--color-text-muted)">
-          <span dir="ltr" class="tnum">{{ formatToman(booking.walletAmountUsed) }}</span> تومان از کیف پول شما کسر شد
-        </p>
-      </div>
-    </BaseCard>
-
-    <!-- Manual-approval mode, awaiting the salon's decision. The load-bearing sentence is the
-         second one: this booking has no payment behind it at all, so any copy that hints
-         otherwise (a receipt, a refund, a "pay now") would be a straight lie. Muted/subtle
-         surface rather than danger: nothing is wrong and there is nothing for the customer
-         to fix -- the only action offered is withdrawing the request, below. -->
-    <BaseCard v-if="booking.status === 'pending_approval'" data-testid="pending-approval-card" class="space-y-1.5 text-sm">
-      <p class="flex items-center gap-1.5 font-bold text-(--color-text)">
-        <BaseIcon name="clock" :size="15" />
-        درخواست شما برای سالن ارسال شد
-      </p>
-      <p class="text-(--color-text-muted)">
-        این نوبت پس از تایید سالن قطعی می‌شود. تا آن زمان هیچ مبلغی از شما دریافت نشده است و
-        پرداخت فقط بعد از تایید سالن انجام می‌شود.
-      </p>
-      <p v-if="booking.approvalExpiresAt" class="text-(--color-text-muted)">
-        مهلت پاسخ سالن: <RemainingTime :expires-at="booking.approvalExpiresAt" />
-      </p>
-    </BaseCard>
-
-    <!-- The salon answered, and said no. Stated plainly, with the same "nothing was taken"
-         reassurance -- a rejected request never reached a payment. -->
-    <BaseCard v-else-if="booking.status === 'rejected_by_salon'" data-testid="rejected-card" class="space-y-1.5 text-sm">
-      <p class="flex items-center gap-1.5 font-bold text-(--color-danger)">
-        <BaseIcon name="x" :size="15" />
-        سالن این درخواست را رد کرد
-      </p>
-      <p class="text-(--color-text-muted)">مبلغی از شما دریافت نشده است. می‌توانید زمان یا سالن دیگری را انتخاب کنید.</p>
-    </BaseCard>
-
-    <!-- Cancelled by the platform. Says plainly that the customer did nothing wrong, and --
-         only when money really moved -- that it all comes back; the refund-status card below
-         carries the progress of that refund. -->
-    <BaseCard v-if="booking.status === 'cancelled_by_admin'" data-testid="admin-cancelled-card" class="space-y-1.5 text-sm">
-      <p class="flex items-center gap-1.5 font-bold text-(--color-danger)">
-        <BaseIcon name="x" :size="15" />
-        قیچی این نوبت را لغو کرد
-      </p>
-      <p class="text-(--color-text-muted)">این لغو به دلیل مشکلی از سمت شما نبود و هزینه‌ای برای شما ندارد.</p>
-      <p v-if="hasOnlineDeposit" class="text-(--color-text-muted)">بیعانه‌ای که پرداخت کرده‌اید به‌طور کامل به شما بازگردانده می‌شود.</p>
-    </BaseCard>
-
-    <!-- Refund status: "pending" and "done" are opposite emotional states and must not
-         share a color. "pending" is a neutral, in-progress fact (not an error) so it gets
-         the muted-text treatment, not an alarming or accent color; "done" is a genuine
-         confirmation and gets --color-success, matching bookings/index.vue's status
-         badges. Neither uses plain --color-accent as body text (WCAG AA contrast). -->
-    <BaseCard v-if="booking.refundStatus" data-testid="refund-status-card" class="text-sm">
-      <p v-if="booking.refundStatus === 'pending'" class="flex items-center gap-1.5 text-(--color-text-muted)">
-        <BaseIcon name="clock" :size="14" />
-        بازگشت وجه در حال انجام است
-      </p>
-      <p v-else class="flex items-center gap-1.5 text-(--color-success)">
-        <BaseIcon name="check-circle" :size="14" />
-        وجه بازگردانده شد
-      </p>
-    </BaseCard>
-
+  <div v-if="booking" class="mx-auto max-w-2xl space-y-4 p-4 lg:p-6" :class="hasAside ? 'lg:max-w-4xl' : 'lg:max-w-3xl'">
+    <!-- One-time success moment right after the booking flow (see justCreated). The copy follows
+         the booking's real status: a manual-approval request is NOT a booking yet. -->
     <div
-      v-if="CANCELLABLE_STATUSES.includes(booking.status) || booking.status === 'pending_payment' || booking.status === 'completed'"
-      class="flex flex-wrap items-center gap-2"
+      v-if="justCreated && CANCELLABLE_STATUSES.includes(booking.status)"
+      data-testid="booking-created-banner"
+      role="status"
+      class="flex items-center gap-4 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 shadow-(--shadow-sm)"
     >
-      <BaseButton
-        v-if="booking.status === 'pending_payment'"
-        data-testid="retry-payment-button"
-        :loading="retrying"
-        @click="retryPayment"
-      >
-        تکمیل پرداخت
-      </BaseButton>
-      <!-- Next to the action it constrains, not buried in the card above. Display only: the
-           button stays enabled past the deadline and the API's own refusal is what ends the
-           attempt -- gating a payment button on a client clock could lock a customer out of
-           a window the server still considers open. -->
-      <span v-if="booking.status === 'pending_payment' && booking.paymentExpiresAt" class="text-sm text-(--color-text-muted)">
-        مهلت پرداخت: <RemainingTime :expires-at="booking.paymentExpiresAt" />
+      <span class="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-(--color-mascot-tile)">
+        <img src="/mascot/done.webp" alt="" width="80" height="80" decoding="async" class="h-full w-full object-contain" />
       </span>
-
-      <BaseButton
-        v-if="CANCELLABLE_STATUSES.includes(booking.status)"
-        variant="danger"
-        data-testid="cancel-booking-button"
-        @click="cancelBooking"
-      >
-        {{ booking.status === 'pending_approval' ? 'لغو درخواست' : 'لغو نوبت' }}
-      </BaseButton>
-
-      <template v-if="booking.status === 'completed'">
-        <!-- A review already on file stays viewable/editable even with the flag off (the
-             API only blocks NEW create/reply while disabled, see reviews.service.ts) --
-             only the net-new "ثبت نظر" path is hidden here. -->
-        <BaseButton
-          v-if="myReview?.status !== 'withdrawn' && (myReview || (featureFlags.reviewsEnabled && booking.reviewable !== false))"
-          variant="secondary"
-          data-testid="review-booking-button"
-          @click="reviewOpen = true"
-        >
-          {{ reviewButtonLabel }}
-        </BaseButton>
-        <p v-else-if="myReview?.status === 'withdrawn'" data-testid="review-withdrawn-note" class="text-sm text-(--color-text-muted)">
-          نظر شما برای این نوبت حذف شده است
+      <div class="min-w-0 space-y-1 text-sm">
+        <p class="text-base font-bold text-(--color-text)">
+          {{ booking.status === 'pending_approval' ? 'درخواست رزرو شما ارسال شد' : 'نوبت شما ثبت شد' }}
         </p>
-      </template>
+        <p class="text-(--color-text-muted)">
+          {{ booking.status === 'pending_approval'
+            ? 'نوبت پس از تایید سالن قطعی می‌شود؛ نتیجه و مهلت پاسخ سالن را در همین صفحه می‌بینید.'
+            : 'جزئیات نوبت را در ادامه می‌بینید.' }}
+        </p>
+      </div>
     </div>
 
-    <NuxtLink to="/bookings" class="block text-sm text-(--color-text) hover:underline">بازگشت به نوبت‌های من</NuxtLink>
+    <!-- Two columns only when the side column has something real in it; otherwise the details
+         card keeps the full width instead of sitting beside an empty gap. -->
+    <div class="space-y-4" :class="hasAside ? 'lg:grid lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start lg:gap-6 lg:space-y-0' : ''">
+      <div class="min-w-0 space-y-4">
+        <!-- break-words on the card, not per line: overflow-wrap inherits, and every field in
+             here (salon name, service name, worker name) is provider-authored free text that
+             can arrive as one unbreakable token. -->
+        <BaseCard class="space-y-2 text-sm break-words">
+          <!-- The heading and the badge share a row, with the badge shrink-0: the salon name is
+               provider-authored free text and must be the half that wraps, never the status. -->
+          <div class="flex items-start justify-between gap-3">
+            <h1 class="min-w-0 text-lg font-bold text-(--color-text)">{{ booking.salonName }}</h1>
+            <span
+              data-testid="booking-status-badge"
+              class="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-xs font-bold whitespace-nowrap"
+              :class="STATUS_META[booking.status].badgeClass"
+            >
+              <BaseIcon :name="STATUS_META[booking.status].icon" :size="13" />
+              {{ STATUS_META[booking.status].label }}
+            </span>
+          </div>
+          <p class="text-(--color-text)">{{ booking.serviceName }}</p>
+          <p v-if="booking.workerName" class="text-(--color-text-muted)">متخصص: {{ workerDisplayName(booking.workerName) }}</p>
+          <p class="flex items-center gap-1.5 text-(--color-text-muted)">
+            <BaseIcon name="calendar" :size="14" />
+            {{ formatAppointment(booking.startsAt) }}
+          </p>
+          <div class="space-y-1 border-t border-(--color-border) pt-2">
+            <p>مبلغ کل: <span dir="ltr" class="tnum">{{ formatToman(booking.priceSnapshot) }}</span> تومان</p>
+            <!-- The label carries the tense. On a pending_approval booking this figure is what
+                 WILL be due if the salon says yes, and reading it as a paid amount is exactly
+                 the misunderstanding this whole flow has to avoid. Absent entirely when no
+                 money moved (see showDepositLine): depositAmount is recorded on every row for
+                 CRM/reporting even when the platform collected nothing, so printing it as
+                 "بیعانه: X تومان" would invent a payment. -->
+            <p v-if="showDepositLine" data-testid="deposit-line">
+              {{ booking.status === 'pending_approval' ? 'بیعانه پس از تایید سالن' : 'بیعانه' }}:
+              <span dir="ltr" class="tnum">{{ formatToman(booking.depositAmount) }}</span> تومان
+            </p>
+            <!-- Tense-neutral on purpose: true of a live booking (paid at the salon), a
+                 cancelled one, and a rejected request alike. -->
+            <p v-else data-testid="no-deposit-line" class="text-(--color-text-muted)">بیعانه‌ای به‌صورت آنلاین دریافت نشده است</p>
+            <!-- depositAmount above is already what's charged online (post-wallet) --
+                 this line exists only so the reduction is traceable back to the wallet,
+                 mirroring booking.entity.ts's own walletAmountUsed doc comment. -->
+            <p v-if="booking.walletAmountUsed" class="text-(--color-text-muted)">
+              <span dir="ltr" class="tnum">{{ formatToman(booking.walletAmountUsed) }}</span> تومان از کیف پول شما کسر شد
+            </p>
+          </div>
+        </BaseCard>
+
+        <!-- Manual-approval mode, awaiting the salon's decision. The load-bearing sentence is the
+             second one: this booking has no payment behind it at all, so any copy that hints
+             otherwise (a receipt, a refund, a "pay now") would be a straight lie. Muted/subtle
+             surface rather than danger: nothing is wrong and there is nothing for the customer
+             to fix -- the only action offered is withdrawing the request, below. -->
+        <BaseCard v-if="booking.status === 'pending_approval'" data-testid="pending-approval-card" class="space-y-1.5 text-sm">
+          <p class="flex items-center gap-1.5 font-bold text-(--color-text)">
+            <BaseIcon name="clock" :size="15" />
+            درخواست شما برای سالن ارسال شد
+          </p>
+          <p class="text-(--color-text-muted)">
+            این نوبت پس از تایید سالن قطعی می‌شود. تا آن زمان هیچ مبلغی از شما دریافت نشده است و
+            پرداخت فقط بعد از تایید سالن انجام می‌شود.
+          </p>
+          <p v-if="booking.approvalExpiresAt" class="text-(--color-text-muted)">
+            مهلت پاسخ سالن: <RemainingTime :expires-at="booking.approvalExpiresAt" />
+          </p>
+        </BaseCard>
+
+        <!-- The salon answered, and said no. Stated plainly, with the same "nothing was taken"
+             reassurance -- a rejected request never reached a payment. -->
+        <BaseCard v-else-if="booking.status === 'rejected_by_salon'" data-testid="rejected-card" class="space-y-1.5 text-sm">
+          <p class="flex items-center gap-1.5 font-bold text-(--color-danger)">
+            <BaseIcon name="x" :size="15" />
+            سالن این درخواست را رد کرد
+          </p>
+          <p class="text-(--color-text-muted)">مبلغی از شما دریافت نشده است. می‌توانید زمان یا سالن دیگری را انتخاب کنید.</p>
+        </BaseCard>
+
+        <!-- Cancelled by the platform. Says plainly that the customer did nothing wrong, and --
+             only when money really moved -- that it all comes back; the refund-status card below
+             carries the progress of that refund. -->
+        <BaseCard v-if="booking.status === 'cancelled_by_admin'" data-testid="admin-cancelled-card" class="space-y-1.5 text-sm">
+          <p class="flex items-center gap-1.5 font-bold text-(--color-danger)">
+            <BaseIcon name="x" :size="15" />
+            قیچی این نوبت را لغو کرد
+          </p>
+          <p class="text-(--color-text-muted)">این لغو به دلیل مشکلی از سمت شما نبود و هزینه‌ای برای شما ندارد.</p>
+          <p v-if="hasOnlineDeposit" class="text-(--color-text-muted)">بیعانه‌ای که پرداخت کرده‌اید به‌طور کامل به شما بازگردانده می‌شود.</p>
+        </BaseCard>
+
+        <!-- Refund status: "pending" and "done" are opposite emotional states and must not
+             share a color. "pending" is a neutral, in-progress fact (not an error) so it gets
+             the muted-text treatment, not an alarming or accent color; "done" is a genuine
+             confirmation and gets --color-success, matching bookings/index.vue's status
+             badges. Neither uses plain --color-accent as body text (WCAG AA contrast). -->
+        <BaseCard v-if="booking.refundStatus" data-testid="refund-status-card" class="text-sm">
+          <p v-if="booking.refundStatus === 'pending'" class="flex items-center gap-1.5 text-(--color-text-muted)">
+            <BaseIcon name="clock" :size="14" />
+            بازگشت وجه در حال انجام است
+          </p>
+          <p v-else class="flex items-center gap-1.5 text-(--color-success)">
+            <BaseIcon name="check-circle" :size="14" />
+            وجه بازگردانده شد
+          </p>
+        </BaseCard>
+
+        <div
+          v-if="CANCELLABLE_STATUSES.includes(booking.status) || booking.status === 'pending_payment' || booking.status === 'completed'"
+          class="flex flex-wrap items-center gap-2"
+        >
+          <BaseButton
+            v-if="booking.status === 'pending_payment'"
+            data-testid="retry-payment-button"
+            :loading="retrying"
+            @click="retryPayment"
+          >
+            تکمیل پرداخت
+          </BaseButton>
+          <!-- Next to the action it constrains, not buried in the card above. Display only: the
+               button stays enabled past the deadline and the API's own refusal is what ends the
+               attempt -- gating a payment button on a client clock could lock a customer out of
+               a window the server still considers open. -->
+          <span v-if="booking.status === 'pending_payment' && booking.paymentExpiresAt" class="text-sm text-(--color-text-muted)">
+            مهلت پرداخت: <RemainingTime :expires-at="booking.paymentExpiresAt" />
+          </span>
+
+          <BaseButton
+            v-if="CANCELLABLE_STATUSES.includes(booking.status)"
+            variant="danger"
+            data-testid="cancel-booking-button"
+            @click="cancelBooking"
+          >
+            {{ booking.status === 'pending_approval' ? 'لغو درخواست' : 'لغو نوبت' }}
+          </BaseButton>
+
+          <template v-if="booking.status === 'completed'">
+            <!-- A review already on file stays viewable/editable even with the flag off (the
+                 API only blocks NEW create/reply while disabled, see reviews.service.ts) --
+                 only the net-new "ثبت نظر" path is hidden here. -->
+            <BaseButton
+              v-if="myReview?.status !== 'withdrawn' && (myReview || (featureFlags.reviewsEnabled && booking.reviewable !== false))"
+              variant="secondary"
+              data-testid="review-booking-button"
+              @click="reviewOpen = true"
+            >
+              {{ reviewButtonLabel }}
+            </BaseButton>
+            <p v-else-if="myReview?.status === 'withdrawn'" data-testid="review-withdrawn-note" class="text-sm text-(--color-text-muted)">
+              نظر شما برای این نوبت حذف شده است
+            </p>
+          </template>
+        </div>
+
+      </div>
+
+      <!-- Where it is and how to reach the salon, plus the calendar file. Beside the details on
+           desktop, below them on phones. Every row is conditional on real data. -->
+      <div v-if="hasAside" class="space-y-3">
+        <BaseCard v-if="hasSalonCard" data-testid="booking-salon-card" class="space-y-3 text-sm">
+          <h2 class="font-bold text-(--color-text)">{{ booking.salonName }}</h2>
+          <p v-if="booking.salonAddress" data-testid="booking-salon-address" class="flex items-start gap-1.5 text-(--color-text-muted)">
+            <BaseIcon name="map-pin" :size="14" class="mt-0.5 shrink-0" />
+            <span class="min-w-0 break-words">{{ booking.salonAddress }}</span>
+          </p>
+          <div v-if="salonCoords" class="grid grid-cols-2 gap-2 text-xs font-semibold" data-testid="booking-directions">
+            <a
+              :href="neshanUrl(salonCoords.lat, salonCoords.lng)"
+              target="_blank"
+              rel="noopener"
+              class="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-(--color-border) text-(--color-text) transition-colors hover:bg-(--color-surface-subtle)"
+            >
+              مسیریابی با نشان
+            </a>
+            <a
+              :href="googleMapsUrl(salonCoords.lat, salonCoords.lng)"
+              target="_blank"
+              rel="noopener"
+              class="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-(--color-border) text-(--color-text) transition-colors hover:bg-(--color-surface-subtle)"
+            >
+              مسیریابی با گوگل‌مپ
+            </a>
+          </div>
+          <a
+            v-if="contact"
+            :href="contact.href"
+            data-testid="booking-salon-contact"
+            class="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-(--color-border) px-3 font-semibold text-(--color-text) transition-colors hover:bg-(--color-surface-subtle)"
+          >
+            <BaseIcon name="phone" :size="15" />
+            تماس با سالن
+            <span dir="ltr" class="tnum text-(--color-text-muted)">{{ contact.display }}</span>
+          </a>
+          <NuxtLink
+            v-if="booking.salonSlug"
+            :to="`/salons/${booking.salonSlug}`"
+            class="inline-flex min-h-11 items-center gap-1 font-medium text-(--color-accent-text) hover:underline"
+          >
+            صفحه سالن
+            <BaseIcon name="chevron-back" :size="14" />
+          </NuxtLink>
+        </BaseCard>
+
+        <BaseButton
+          v-if="canAddToCalendar"
+          variant="secondary"
+          block
+          data-testid="add-to-calendar-button"
+          @click="addToCalendar"
+        >
+          <template #icon><BaseIcon name="calendar-plus" :size="18" /></template>
+          افزودن به تقویم
+        </BaseButton>
+      </div>
+    </div>
+
+    <NuxtLink to="/bookings" custom v-slot="{ navigate }">
+      <BaseButton variant="ghost" data-testid="back-to-bookings" @click="navigate">
+        <template #icon><BaseIcon name="chevron-forward" :size="16" /></template>
+        بازگشت به نوبت‌های من
+      </BaseButton>
+    </NuxtLink>
 
     <CancelBookingDialog
       v-if="cancelOpen"

@@ -10,10 +10,12 @@ const hasReviews = computed(() => props.count > 0)
   <span
     v-if="hasReviews"
     data-testid="rating-label"
+    role="img"
     class="inline-flex items-center gap-1 whitespace-nowrap"
-    :aria-label="`امتیاز ${Number(average).toLocaleString('fa-IR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} از ${count.toLocaleString('fa-IR')} نظر`"
+    :aria-label="`امتیاز ${Number(average).toLocaleString('fa-IR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} از ۵، ${count.toLocaleString('fa-IR')} نظر`"
   >
-    <BaseIcon name="star" :size="iconSize" class="text-(--color-premium)" />
+    <!-- Filled, not just tinted: an outline star reads as "empty" (see SalonReviews.vue). -->
+    <BaseIcon name="star" :size="iconSize" fill="currentColor" class="text-(--color-premium)" />
     <span class="font-semibold text-(--color-text)">{{ Number(average).toLocaleString('fa-IR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }}</span>
     <span class="text-(--color-text-muted)">({{ count.toLocaleString('fa-IR') }})</span>
   </span>
