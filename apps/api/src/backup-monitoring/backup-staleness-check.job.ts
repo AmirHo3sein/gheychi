@@ -13,7 +13,7 @@ import { BACKUP_LAST_SUCCESS_KEY } from './backup-report.controller';
 // cron tick would absorb on its own) doesn't page an operator for something that was
 // always going to self-resolve within a few hours. 27h = 24h (one cycle) + 3h buffer.
 // Anything past that really has gone a full day with no successful backup landing in S3.
-const STALE_AFTER_HOURS = 27;
+export const STALE_AFTER_HOURS = 27;
 
 @Injectable()
 export class BackupStalenessCheckJob {

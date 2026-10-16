@@ -3,7 +3,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, EntityManager } from 'typeorm';
 import { AdminNotification } from './admin-notification.entity';
-import { AdminNotificationsService } from './admin-notifications.service';
+import { AdminNotificationsService, severityOf } from './admin-notifications.service';
 
 const ADMIN_ID = 'admin-1';
 
@@ -60,6 +60,33 @@ describe('AdminNotificationsService', () => {
     });
   });
 
+  describe('emitAlert', () => {
+    it('inserts an alert row carrying the severity it was raised with', async () => {
+      await service.emitAlert('critical', 'بازپرداخت گیر کرده', 'متن', '/payments/p1');
+      expect(repo.insert).toHaveBeenCalledWith({
+        type: 'alert',
+        title: 'بازپرداخت گیر کرده',
+        body: 'متن',
+        link: '/payments/p1',
+        severity: 'critical',
+      });
+    });
+  });
+
+  describe('severityOf', () => {
+    it('keeps a stored alert severity', () => {
+      expect(severityOf('alert', 'critical')).toBe('critical');
+      expect(severityOf('alert', 'warning')).toBe('warning');
+    });
+    it("reads a pre-column alert (NULL) as 'warning', never 'critical'", () => {
+      expect(severityOf('alert', null)).toBe('warning');
+    });
+    it("reports every non-alert type as 'info'", () => {
+      expect(severityOf('salon_resubmitted', null)).toBe('info');
+      expect(severityOf('report_created', null)).toBe('info');
+    });
+  });
+
   describe('unreadCount', () => {
     it('counts rows with no matching read for THIS admin', async () => {
       query.mockResolvedValue([{ count: 3 }]);
@@ -70,16 +97,30 @@ describe('AdminNotificationsService', () => {
     });
   });
 
+  describe('unreadCounts', () => {
+    it('returns total + per-severity unread counts for THIS admin in one query', async () => {
+      query.mockResolvedValue([{ total: 6, critical: 1, warning: 2, info: 3 }]);
+
+      await expect(service.unreadCounts(ADMIN_ID)).resolves.toEqual({ total: 6, critical: 1, warning: 2, info: 3 });
+      expect(query).toHaveBeenCalledTimes(1);
+      const [sql, params] = query.mock.calls[0];
+      expect(sql).toContain('r.read_at IS NULL');
+      expect(sql).toContain('r.admin_id = $1');
+      expect(sql).toContain("COALESCE(n.severity, 'warning')");
+      expect(params).toEqual([ADMIN_ID]);
+    });
+  });
+
   describe('list', () => {
     it('returns the standard envelope with default paging, scoped to the caller', async () => {
       query
-        .mockResolvedValueOnce([{ id: 'n1', type: 't', title: 'T', body: null, link: null, created_at: new Date('2026-01-01'), read_at: null }])
+        .mockResolvedValueOnce([{ id: 'n1', type: 't', title: 'T', body: null, link: null, severity: null, created_at: new Date('2026-01-01'), read_at: null }])
         .mockResolvedValueOnce([{ count: 1 }]);
 
       const result = await service.list({}, ADMIN_ID);
 
       expect(result).toEqual({
-        items: [{ id: 'n1', type: 't', title: 'T', body: null, link: null, readAt: null, createdAt: new Date('2026-01-01') }],
+        items: [{ id: 'n1', type: 't', title: 'T', body: null, link: null, severity: 'info', readAt: null, createdAt: new Date('2026-01-01') }],
         total: 1,
         page: 1,
         pageSize: 20,
@@ -97,6 +138,34 @@ describe('AdminNotificationsService', () => {
       const [listSql, listParams] = query.mock.calls[0];
       expect(listSql).toContain('WHERE r.read_at IS NULL');
       expect(listParams).toEqual([ADMIN_ID, 10, 10]);
+    });
+
+    it('binds ?type= and ?severity= as parameters, combined with unread, and keeps paging after them', async () => {
+      query.mockResolvedValueOnce([]).mockResolvedValueOnce([{ count: 0 }]);
+
+      await service.list({ unread: 'true', type: 'alert', severity: 'warning', page: 3, pageSize: 5 }, ADMIN_ID);
+
+      const [listSql, listParams] = query.mock.calls[0];
+      expect(listSql).toContain('WHERE r.read_at IS NULL AND n.type = $2 AND');
+      // The severity predicate is the SQL twin of severityOf(): NULL alert -> 'warning'.
+      expect(listSql).toContain("COALESCE(n.severity, 'warning')");
+      expect(listSql).toContain('= $3');
+      expect(listSql).toContain('LIMIT $4 OFFSET $5');
+      expect(listParams).toEqual([ADMIN_ID, 'alert', 'warning', 5, 10]);
+      const [countSql, countParams] = query.mock.calls[1];
+      expect(countSql).toContain('n.type = $2');
+      expect(countParams).toEqual([ADMIN_ID, 'alert', 'warning']);
+    });
+
+    it('never interpolates filter values into the SQL text', async () => {
+      query.mockResolvedValueOnce([]).mockResolvedValueOnce([{ count: 0 }]);
+
+      await service.list({ type: 'report_created', severity: 'info' }, ADMIN_ID);
+
+      const [listSql, listParams] = query.mock.calls[0];
+      expect(listSql).not.toContain('report_created');
+      expect(listSql).toContain('LIMIT $4 OFFSET $5');
+      expect(listParams).toEqual([ADMIN_ID, 'report_created', 'info', 20, 0]);
     });
 
     it("never lets one admin's read state leak into another admin's unread count", async () => {

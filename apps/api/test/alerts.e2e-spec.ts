@@ -95,6 +95,9 @@ describe('Money-critical alerting (e2e)', () => {
       (n: { type: string; title: string }) => n.type === 'alert' && n.title === 'بازپرداخت پذیرفته نشد',
     );
     expect(alert).toBeDefined();
+    // Raised as 'warning' in PaymentsService (a retry is still running) -- stored and
+    // surfaced as such, not flattened to a generic notification.
+    expect(alert.severity).toBe('warning');
 
     const count = await request(app.getHttpServer())
       .get('/api/admin/notifications/unread-count')

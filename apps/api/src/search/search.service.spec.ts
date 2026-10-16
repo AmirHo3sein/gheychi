@@ -1,4 +1,4 @@
-import { SearchService } from './search.service';
+import { SearchService, SUGGESTION_LIMIT, nameFilterPattern } from './search.service';
 import { SearchQueryDto } from './dto/search.dto';
 import { AnalyticsService } from '../analytics/analytics.service';
 
@@ -207,6 +207,43 @@ describe('SearchService', () => {
 
       expect(items.map((i) => i.id)).toEqual(['high-rated', 'low-rated']);
       expect(items.every((i) => i.ratingAvg === 0)).toBe(true);
+    });
+  });
+
+  describe('suggest (type-ahead)', () => {
+    it('returns at most SUGGESTION_LIMIT salons through the same query, and never counts as a search', async () => {
+      query.mockResolvedValue(Array.from({ length: 10 }, (_, i) => row(i)));
+
+      const result = await service.suggest({ ...BASE_QUERY, q: 'ستاره' });
+
+      expect(result.items).toHaveLength(SUGGESTION_LIMIT);
+      const [sql, params] = query.mock.calls[0];
+      expect(sql).toContain("s.status = 'approved'");
+      expect(sql).toContain('s.gender_target = $3');
+      expect(params[2]).toBe('women');
+      expect(params.at(-1)).toBe(SUGGESTION_LIMIT);
+      expect(analytics.track).not.toHaveBeenCalled();
+      expect(result).not.toHaveProperty('nextCursor');
+    });
+  });
+
+  describe('name filter', () => {
+    it('escapes LIKE wildcards so they match literally', () => {
+      expect(nameFilterPattern('50%_off\\')).toBe('50\\%\\_off\\\\');
+    });
+
+    it('folds Arabic ي/ك to Persian ی/ک, matching the folded salon name in SQL', async () => {
+      expect(nameFilterPattern('آرايشگاه كوثر')).toBe('آرایشگاه کوثر');
+      query.mockResolvedValue([]);
+      await service.search({ ...BASE_QUERY, q: 'ك' });
+      const [sql, params] = query.mock.calls[0];
+      expect(sql).toContain("translate(s.name, 'يك', 'یک') ILIKE");
+      expect(params[5]).toBe('ک');
+    });
+
+    it('sends no name filter at all for an empty query', () => {
+      expect(nameFilterPattern(undefined)).toBeNull();
+      expect(nameFilterPattern('')).toBeNull();
     });
   });
 });

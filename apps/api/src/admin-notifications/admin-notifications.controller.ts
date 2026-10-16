@@ -22,6 +22,13 @@ export class AdminNotificationsController {
     return { count: await this.notifications.unreadCount((req.user as User).id) };
   }
 
+  // Per-severity breakdown of the caller's unread rows, for the severity bell. Additive:
+  // `unread-count` keeps its { count } shape for existing callers.
+  @Get('unread-counts')
+  unreadCounts(@Req() req: Request) {
+    return this.notifications.unreadCounts((req.user as User).id);
+  }
+
   @Patch(':id/read')
   markRead(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) {
     return this.notifications.markRead(id, (req.user as User).id);

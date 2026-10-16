@@ -49,7 +49,7 @@ function minutesToTime(min: number): string {
 // sub-ranges (0 when the exception fully covers the range, 2 when it sits strictly inside --
 // e.g. 09:00-20:00 minus 13:00-14:00 -> 09:00-13:00 and 14:00-20:00 -- 1 when it clips only
 // one edge or doesn't touch the range at all).
-function subtractInterval(range: WorkingHourRange, exception: { startTime: string; endTime: string }): WorkingHourRange[] {
+export function subtractInterval(range: WorkingHourRange, exception: { startTime: string; endTime: string }): WorkingHourRange[] {
   const rangeOpen = parseTimeToMinutes(range.openTime);
   const rangeClose = parseTimeToMinutes(range.closeTime);
   const excStart = parseTimeToMinutes(exception.startTime);
@@ -68,7 +68,7 @@ export interface DayAvailability {
   slots: string[]; // ISO 8601 UTC start times
 }
 
-function parseTimeToMinutes(time: string): number {
+export function parseTimeToMinutes(time: string): number {
   const [h, m] = time.split(':').map(Number);
   return h * 60 + m;
 }

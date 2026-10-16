@@ -39,6 +39,8 @@ import { ReferralExpiryJob } from './referral-expiry.job';
 import { ReferralGrantJob } from './referral-grant.job';
 import { RefundRetryJob } from './refund-retry.job';
 import { SalonBookingsController } from './salon-bookings.controller';
+import { SalonCapacityController } from './salon-capacity.controller';
+import { SalonCapacityService } from './salon-capacity.service';
 import { SalonEarningsController } from './salon-earnings.controller';
 import { ZarinpalGateway } from './zarinpal-payment.gateway';
 
@@ -77,12 +79,14 @@ import { ZarinpalGateway } from './zarinpal-payment.gateway';
     BookingsController,
     PaymentsController,
     SalonBookingsController,
+    SalonCapacityController,
     SalonEarningsController,
   ],
   providers: [
     AdminBookingsService,
     AvailabilityService,
     BookingEventsService,
+    SalonCapacityService,
     BookingSettingsService,
     BookingsService,
     PaymentsService,

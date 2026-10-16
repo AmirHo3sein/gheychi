@@ -4,6 +4,7 @@ import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ActivityModule } from './activity/activity.module';
+import { AdminDashboardModule } from './admin-dashboard/admin-dashboard.module';
 import { AdminNotificationsModule } from './admin-notifications/admin-notifications.module';
 import { AlertsModule } from './alerts/alerts.module';
 import { AuthGuard } from './auth/auth.guard';
@@ -67,6 +68,7 @@ import { WalletModule } from './wallet/wallet.module';
     PlatformConfigModule,
     AlertsModule,
     AuthModule,
+    AdminDashboardModule,
     BackupMonitoringModule,
     CspReportModule,
     CatalogModule,

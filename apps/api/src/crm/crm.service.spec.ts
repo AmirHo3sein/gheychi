@@ -288,6 +288,10 @@ describe('CrmService', () => {
     function stubDashboard(current: PeriodRows, previous: PeriodRows = {}, extras: Record<string, unknown[]> = {}) {
       dataSourceQuery.mockImplementation((sql: string, params: unknown[]) => {
         const period = (params[1] as Date).getTime() === FROM.getTime() ? current : previous;
+        if (sql.includes('dashboard daily series')) {
+          return Promise.resolve((params[1] as Date).getTime() === FROM.getTime() ? (extras.daily ?? []) : (extras.previousDaily ?? []));
+        }
+        if (sql.includes('dashboard heatmap')) return Promise.resolve(extras.heatmap ?? []);
         if (sql.includes('no_show_count')) {
           return Promise.resolve([
             {
@@ -406,6 +410,51 @@ describe('CrmService', () => {
 
       const dowSql: string = dataSourceQuery.mock.calls.find((c: unknown[]) => (c[0] as string).includes('EXTRACT(DOW'))![0];
       expect(dowSql).toContain('b.starts_at >= $2 AND b.starts_at < $3');
+    });
+
+    it('returns a zero-filled Tehran-day series for both windows, coercing raw aggregates', async () => {
+      stubDashboard({}, {}, {
+        daily: [
+          { day: '2026-08-01', bookings_count: '2', completed_count: '1', cancelled_count: '0', gross: '500000' },
+          { day: '2026-08-02', bookings_count: '0', completed_count: '0', cancelled_count: '1', gross: '0' },
+        ],
+        previousDaily: [{ day: '2026-07-02', bookings_count: '1', completed_count: '1', cancelled_count: '0', gross: '300000' }],
+      });
+
+      const result = await service.getDashboardSummary('salon-1', FROM, TO);
+
+      expect(result.daily).toEqual([
+        { date: '2026-08-01', bookingsCount: 2, completedCount: 1, cancelledCount: 0, grossBookingValue: 500_000 },
+        { date: '2026-08-02', bookingsCount: 0, completedCount: 0, cancelledCount: 1, grossBookingValue: 0 },
+      ]);
+      expect(result.previousDaily).toEqual([
+        { date: '2026-07-02', bookingsCount: 1, completedCount: 1, cancelledCount: 0, grossBookingValue: 300_000 },
+      ]);
+      const dailySql = dataSourceQuery.mock.calls.map(([q]) => String(q)).find((q) => q.includes('dashboard daily series'))!;
+      // Same lenses as the headline figures, or the chart and the tiles above it disagree.
+      expect(dailySql).toContain('generate_series');
+      expect(dailySql).toContain("AT TIME ZONE 'Asia/Tehran'");
+      expect(dailySql).toContain('b.created_at >= $2 AND b.created_at < $3');
+      expect(dailySql).toMatch(/SUM\(b\.price_snapshot\) FILTER \(WHERE b\.status = 'completed'\)/);
+      expect(dailySql).toContain("('cancelled_by_user', 'cancelled_by_salon')");
+    });
+
+    it('skips the daily series (without querying) for a window too long to chart', async () => {
+      stubDashboard({});
+      const result = await service.getDashboardSummary('salon-1', new Date('2024-01-01T00:00:00Z'), TO);
+      expect(result.daily).toEqual([]);
+      expect(dataSourceQuery.mock.calls.some(([q]) => String(q).includes('dashboard daily series'))).toBe(false);
+    });
+
+    it('returns the weekday x hour heatmap in Tehran time, windowed on starts_at', async () => {
+      stubDashboard({}, {}, { heatmap: [{ weekday: 6, hour: 10, bookings_count: '4' }] });
+
+      const result = await service.getDashboardSummary('salon-1', FROM, TO);
+
+      expect(result.heatmap).toEqual([{ weekday: 6, hour: 10, count: 4 }]);
+      const sql = dataSourceQuery.mock.calls.map(([q]) => String(q)).find((q) => q.includes('dashboard heatmap'))!;
+      expect(sql).toContain("AT TIME ZONE 'Asia/Tehran'");
+      expect(sql).toContain('b.starts_at >= $2 AND b.starts_at < $3');
     });
 
     it('maps the top services and workers, coercing raw string aggregates', async () => {

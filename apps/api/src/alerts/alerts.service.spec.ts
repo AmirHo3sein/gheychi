@@ -35,7 +35,7 @@ describe('AlertsService.raise', () => {
             multi: () => ({ incr: jest.fn().mockReturnThis(), expire: jest.fn().mockReturnThis(), exec: redisExec }),
           },
         },
-        { provide: AdminNotificationsService, useValue: { emit } },
+        { provide: AdminNotificationsService, useValue: { emitAlert: emit } },
         { provide: SMS_PROVIDER, useValue: { send: smsSend } },
         {
           provide: ConfigService,
@@ -62,13 +62,18 @@ describe('AlertsService.raise', () => {
     await service.raise(CRITICAL_ALERT);
 
     expect(redisSet).toHaveBeenCalledWith('alert:dedup:refund-stuck:pay-1', '1', 'EX', 6 * 3600, 'NX');
-    expect(emit).toHaveBeenCalledWith('alert', CRITICAL_ALERT.title, CRITICAL_ALERT.body, null);
+    expect(emit).toHaveBeenCalledWith('critical', CRITICAL_ALERT.title, CRITICAL_ALERT.body, null);
     expect(smsSend).toHaveBeenCalledWith('09121112233', `${CRITICAL_ALERT.title} — ${CRITICAL_ALERT.body}`);
   });
 
   it('passes the link through to the notification when provided', async () => {
     await service.raise({ ...CRITICAL_ALERT, link: '/payments/pay-1' });
-    expect(emit).toHaveBeenCalledWith('alert', CRITICAL_ALERT.title, CRITICAL_ALERT.body, '/payments/pay-1');
+    expect(emit).toHaveBeenCalledWith('critical', CRITICAL_ALERT.title, CRITICAL_ALERT.body, '/payments/pay-1');
+  });
+
+  it('stores the alert severity on the notification (warning is not upgraded to critical)', async () => {
+    await service.raise({ ...CRITICAL_ALERT, severity: 'warning' });
+    expect(emit).toHaveBeenCalledWith('warning', CRITICAL_ALERT.title, CRITICAL_ALERT.body, null);
   });
 
   it('suppresses a duplicate key inside the dedup window (no notification, no SMS)', async () => {

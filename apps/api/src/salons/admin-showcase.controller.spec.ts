@@ -3,12 +3,14 @@ import { Repository } from 'typeorm';
 import { AdminShowcaseController } from './admin-showcase.controller';
 import { PortfolioItem } from './portfolio-item.entity';
 import { SalonStory } from './salon-story.entity';
+import { SalonServicesService } from './salon-services.service';
 
 describe('AdminShowcaseController status toggles', () => {
   let controller: AdminShowcaseController;
   let stories: { findOneBy: jest.Mock; findOneByOrFail: jest.Mock; update: jest.Mock };
   let items: { findOneBy: jest.Mock; findOneByOrFail: jest.Mock; update: jest.Mock };
   let req: { auditBefore?: unknown; auditAfter?: unknown };
+  let salonServices: { adminRemoveImage: jest.Mock };
 
   beforeEach(() => {
     stories = {
@@ -22,9 +24,11 @@ describe('AdminShowcaseController status toggles', () => {
       update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
     req = {};
+    salonServices = { adminRemoveImage: jest.fn() };
     controller = new AdminShowcaseController(
       stories as unknown as Repository<SalonStory>,
       items as unknown as Repository<PortfolioItem>,
+      salonServices as unknown as SalonServicesService,
     );
   });
 
@@ -105,5 +109,29 @@ describe('AdminShowcaseController status toggles', () => {
 
     expect(req.auditBefore).toEqual({ status: 'published' });
     expect(req.auditAfter).toEqual({ status: 'removed' });
+  });
+
+  describe('removeServiceImage', () => {
+    it('delegates to the locked service removal and records the audit before/after', async () => {
+      salonServices.adminRemoveImage.mockResolvedValue({
+        before: { id: 'svc-1', salonId: 'salon-1', name: 'کوتاهی', isActive: false, imageUrl: 'http://cdn/k.jpg', imageStorageKey: 'k.jpg' },
+        saved: { id: 'svc-1', salonId: 'salon-1', name: 'کوتاهی', isActive: false, imageUrl: null, imageStorageKey: null },
+      });
+
+      const result = await controller.removeServiceImage('svc-1', req as never);
+
+      expect(salonServices.adminRemoveImage).toHaveBeenCalledWith('svc-1');
+      expect(result).toEqual({ id: 'svc-1', salonId: 'salon-1', name: 'کوتاهی', isActive: false, imageUrl: null });
+      expect(result).not.toHaveProperty('imageStorageKey');
+      expect(req.auditBefore).toEqual({ imageUrl: 'http://cdn/k.jpg', imageStorageKey: 'k.jpg', salonId: 'salon-1', serviceName: 'کوتاهی' });
+      expect(req.auditAfter).toEqual({ imageUrl: null });
+    });
+
+    it('propagates 404/409 without recording a before/after snapshot', async () => {
+      salonServices.adminRemoveImage.mockRejectedValue(new ConflictException('این خدمت تصویری ندارد'));
+
+      await expect(controller.removeServiceImage('svc-1', req as never)).rejects.toBeInstanceOf(ConflictException);
+      expect(req.auditBefore).toBeUndefined();
+    });
   });
 });

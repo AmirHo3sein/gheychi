@@ -328,6 +328,53 @@ describe('Salon CRM (e2e)', () => {
     });
   });
 
+  describe('GET /salons/mine/dashboard-summary — chart series', () => {
+    it('returns a zero-filled Tehran-day series whose points sum to the headline figures', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/salons/mine/dashboard-summary')
+        .set('Cookie', ownerCookie)
+        .expect(200);
+
+      const daily: Array<{ date: string; bookingsCount: number; grossBookingValue: number; completedCount: number }> = res.body.daily;
+      // A 30-day window touches 30 or 31 Tehran calendar days depending on the time of day.
+      expect(daily.length === 30 || daily.length === 31).toBe(true);
+      const dates = daily.map((d) => d.date);
+      expect([...dates].sort()).toEqual(dates);
+      expect(new Set(dates).size).toBe(dates.length);
+      const todayTehran = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tehran' }).format(new Date());
+      expect(dates[dates.length - 1]).toBe(todayTehran);
+      expect(daily.reduce((n, d) => n + d.bookingsCount, 0)).toBe(res.body.bookingsCount);
+      expect(daily.reduce((n, d) => n + d.completedCount, 0)).toBe(res.body.completedCount);
+      expect(daily.reduce((n, d) => n + d.grossBookingValue, 0)).toBe(res.body.grossBookingValue);
+      expect(res.body.previousDaily.reduce((n: number, d: { bookingsCount: number }) => n + d.bookingsCount, 0)).toBe(0);
+    });
+
+    it('does not grow an empty extra day when the window ends exactly at Tehran midnight', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/salons/mine/dashboard-summary')
+        .query({ from: '2026-08-01T00:00:00+03:30', to: '2026-08-04T00:00:00+03:30' })
+        .set('Cookie', ownerCookie)
+        .expect(200);
+
+      expect(res.body.daily.map((d: { date: string }) => d.date)).toEqual(['2026-08-01', '2026-08-02', '2026-08-03']);
+    });
+
+    it('places an appointment in the heatmap by its Tehran weekday and hour', async () => {
+      const [{ starts_at: startsAt }] = await ds.query(`SELECT starts_at FROM bookings WHERE id = $1`, [bookingId]);
+      const start = new Date(startsAt);
+      const res = await request(app.getHttpServer())
+        .get('/api/salons/mine/dashboard-summary')
+        .query({ from: new Date(start.getTime() - 3_600_000).toISOString(), to: new Date(start.getTime() + 3_600_000).toISOString() })
+        .set('Cookie', ownerCookie)
+        .expect(200);
+
+      const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tehran', weekday: 'short', hour: 'numeric', hourCycle: 'h23' }).formatToParts(start);
+      const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(parts.find((p) => p.type === 'weekday')!.value);
+      const hour = Number(parts.find((p) => p.type === 'hour')!.value);
+      expect(res.body.heatmap).toEqual([{ weekday, hour, count: 1 }]);
+    });
+  });
+
   describe('GET /salons/mine/funnel', () => {
     /**
      * Analytics writes are deliberately fire-and-forget (never awaited by the request that

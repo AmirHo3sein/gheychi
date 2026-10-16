@@ -3,7 +3,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
-import { SearchQueryDto } from './dto/search.dto';
+import { SearchQueryDto, SearchSuggestionsQueryDto } from './dto/search.dto';
 
 export interface SearchResult {
   id: string;
@@ -36,6 +36,21 @@ const DEFAULT_PAGE_SIZE = 50;
 // below), so without a ceiling a client that just keeps requesting "more" could walk
 // this all the way up to the full catalog. Once hit, hasMore is forced false.
 const MAX_FETCH_ROWS = 1000;
+/** How many salons the type-ahead under the search field offers. */
+export const SUGGESTION_LIMIT = 6;
+
+/**
+ * The salon-name filter's ILIKE operand. Two things a raw `'%' || q || '%'` got wrong:
+ * - `%`, `_` and `\` in what the customer typed acted as wildcards (`_` matched any one
+ *   letter), so they are escaped (backslash is Postgres's default LIKE escape).
+ * - Arabic-script ي/ك (what many Persian keyboards and copy-pasted names produce) never
+ *   matched Persian ی/ک. The SQL folds the salon name the same way (NAME_FOLD_SQL).
+ */
+export function nameFilterPattern(q: string | undefined): string | null {
+  if (!q) return null;
+  return q.replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
 
 interface SearchCursor {
   page: number;
@@ -69,6 +84,48 @@ export class SearchService {
   ) {}
 
   async search(q: SearchQueryDto): Promise<SearchPage> {
+    const { items, hasMore, page } = await this.runQuery(q);
+
+    // Best-effort and never awaited, same rationale as BookingsService's own
+    // booking_started call -- an analytics outage must add zero latency/failure risk
+    // to this public, unauthenticated, high-traffic endpoint. Deliberately carries no
+    // raw free-text query (`q.q`, the salon-name filter -- only WHETHER one was used,
+    // never its content) and no lat/lng (precise enough to pin down a searcher's
+    // real-world location) -- only the structured filters the client actually chose
+    // (gender/categoryId/sort/radius/price/name-filter-used) plus how many results
+    // came back, which is exactly the shape useful for later "are searches returning
+    // anything" analysis without carrying anything that could identify the searcher.
+    void this.analytics
+      .track('search_performed', {
+        gender: q.gender,
+        categoryId: q.categoryId ?? null,
+        hasNameFilter: !!q.q,
+        priceMin: q.priceMin ?? null,
+        priceMax: q.priceMax ?? null,
+        sort: q.sort ?? 'distance',
+        radiusKm: q.radiusKm ?? 15,
+        page,
+        resultCount: items.length,
+        hasMore,
+      })
+      .catch(() => {});
+
+    return { items, nextCursor: hasMore ? encodeCursor(page + 1) : null, hasMore };
+  }
+
+  /**
+   * Type-ahead: the first few salons a full search with this name fragment would return,
+   * through the exact same query (status/gender/radius/featured-cap rules included), so a
+   * suggestion can never show a salon the results list would not. Deliberately NOT tracked
+   * as `search_performed` -- it fires as the customer types, and counting every keystroke
+   * as a search would swamp the real search analytics.
+   */
+  async suggest(q: SearchSuggestionsQueryDto): Promise<{ items: SearchResult[] }> {
+    const { items } = await this.runQuery({ ...q, pageSize: SUGGESTION_LIMIT });
+    return { items };
+  }
+
+  private async runQuery(q: SearchQueryDto): Promise<{ items: SearchResult[]; hasMore: boolean; page: number }> {
     // 5km silently excluded any salon in the same city whose pin wasn't within easy walking
     // distance of the exact searched point -- a real salon 11-12km from a city's canonical
     // center (a completely normal distance within a metro like Tehran, which spans ~30km)
@@ -143,7 +200,7 @@ export class SearchService {
         AND ($5::int IS NULL OR EXISTS (
           SELECT 1 FROM salon_categories sc2
           WHERE sc2.salon_id = s.id AND sc2.category_id = $5))
-        AND ($6::text IS NULL OR s.name ILIKE '%' || $6 || '%')
+        AND ($6::text IS NULL OR translate(s.name, 'يك', 'یک') ILIKE '%' || $6 || '%')
         -- Honest bounds, pricing-type-aware: a FIXED service's discounted price can prove
         -- either bound exactly, same as before. A FROM service's floor can only ever prove
         -- a LOWER bound (its real price could be arbitrarily higher, so it must never
@@ -169,7 +226,7 @@ export class SearchService {
       ORDER BY is_featured DESC, ${secondarySort}
       LIMIT $9
       `,
-      [q.lng, q.lat, q.gender, radiusMeters, q.categoryId ?? null, q.q ?? null, q.priceMin ?? null, q.priceMax ?? null, fetchLimit],
+      [q.lng, q.lat, q.gender, radiusMeters, q.categoryId ?? null, nameFilterPattern(q.q), q.priceMin ?? null, q.priceMax ?? null, fetchLimit],
     );
 
     const mapped = rows.map((r: Record<string, unknown>) => ({
@@ -249,30 +306,6 @@ export class SearchService {
     const moreWithinFetched = start + pageSize < allFetched.length;
     const hasMore = moreWithinFetched || (!reachedEndOfData && fetchLimit < MAX_FETCH_ROWS);
 
-    // Best-effort and never awaited, same rationale as BookingsService's own
-    // booking_started call -- an analytics outage must add zero latency/failure risk
-    // to this public, unauthenticated, high-traffic endpoint. Deliberately carries no
-    // raw free-text query (`q.q`, the salon-name filter -- only WHETHER one was used,
-    // never its content) and no lat/lng (precise enough to pin down a searcher's
-    // real-world location) -- only the structured filters the client actually chose
-    // (gender/categoryId/sort/radius/price/name-filter-used) plus how many results
-    // came back, which is exactly the shape useful for later "are searches returning
-    // anything" analysis without carrying anything that could identify the searcher.
-    void this.analytics
-      .track('search_performed', {
-        gender: q.gender,
-        categoryId: q.categoryId ?? null,
-        hasNameFilter: !!q.q,
-        priceMin: q.priceMin ?? null,
-        priceMax: q.priceMax ?? null,
-        sort: q.sort ?? 'distance',
-        radiusKm: q.radiusKm ?? 15,
-        page,
-        resultCount: items.length,
-        hasMore,
-      })
-      .catch(() => {});
-
-    return { items, nextCursor: hasMore ? encodeCursor(page + 1) : null, hasMore };
+    return { items, hasMore, page };
   }
 }

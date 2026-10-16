@@ -5,7 +5,8 @@ import { CronJobRunner } from '../common/cron-job-runner.service';
 import { STORAGE_PROVIDER, StorageProvider } from './storage.provider';
 
 // Every prefix any upload site ever writes under (salon-photos.controller.ts,
-// salon-portfolio.controller.ts, salon-stories.controller.ts all use `salons/...`;
+// salon-portfolio.controller.ts, salon-stories.controller.ts and service images in
+// salon-services.service.ts all use `salons/...`;
 // content.service.ts's blog covers use `blog/...`). Pass 2 only ever considers
 // objects under these -- an unrecognized prefix is left alone rather than swept.
 const KNOWN_PREFIXES = ['salons/', 'blog/'];
@@ -39,7 +40,7 @@ export interface StorageReconciliationResult {
 /**
  * Storage <-> DB cross-check, in two independent passes:
  *
- * 1. A DB row (salon_photos/portfolio_items/salon_stories/blog_posts) whose
+ * 1. A DB row (salon_photos/portfolio_items/salon_stories/salon_services/blog_posts) whose
  *    storage_key 404s in the backing store -- almost always a prior delete/upload
  *    failure that left a live reference to a missing file (a real, user-visible bug:
  *    the image 404s in the UI). Logged loudly for a human to look into; never
@@ -79,7 +80,13 @@ export class StorageReconciliationJob {
     return { missingObjectsLogged, orphansDeleted };
   }
 
-  /** Every storage_key any live row currently references, across all four owning tables. */
+  /**
+   * Every storage_key any row currently references, across all five owning tables.
+   * salon_services is read without an is_active filter only for robustness: an archived row
+   * cannot hold an image (archive clears it, and CHECK salon_services_archived_no_image_chk
+   * enforces it -- migration 1758300000000 cleared the legacy ones, whose now-unreferenced
+   * objects pass 2 below deletes as orphans). Whatever a row references is owned, never swept.
+   */
   private async loadKnownKeys(): Promise<Set<string>> {
     const rows: KnownKeyRow[] = await this.dataSource.query(`
       SELECT storage_key FROM salon_photos WHERE storage_key <> ''
@@ -87,6 +94,8 @@ export class StorageReconciliationJob {
       SELECT storage_key FROM portfolio_items
       UNION ALL
       SELECT storage_key FROM salon_stories
+      UNION ALL
+      SELECT image_storage_key AS storage_key FROM salon_services WHERE image_storage_key IS NOT NULL
       UNION ALL
       SELECT cover_image_key AS storage_key FROM blog_posts WHERE cover_image_key IS NOT NULL
     `);
@@ -128,6 +137,9 @@ export class StorageReconciliationJob {
       for (const obj of objects) {
         if (deleted >= DELETE_BATCH_SIZE) return deleted;
         if (knownKeys.has(obj.key)) continue;
+        // Grace is measured from the object's own upload time, not from when it lost its
+        // last reference -- a long-lived file a row just stopped pointing at goes on the
+        // very next run.
         if (obj.lastModified.getTime() > cutoff) continue;
         try {
           await this.storage.delete(obj.key);

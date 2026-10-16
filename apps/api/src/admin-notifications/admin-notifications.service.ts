@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
-import { AdminNotification } from './admin-notification.entity';
+import { AdminNotification, AlertSeverity, NotificationSeverity } from './admin-notification.entity';
 import { AdminNotificationQueryDto } from './dto/admin-notification-query.dto';
 
 export interface AdminNotificationView {
@@ -10,6 +10,7 @@ export interface AdminNotificationView {
   title: string;
   body: string | null;
   link: string | null;
+  severity: NotificationSeverity;
   readAt: Date | null;
   createdAt: Date;
 }
@@ -20,8 +21,33 @@ interface NotificationRow {
   title: string;
   body: string | null;
   link: string | null;
+  severity: AlertSeverity | null;
   created_at: Date;
   read_at: Date | null;
+}
+
+/**
+ * The severity the admin panel shows. An alert keeps the severity it was raised with; an
+ * alert from before the column existed (NULL) reads as 'warning' -- never 'critical', since
+ * nothing records that it was one. Every non-alert type is 'info'.
+ */
+export function severityOf(type: string, stored: AlertSeverity | null): NotificationSeverity {
+  if (type !== 'alert') return 'info';
+  return stored ?? 'warning';
+}
+
+/**
+ * severityOf() as a SQL expression over `admin_notifications n`, for filtering and counting
+ * in the database. MUST stay in lockstep with severityOf() above -- the e2e suite asserts the
+ * two agree (an old NULL-severity alert filters and counts as 'warning').
+ */
+const EFFECTIVE_SEVERITY_SQL = `(CASE WHEN n.type <> 'alert' THEN 'info' ELSE COALESCE(n.severity, 'warning') END)`;
+
+export interface UnreadCounts {
+  total: number;
+  critical: number;
+  warning: number;
+  info: number;
 }
 
 @Injectable()
@@ -53,6 +79,14 @@ export class AdminNotificationsService {
   }
 
   /**
+   * AlertsService's write path: an `alert` row that also records the severity it was raised
+   * with. Same throw-on-failure contract as emit().
+   */
+  async emitAlert(severity: AlertSeverity, title: string, body: string | null, link: string | null): Promise<void> {
+    await this.repo.insert({ type: 'alert', title, body, link, severity });
+  }
+
+  /**
    * "Read" is per-caller (admin_notification_reads), not a column on the notification
    * itself -- one admin reading a notification must not mark it read for every other
    * admin. LEFT JOINed against the calling admin's own rows only; a notification with
@@ -61,28 +95,41 @@ export class AdminNotificationsService {
   async list(query: AdminNotificationQueryDto, adminId: string) {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
-    const unreadOnly = query.unread === 'true';
-    const whereUnread = unreadOnly ? 'WHERE r.read_at IS NULL' : '';
+
+    // $1 is always the caller's admin id; each optional filter appends its own bound
+    // parameter. Values never reach the SQL text -- only these fixed predicate strings do.
+    const params: unknown[] = [adminId];
+    const conditions: string[] = [];
+    if (query.unread === 'true') conditions.push('r.read_at IS NULL');
+    if (query.type) {
+      params.push(query.type);
+      conditions.push(`n.type = $${params.length}`);
+    }
+    if (query.severity) {
+      params.push(query.severity);
+      conditions.push(`${EFFECTIVE_SEVERITY_SQL} = $${params.length}`);
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const rows: NotificationRow[] = await this.dataSource.query(
       `
-      SELECT n.id, n.type, n.title, n.body, n.link, n.created_at, r.read_at
+      SELECT n.id, n.type, n.title, n.body, n.link, n.severity, n.created_at, r.read_at
       FROM admin_notifications n
       LEFT JOIN admin_notification_reads r ON r.notification_id = n.id AND r.admin_id = $1
-      ${whereUnread}
+      ${where}
       ORDER BY n.created_at DESC
-      LIMIT $2 OFFSET $3
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
       `,
-      [adminId, pageSize, (page - 1) * pageSize],
+      [...params, pageSize, (page - 1) * pageSize],
     );
     const [{ count }]: Array<{ count: number }> = await this.dataSource.query(
       `
       SELECT count(*)::int AS count
       FROM admin_notifications n
       LEFT JOIN admin_notification_reads r ON r.notification_id = n.id AND r.admin_id = $1
-      ${whereUnread}
+      ${where}
       `,
-      [adminId],
+      params,
     );
 
     return {
@@ -92,6 +139,7 @@ export class AdminNotificationsService {
         title: row.title,
         body: row.body,
         link: row.link,
+        severity: severityOf(row.type, row.severity),
         readAt: row.read_at,
         createdAt: row.created_at,
       })),
@@ -112,6 +160,28 @@ export class AdminNotificationsService {
       [adminId],
     );
     return count;
+  }
+
+  /**
+   * The caller's unread notifications broken down by DISPLAYED severity (severityOf):
+   * a pre-column alert (stored NULL) counts as 'warning', every non-alert row as 'info'.
+   * One aggregate query, so the admin bell can poll it as cheaply as unread-count.
+   */
+  async unreadCounts(adminId: string): Promise<UnreadCounts> {
+    const [row]: Array<UnreadCounts> = await this.dataSource.query(
+      `
+      SELECT
+        count(*)::int AS total,
+        count(*) FILTER (WHERE ${EFFECTIVE_SEVERITY_SQL} = 'critical')::int AS critical,
+        count(*) FILTER (WHERE ${EFFECTIVE_SEVERITY_SQL} = 'warning')::int AS warning,
+        count(*) FILTER (WHERE ${EFFECTIVE_SEVERITY_SQL} = 'info')::int AS info
+      FROM admin_notifications n
+      LEFT JOIN admin_notification_reads r ON r.notification_id = n.id AND r.admin_id = $1
+      WHERE r.read_at IS NULL
+      `,
+      [adminId],
+    );
+    return { total: row.total, critical: row.critical, warning: row.warning, info: row.info };
   }
 
   async markRead(id: string, adminId: string): Promise<AdminNotificationView> {
@@ -137,6 +207,7 @@ export class AdminNotificationsService {
       title: notification.title,
       body: notification.body,
       link: notification.link,
+      severity: severityOf(notification.type, notification.severity),
       readAt: read_at,
       createdAt: notification.createdAt,
     };

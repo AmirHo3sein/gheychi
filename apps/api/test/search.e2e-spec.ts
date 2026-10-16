@@ -512,4 +512,62 @@ describe('Search (e2e)', () => {
       expect(res.body.items.length).toBeLessThanOrEqual(PAGE_SIZE);
     });
   });
+
+  // Kept last: it adds a salon, which later count-based tests in this file would see.
+  describe('GET /search/suggestions', () => {
+    const base = { lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women' };
+
+    beforeAll(async () => {
+      const ds = app.get(DataSource);
+      await ds.query(`INSERT INTO users (id, phone, role) VALUES ('00000000-0000-4000-8000-000000000009', '09120000009', 'provider')`);
+      await ds.query(`
+        INSERT INTO salons (id, owner_id, name, slug, gender_target, status, address, city, location) VALUES
+          ('10000000-0000-4000-8000-000000000009', '00000000-0000-4000-8000-000000000009',
+           'آرایشگاه کوثر', 'kowsar', 'women', 'approved', 'E', 'Tehran',
+           ST_SetSRID(ST_MakePoint(51.3349, 35.7219), 4326)::geography)`);
+    });
+
+    it('suggests approved salons of the requested gender whose name matches, and nothing else', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/search/suggestions')
+        .query({ ...base, q: 'salon' })
+        .expect(200);
+
+      const slugs: string[] = res.body.items.map((s: { slug: string }) => s.slug);
+      expect(slugs).toEqual(expect.arrayContaining(['near-salon', 'far-salon']));
+      expect(slugs).not.toContain('mens-salon'); // wrong gender
+      expect(slugs).not.toContain('pending-salon'); // not approved
+      expect(slugs.length).toBeLessThanOrEqual(6);
+      expect(res.body.items[0]).toEqual(expect.objectContaining({ name: expect.any(String), slug: expect.any(String), city: 'Tehran' }));
+    });
+
+    it('matches a Persian name typed with Arabic ي/ك', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/search/suggestions')
+        .query({ ...base, q: 'آرايشگاه كوثر' })
+        .expect(200);
+      expect(res.body.items.map((s: { slug: string }) => s.slug)).toEqual(['kowsar']);
+    });
+
+    it('treats LIKE wildcards literally, in suggestions and in the full search', async () => {
+      for (const path of ['/api/search/suggestions', '/api/search']) {
+        const res = await request(app.getHttpServer()).get(path).query({ ...base, q: '_' }).expect(200);
+        expect(res.body.items).toEqual([]);
+      }
+    });
+
+    it('requires a name fragment and a gender', async () => {
+      await request(app.getHttpServer()).get('/api/search/suggestions').query(base).expect(400);
+      await request(app.getHttpServer()).get('/api/search/suggestions').query({ lat: ANCHOR.lat, lng: ANCHOR.lng, q: 'salon' }).expect(400);
+    });
+
+    it('is not recorded as a search in analytics', async () => {
+      const ds = app.get(DataSource);
+      const count = async () => Number((await ds.query(`SELECT COUNT(*) AS n FROM analytics_events WHERE event_name = 'search_performed'`))[0].n);
+      const before = await count();
+      await request(app.getHttpServer()).get('/api/search/suggestions').query({ ...base, q: 'salon' }).expect(200);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(await count()).toBe(before);
+    });
+  });
 });

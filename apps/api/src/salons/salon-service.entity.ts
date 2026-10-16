@@ -53,6 +53,23 @@ export class SalonService {
   @Column({ name: 'discount_percent', type: 'int', nullable: true })
   discountPercent: number | null;
 
+  // Optional primary image, set/cleared ONLY via POST/DELETE salons/mine/services/:id/image
+  // (never through the JSON create/update DTOs). Both-or-neither (DB CHECK
+  // salon_services_image_shape_chk); an archived row never holds one (DB CHECK
+  // salon_services_archived_no_image_chk). Purely presentational -- nothing in booking, pricing,
+  // availability or search reads it. The key is internal: public reads map it out.
+  @Column({ name: 'image_url', type: 'varchar', nullable: true })
+  imageUrl: string | null;
+
+  @Column({ name: 'image_storage_key', type: 'varchar', nullable: true })
+  imageStorageKey: string | null;
+
+  // When an admin last took this service's image down (DELETE admin/services/:id/image).
+  // The owner-facing notice: shown in the provider panel while set, cleared by the owner's
+  // next upload or remove. Owner + admin surfaces only -- public reads map it out.
+  @Column({ name: 'image_removed_by_admin_at', type: 'timestamptz', nullable: true })
+  imageRemovedByAdminAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 }

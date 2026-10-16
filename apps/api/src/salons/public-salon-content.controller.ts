@@ -45,7 +45,12 @@ export class PublicSalonContentController {
   @Get('services')
   async listServices(@Param('slug') slug: string) {
     const salonId = await this.requireSalonId(slug);
-    return this.services.find({ where: { salonId, isActive: true }, order: { createdAt: 'ASC' } });
+    const services = await this.services.find({ where: { salonId, isActive: true }, order: { createdAt: 'ASC' } });
+    // imageUrl is public; imageStorageKey (storage bookkeeping) and imageRemovedByAdminAt
+    // (a moderation notice meant for the owner) never leave the owner/admin surfaces.
+    return services.map(
+      ({ imageStorageKey: _imageStorageKey, imageRemovedByAdminAt: _imageRemovedByAdminAt, ...publicFields }) => publicFields,
+    );
   }
 
   @Get('packages')

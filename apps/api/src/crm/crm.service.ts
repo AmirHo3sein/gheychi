@@ -50,6 +50,8 @@ const REVENUE_STATUS_SQL = `'completed'`;
 // Top-N lists on the dashboard. A fixed small ceiling, not a paginated view -- these answer
 // "what should I look at", not "show me everything".
 const TOP_N = 5;
+/** Longest window the dashboard's day-by-day series is computed for (a year, plus slack). */
+const MAX_DAILY_SERIES_DAYS = 400;
 
 export interface CustomerListRow {
   userId: string;
@@ -143,8 +145,32 @@ export interface TopWorkerRow {
   bookingsCount: number;
 }
 
+/** One Tehran calendar day of a dashboard window. Same lenses as PeriodMetrics, so the
+ *  days of a window sum exactly to that window's own totals. */
+export interface DailyPoint {
+  /** Tehran-local calendar date, `YYYY-MM-DD` (Gregorian -- the client formats it). */
+  date: string;
+  bookingsCount: number;
+  completedCount: number;
+  cancelledCount: number;
+  grossBookingValue: number;
+}
+
+/** Appointments per Tehran-local weekday (0 = Sunday) and hour (0-23). Empty cells omitted. */
+export interface HeatmapCell {
+  weekday: number;
+  hour: number;
+  count: number;
+}
+
 export interface DashboardSummary extends PeriodMetrics {
   previous: PeriodMetrics;
+  /** Day-by-day series for this window; empty when the window is too long to chart. */
+  daily: DailyPoint[];
+  /** The same series for the previous window, for a like-for-like overlay. */
+  previousDaily: DailyPoint[];
+  /** When customers are in the chair -- the full distribution behind busiestWeekday/Hour. */
+  heatmap: HeatmapCell[];
   topServices: TopServiceRow[];
   topWorkers: TopWorkerRow[];
   /** Tehran-local day of week, 0 = Sunday. `null` when the window has no appointments. */
@@ -388,16 +414,20 @@ export class CrmService {
     const previousTo = from;
     const previousFrom = new Date(from.getTime() - (to.getTime() - from.getTime()));
 
-    const [current, previous, topServices, topWorkers, busiestWeekday, busiestHour] = await Promise.all([
-      this.periodMetrics(salonId, from, to),
-      this.periodMetrics(salonId, previousFrom, previousTo),
-      this.topServices(salonId, from, to),
-      this.topWorkers(salonId, from, to),
-      this.busiestBy(salonId, from, to, 'DOW'),
-      this.busiestBy(salonId, from, to, 'HOUR'),
-    ]);
+    const [current, previous, topServices, topWorkers, busiestWeekday, busiestHour, daily, previousDaily, heatmap] =
+      await Promise.all([
+        this.periodMetrics(salonId, from, to),
+        this.periodMetrics(salonId, previousFrom, previousTo),
+        this.topServices(salonId, from, to),
+        this.topWorkers(salonId, from, to),
+        this.busiestBy(salonId, from, to, 'DOW'),
+        this.busiestBy(salonId, from, to, 'HOUR'),
+        this.dailySeries(salonId, from, to),
+        this.dailySeries(salonId, previousFrom, previousTo),
+        this.heatmap(salonId, from, to),
+      ]);
 
-    return { ...current, previous, topServices, topWorkers, busiestWeekday, busiestHour };
+    return { ...current, previous, topServices, topWorkers, busiestWeekday, busiestHour, daily, previousDaily, heatmap };
   }
 
   /**
@@ -550,6 +580,80 @@ export class CrmService {
       [salonId, from, to],
     );
     return rows.map((r) => ({ workerId: r.worker_id, name: r.name, bookingsCount: Number(r.bookings_count) }));
+  }
+
+  /**
+   * One row per Tehran calendar day touched by [from, to), zero-filled by generate_series so
+   * a quiet day is a real 0 on the chart rather than a gap the line silently bridges.
+   *
+   * Same lenses as periodMetrics() -- created_at window, confirmed/completed for the count,
+   * completed-only list price for the value, real cancellations only -- so the points of a
+   * window add up to exactly the headline figures above them. `to` is exclusive, hence the
+   * microsecond step back before taking its date (a window ending at Tehran midnight must
+   * not grow an empty extra day). Windows longer than MAX_DAILY_SERIES_DAYS return [] --
+   * the endpoint accepts any range, and the series is a chart, not an export.
+   */
+  private async dailySeries(salonId: string, from: Date, to: Date): Promise<DailyPoint[]> {
+    if (to.getTime() - from.getTime() > MAX_DAILY_SERIES_DAYS * 86_400_000) return [];
+    const rows: Array<{
+      day: string;
+      bookings_count: string;
+      completed_count: string;
+      cancelled_count: string;
+      gross: string;
+    }> = await this.dataSource.query(
+      `
+      -- dashboard daily series
+      WITH days AS (
+        SELECT generate_series(
+          ($2::timestamptz AT TIME ZONE 'Asia/Tehran')::date,
+          (($3::timestamptz - interval '1 microsecond') AT TIME ZONE 'Asia/Tehran')::date,
+          interval '1 day'
+        )::date AS day
+      )
+      SELECT to_char(d.day, 'YYYY-MM-DD') AS day,
+        COUNT(b.id) FILTER (WHERE b.status IN ${ACTIVE_BOOKING_STATUSES_SQL}) AS bookings_count,
+        COUNT(b.id) FILTER (WHERE b.status = 'completed') AS completed_count,
+        COUNT(b.id) FILTER (WHERE b.status IN ('cancelled_by_user', 'cancelled_by_salon')) AS cancelled_count,
+        COALESCE(SUM(b.price_snapshot) FILTER (WHERE b.status = ${REVENUE_STATUS_SQL}), 0) AS gross
+      FROM days d
+      LEFT JOIN bookings b
+        ON b.salon_id = $1 AND b.created_at >= $2 AND b.created_at < $3
+        AND (b.created_at AT TIME ZONE 'Asia/Tehran')::date = d.day
+      GROUP BY d.day
+      ORDER BY d.day
+      `,
+      [salonId, from, to],
+    );
+    return rows.map((r) => ({
+      date: r.day,
+      bookingsCount: Number(r.bookings_count),
+      completedCount: Number(r.completed_count),
+      cancelledCount: Number(r.cancelled_count),
+      grossBookingValue: Number(r.gross),
+    }));
+  }
+
+  /**
+   * Weekday x hour distribution of appointments, with exactly busiestBy()'s semantics
+   * (starts_at window, Tehran local time, confirmed/completed) -- see that method for why
+   * both of those matter. At most 7 x 24 rows.
+   */
+  private async heatmap(salonId: string, from: Date, to: Date): Promise<HeatmapCell[]> {
+    const rows: Array<{ weekday: number; hour: number; bookings_count: string }> = await this.dataSource.query(
+      `
+      -- dashboard heatmap
+      SELECT EXTRACT(DOW FROM b.starts_at AT TIME ZONE 'Asia/Tehran')::int AS weekday,
+             EXTRACT(HOUR FROM b.starts_at AT TIME ZONE 'Asia/Tehran')::int AS hour,
+             COUNT(*) AS bookings_count
+      FROM bookings b
+      WHERE b.salon_id = $1 AND b.status IN ${ACTIVE_BOOKING_STATUSES_SQL} AND b.starts_at >= $2 AND b.starts_at < $3
+      GROUP BY weekday, hour
+      ORDER BY weekday, hour
+      `,
+      [salonId, from, to],
+    );
+    return rows.map((r) => ({ weekday: Number(r.weekday), hour: Number(r.hour), count: Number(r.bookings_count) }));
   }
 
   /**

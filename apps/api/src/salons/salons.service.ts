@@ -454,7 +454,7 @@ export class SalonsService {
       this.dataSource.query(`SELECT id, name, phone, status FROM users WHERE id = $1`, [salon.ownerId]),
       this.dataSource.query(`SELECT id, url, sort_order FROM salon_photos WHERE salon_id = $1 ORDER BY sort_order ASC, id ASC`, [id]),
       this.dataSource.query(
-        `SELECT id, name, pricing_type, price, price_max, duration_min, is_active
+        `SELECT id, name, pricing_type, price, price_max, duration_min, is_active, image_url, image_removed_by_admin_at
            FROM salon_services WHERE salon_id = $1 ORDER BY created_at ASC, id ASC`,
         [id],
       ),
@@ -484,9 +484,13 @@ export class SalonsService {
       location: salon.location ? { lat: salon.location.coordinates[1], lng: salon.location.coordinates[0] } : null,
       photos: photos.map((p: { id: string; url: string; sort_order: number }) => ({ id: p.id, url: p.url, sortOrder: p.sort_order })),
       services: services.map(
-        (r: { id: string; name: string; pricing_type: string; price: string | null; price_max: string | null; duration_min: number; is_active: boolean }) => ({
+        (r: {
+          id: string; name: string; pricing_type: string; price: string | null; price_max: string | null; duration_min: number;
+          is_active: boolean; image_url: string | null; image_removed_by_admin_at: Date | null;
+        }) => ({
           id: r.id, name: r.name, pricingType: r.pricing_type, price: toNumber(r.price), priceMax: toNumber(r.price_max),
-          durationMinutes: r.duration_min, isActive: r.is_active,
+          durationMinutes: r.duration_min, isActive: r.is_active, imageUrl: r.image_url,
+          imageRemovedByAdminAt: r.image_removed_by_admin_at,
         }),
       ),
       hours: [

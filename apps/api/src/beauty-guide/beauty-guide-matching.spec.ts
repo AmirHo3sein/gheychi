@@ -13,7 +13,7 @@ function row(over: Partial<CandidateServiceRow>): CandidateServiceRow {
     salonId: 's1', salonName: 'S1', slug: 's1', city: 'تهران', address: 'x', ratingAvg: 4, ratingCount: 10,
     distanceKm: 2, coverPhoto: null, hasActiveStory: false, serviceId: 'sv1', serviceName: 'رنگ', serviceDescription: null,
     categoryId: COLOR, pricingType: 'fixed', price: 1_000_000, priceMax: null, discountPercent: null, durationMin: 60,
-    durationMax: null, hasPortfolio: false, ...over,
+    durationMax: null, imageUrl: null, hasPortfolio: false, ...over,
   };
 }
 
@@ -61,6 +61,16 @@ describe('rankMatches', () => {
     expect(services.find((s) => s.id === 'f')).toMatchObject({ bookableOnline: true, price: 2_500_000, discountPercent: 10 });
     // Card floor: discounted fixed (2,250,000) vs range floor (2,000,000) → 2,000,000. Quote contributes nothing.
     expect(result[0].salon.minPrice).toBe(2_000_000);
+  });
+
+  it('passes each service image through unchanged (null when the service has none)', () => {
+    const [r] = rankMatches(
+      [row({ serviceId: 'img', imageUrl: 'http://cdn/salons/s1/services/img/a.jpg' }), row({ serviceId: 'none' })],
+      concepts,
+      true,
+    );
+    expect(r.services.find((s) => s.id === 'img')?.imageUrl).toBe('http://cdn/salons/s1/services/img/a.jpg');
+    expect(r.services.find((s) => s.id === 'none')?.imageUrl).toBeNull();
   });
 
   it('ignores rows whose category no effective concept maps to', () => {

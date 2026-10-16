@@ -4,7 +4,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import Redis from 'ioredis';
-import { DataSource, EntityManager, In, LessThan, MoreThan, Not, Repository } from 'typeorm';
+import { And, DataSource, EntityManager, FindOperator, In, LessThan, MoreThan, MoreThanOrEqual, Not, Repository } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { isUniqueViolation } from '../common/postgres-error-codes';
@@ -16,7 +16,7 @@ import { formatIranDateTimeFa } from '../common/iran-time.util';
 import { CouponsService } from '../coupons/coupons.service';
 import { REDIS } from '../redis/redis.module';
 import { SalonService } from '../salons/salon-service.entity';
-import { Salon } from '../salons/salon.entity';
+import { GeoPoint, Salon } from '../salons/salon.entity';
 import { Worker } from '../salons/worker.entity';
 import { WorkerEligibilityService } from '../salons/worker-eligibility.service';
 import { PlatformConfigService } from '../platform-config/platform-config.service';
@@ -63,6 +63,23 @@ type SalonBooking = EnrichedBooking & {
   depositPaid: boolean;
   prepaidAmount: number;
   amountDue: number | null;
+};
+
+// Where/how to reach the salon, for the customer's own booking responses (findMine/listMine).
+// Every field here is already public on the salon page; contactPhone is the salon's own
+// public number (salons.contact_phone), never the owner's account phone (users.phone).
+type SalonContact = {
+  salonSlug: string | null;
+  salonAddress: string | null;
+  salonLocation: GeoPoint | null;
+  salonContactPhone: string | null;
+};
+
+const NO_SALON_CONTACT: SalonContact = {
+  salonSlug: null,
+  salonAddress: null,
+  salonLocation: null,
+  salonContactPhone: null,
 };
 
 const LOCK_TTL_MS = 5000;
@@ -1331,7 +1348,8 @@ export class BookingsService {
     userId: string,
     id: string,
   ): Promise<
-    EnrichedBooking & { refundStatus: 'pending' | 'done' | null; depositPaid: boolean; reviewable: boolean }
+    EnrichedBooking &
+      SalonContact & { refundStatus: 'pending' | 'done' | null; depositPaid: boolean; reviewable: boolean }
   > {
     const booking = await this.bookings.findOneBy({ id, userId });
     if (!booking) throw new NotFoundException('Booking not found');
@@ -1346,27 +1364,63 @@ export class BookingsService {
       : null;
     const [depositPaid] = await this.depositPaidFor([id]);
     const [reviewable] = await this.reviewableFor([booking]);
-    return { ...withNames, refundStatus, depositPaid: depositPaid ?? false, reviewable: reviewable ?? false };
+    const contactBySalon = await this.salonContactFor([booking.salonId]);
+    return {
+      ...withNames,
+      ...(contactBySalon.get(booking.salonId) ?? NO_SALON_CONTACT),
+      refundStatus,
+      depositPaid: depositPaid ?? false,
+      reviewable: reviewable ?? false,
+    };
   }
 
   async listMine(
     userId: string,
-  ): Promise<Array<EnrichedBooking & { depositPaid: boolean; reviewable: boolean }>> {
+  ): Promise<Array<EnrichedBooking & SalonContact & { depositPaid: boolean; reviewable: boolean }>> {
     const bookings = await this.bookings.find({
       where: { userId },
       order: { startsAt: 'DESC' },
       take: MAX_MY_BOOKINGS_LISTED,
     });
-    const [withNames, paidFlags, reviewableFlags] = await Promise.all([
+    const [withNames, paidFlags, reviewableFlags, contactBySalon] = await Promise.all([
       this.attachNames(bookings),
       this.depositPaidFor(bookings.map((b) => b.id)),
       this.reviewableFor(bookings),
+      this.salonContactFor(bookings.map((b) => b.salonId)),
     ]);
     return withNames.map((b, i) => ({
       ...b,
+      ...(contactBySalon.get(b.salonId) ?? NO_SALON_CONTACT),
       depositPaid: paidFlags[i] ?? false,
       reviewable: reviewableFlags[i] ?? false,
     }));
+  }
+
+  /**
+   * Public salon location/contact for the customer's own bookings -- the same address, map
+   * point and public contact number the salon page already shows, so nothing new is exposed
+   * (callers have already scoped the bookings to the caller). Explicit `select` keeps the
+   * owner id and every non-public column out of reach. `salonSlug` is null while the salon is
+   * not approved, since its public page would 404.
+   */
+  private async salonContactFor(salonIds: string[]): Promise<Map<string, SalonContact>> {
+    const ids = [...new Set(salonIds)];
+    if (ids.length === 0) return new Map();
+    const salons = await this.salons.find({
+      where: { id: In(ids) },
+      select: ['id', 'slug', 'status', 'address', 'location', 'contactPhone'],
+    });
+    return new Map(
+      salons.map((s) => [
+        s.id,
+        {
+          salonSlug: s.status === 'approved' ? (s.slug ?? null) : null,
+          salonAddress: s.address ?? null,
+          salonLocation: s.location ?? null,
+          salonContactPhone: s.contactPhone ?? null,
+        },
+      ]),
+    );
   }
 
   /**
@@ -1757,15 +1811,28 @@ export class BookingsService {
     });
   }
 
-  async listForSalon(salonId: string): Promise<SalonBooking[]> {
+  async listForSalon(salonId: string, range: { from?: string; to?: string } = {}): Promise<SalonBooking[]> {
     // No pagination UI exists downstream today (the provider panel's bookings screen
     // loads this once and filters/sorts client-side over the full list) -- rather than
     // change the response shape and force a frontend rework, this is a generous but
     // real ceiling: invisible for any realistically-scaled salon today (thousands of
     // bookings would mean years of steady daily activity), while bounding the
     // previously-completely-unbounded worst case.
+    //
+    // The optional window (on starts_at, [from, to)) lets a dashboard or calendar ask for
+    // just the days it shows instead of pulling the whole history; same shape, same cap.
+    const from = range.from ? new Date(range.from) : undefined;
+    const to = range.to ? new Date(range.to) : undefined;
+    if (from && to && from >= to) {
+      throw new BadRequestException('بازهٔ زمانی نامعتبر است: «از» باید پیش از «تا» باشد');
+    }
+    let startsAt: FindOperator<Date> | undefined;
+    if (from && to) startsAt = And(MoreThanOrEqual(from), LessThan(to));
+    else if (from) startsAt = MoreThanOrEqual(from);
+    else if (to) startsAt = LessThan(to);
+
     const bookings = await this.bookings.find({
-      where: { salonId },
+      where: startsAt ? { salonId, startsAt } : { salonId },
       order: { startsAt: 'DESC' },
       take: MAX_SALON_BOOKINGS_LISTED,
     });

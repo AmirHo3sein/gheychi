@@ -74,6 +74,30 @@ describe('StorageReconciliationJob', () => {
     });
   });
 
+  describe('known keys', () => {
+    it('includes every salon_services image key, archived services included (no is_active filter)', async () => {
+      await job.run();
+
+      const sql: string = query.mock.calls[0][0];
+      expect(sql).toMatch(/SELECT image_storage_key AS storage_key FROM salon_services WHERE image_storage_key IS NOT NULL/);
+      const servicesClause = sql.slice(sql.indexOf('FROM salon_services'), sql.indexOf('UNION ALL', sql.indexOf('FROM salon_services')));
+      expect(servicesClause).not.toMatch(/is_active/);
+    });
+
+    it('never sweeps an old service image that is still referenced', async () => {
+      const key = 'salons/s1/services/svc1/abc.jpg';
+      query.mockResolvedValue([{ storage_key: key }]);
+      list.mockImplementation(async (prefix: string) =>
+        prefix === 'salons/' ? [{ key, lastModified: new Date(Date.now() - 48 * HOUR_MS) }] : [],
+      );
+
+      const result = await job.run();
+
+      expect(result.orphansDeleted).toBe(0);
+      expect(del).not.toHaveBeenCalled();
+    });
+  });
+
   describe('pass 2 -- orphaned objects', () => {
     it('deletes an object under a known prefix past the grace period with no matching DB row', async () => {
       query.mockResolvedValue([]);

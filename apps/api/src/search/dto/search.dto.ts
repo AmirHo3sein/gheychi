@@ -72,3 +72,25 @@ export class SearchQueryDto {
   @Max(100)
   pageSize?: number;
 }
+
+/**
+ * GET /search/suggestions -- the type-ahead under the home search field. The same location
+ * and gender as a full search (results must never cross the gender filter), a required name
+ * fragment, and nothing else: no paging, no price/category filters.
+ */
+export class SearchSuggestionsQueryDto {
+  @IsString()
+  @Length(1, 100)
+  q: string;
+
+  @Type(() => Number)
+  @IsLatitude()
+  lat: number;
+
+  @Type(() => Number)
+  @IsLongitude()
+  lng: number;
+
+  @IsIn(['women', 'men'])
+  gender: 'women' | 'men';
+}

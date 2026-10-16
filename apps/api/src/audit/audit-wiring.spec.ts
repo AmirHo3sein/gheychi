@@ -59,6 +59,12 @@ describe('admin mutation audit wiring', () => {
       targetType: 'portfolioitem',
     },
     {
+      label: 'service image admin removal',
+      handler: AdminShowcaseController.prototype.removeServiceImage,
+      action: 'salon.service.image.removed',
+      targetType: 'salonservice',
+    },
+    {
       label: 'user status',
       handler: AdminUsersController.prototype.setStatus,
       action: 'user.status.set',

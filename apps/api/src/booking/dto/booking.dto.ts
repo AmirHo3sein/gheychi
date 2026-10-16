@@ -146,3 +146,43 @@ export class RescheduleBookingDto {
   @IsISO8601()
   startsAt: string;
 }
+
+// A bare date ('2026-10-16') parses as UTC midnight and an offset-less date-time as the
+// SERVER's local time -- either silently shifts a Tehran-day window by up to 3.5 hours, and
+// the latter differs by host. The window bounds must carry their own offset (Z or +03:30).
+const INSTANT_WITH_OFFSET = /T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/;
+const INSTANT_WITH_OFFSET_MESSAGE = '$property must be an ISO 8601 date-time with a time zone offset (Z or ±hh:mm)';
+
+/**
+ * GET /salons/mine/bookings window, on `starts_at`: `from` inclusive, `to` exclusive (ISO
+ * 8601 instants -- a Tehran day is the caller's job to convert, as the panels already do
+ * via tehran-day.ts). Either may be given alone; omitting both keeps the original
+ * unfiltered listing exactly. `from < to` is checked in BookingsService.listForSalon.
+ */
+export class ListSalonBookingsQueryDto {
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  @Matches(INSTANT_WITH_OFFSET, { message: INSTANT_WITH_OFFSET_MESSAGE })
+  from?: string;
+
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  @Matches(INSTANT_WITH_OFFSET, { message: INSTANT_WITH_OFFSET_MESSAGE })
+  to?: string;
+}
+
+/**
+ * GET /salons/mine/capacity window: Tehran calendar dates, `from` inclusive, `to`
+ * exclusive. Defaults (today .. today+7) and the 31-day cap live in SalonCapacityService.
+ */
+export class SalonCapacityQueryDto {
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  @IsISO8601({ strict: true })
+  from?: string;
+
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  @IsISO8601({ strict: true })
+  to?: string;
+}

@@ -233,6 +233,52 @@ describe('Bookings — create hold (e2e)', () => {
       .expect(404);
   });
 
+  it('carries the salon\'s public slug, address, map point and public contact phone on the caller\'s own booking -- never the owner\'s account phone', async () => {
+    const ds = app.get(DataSource);
+    await ds.query(`UPDATE salons SET contact_phone = '02188887777' WHERE id = $1`, [salonId]);
+    const [salon] = await ds.query(`SELECT slug, address FROM salons WHERE id = $1`, [salonId]);
+
+    const created = await request(app.getHttpServer())
+      .post('/api/bookings')
+      .set('Cookie', customerCookie)
+      .send({ salonId, serviceId, startsAt: futureIso(76) })
+      .expect(201);
+    const bookingId = created.body.booking.id;
+
+    const detail = await request(app.getHttpServer())
+      .get(`/api/bookings/${bookingId}`)
+      .set('Cookie', customerCookie)
+      .expect(200);
+    expect(detail.body).toMatchObject({
+      salonSlug: salon.slug,
+      salonAddress: salon.address,
+      salonContactPhone: '02188887777',
+    });
+    expect(detail.body.salonLocation.type).toBe('Point');
+    expect(detail.body.salonLocation.coordinates[0]).toBeCloseTo(51.4);
+    expect(detail.body.salonLocation.coordinates[1]).toBeCloseTo(35.7);
+    // The owner's account phone (09125550001) must not appear anywhere in the response.
+    expect(JSON.stringify(detail.body)).not.toContain('09125550001');
+    expect(detail.body).not.toHaveProperty('salonOwnerId');
+
+    const list = await request(app.getHttpServer())
+      .get('/api/bookings/mine')
+      .set('Cookie', customerCookie)
+      .expect(200);
+    const item = list.body.find((b: { id: string }) => b.id === bookingId);
+    expect(item).toMatchObject({ salonSlug: salon.slug, salonContactPhone: '02188887777' });
+    expect(JSON.stringify(list.body)).not.toContain('09125550001');
+
+    // Another customer gets a plain 404 -- no salon context leaks.
+    const otherCustomer = await loginAs(app, '09128880005');
+    const denied = await request(app.getHttpServer())
+      .get(`/api/bookings/${bookingId}`)
+      .set('Cookie', otherCustomer)
+      .expect(404);
+    expect(denied.body).not.toHaveProperty('salonAddress');
+    expect(denied.body).not.toHaveProperty('salonContactPhone');
+  });
+
   it('requires auth to create a booking', () =>
     request(app.getHttpServer())
       .post('/api/bookings')

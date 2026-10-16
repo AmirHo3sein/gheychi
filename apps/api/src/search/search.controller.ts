@@ -1,6 +1,6 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { Public } from '../auth/public.decorator';
-import { SearchQueryDto } from './dto/search.dto';
+import { SearchQueryDto, SearchSuggestionsQueryDto } from './dto/search.dto';
 import { SearchService } from './search.service';
 
 @Controller('search')
@@ -11,5 +11,11 @@ export class SearchController {
   @Get()
   run(@Query() query: SearchQueryDto) {
     return this.search.search(query);
+  }
+
+  // Same public read as run() -- approved salons only, gender-filtered -- just fewer rows.
+  @Get('suggestions')
+  suggestions(@Query() query: SearchSuggestionsQueryDto) {
+    return this.search.suggest(query);
   }
 }

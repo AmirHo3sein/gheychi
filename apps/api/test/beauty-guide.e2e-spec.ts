@@ -273,6 +273,22 @@ describe('Beauty Guide (e2e)', () => {
       expect(JSON.stringify(res.body)).not.toMatch(/total/i);
     });
 
+    it('exposes each matched service image as imageUrl (null when none), never the storage key', async () => {
+      const url = `http://cdn.test/salons/${salonId}/services/${fixedServiceId}/bg.jpg`;
+      await ds.query(`UPDATE salon_services SET image_url = $1, image_storage_key = $2 WHERE id = $3`, [
+        url, `salons/${salonId}/services/${fixedServiceId}/bg.jpg`, fixedServiceId,
+      ]);
+      try {
+        const res = await http().get(`/api/beauty-guides/${guideId}/matches?lat=35.7&lng=51.4`).set('Cookie', customer).expect(200);
+        const services = res.body.salons[0].services;
+        expect(services.find((s: { id: string }) => s.id === fixedServiceId).imageUrl).toBe(url);
+        expect(services.find((s: { id: string }) => s.id === quoteServiceId).imageUrl).toBeNull();
+        expect(JSON.stringify(res.body)).not.toMatch(/storageKey|storage_key/i);
+      } finally {
+        await ds.query(`UPDATE salon_services SET image_url = NULL, image_storage_key = NULL WHERE id = $1`, [fixedServiceId]);
+      }
+    });
+
     it('lets the customer remove, add and restore concepts — corrections are authoritative', async () => {
       let res = await http().patch(`/api/beauty-guides/${guideId}`).set('Cookie', customer)
         .send({ removeConceptKeys: ['balayage'], addConceptKeys: ['highlights'], attributes: { hair_length: 'medium' } })

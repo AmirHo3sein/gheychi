@@ -4,6 +4,7 @@ import { Reflector } from '@nestjs/core';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ActivityController } from './activity/activity.controller';
+import { AdminDashboardController } from './admin-dashboard/admin-dashboard.controller';
 import { AdminNotificationsController } from './admin-notifications/admin-notifications.controller';
 import { AdminAnalyticsController } from './analytics/admin-analytics.controller';
 import { AdminAuditController } from './audit/admin-audit.controller';
@@ -27,6 +28,7 @@ import { AvailabilityController } from './booking/availability.controller';
 import { BookingsController } from './booking/bookings.controller';
 import { PaymentsController } from './booking/payments.controller';
 import { SalonBookingsController } from './booking/salon-bookings.controller';
+import { SalonCapacityController } from './booking/salon-capacity.controller';
 import { SalonEarningsController } from './booking/salon-earnings.controller';
 import { AdminCategoriesController } from './catalog/admin-categories.controller';
 import { AdminCategoryRequestsController } from './catalog/admin-category-requests.controller';
@@ -98,6 +100,7 @@ const METHOD_METADATA = 'method';
 // "controller count" sanity check.
 const ALL_CONTROLLERS: Function[] = [
   ActivityController,
+  AdminDashboardController,
   AdminNotificationsController,
   AdminAnalyticsController,
   AdminAuditController,
@@ -115,6 +118,7 @@ const ALL_CONTROLLERS: Function[] = [
   BookingsController,
   PaymentsController,
   SalonBookingsController,
+  SalonCapacityController,
   SalonEarningsController,
   AdminCategoriesController,
   AdminCategoryRequestsController,
@@ -227,6 +231,7 @@ const PUBLIC_ROUTES: Array<[Function, string]> = [
   [SalonsController, 'canonical'],
   [SitemapSalonsController, 'list'],
   [SearchController, 'run'],
+  [SearchController, 'suggestions'],
 ];
 
 function routeHandlerNames(controller: Function): string[] {

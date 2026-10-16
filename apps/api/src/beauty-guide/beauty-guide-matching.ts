@@ -28,6 +28,8 @@ export interface CandidateServiceRow {
   discountPercent: number | null;
   durationMin: number;
   durationMax: number | null;
+  /** salon_services.image_url -- public catalog image, presentational only. */
+  imageUrl: string | null;
   hasPortfolio: boolean;
 }
 
@@ -40,6 +42,8 @@ export interface MatchedService {
   discountPercent: number | null;
   durationMin: number;
   durationMax: number | null;
+  /** The service's optional public catalog image; never read by ranking or pricing. */
+  imageUrl: string | null;
   /** Concept keys this service is matched to (via its category). */
   conceptKeys: string[];
   /** True when the service name/description literally mentions a concept keyword. */
@@ -106,6 +110,7 @@ export function rankMatches(
       discountPercent: row.discountPercent,
       durationMin: row.durationMin,
       durationMax: row.durationMax,
+      imageUrl: row.imageUrl,
       // A keyword hit narrows the service to the concepts it actually names; otherwise the
       // service matches every concept sharing its category (category-level precision only).
       conceptKeys: (keywordConcepts.length ? keywordConcepts : related).map((c) => c.key),

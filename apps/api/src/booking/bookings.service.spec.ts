@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, NotFoundExc
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource, In, LessThan, MoreThan, Not, QueryFailedError } from 'typeorm';
+import { And, DataSource, In, LessThan, MoreThan, MoreThanOrEqual, Not, QueryFailedError } from 'typeorm';
 import { AlertsService } from '../alerts/alerts.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { UNIQUE_VIOLATION } from '../common/postgres-error-codes';
@@ -1843,6 +1843,39 @@ describe('BookingsService.listMine / findMine -- workerName enrichment', () => {
     });
   });
 
+  describe('listForSalon date window (starts_at, [from, to))', () => {
+    const FROM = '2026-10-15T20:30:00.000Z';
+    const TO = '2026-10-16T20:30:00.000Z';
+    beforeEach(() => bookingsFind.mockResolvedValue([]));
+
+    it('applies both bounds: from inclusive, to exclusive', async () => {
+      await service.listForSalon('salon-1', { from: FROM, to: TO });
+      expect(bookingsFind).toHaveBeenCalledWith({
+        where: { salonId: 'salon-1', startsAt: And(MoreThanOrEqual(new Date(FROM)), LessThan(new Date(TO))) },
+        order: { startsAt: 'DESC' },
+        take: 1000,
+      });
+    });
+
+    it('accepts a lone from or a lone to', async () => {
+      await service.listForSalon('salon-1', { from: FROM });
+      expect(bookingsFind.mock.calls[0][0].where).toEqual({ salonId: 'salon-1', startsAt: MoreThanOrEqual(new Date(FROM)) });
+      await service.listForSalon('salon-1', { to: TO });
+      expect(bookingsFind.mock.calls[1][0].where).toEqual({ salonId: 'salon-1', startsAt: LessThan(new Date(TO)) });
+    });
+
+    it('keeps the unfiltered query exactly when the window is empty', async () => {
+      await service.listForSalon('salon-1', {});
+      expect(bookingsFind.mock.calls[0][0].where).toEqual({ salonId: 'salon-1' });
+    });
+
+    it('rejects from >= to with a 400 and never queries', async () => {
+      await expect(service.listForSalon('salon-1', { from: TO, to: FROM })).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.listForSalon('salon-1', { from: FROM, to: FROM })).rejects.toBeInstanceOf(BadRequestException);
+      expect(bookingsFind).not.toHaveBeenCalled();
+    });
+  });
+
   it('listMine flags depositPaid from the Payment row (paid/refund states), never from depositAmount', async () => {
     bookingsFind.mockResolvedValue([
       { id: 'booking-paid', salonId: 'salon-1', serviceId: 'service-1', workerId: null, depositAmount: 100_000 },
@@ -1878,6 +1911,63 @@ describe('BookingsService.listMine / findMine -- workerName enrichment', () => {
       where: { userId: 'customer-1' },
       order: { startsAt: 'DESC' },
       take: 500,
+    });
+  });
+
+  describe('salon location/contact (customer responses)', () => {
+    const SALON_ROW = {
+      id: 'salon-1',
+      name: 'Salon One',
+      slug: 'salon-one',
+      status: 'approved',
+      address: 'Vali-Asr St, No. 10',
+      location: { type: 'Point', coordinates: [51.4, 35.7] },
+      contactPhone: '02188887777',
+    };
+    const booking = { id: 'booking-1', salonId: 'salon-1', serviceId: 'service-1', workerId: null, userId: 'customer-1' };
+
+    beforeEach(() => salonsFind.mockResolvedValue([SALON_ROW]));
+
+    it('findMine carries the public slug, address, map point and public contact phone', async () => {
+      bookingsFindOneBy.mockResolvedValue(booking);
+
+      const result = await service.findMine('customer-1', 'booking-1');
+
+      expect(result).toMatchObject({
+        salonSlug: 'salon-one',
+        salonAddress: 'Vali-Asr St, No. 10',
+        salonLocation: { type: 'Point', coordinates: [51.4, 35.7] },
+        salonContactPhone: '02188887777',
+      });
+      // Only public columns are read -- never ownerId (the path to the owner's account phone).
+      const contactCall = salonsFind.mock.calls.find(([opts]) => opts.select?.includes('contactPhone'));
+      expect(contactCall[0].select).toEqual(['id', 'slug', 'status', 'address', 'location', 'contactPhone']);
+    });
+
+    it('listMine carries the same fields on every item', async () => {
+      bookingsFind.mockResolvedValue([booking]);
+
+      const [b] = await service.listMine('customer-1');
+
+      expect(b).toMatchObject({ salonSlug: 'salon-one', salonContactPhone: '02188887777' });
+    });
+
+    it('nulls the slug while the salon is not approved (its public page would 404)', async () => {
+      salonsFind.mockResolvedValue([{ ...SALON_ROW, status: 'suspended' }]);
+      bookingsFindOneBy.mockResolvedValue(booking);
+
+      const result = await service.findMine('customer-1', 'booking-1');
+
+      expect(result.salonSlug).toBeNull();
+      expect(result.salonAddress).toBe('Vali-Asr St, No. 10');
+    });
+
+    it('findMine still 404s for a booking that is not the caller\'s, before any salon lookup', async () => {
+      bookingsFindOneBy.mockResolvedValue(null);
+
+      await expect(service.findMine('customer-2', 'booking-1')).rejects.toBeInstanceOf(NotFoundException);
+      expect(bookingsFindOneBy).toHaveBeenCalledWith({ id: 'booking-1', userId: 'customer-2' });
+      expect(salonsFind).not.toHaveBeenCalled();
     });
   });
 

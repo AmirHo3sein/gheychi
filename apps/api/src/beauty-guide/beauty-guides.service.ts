@@ -524,7 +524,7 @@ export class BeautyGuidesService {
              (SELECT sp.url FROM salon_photos sp WHERE sp.salon_id = s.id ORDER BY sp.is_cover DESC, sp.sort_order ASC LIMIT 1) AS cover_photo,
              EXISTS (SELECT 1 FROM salon_stories st WHERE st.salon_id = s.id AND st.status = 'published' AND st.expires_at > now()) AS has_active_story,
              ss.id AS service_id, ss.name AS service_name, ss.description AS service_description, ss.category_id,
-             ss.pricing_type, ss.price, ss.price_max, ss.discount_percent, ss.duration_min, ss.duration_max,
+             ss.pricing_type, ss.price, ss.price_max, ss.discount_percent, ss.duration_min, ss.duration_max, ss.image_url,
              EXISTS (SELECT 1 FROM portfolio_items pi WHERE pi.service_id = ss.id AND pi.status = 'published') AS has_portfolio
         FROM salon_services ss
         JOIN salons s ON s.id = ss.salon_id
@@ -559,6 +559,7 @@ export class BeautyGuidesService {
       discountPercent: r.discount_percent === null ? null : Number(r.discount_percent),
       durationMin: Number(r.duration_min),
       durationMax: r.duration_max === null ? null : Number(r.duration_max),
+      imageUrl: (r.image_url as string | null) ?? null,
       hasPortfolio: portfolioEnabled && Boolean(r.has_portfolio),
     }));
     const salons = rankMatches(candidates, mappable, reviewsEnabled);

@@ -1,5 +1,5 @@
 import {
-  Body, ConflictException, Controller, NotFoundException, Param, ParseUUIDPipe, Patch, Req, UseGuards, UseInterceptors,
+  Body, ConflictException, Controller, Delete, NotFoundException, Param, ParseUUIDPipe, Patch, Req, UseGuards, UseInterceptors,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
@@ -11,6 +11,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { UpdateShowcaseStatusDto } from './dto/admin-showcase-status.dto';
 import { PortfolioItem } from './portfolio-item.entity';
 import { SalonStory } from './salon-story.entity';
+import { SalonServicesService } from './salon-services.service';
 
 /**
  * Admin remove/restore toggle for showcase content (salon-showcase spec, §Admin).
@@ -18,6 +19,12 @@ import { SalonStory } from './salon-story.entity';
  * (evidence) is retained; storage objects ride the normal GC/delete paths. Routes are
  * id-addressed under `admin/stories|portfolio` (NOT `admin/salons/...`) because the
  * target is the content row itself, not a salon-scoped collection.
+ *
+ * Service images are the exception to "never a hard delete": DELETE services/:id/image
+ * takes the image down for good (row cleared, object deleted after commit -- the same
+ * lifecycle as the owner's own remove). The image is presentational only, so there is no
+ * evidence to retain beyond the audit row's before-snapshot, and the owner can upload a
+ * new one.
  */
 @Controller('admin')
 @UseGuards(RolesGuard)
@@ -26,6 +33,7 @@ export class AdminShowcaseController {
   constructor(
     @InjectRepository(SalonStory) private readonly stories: Repository<SalonStory>,
     @InjectRepository(PortfolioItem) private readonly portfolioItems: Repository<PortfolioItem>,
+    private readonly salonServices: SalonServicesService,
   ) {}
 
   @Patch('stories/:id/status')
@@ -64,6 +72,24 @@ export class AdminShowcaseController {
     const updated = await this.portfolioItems.findOneByOrFail({ id });
     req.auditAfter = { status: updated.status };
     return updated;
+  }
+
+  // Addressed by id alone (any salon). 404 unknown id, 409 when the row has no image -- also
+  // the lost-race outcome for a second admin, and always the outcome for an archived service,
+  // which can no longer hold an image (salon_services_archived_no_image_chk).
+  @Delete('services/:id/image')
+  @UseInterceptors(AuditInterceptor)
+  @AuditAction('salon.service.image.removed', 'salonservice')
+  async removeServiceImage(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) {
+    const { before, saved } = await this.salonServices.adminRemoveImage(id);
+    req.auditBefore = {
+      imageUrl: before.imageUrl,
+      imageStorageKey: before.imageStorageKey,
+      salonId: before.salonId,
+      serviceName: before.name,
+    };
+    req.auditAfter = { imageUrl: null };
+    return { id: saved.id, salonId: saved.salonId, name: saved.name, isActive: saved.isActive, imageUrl: saved.imageUrl };
   }
 }
 

@@ -28,8 +28,8 @@ export interface AlertInput {
 
 /**
  * Operator paging for money-critical conditions. Every alert becomes an
- * admin-panel notification (type 'alert'); critical ones also SMS every phone
- * in ALERT_ADMIN_PHONE (comma-separated; empty/unset => SMS disabled, e.g.
+ * admin-panel notification (type 'alert', its severity stored on the row);
+ * critical ones also SMS every phone in ALERT_ADMIN_PHONE (comma-separated; empty/unset => SMS disabled, e.g.
  * local dev). raise() NEVER throws -- alerting must not be able to break a
  * payment path -- and fails open on Redis errors (a duplicate alert beats a
  * dropped one). When NOTHING was delivered (notification emit failed and no
@@ -72,7 +72,7 @@ export class AlertsService {
       if (!fresh) return; // duplicate inside the window -- already alerted
 
       let emitted = true;
-      await this.adminNotifications.emit('alert', input.title, input.body, input.link ?? null).catch((err) => {
+      await this.adminNotifications.emitAlert(input.severity, input.title, input.body, input.link ?? null).catch((err) => {
         emitted = false;
         this.logger.error(
           `Alert notification emit failed for ${input.key}: ${err instanceof Error ? err.message : String(err)}`,

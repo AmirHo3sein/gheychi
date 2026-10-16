@@ -1,5 +1,5 @@
 import {
-  Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Req, UseGuards, UseInterceptors,
+  Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, Req, UseGuards, UseInterceptors,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { AuditAction } from '../audit/audit.decorator';
@@ -8,7 +8,9 @@ import { SalonOwnerGuard } from '../salons/salon-owner.guard';
 import { AssignWorkerDto } from '../salons/dto/worker.dto';
 import { BookingsService } from './bookings.service';
 import { User } from '../users/user.entity';
-import { CreateManualBookingDto, RejectBookingDto, RescheduleBookingDto, UpdateBookingStatusDto } from './dto/booking.dto';
+import {
+  CreateManualBookingDto, ListSalonBookingsQueryDto, RejectBookingDto, RescheduleBookingDto, UpdateBookingStatusDto,
+} from './dto/booking.dto';
 
 @Controller('salons/mine/bookings')
 @UseGuards(SalonOwnerGuard)
@@ -16,8 +18,8 @@ export class SalonBookingsController {
   constructor(private readonly bookings: BookingsService) {}
 
   @Get()
-  list(@Req() req: Request) {
-    return this.bookings.listForSalon(req.salonId!);
+  list(@Req() req: Request, @Query() query: ListSalonBookingsQueryDto) {
+    return this.bookings.listForSalon(req.salonId!, query);
   }
 
   // A customer who called or walked in -- not in the system at all. See
