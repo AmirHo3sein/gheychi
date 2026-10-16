@@ -1,6 +1,7 @@
 import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
+import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import BookingsView from './BookingsView.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import Pagination from '@/components/ui/Pagination.vue'
@@ -11,11 +12,23 @@ vi.mock('@/composables/useApi', () => ({
   useApi: () => ({ apiFetch: fetchMock }),
 }))
 
-// The page reads route.query so another screen can deep-link into a pre-filtered list.
+// The page reads route.query so another screen can deep-link into a pre-filtered list. A real
+// router (memory history), so the URL round-trip is exercised, not a mocked useRoute.
 const routeQuery = ref<Record<string, string>>({})
-vi.mock('vue-router', () => ({ useRoute: () => ({ query: routeQuery.value }) }))
+let router: Router
 
-const mountOptions = { global: { stubs: { RouterLink: RouterLinkStub } } }
+async function mountView() {
+  router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/bookings', component: BookingsView },
+      { path: '/bookings/:id', name: 'booking-timeline', component: { template: '<div />' } },
+    ],
+  })
+  router.push({ path: '/bookings', query: routeQuery.value })
+  await router.isReady()
+  return mount(BookingsView, { global: { plugins: [router], stubs: { RouterLink: RouterLinkStub } } })
+}
 
 const SALON_ID = '22222222-2222-4222-8222-222222222222'
 const BOOKING_ID = '11111111-1111-4111-8111-111111111111'
@@ -80,7 +93,7 @@ describe('BookingsView', () => {
 
   it('loads the unfiltered list and renders customer, salon, service, money and payment state', async () => {
     respondWith([paidBooking])
-    const wrapper = mount(BookingsView, mountOptions)
+    const wrapper = await mountView()
     await flushPromises()
 
     expect(fetchMock).toHaveBeenCalledWith('/admin/bookings?page=1&pageSize=20', { silent: true })
@@ -100,7 +113,7 @@ describe('BookingsView', () => {
     // pending_approval bookings genuinely have no Payment row; showing "۰ تومان" would
     // read as "paid nothing", which is a different and wrong fact.
     respondWith([manualBooking])
-    const wrapper = mount(BookingsView, mountOptions)
+    const wrapper = await mountView()
     await flushPromises()
 
     expect(wrapper.get('[data-testid="no-payment"]').text()).toBe('بدون پرداخت آنلاین')
@@ -113,7 +126,7 @@ describe('BookingsView', () => {
 
   it('links each row to that booking\'s timeline, finally making BookingTimelineView reachable', async () => {
     respondWith([paidBooking])
-    const wrapper = mount(BookingsView, mountOptions)
+    const wrapper = await mountView()
     await flushPromises()
 
     const link = wrapper.getComponent(RouterLinkStub)
@@ -122,7 +135,7 @@ describe('BookingsView', () => {
 
   it('applies a select filter and resets to page 1', async () => {
     respondWith([paidBooking])
-    const wrapper = mount(BookingsView, mountOptions)
+    const wrapper = await mountView()
     await flushPromises()
 
     const paymentSelect = wrapper.get('[data-testid="payment-status-filter"]').getComponent(AppSelect)
@@ -135,10 +148,39 @@ describe('BookingsView', () => {
     )
   })
 
+  // The dashboard's «استرداد در انتظار» tile deep-links here. The filter must live in the URL
+  // both ways: the sidebar's bare /bookings link (same path, so the page stays mounted) has to
+  // clear it, and clearing it on the page has to clear the URL -- otherwise "back" from a
+  // booking's timeline quietly re-applies a filter the admin already removed.
+  it('keeps the deep-linked payment filter in sync with the URL in both directions', async () => {
+    routeQuery.value = { paymentStatus: 'refund_pending' }
+    respondWith([paidBooking])
+    const wrapper = await mountView()
+    await flushPromises()
+    expect(fetchMock).toHaveBeenLastCalledWith('/admin/bookings?page=1&pageSize=20&paymentStatus=refund_pending', { silent: true })
+
+    await router.push('/bookings')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenLastCalledWith('/admin/bookings?page=1&pageSize=20', { silent: true })
+    expect(wrapper.get('[data-testid="payment-status-filter"]').getComponent(AppSelect).props('modelValue')).toBe('')
+
+    await wrapper.get('[data-testid="payment-status-filter"]').getComponent(AppSelect).setValue('paid')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ paymentStatus: 'paid' })
+  })
+
+  it('ignores an unknown payment status in the URL instead of sending it to the API', async () => {
+    routeQuery.value = { paymentStatus: 'bogus' }
+    respondWith([paidBooking])
+    await mountView()
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/admin/bookings?page=1&pageSize=20', { silent: true })
+  })
+
   it('pre-fills the salon filter from the query string, so another screen can deep-link into it', async () => {
     routeQuery.value = { salonId: SALON_ID }
     respondWith([paidBooking])
-    mount(BookingsView, mountOptions)
+    await mountView()
     await flushPromises()
 
     expect(fetchMock).toHaveBeenCalledWith(`/admin/bookings?page=1&pageSize=20&salonId=${SALON_ID}`, { silent: true })
@@ -147,7 +189,7 @@ describe('BookingsView', () => {
   it('never sends a half-typed id, since the backend 400s anything that is not a real UUID', async () => {
     routeQuery.value = { salonId: 'not-a-uuid' }
     respondWith([paidBooking])
-    mount(BookingsView, mountOptions)
+    await mountView()
     await flushPromises()
 
     expect(fetchMock).toHaveBeenCalledWith('/admin/bookings?page=1&pageSize=20', { silent: true })
@@ -155,7 +197,7 @@ describe('BookingsView', () => {
 
   it('paginates, requesting the next page while keeping the active filters', async () => {
     respondWith([paidBooking], 45)
-    const wrapper = mount(BookingsView, mountOptions)
+    const wrapper = await mountView()
     await flushPromises()
 
     wrapper.getComponent(Pagination).vm.$emit('update:page', 2)
@@ -166,7 +208,7 @@ describe('BookingsView', () => {
 
   it('shows the empty state when nothing matches', async () => {
     respondWith([])
-    const wrapper = mount(BookingsView, mountOptions)
+    const wrapper = await mountView()
     await flushPromises()
 
     expect(wrapper.text()).toContain('نوبتی با این فیلترها یافت نشد.')
@@ -177,7 +219,7 @@ describe('BookingsView', () => {
     // "No bookings match" is a conclusion an operator would act on mid-dispute, so a
     // failed request must never be repainted as one.
     fetchMock.mockResolvedValueOnce({ data: null, error: { status: 500, message: 'boom' } })
-    const wrapper = mount(BookingsView, mountOptions)
+    const wrapper = await mountView()
     await flushPromises()
 
     expect(wrapper.find('[data-testid="load-error"]').exists()).toBe(true)
@@ -196,7 +238,7 @@ describe('BookingsView', () => {
     // guard the table would flip back to the pre-filter rows after the filter had applied.
     let resolveFirst!: (value: unknown) => void
     fetchMock.mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
-    const wrapper = mount(BookingsView, mountOptions)
+    const wrapper = await mountView()
     await flushPromises()
 
     fetchMock.mockResolvedValue({ data: { items: [manualBooking], total: 1, page: 1, pageSize: 20 }, error: null })
@@ -215,7 +257,7 @@ describe('BookingsView', () => {
   describe('deposit honesty', () => {
     it('says the deposit was paid only when depositPaid is true', async () => {
       respondWith([paidBooking])
-      const wrapper = mount(BookingsView, mountOptions)
+      const wrapper = await mountView()
       await flushPromises()
 
       expect(wrapper.get('[data-testid="deposit-paid"]').text()).toContain('بیعانه پرداخت‌شده')
@@ -224,7 +266,7 @@ describe('BookingsView', () => {
     it('shows no deposit-collected line for a booking whose deposit was never captured', async () => {
       // depositAmount is still 200,000 here -- the priced deposit -- but no money moved.
       respondWith([{ ...manualBooking, status: 'confirmed', depositAmount: 200_000, depositPaid: false }])
-      const wrapper = mount(BookingsView, mountOptions)
+      const wrapper = await mountView()
       await flushPromises()
 
       expect(wrapper.find('[data-testid="deposit-paid"]').exists()).toBe(false)
@@ -235,7 +277,7 @@ describe('BookingsView', () => {
   describe('platform cancel', () => {
     const rowFor = async (status: string) => {
       respondWith([{ ...paidBooking, status }])
-      const wrapper = mount(BookingsView, mountOptions)
+      const wrapper = await mountView()
       await flushPromises()
       return wrapper
     }

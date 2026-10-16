@@ -115,7 +115,7 @@ async function reactivate(coupon: SubscriptionCoupon) {
 </script>
 
 <template>
-  <div class="mx-auto max-w-3xl space-y-5 p-4 sm:p-6 lg:p-8">
+  <div class="space-y-5 p-4 sm:p-6 lg:p-8">
     <div>
       <h1 class="text-lg font-bold text-(--color-text)">کدهای تخفیف اشتراک</h1>
       <p class="mt-1 text-sm text-(--color-text-muted)">

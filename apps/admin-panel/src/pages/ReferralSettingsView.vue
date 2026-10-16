@@ -15,6 +15,7 @@ import { useToast } from '@/composables/useToast'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppSwitch from '@/components/ui/AppSwitch.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppMoneyInput from '@/components/ui/AppMoneyInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
@@ -310,7 +311,7 @@ onMounted(load)
 
 <!-- p-4 -> sm:p-6 -> lg:p-8 scale; below that 64px of gutter is a fifth of a 320px screen. -->
 <template>
-  <div class="mx-auto max-w-4xl space-y-5 p-4 sm:p-6 lg:p-8">
+  <div class="mx-auto max-w-3xl space-y-5 p-4 sm:p-6 lg:p-8">
     <div
       v-if="loading && rows.length === 0"
       class="flex items-center justify-center gap-2 py-16 text-sm text-(--color-text-muted)"
@@ -348,32 +349,12 @@ onMounted(load)
           </div>
           <div class="flex shrink-0 items-center gap-2.5">
             <StatusBadge :label="row.enabled ? 'فعال' : 'غیرفعال'" :tone="row.enabled ? 'success' : 'neutral'" />
-            <button
-              type="button"
-              role="switch"
-              :aria-checked="row.enabled"
+            <AppSwitch
+              v-model="row.enabled"
               :aria-label="'فعال‌سازی معرفی ' + referralTypeLabel(row.referralType)"
               :data-testid="`enabled-toggle-${row.referralType}`"
               :disabled="confirmingType === row.referralType"
-              class="flex h-11 w-11 shrink-0 items-center justify-center disabled:cursor-not-allowed disabled:opacity-60"
-              @click="row.enabled = !row.enabled"
-            >
-              <!-- accent-TEXT for the on-track, not the raw accent: the brand peach is a
-                   light pastel (1.68:1 against a white knob), so an accent-filled track read
-                   as barely distinguishable from the off state. accent-text is the darkened
-                   brand shade in light mode and the light one in dark mode, and the knob
-                   follows --color-surface-card, so the pair inverts together and stays
-                   legible in both themes (6.95:1 light / 9.26:1 dark). -->
-              <span
-                class="relative h-6 w-11 rounded-full transition-colors"
-                :class="row.enabled ? 'bg-(--color-accent-text)' : 'bg-(--color-text-muted)'"
-              >
-                <span
-                  class="absolute top-0.5 h-5 w-5 rounded-full bg-(--color-surface-card) shadow-(--shadow-sm) transition-all"
-                  :class="row.enabled ? 'end-0.5' : 'start-0.5'"
-                />
-              </span>
-            </button>
+            />
           </div>
         </div>
 

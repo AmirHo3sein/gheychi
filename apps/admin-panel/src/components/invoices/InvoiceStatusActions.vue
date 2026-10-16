@@ -106,7 +106,7 @@ async function submit() {
           v-model="note"
           data-testid="payment-note-input"
           rows="2"
-          class="w-full rounded-xl border border-(--color-text-muted) p-3 text-sm"
+          class="w-full rounded-xl border border-(--color-border-control) p-3 text-sm"
         />
       </div>
       <div class="flex flex-wrap gap-2.5">

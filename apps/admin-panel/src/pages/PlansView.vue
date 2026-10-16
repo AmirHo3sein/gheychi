@@ -19,6 +19,7 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { formatToman } from '@/utils/format-toman'
 import { entitlementLabel } from '@/utils/entitlement-label'
+import { salonStatusLabel } from '@/utils/labels'
 
 interface Plan {
   id: string
@@ -30,7 +31,8 @@ interface Plan {
   isDefault: boolean
   sortOrder: number
   entitlements: Record<string, unknown>
-  subscriberCount: number
+  // Absent on the create response; a just-created plan has no subscribers by definition.
+  subscriberCount?: number
 }
 
 interface PlanSalonSummary {
@@ -63,7 +65,9 @@ onMounted(load)
 function formatEntitlements(entitlements: Record<string, unknown>): string {
   const keys = Object.keys(entitlements)
   if (keys.length === 0) return 'بدون محدودیت تعریف‌شده'
-  return keys.map((k) => `${entitlementLabel(k)}${entitlementLabel(k) === k ? '' : ` (${k})`}: ${JSON.stringify(entitlements[k])}`).join('، ')
+  // Numbers read in Persian digits like every other figure; any other JSON value stays verbatim.
+  const show = (v: unknown) => (typeof v === 'number' ? v.toLocaleString('fa-IR') : JSON.stringify(v))
+  return keys.map((k) => `${entitlementLabel(k)}${entitlementLabel(k) === k ? '' : ` (${k})`}: ${show(entitlements[k])}`).join('، ')
 }
 
 // --- Create ---------------------------------------------------------------
@@ -239,7 +243,7 @@ async function toggleSalonsList(plan: Plan) {
 </script>
 
 <template>
-  <div class="mx-auto max-w-4xl space-y-5 p-4 sm:p-6 lg:p-8">
+  <div class="space-y-5 p-4 sm:p-6 lg:p-8">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h1 class="text-lg font-bold text-(--color-text)">پلن‌های اشتراک</h1>
@@ -253,7 +257,7 @@ async function toggleSalonsList(plan: Plan) {
       </AppButton>
     </div>
 
-    <AppCard v-if="creating" data-testid="create-plan-form">
+    <AppCard v-if="creating" data-testid="create-plan-form" class="max-w-3xl">
       <form class="space-y-3" @submit.prevent="create">
         <div class="grid gap-3 sm:grid-cols-2">
           <AppInput v-model="newKey" label="شناسه داخلی (key)" placeholder="مثلا plus" data-testid="new-key-input" />
@@ -305,8 +309,17 @@ async function toggleSalonsList(plan: Plan) {
 
     <EmptyState v-else-if="plans.length === 0" icon="plan" message="هنوز پلنی تعریف نشده است." />
 
-    <div v-else class="space-y-3">
-      <AppCard v-for="plan in plans" :key="plan.id" data-testid="plan-card">
+    <!-- A card grid that uses the full width; a card being edited spans the whole row so its
+         JSON field and form controls get room. Each card is a column so the action row sits on
+         the bottom edge and cards in one row line up. -->
+    <div v-else class="grid grid-cols-1 items-stretch gap-4 md:grid-cols-2 2xl:grid-cols-3">
+      <AppCard
+        v-for="plan in plans"
+        :key="plan.id"
+        data-testid="plan-card"
+        class="flex flex-col"
+        :class="editingId === plan.id && 'md:col-span-2 2xl:col-span-3'"
+      >
         <template v-if="editingId === plan.id">
           <div ref="editRowRef" class="space-y-3">
             <div class="grid gap-3 sm:grid-cols-2">
@@ -336,22 +349,22 @@ async function toggleSalonsList(plan: Plan) {
 
         <template v-else>
           <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-            <div class="min-w-0">
+            <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-2">
                 <h2 class="break-words text-base font-bold text-(--color-text)">{{ plan.name }}</h2>
                 <StatusBadge v-if="plan.isDefault" data-testid="default-badge" label="پیش‌فرض" tone="info" />
                 <StatusBadge :label="plan.isActive ? 'فعال' : 'غیرفعال'" :tone="plan.isActive ? 'success' : 'neutral'" />
               </div>
-              <p class="mt-0.5 font-mono text-xs text-(--color-text-muted)" dir="ltr">{{ plan.key }}</p>
+              <p class="mt-0.5 font-mono text-xs text-(--color-text-muted)"><bdi dir="ltr">{{ plan.key }}</bdi></p>
               <p v-if="plan.description" class="mt-1.5 text-sm text-(--color-text)">{{ plan.description }}</p>
             </div>
-            <p class="shrink-0 text-sm font-bold text-(--color-text)">
-              <span dir="ltr" class="tnum">{{ plan.monthlyPriceToman === 0 ? 'رایگان' : formatToman(plan.monthlyPriceToman) }}</span>
-              <span v-if="plan.monthlyPriceToman > 0"> تومان/ماه</span>
+            <p class="shrink-0 text-(--color-text)">
+              <span dir="ltr" class="tnum text-xl font-black">{{ plan.monthlyPriceToman === 0 ? 'رایگان' : formatToman(plan.monthlyPriceToman) }}</span>
+              <span v-if="plan.monthlyPriceToman > 0" class="text-xs text-(--color-text-muted)"> تومان/ماه</span>
             </p>
           </div>
 
-          <p class="mt-3 break-words text-xs text-(--color-text-muted)">{{ formatEntitlements(plan.entitlements) }}</p>
+          <p class="mt-3 break-words rounded-xl bg-(--color-surface-subtle) px-3 py-2 text-xs leading-5 text-(--color-text-muted)">{{ formatEntitlements(plan.entitlements) }}</p>
 
           <button
             type="button"
@@ -359,8 +372,8 @@ async function toggleSalonsList(plan: Plan) {
             :data-testid="`toggle-salons-${plan.key}`"
             @click="toggleSalonsList(plan)"
           >
-            {{ plan.subscriberCount }} سالن مشترک
-            <span v-if="plan.subscriberCount > 0">{{ expandedSalonsId === plan.id ? '(بستن)' : '(مشاهده)' }}</span>
+            {{ (plan.subscriberCount ?? 0).toLocaleString('fa-IR') }} سالن مشترک
+            <span v-if="(plan.subscriberCount ?? 0) > 0">{{ expandedSalonsId === plan.id ? '(بستن)' : '(مشاهده)' }}</span>
           </button>
 
           <div v-if="expandedSalonsId === plan.id" :data-testid="`salons-list-${plan.key}`" class="mt-2 rounded-lg bg-(--color-surface-subtle) p-2.5">
@@ -369,12 +382,13 @@ async function toggleSalonsList(plan: Plan) {
             <ul v-else class="space-y-1">
               <li v-for="salon in salonsByPlanId[plan.id]" :key="salon.id" class="flex items-center justify-between gap-2 text-xs text-(--color-text)">
                 <span class="truncate">{{ salon.name }}</span>
-                <StatusBadge :label="salon.status" tone="neutral" />
+                <StatusBadge :label="salonStatusLabel(salon.status).label" :tone="salonStatusLabel(salon.status).tone" />
               </li>
             </ul>
           </div>
 
-          <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-(--color-border-soft) pt-3.5">
+          <div class="min-h-4 flex-1" aria-hidden="true" />
+          <div class="flex flex-wrap items-center gap-2 border-t border-(--color-border-soft) pt-3.5">
             <AppButton type="button" variant="secondary" :data-testid="`edit-plan-${plan.key}`" @click="startEdit(plan)">
               <template #icon><AppIcon name="pencil" :size="15" /></template>
               ویرایش

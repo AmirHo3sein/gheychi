@@ -122,7 +122,7 @@ onMounted(load)
 
 <!-- p-4 -> sm:p-6 -> lg:p-8 scale; below that 64px of gutter is a fifth of a 320px screen. -->
 <template>
-  <div class="mx-auto max-w-3xl space-y-5 p-4 sm:p-6 lg:p-8">
+  <div class="space-y-5 p-4 sm:p-6 lg:p-8">
     <AppCard>
       <p class="mb-3 flex items-center gap-2 text-sm font-semibold text-(--color-text)">
         <AppIcon name="plus" :size="16" class="text-(--color-accent-text)" />

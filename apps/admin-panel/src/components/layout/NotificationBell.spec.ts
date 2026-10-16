@@ -15,6 +15,7 @@ function makeRouter(): Router {
     routes: [
       { path: '/', component: { template: '<div />' } },
       { path: '/reports', component: { template: '<div />' } },
+      { path: '/notifications', component: { template: '<div />' } },
       { path: '/salons/:id', component: { template: '<div />' } },
     ],
   })
@@ -269,5 +270,98 @@ describe('NotificationBell', () => {
     await wrapper.get('[data-testid="notification-bell"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-testid="notification-item"]').text()).toContain('تغییر مهم در اطلاعات سالن')
+  })
+
+  describe('severity and grouping', () => {
+    const alert = {
+      id: 'a1',
+      type: 'alert',
+      severity: 'critical',
+      title: 'پشتیبان‌گیری قدیمی است',
+      body: 'آخرین پشتیبان موفق بیش از ۲۷ ساعت پیش بوده است.',
+      link: null,
+      readAt: null,
+      createdAt: '2026-07-10T12:00:00.000Z',
+    }
+
+    function listWith(items: unknown[]) {
+      fetchMock.mockImplementation((url: string, opts?: { method?: string }) => {
+        if (opts?.method === 'PATCH') return Promise.resolve({ data: null, error: null })
+        if (url.startsWith('/admin/notifications?'))
+          return Promise.resolve({ data: { items, total: items.length, page: 1, pageSize: 10 }, error: null })
+        return Promise.resolve({ data: { count: items.length }, error: null })
+      })
+    }
+
+    it('marks operator alerts as critical and labels them, routine items are not', async () => {
+      listWith([{ ...alert }, { ...notification }])
+      const { wrapper } = await mountBell()
+      await wrapper.get('[data-testid="notification-bell"]').trigger('click')
+      await flushPromises()
+      const [first, second] = wrapper.findAll('[data-testid="notification-item"]')
+      expect(first!.attributes('data-severity')).toBe('critical')
+      expect(first!.text()).toContain('بحرانی')
+      expect(second!.attributes('data-severity')).toBe('action')
+    })
+
+    // Behaviour change: severity now comes from the API. A legacy alert (null severity) and a
+    // warning-level alert are both shown as warnings, never with the critical treatment.
+    it('shows warning-level and legacy (null severity) alerts as warnings, not critical', async () => {
+      listWith([{ ...alert, severity: 'warning' }, { ...alert, id: 'a2', title: 'قدیمی', severity: null }])
+      const { wrapper } = await mountBell()
+      await wrapper.get('[data-testid="notification-bell"]').trigger('click')
+      await flushPromises()
+      const items = wrapper.findAll('[data-testid="notification-item"]')
+      expect(items.map((i) => i.attributes('data-severity'))).toEqual(['warning', 'warning'])
+      expect(items[0]!.text()).toContain('هشدار')
+      expect(items[0]!.text()).not.toContain('بحرانی')
+    })
+
+    it('links to the full inbox', async () => {
+      listWith([{ ...notification }])
+      const { wrapper, router } = await mountBell()
+      await wrapper.get('[data-testid="notification-bell"]').trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-testid="notifications-view-all"]').trigger('click')
+      await flushPromises()
+      expect(router.currentRoute.value.path).toBe('/notifications')
+      expect(wrapper.find('[data-testid="notification-dropdown"]').exists()).toBe(false)
+    })
+
+    it('collapses consecutive identical alerts into one row with a ×N count, and reads them all on click', async () => {
+      listWith([{ ...alert }, { ...alert, id: 'a2' }, { ...alert, id: 'a3' }, { ...notification }, { ...alert, id: 'a4' }])
+      const { wrapper } = await mountBell()
+      await wrapper.get('[data-testid="notification-bell"]').trigger('click')
+      await flushPromises()
+
+      const items = wrapper.findAll('[data-testid="notification-item"]')
+      // a1-a3 collapse; the report breaks the run, so a4 stays its own row.
+      expect(items).toHaveLength(3)
+      expect(items[0]!.get('[data-testid="notification-repeat"]').text()).toContain('×۳')
+      expect(items[2]!.find('[data-testid="notification-repeat"]').exists()).toBe(false)
+
+      await items[0]!.trigger('click')
+      await flushPromises()
+      for (const id of ['a1', 'a2', 'a3']) {
+        expect(fetchMock).toHaveBeenCalledWith(`/admin/notifications/${id}/read`, { method: 'PATCH', silent: true })
+      }
+      expect(fetchMock).not.toHaveBeenCalledWith('/admin/notifications/a4/read', expect.anything())
+      expect(wrapper.emitted('changed')).toHaveLength(1)
+    })
+
+    it('labels the alert, salon_submitted and category_requested types when a title is missing', async () => {
+      listWith([
+        { ...alert, title: '' },
+        { ...notification, id: 's1', type: 'salon_submitted', title: '' },
+        { ...notification, id: 'c1', type: 'category_requested', title: '' },
+      ])
+      const { wrapper } = await mountBell()
+      await wrapper.get('[data-testid="notification-bell"]').trigger('click')
+      await flushPromises()
+      const text = wrapper.get('[data-testid="notification-dropdown"]').text()
+      expect(text).toContain('هشدار عملیاتی')
+      expect(text).toContain('سالن جدید در انتظار بررسی')
+      expect(text).toContain('درخواست دسته‌بندی جدید')
+    })
   })
 })

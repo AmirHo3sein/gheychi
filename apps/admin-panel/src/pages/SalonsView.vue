@@ -3,6 +3,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useCities } from '@/composables/useCities'
+import { useQueryFilters } from '@/composables/useQueryFilters'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -14,6 +15,7 @@ import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { debounce } from '@/utils/debounce'
 import { genderTargetLabel, salonStatusLabel } from '@/utils/labels'
+import { STACKED_CELL, STACKED_CELL_PLAIN, STACKED_ROW, STACKED_TABLE, STACKED_TBODY, STACKED_THEAD } from '@/utils/stacked-table'
 
 const GENDER_OPTIONS = [
   { value: '', label: 'همه مخاطب‌ها' },
@@ -59,14 +61,23 @@ const loading = ref(true)
 // Distinct from "genuinely no results": a fetch failure must not be silently repainted as an
 // empty list (the operator would read that as "no salons match", not "the request failed").
 const loadError = ref(false)
-const page = ref(1)
 const total = ref(0)
 const pageSize = 20
 
-const statusFilter = ref<'all' | 'pending' | 'approved' | 'rejected' | 'suspended'>('all')
-const cityFilter = ref('')
-const nameFilter = ref('')
-const genderFilter = ref<'' | 'women' | 'men'>('')
+type StatusValue = 'all' | 'pending' | 'approved' | 'rejected' | 'suspended'
+// Kept in the URL (useQueryFilters) so returning from a salon's page restores the list exactly,
+// and the dashboard can deep-link to /salons?status=pending.
+const {
+  page,
+  status: statusFilter,
+  city: cityFilter,
+  name: nameFilter,
+  gender: genderFilter,
+  changedByUrl,
+} = useQueryFilters(
+  { page: 1, status: 'all' as StatusValue, city: '', name: '', gender: '' as '' | 'women' | 'men' },
+  { allowed: { status: STATUS_OPTIONS.map((o) => o.value), gender: ['women', 'men'] } },
+)
 
 async function load() {
   loading.value = true
@@ -92,7 +103,9 @@ function loadFromFilterChange() {
   // Any filter change invalidates the current page position. When we're past page 1, just
   // reset it -- the page watcher below triggers the (single) reload; calling load() here too
   // would fire a redundant concurrent second request.
-  if (page.value !== 1) {
+  // A navigation (back/forward) that set the filters -- and maybe `page` with them -- is not
+  // an edit: keep the page the URL asked for.
+  if (page.value !== 1 && !changedByUrl()) {
     page.value = 1
   } else {
     load()
@@ -212,8 +225,8 @@ watch(page, load)
              no scrollbar exists while the table fits, which is the ≥1280px case this app
              optimizes for. -->
         <ScrollTable label="فهرست سالن‌ها">
-          <table class="w-full text-start text-sm transition-opacity" :class="{ 'opacity-50': loading }">
-            <thead>
+          <table class="w-full text-start text-sm transition-opacity" :class="[STACKED_TABLE, { 'opacity-50': loading }]">
+            <thead :class="STACKED_THEAD">
               <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
                 <th scope="col" class="px-5 py-3 font-semibold">نام</th>
                 <th scope="col" class="px-5 py-3 font-semibold">شهر</th>
@@ -222,15 +235,18 @@ watch(page, load)
                 <th scope="col" class="px-5 py-3 font-semibold">تاریخ ثبت</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody :class="STACKED_TBODY">
               <tr
                 v-for="salon in salons"
                 :key="salon.id"
                 class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
+                :class="STACKED_ROW"
               >
-                <td class="px-5 py-3.5">
-                  <div class="flex items-center gap-2">
-                    <RouterLink :to="`/salons/${salon.id}`" class="font-semibold text-(--color-text) hover:text-(--color-accent-text)">
+                <td class="px-5 py-3.5 max-md:-order-2 max-md:col-span-2" :class="STACKED_CELL_PLAIN">
+                  <div class="flex flex-wrap items-center gap-x-2">
+                    <!-- min-h-10: a 40px tap target; md:-my-2.5 gives the extra height back to the
+                         table row so the desktop row height is unchanged. -->
+                    <RouterLink :to="`/salons/${salon.id}`" class="inline-flex min-h-10 items-center font-semibold text-(--color-text) hover:text-(--color-accent-text) md:-my-2.5">
                       {{ salon.name }}
                     </RouterLink>
                     <span
@@ -253,12 +269,13 @@ watch(page, load)
                     </span>
                   </div>
                 </td>
-                <td class="px-5 py-3.5 text-(--color-text-muted)">{{ salon.city }}</td>
-                <td class="px-5 py-3.5 text-(--color-text-muted)">{{ genderTargetLabel(salon.genderTarget) }}</td>
-                <td class="px-5 py-3.5">
+                <td class="px-5 py-3.5 text-(--color-text-muted)" :class="STACKED_CELL" data-label="شهر">{{ salon.city }}</td>
+                <td class="px-5 py-3.5 text-(--color-text-muted)" :class="STACKED_CELL" data-label="مخاطب">{{ genderTargetLabel(salon.genderTarget) }}</td>
+                <!-- First after the name in the card layout: status is what an operator scans for. -->
+                <td class="px-5 py-3.5 max-md:-order-1" :class="STACKED_CELL" data-label="وضعیت">
                   <StatusBadge :label="salonStatusLabel(salon.status).label" :tone="salonStatusLabel(salon.status).tone" />
                 </td>
-                <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDate(salon.createdAt) }}</td>
+                <td class="tnum px-5 py-3.5 text-(--color-text-muted)" :class="STACKED_CELL" data-label="تاریخ ثبت">{{ formatDate(salon.createdAt) }}</td>
               </tr>
             </tbody>
           </table>

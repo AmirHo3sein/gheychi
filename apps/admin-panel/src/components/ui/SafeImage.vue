@@ -6,7 +6,12 @@
 import { ref, watch } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 
-const props = defineProps<{ src: string; alt: string }>()
+// `compact` is for thumbnail-sized boxes (e.g. the 40px service thumbnail in
+// SalonReviewPanel): the full fallback (icon + a visible sentence) cannot fit there and was
+// clipped to an unreadable fragment, so compact mode shows the icon alone and carries the
+// same message through the role="img" aria-label plus a hover title instead. Larger call
+// sites leave it off and keep the visible text.
+const props = withDefaults(defineProps<{ src: string; alt: string; compact?: boolean }>(), { compact: false })
 const failed = ref(false)
 watch(() => props.src, () => (failed.value = false))
 </script>
@@ -17,10 +22,12 @@ watch(() => props.src, () => (failed.value = false))
     data-testid="image-fallback"
     role="img"
     :aria-label="`${alt} (بارگذاری نشد)`"
-    class="flex h-full w-full flex-col items-center justify-center gap-1 bg-(--color-border-soft) p-2 text-center text-xs text-(--color-text-muted)"
+    :title="compact ? 'تصویر بارگذاری نشد' : undefined"
+    class="flex h-full w-full flex-col items-center justify-center gap-1 bg-(--color-border-soft) text-center text-xs text-(--color-text-muted)"
+    :class="compact ? 'p-0' : 'p-2'"
   >
-    <AppIcon name="warning" :size="18" />
-    تصویر بارگذاری نشد
+    <AppIcon name="warning" :size="compact ? 16 : 18" />
+    <template v-if="!compact">تصویر بارگذاری نشد</template>
   </div>
   <img v-else :src="src" :alt="alt" loading="lazy" class="h-full w-full object-cover" @error="failed = true" />
 </template>

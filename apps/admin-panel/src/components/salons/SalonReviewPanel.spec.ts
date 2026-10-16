@@ -1,7 +1,11 @@
-import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SalonReviewPanel from './SalonReviewPanel.vue'
 import type { SalonReviewData } from '@/utils/salon-review'
+import { resetToast, useToast } from '@/composables/useToast'
+
+const fetchMock = vi.fn()
+vi.mock('@/composables/useApi', () => ({ useApi: () => ({ apiFetch: fetchMock }) }))
 
 const base: SalonReviewData = {
   address: 'خیابان ولیعصر',
@@ -27,10 +31,18 @@ const base: SalonReviewData = {
 const mountPanel = (over: Partial<SalonReviewData> = {}) => mount(SalonReviewPanel, { props: { salon: { ...base, ...over } } })
 
 describe('SalonReviewPanel', () => {
+  beforeEach(() => {
+    fetchMock.mockReset()
+    resetToast()
+  })
+
   it('shows the owner phone as a tel: link with the owner account status', () => {
     const wrapper = mountPanel()
     expect(wrapper.text()).toContain('مریم احمدی')
     expect(wrapper.get('[data-testid="owner-phone"]').attributes('href')).toBe('tel:09121234567')
+    // Displayed in Persian digits; the dialable href and the title (copy source) stay ASCII.
+    expect(wrapper.get('[data-testid="owner-phone"]').text()).toBe('۰۹۱۲۱۲۳۴۵۶۷')
+    expect(wrapper.get('[data-testid="owner-phone"]').attributes('title')).toBe('09121234567')
     expect(wrapper.get('[data-testid="owner-status"]').text()).toContain('فعال')
   })
 
@@ -41,6 +53,7 @@ describe('SalonReviewPanel', () => {
 
   it('links the contact phone, or says plainly it was not provided', () => {
     expect(mountPanel().get('[data-testid="contact-phone"]').attributes('href')).toBe('tel:02112345678')
+    expect(mountPanel().get('[data-testid="contact-phone"]').text()).toBe('۰۲۱۱۲۳۴۵۶۷۸')
     const missing = mountPanel({ contactPhone: null })
     expect(missing.find('[data-testid="contact-phone"]').exists()).toBe(false)
     expect(missing.get('[data-testid="contact-phone-missing"]').text()).toBe('ثبت نشده')
@@ -83,10 +96,79 @@ describe('SalonReviewPanel', () => {
     expect(rows[3]!.text()).toContain('غیرفعال')
   })
 
+  it('shows a service photo thumbnail only for services that have one', () => {
+    const services = base.services.map((s) => (s.id === 's2' ? { ...s, imageUrl: 'http://cdn/svc2.jpg' } : { ...s, imageUrl: null }))
+    const rows = mountPanel({ services }).findAll('[data-testid="service-row"]')
+    const link = rows[1]!.get('[data-testid="service-image"]')
+    expect(link.attributes('href')).toBe('http://cdn/svc2.jpg')
+    expect(link.attributes('rel')).toContain('noopener')
+    expect(link.get('img').attributes('alt')).toBe('رنگ')
+    for (const i of [0, 2, 3]) expect(rows[i]!.find('[data-testid="service-image"]').exists()).toBe(false)
+  })
+
+  it('uses the icon-only fallback for a broken service thumbnail', async () => {
+    const services = base.services.map((s) => (s.id === 's2' ? { ...s, imageUrl: 'http://cdn/svc2.jpg' } : s))
+    const wrapper = mountPanel({ services })
+    await wrapper.get('[data-testid="service-image"] img').trigger('error')
+    const fallback = wrapper.get('[data-testid="service-image"] [data-testid="image-fallback"]')
+    expect(fallback.text()).toBe('')
+    expect(fallback.attributes('aria-label')).toBe('رنگ (بارگذاری نشد)')
+  })
+
+  it('offers an image takedown only for services that have an image', () => {
+    const services = base.services.map((s) => (s.id === 's2' ? { ...s, imageUrl: 'http://cdn/svc2.jpg' } : { ...s, imageUrl: null }))
+    const rows = mountPanel({ services }).findAll('[data-testid="service-row"]')
+    expect(rows[1]!.get('[data-testid="remove-service-image"]').attributes('aria-label')).toBe('حذف تصویر خدمت رنگ')
+    for (const i of [0, 2, 3]) expect(rows[i]!.find('[data-testid="remove-service-image"]').exists()).toBe(false)
+  })
+
+  // The panel no longer hides a taken-down image itself: it forwards the removal to the detail
+  // page, which owns the salon payload and refetches it (SalonDetailView.spec covers the row
+  // update and focus). Replaces the earlier local-state + focusable "removed"-cell tests.
+  it('forwards a confirmed takedown to the detail page as image-removed', async () => {
+    fetchMock.mockResolvedValueOnce({ data: { id: 's2', imageUrl: null }, error: null })
+    const services = base.services.map((s) => (s.id === 's2' || s.id === 's3' ? { ...s, imageUrl: `http://cdn/${s.id}.jpg` } : s))
+    const wrapper = mountPanel({ services })
+    const row = () => wrapper.findAll('[data-testid="service-row"]')[1]!
+
+    await row().get('[data-testid="remove-service-image"]').trigger('click')
+    expect(fetchMock).not.toHaveBeenCalled()
+    await row().get('[data-testid="remove-service-image-confirm"]').trigger('click')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith('/admin/services/s2/image', { method: 'DELETE', silent: true })
+    expect(wrapper.emitted('image-removed')).toEqual([['s2']])
+    expect(useToast().toasts.value.some((t) => t.tone === 'success')).toBe(true)
+  })
+
+  it('says an admin removed the image when imageRemovedByAdminAt is set and no image remains', () => {
+    const services = base.services.map((s) =>
+      s.id === 's2' ? { ...s, imageUrl: null, imageRemovedByAdminAt: '2026-10-09T10:00:00.000Z' } : { ...s, imageUrl: null },
+    )
+    const wrapper = mountPanel({ services })
+    expect(wrapper.get('[data-testid="service-image-removed-s2"]').text()).toBe('حذف‌شده توسط مدیر')
+    expect(wrapper.find('[data-testid="service-image-none-s2"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="service-image-none-s1"]').text()).toBe('—')
+  })
+
+  it('keeps the service image when the takedown fails', async () => {
+    fetchMock.mockResolvedValueOnce({ data: null, error: { status: 500, message: 'خطایی رخ داد' } })
+    const services = base.services.map((s) => (s.id === 's2' ? { ...s, imageUrl: 'http://cdn/svc2.jpg' } : s))
+    const wrapper = mountPanel({ services })
+    const row = () => wrapper.findAll('[data-testid="service-row"]')[1]!
+    await row().get('[data-testid="remove-service-image"]').trigger('click')
+    await row().get('[data-testid="remove-service-image-confirm"]').trigger('click')
+    await flushPromises()
+
+    expect(row().find('[data-testid="service-image"]').exists()).toBe(true)
+    expect(row().find('[data-testid="remove-service-image"]').exists()).toBe(true)
+  })
+
   it('lists the week Saturday-first with closed days marked', () => {
     const days = mountPanel().findAll('[data-testid="hours-day"]')
     expect(days).toHaveLength(7)
-    expect(days[0]!.text()).toBe('09:00 تا 18:00')
+    expect(days[0]!.text()).toBe('۰۹:۰۰ تا ۱۸:۰۰')
     expect(days[1]!.text()).toBe('تعطیل')
   })
 

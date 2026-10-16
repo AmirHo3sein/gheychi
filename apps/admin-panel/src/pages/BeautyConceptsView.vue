@@ -100,7 +100,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="mx-auto max-w-4xl space-y-5 p-4 sm:p-6 lg:p-8">
+  <div class="space-y-5 p-4 sm:p-6 lg:p-8">
     <AppCard>
       <div v-if="!creating" class="flex flex-wrap items-center justify-between gap-3">
         <p class="text-sm text-(--color-text-muted)">
@@ -150,12 +150,14 @@ onMounted(load)
     />
 
     <template v-else>
-      <AppSelect
-        v-model="domainFilter"
-        label="حوزه"
-        :options="domainFilterOptions"
-        data-testid="domain-filter"
-      />
+      <div class="w-full max-w-xs">
+        <AppSelect
+          v-model="domainFilter"
+          label="حوزه"
+          :options="domainFilterOptions"
+          data-testid="domain-filter"
+        />
+      </div>
 
       <section v-for="group in groups" :key="group.domain" class="space-y-2.5" :data-testid="`domain-group-${group.domain}`">
         <h2 class="flex items-center gap-2 px-1 text-sm font-bold text-(--color-text)">
@@ -163,7 +165,14 @@ onMounted(load)
           <span class="text-xs font-normal text-(--color-text-muted)">({{ group.concepts.length.toLocaleString('fa-IR') }})</span>
         </h2>
 
-        <AppCard v-for="concept in group.concepts" :key="concept.id" :data-testid="`concept-${concept.key}`">
+        <!-- Full-width card grid; the card being edited spans the row so its form has room. -->
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
+        <AppCard
+          v-for="concept in group.concepts"
+          :key="concept.id"
+          :data-testid="`concept-${concept.key}`"
+          :class="editingId === concept.id && 'md:col-span-2 2xl:col-span-3'"
+        >
           <BeautyConceptForm
             v-if="editingId === concept.id"
             mode="edit"
@@ -173,8 +182,8 @@ onMounted(load)
             @submit="saveEdit(concept.id, $event)"
             @cancel="editingId = null"
           />
-          <div v-else class="flex flex-wrap items-start justify-between gap-3">
-            <div class="min-w-0 space-y-1.5">
+          <div v-else class="flex items-start justify-between gap-3">
+            <div class="min-w-0 flex-1 space-y-1.5">
               <div class="flex flex-wrap items-center gap-2">
                 <p class="text-sm font-semibold text-(--color-text)">
                   {{ concept.nameFa }} (<span dir="ltr">{{ concept.nameEn }}</span>)
@@ -203,6 +212,7 @@ onMounted(load)
               variant="secondary"
               :disabled="submitting"
               title="ویرایش"
+              :aria-label="`ویرایش ${concept.nameFa}`"
               :data-testid="`edit-concept-${concept.key}`"
               @click="editingId = concept.id; creating = false"
             >
@@ -210,6 +220,7 @@ onMounted(load)
             </AppButton>
           </div>
         </AppCard>
+        </div>
       </section>
     </template>
   </div>

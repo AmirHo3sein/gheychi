@@ -182,7 +182,7 @@ function submit() {
         data-testid="concept-maintenance-input"
         rows="3"
         maxlength="500"
-        class="w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-3 text-sm text-(--color-text)"
+        class="w-full rounded-xl border border-(--color-border-control) bg-(--color-surface-card) p-3 text-sm text-(--color-text)"
       />
       <p class="mt-1 text-xs text-(--tone-warning-text)">هشدار — متن نگهداری باید محتاطانه باشد، بدون وعده یا برنامه قطعی.</p>
     </div>

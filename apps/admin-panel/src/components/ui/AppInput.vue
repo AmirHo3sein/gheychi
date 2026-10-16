@@ -9,7 +9,7 @@ withDefaults(
     icon?: IconName
     error?: string
     type?: string
-    inputmode?: 'text' | 'tel' | 'numeric' | 'email'
+    inputmode?: 'text' | 'tel' | 'numeric' | 'decimal' | 'email'
     maxlength?: number
     placeholder?: string
     required?: boolean
@@ -60,7 +60,7 @@ const inputId = useId()
         :class="[
           icon ? 'ps-11 pe-4' : 'px-4',
           align === 'center' ? 'text-center tracking-[0.4em]' : '',
-          error ? 'border-(--color-danger) focus:border-(--color-danger) focus:ring-(--color-danger)/30' : 'border-(--color-border) focus:border-(--color-accent)',
+          error ? 'border-(--color-danger) focus:border-(--color-danger) focus:ring-(--color-danger)/30' : 'border-(--color-border-control) focus:border-(--color-accent-text)',
         ]"
       />
     </div>

@@ -38,10 +38,21 @@ describe('ConfigView', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  it('shows values in Persian digits and accepts Persian-digit input as the same number', async () => {
+    const wrapper = await mountView()
+    const inputs = wrapper.findAll('input[data-testid="config-input"]')
+    expect((inputs[0]!.element as HTMLInputElement).value).toBe('۲۰')
+
+    await inputs[0]!.setValue('۳۵') // deposit_percent 20 -> 35, typed on a Persian keyboard
+    expect(wrapper.get('[data-testid="config-save-button"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[data-testid="config-save-button"]').trigger('click')
+    expect(wrapper.get('[data-testid="config-confirm-summary"]').text()).toContain('۳۵')
+  })
+
   it('shows a confirm summary of only the changed rows before PATCHing, on clicking save', async () => {
     const wrapper = await mountView()
 
-    const inputs = wrapper.findAll('input[type="number"]')
+    const inputs = wrapper.findAll('input[data-testid="config-input"]')
     await inputs[0].setValue(30) // deposit_percent 20 -> 30
     // cancellation_window_hours (index 2) left untouched.
 
@@ -97,7 +108,7 @@ describe('ConfigView', () => {
   it('cancelling the confirm screen does not fire the PATCH', async () => {
     const wrapper = await mountView()
 
-    const inputs = wrapper.findAll('input[type="number"]')
+    const inputs = wrapper.findAll('input[data-testid="config-input"]')
     await inputs[0].setValue(30)
     await wrapper.get('[data-testid="config-save-button"]').trigger('click')
     expect(wrapper.find('[data-testid="config-confirm-summary"]').exists()).toBe(true)
@@ -114,7 +125,7 @@ describe('ConfigView', () => {
 
   it('blocks save when a field is cleared to empty text instead of silently coercing to 0', async () => {
     const wrapper = await mountView()
-    const inputs = wrapper.findAll('input[type="number"]')
+    const inputs = wrapper.findAll('input[data-testid="config-input"]')
 
     await inputs[0].setValue(50) // deposit_percent: a genuine change, 20 -> 50
     // deposit_min_toman is a text field now (AppMoneyInput), so cancellation_window_hours is
@@ -133,7 +144,7 @@ describe('ConfigView', () => {
 
   it('blocks save when a percent-bounded field exceeds its 0-100 range', async () => {
     const wrapper = await mountView()
-    const inputs = wrapper.findAll('input[type="number"]')
+    const inputs = wrapper.findAll('input[data-testid="config-input"]')
 
     await inputs[0].setValue(150) // deposit_percent: capped at 100
 
@@ -146,7 +157,7 @@ describe('ConfigView', () => {
 
   it('blocks save when a non-percent field goes negative', async () => {
     const wrapper = await mountView()
-    const inputs = wrapper.findAll('input[type="number"]')
+    const inputs = wrapper.findAll('input[data-testid="config-input"]')
 
     // deposit_min_toman is a text field now (AppMoneyInput), so cancellation_window_hours is
     // the second remaining number input on the page.
@@ -158,7 +169,7 @@ describe('ConfigView', () => {
 
   it('recovers a valid value after an invalid edit, re-enabling save', async () => {
     const wrapper = await mountView()
-    const inputs = wrapper.findAll('input[type="number"]')
+    const inputs = wrapper.findAll('input[data-testid="config-input"]')
 
     await inputs[0].setValue('')
     expect(wrapper.get('[data-testid="config-save-button"]').attributes('disabled')).toBeDefined()
@@ -191,7 +202,7 @@ describe('ConfigView', () => {
     const wrapper = mount(ConfigView, { attachTo: document.body })
     await flushPromises()
 
-    const inputs = wrapper.findAll('input[type="number"]')
+    const inputs = wrapper.findAll('input[data-testid="config-input"]')
     await inputs[0].setValue(30)
     await wrapper.get('[data-testid="config-save-button"]').trigger('click')
     await nextTick()
@@ -231,14 +242,14 @@ describe('ConfigView', () => {
 
     it('mirrors the server bounds: per-user cap above 1000 is blocked', async () => {
       const wrapper = await mountBeauty()
-      await wrapper.findAll('input[type="number"]')[0].setValue(1001)
+      await wrapper.findAll('input[data-testid="config-input"]')[0].setValue(1001)
       expect(wrapper.get('[data-testid="config-save-button"]').attributes('disabled')).toBeDefined()
-      expect(wrapper.text()).toContain('باید بین 0 تا 1000')
+      expect(wrapper.text()).toContain('باید بین ۰ تا ۱۰۰۰')
     })
 
     it('mirrors the server bounds: global cap accepts 1000000 but not more', async () => {
       const wrapper = await mountBeauty()
-      const input = wrapper.findAll('input[type="number"]')[1]
+      const input = wrapper.findAll('input[data-testid="config-input"]')[1]
       await input.setValue(1000000)
       expect(wrapper.get('[data-testid="config-save-button"]').attributes('disabled')).toBeUndefined()
       await input.setValue(1000001)
@@ -247,14 +258,14 @@ describe('ConfigView', () => {
 
     it('mirrors the server bounds: retention below 1 day is blocked', async () => {
       const wrapper = await mountBeauty()
-      await wrapper.findAll('input[type="number"]')[2].setValue(0)
+      await wrapper.findAll('input[data-testid="config-input"]')[2].setValue(0)
       expect(wrapper.get('[data-testid="config-save-button"]').attributes('disabled')).toBeDefined()
-      expect(wrapper.text()).toContain('باید بین 1 تا 3650')
+      expect(wrapper.text()).toContain('باید بین ۱ تا ۳۶۵۰')
     })
 
     it('rejects a fractional value for these integer-only keys', async () => {
       const wrapper = await mountBeauty()
-      await wrapper.findAll('input[type="number"]')[0].setValue(2.5)
+      await wrapper.findAll('input[data-testid="config-input"]')[0].setValue(2.5)
       expect(wrapper.get('[data-testid="config-save-button"]').attributes('disabled')).toBeDefined()
       expect(wrapper.text()).toContain('یک عدد صحیح وارد کنید')
     })
@@ -291,7 +302,7 @@ describe('ConfigView', () => {
       [50, 0, false],
     ])('per-user cap %s is %s', async (value, _i, blocked) => {
       const wrapper = await mountLimits()
-      await wrapper.findAll('input[type="number"]')[0]!.setValue(value)
+      await wrapper.findAll('input[data-testid="config-input"]')[0]!.setValue(value)
       expect(save(wrapper) !== undefined).toBe(blocked)
     })
 
@@ -301,7 +312,7 @@ describe('ConfigView', () => {
       [20, false],
     ])('per-salon cap %s is blocked=%s (1-20)', async (value, blocked) => {
       const wrapper = await mountLimits()
-      await wrapper.findAll('input[type="number"]')[1]!.setValue(value)
+      await wrapper.findAll('input[data-testid="config-input"]')[1]!.setValue(value)
       expect(save(wrapper) !== undefined).toBe(blocked)
     })
 
@@ -313,21 +324,21 @@ describe('ConfigView', () => {
       [2.5, true],
     ])('no-show grace %s is blocked=%s (0-1440, integer)', async (value, blocked) => {
       const wrapper = await mountLimits()
-      await wrapper.findAll('input[type="number"]')[2]!.setValue(value)
+      await wrapper.findAll('input[data-testid="config-input"]')[2]!.setValue(value)
       expect(save(wrapper) !== undefined).toBe(blocked)
     })
 
     it('shows the inline range message for an out-of-range grace value', async () => {
       const wrapper = await mountLimits()
-      await wrapper.findAll('input[type="number"]')[2]!.setValue(1441)
-      expect(wrapper.text()).toContain('باید بین 0 تا 1440')
+      await wrapper.findAll('input[data-testid="config-input"]')[2]!.setValue(1441)
+      expect(wrapper.text()).toContain('باید بین ۰ تا ۱۴۴۰')
     })
 
     it('never lists or submits a feature flag, even if the list endpoint returned one', async () => {
       const wrapper = await mountLimits([{ key: 'feature_reviews_enabled', value: true }])
       expect(wrapper.text()).not.toContain('feature_reviews_enabled')
 
-      await wrapper.findAll('input[type="number"]')[0]!.setValue(6)
+      await wrapper.findAll('input[data-testid="config-input"]')[0]!.setValue(6)
       await wrapper.get('[data-testid="config-save-button"]').trigger('click')
       fetchMock.mockResolvedValueOnce({ data: [], error: null })
       await wrapper.get('[data-testid="config-confirm-submit"]').trigger('click')
@@ -337,6 +348,35 @@ describe('ConfigView', () => {
       const keys = (patch[1].body.updates as { key: string }[]).map((u) => u.key)
       expect(keys).not.toContain('feature_reviews_enabled')
       expect(keys).toContain('booking_max_active_per_user')
+    })
+  })
+
+  describe('grouped sections', () => {
+    it('groups keys into labelled sections and puts an unknown key under «سایر» rather than dropping it', async () => {
+      fetchMock.mockResolvedValueOnce({
+        data: [
+          { key: 'no_show_grace_minutes', value: 30 },
+          { key: 'deposit_percent', value: 20 },
+          { key: 'reminder_lead_hours', value: 2 },
+          { key: 'beauty_guide_retention_days', value: 90 },
+          { key: 'booking_hold_ttl_minutes', value: 15 },
+          { key: 'brand_new_key', value: 1 },
+        ],
+        error: null,
+      })
+      const wrapper = mount(ConfigView)
+      await flushPromises()
+      const ids = wrapper.findAll('[data-testid^="config-section-"]').map((el) => el.attributes('data-testid'))
+      expect(ids).toEqual([
+        'config-section-money',
+        'config-section-booking',
+        'config-section-no-show',
+        'config-section-beauty',
+        'config-section-sms',
+        'config-section-other',
+      ])
+      expect(wrapper.get('[data-testid="config-section-other"]').text()).toContain('brand_new_key')
+      expect(wrapper.get('[data-testid="config-section-booking"]').text()).toContain('مهلت نگه‌داری نوبت')
     })
   })
 })

@@ -88,7 +88,7 @@ async function submit() {
         placeholder="در صورت نیاز، توضیح تصمیم را بنویسید…"
         rows="2"
         maxlength="1000"
-        class="w-full rounded-xl border border-(--color-border) p-3 text-sm [color-scheme:light_dark]"
+        class="w-full rounded-xl border border-(--color-border-control) p-3 text-sm [color-scheme:light_dark]"
       />
       <div class="flex flex-wrap gap-2.5">
         <AppButton

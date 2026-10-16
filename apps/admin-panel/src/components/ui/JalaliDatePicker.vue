@@ -193,7 +193,7 @@ onBeforeUnmount(() => {
     <button
       ref="trigger"
       type="button"
-      class="flex h-11 w-full items-center gap-2 rounded-xl border border-(--color-border) px-3 text-sm"
+      class="flex h-11 w-full items-center gap-2 rounded-xl border border-(--color-border-control) px-3 text-sm"
       :aria-label="ariaLabel"
       :title="displayLabel || undefined"
       aria-haspopup="dialog"

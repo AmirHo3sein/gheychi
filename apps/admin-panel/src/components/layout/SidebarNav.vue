@@ -25,6 +25,7 @@ const GROUPS: NavGroup[] = [
     links: [
       { to: '/', label: 'داشبورد', icon: 'dashboard' },
       { to: '/analytics', label: 'آمار و تحلیل', icon: 'chart' },
+      { to: '/notifications', label: 'اعلان‌ها', icon: 'bell' },
     ],
   },
   {
@@ -107,33 +108,52 @@ function isActive(to: string): boolean {
 }
 </script>
 
-<!-- Just the navigation: the surrounding chrome (the fixed 16rem sidebar from `md` up, the
-     off-canvas drawer below it) lives in AppLayout / MobileNavDrawer so the one link list
-     renders identically, labels and section headings included, in both. -->
+<!-- The navigation plus the brand lockup above it: the surrounding chrome (the fixed 16rem
+     sidebar from `md` up, the off-canvas drawer below it) lives in AppLayout / MobileNavDrawer
+     so the one link list, lockup included, renders identically in both. The lockup is not a
+     link -- «داشبورد» is the first nav item a line below, and a second link to `/` would just be
+     one more tab stop. The `brand-action` slot lets the drawer seat its close button on the
+     lockup's row instead of spending a separate header band on it. -->
 <template>
-  <nav aria-label="منوی اصلی" class="space-y-4">
-    <div v-for="group in GROUPS" :key="group.id" data-testid="nav-group">
-      <p :id="`nav-heading-${group.id}`" class="mb-1 px-3 text-[11px] font-bold text-(--color-text-muted)">{{ group.heading }}</p>
-      <ul :aria-labelledby="`nav-heading-${group.id}`" class="space-y-0.5">
-        <li v-for="link in group.links" :key="link.to">
-          <RouterLink
-            :to="link.to"
-            :aria-current="isActive(link.to) ? 'page' : undefined"
-            class="group relative flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text) md:min-h-9 md:py-2"
-            :class="isActive(link.to) && 'bg-(--tone-info-bg) font-bold text-(--color-accent-text) hover:bg-(--tone-info-bg) hover:text-(--color-accent-text)'"
-            @click="emit('navigate')"
-          >
-            <!-- Logical `start-0`, not `right-0`: identical in this RTL-only app, but an
-                 inset/overflow bug in RTL escapes to the LEFT, which is easy to miss. -->
-            <span
-              v-if="isActive(link.to)"
-              class="absolute start-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-full bg-(--color-accent)"
-            />
-            <AppIcon :name="link.icon" :size="19" class="shrink-0" />
-            <span>{{ link.label }}</span>
-          </RouterLink>
-        </li>
-      </ul>
+  <div>
+    <div class="mb-5 flex items-center gap-3 px-2" data-testid="nav-brand">
+      <!-- Decorative: the wordmark beside it is the accessible text. The artwork carries its
+           own peach field, so no bg-* utility. -->
+      <img src="/brand-icon.png" alt="" width="40" height="40" class="h-10 w-10 shrink-0 rounded-xl shadow-(--shadow-sm)" />
+      <div class="min-w-0 leading-tight">
+        <p class="text-lg font-black text-(--color-text)">قیچی</p>
+        <p class="text-xs font-medium text-(--color-text-muted)">پنل مدیریت</p>
+      </div>
+      <div class="ms-auto">
+        <slot name="brand-action" />
+      </div>
     </div>
-  </nav>
+    <nav aria-label="منوی اصلی" class="space-y-5">
+      <div v-for="group in GROUPS" :key="group.id" data-testid="nav-group">
+        <p :id="`nav-heading-${group.id}`" class="mb-1.5 px-3 text-xs font-bold text-(--color-text-muted)">{{ group.heading }}</p>
+        <ul :aria-labelledby="`nav-heading-${group.id}`" class="space-y-0.5">
+          <li v-for="link in group.links" :key="link.to">
+            <!-- Active = the brand's accent-soft fill under accent text (4.77:1, bold), plus a
+                 peach start bar so the state never rests on colour alone. -->
+            <RouterLink
+              :to="link.to"
+              :aria-current="isActive(link.to) ? 'page' : undefined"
+              class="group relative flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-(--color-text-muted) transition-colors duration-150 hover:bg-(--color-border-soft) hover:text-(--color-text) md:min-h-9 md:py-2"
+              :class="isActive(link.to) && 'bg-(--color-accent-soft) font-bold text-(--color-accent-text) hover:bg-(--color-accent-soft) hover:text-(--color-accent-text)'"
+              @click="emit('navigate')"
+            >
+              <!-- Logical `start-0`, not `right-0`: identical in this RTL-only app, but an
+                   inset/overflow bug in RTL escapes to the LEFT, which is easy to miss. -->
+              <span
+                v-if="isActive(link.to)"
+                class="absolute start-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-full bg-(--color-accent-text)"
+              />
+              <AppIcon :name="link.icon" :size="19" class="shrink-0" />
+              <span>{{ link.label }}</span>
+            </RouterLink>
+          </li>
+        </ul>
+      </div>
+    </nav>
+  </div>
 </template>

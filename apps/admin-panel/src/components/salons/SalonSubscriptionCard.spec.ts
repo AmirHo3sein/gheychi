@@ -158,6 +158,9 @@ describe('SalonSubscriptionCard', () => {
       body: { overrides: { smsMonthlyQuota: 500 } },
     })
     expect(wrapper.find('[data-testid="has-overrides-note"]').exists()).toBe(true)
+    // Resolved entitlements read as «label: value» in Persian digits, never raw JSON.
+    expect(wrapper.text()).toContain('سقف پیامک ماهانه: ۵۰۰')
+    expect(wrapper.text()).not.toContain('smsMonthlyQuota')
   })
 
   it('rejects invalid JSON in the overrides editor without calling the API', async () => {

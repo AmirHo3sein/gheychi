@@ -151,7 +151,7 @@ function onKeydown(e: KeyboardEvent) {
           :aria-invalid="showError"
           :aria-describedby="showError ? errorId : undefined"
           placeholder="دلیل را واضح بنویسید؛ در سوابق ثبت می‌شود…"
-          class="mt-1.5 w-full rounded-xl border border-(--color-text-muted) bg-(--color-surface-card) p-3 text-sm text-(--color-text)"
+          class="mt-1.5 w-full rounded-xl border border-(--color-border-control) bg-(--color-surface-card) p-3 text-sm text-(--color-text)"
           @blur="touched = true"
         />
         <p v-if="showError" :id="errorId" data-testid="cancel-reason-error" role="alert" class="mt-1 text-sm text-(--tone-danger-text)">

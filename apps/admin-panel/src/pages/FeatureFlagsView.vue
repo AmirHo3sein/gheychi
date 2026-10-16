@@ -9,6 +9,7 @@ import { useToast } from '@/composables/useToast'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon, { type IconName } from '@/components/ui/AppIcon.vue'
+import AppSwitch from '@/components/ui/AppSwitch.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 
 interface FeatureFlags {
@@ -125,7 +126,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="mx-auto max-w-2xl space-y-5 p-4 sm:p-6 lg:p-8">
+  <div class="mx-auto max-w-3xl space-y-5 p-4 sm:p-6 lg:p-8">
     <div v-if="loading" data-testid="feature-flags-loading" class="flex items-center justify-center gap-2 py-16 text-sm text-(--color-text-muted)">
       <AppIcon name="spinner" :size="20" class="animate-spin" />
       در حال بارگذاری ویژگی‌ها…
@@ -170,25 +171,11 @@ onMounted(load)
           </div>
           <div class="flex shrink-0 items-center gap-2.5">
             <StatusBadge :label="flags[key] ? 'فعال' : 'غیرفعال'" :tone="flags[key] ? 'success' : 'neutral'" />
-            <button
-              type="button"
-              role="switch"
-              :aria-checked="flags[key]"
+            <AppSwitch
+              v-model="flags[key]"
               :aria-label="'فعال‌سازی ' + FLAG_META[key].label"
               :data-testid="`flag-toggle-${key}`"
-              class="flex h-11 w-11 shrink-0 items-center justify-center"
-              @click="flags[key] = !flags[key]"
-            >
-              <span
-                class="relative h-6 w-11 rounded-full transition-colors"
-                :class="flags[key] ? 'bg-(--color-accent-text)' : 'bg-(--color-text-muted)'"
-              >
-                <span
-                  class="absolute top-0.5 h-5 w-5 rounded-full bg-(--color-surface-card) shadow-(--shadow-sm) transition-all"
-                  :class="flags[key] ? 'end-0.5' : 'start-0.5'"
-                />
-              </span>
-            </button>
+            />
           </div>
         </div>
       </AppCard>

@@ -109,20 +109,22 @@ onBeforeUnmount(() => {
         aria-label="منو"
         class="fixed inset-y-0 start-0 z-50 flex w-72 max-w-[85vw] flex-col border-e border-(--color-border) bg-(--color-surface-card) shadow-(--shadow-lg)"
       >
-        <div class="flex shrink-0 items-center justify-between border-b border-(--color-border-soft) px-4 py-3">
-          <span class="text-base font-bold text-(--color-text)">منو</span>
-          <button
-            type="button"
-            data-drawer-close
-            aria-label="بستن منو"
-            class="flex h-11 w-11 items-center justify-center rounded-xl text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text)"
-            @click="close"
-          >
-            <AppIcon name="x" :size="20" />
-          </button>
-        </div>
-        <div class="flex-1 overflow-y-auto px-3 py-4">
-          <SidebarNav @navigate="close" />
+        <!-- The brand lockup at the top of SidebarNav doubles as this dialog's visible
+             header; the close button sits on its row through the `brand-action` slot. -->
+        <div class="flex-1 overflow-y-auto px-3 py-3">
+          <SidebarNav @navigate="close">
+            <template #brand-action>
+              <button
+                type="button"
+                data-drawer-close
+                aria-label="بستن منو"
+                class="flex h-11 w-11 items-center justify-center rounded-xl text-(--color-text-muted) transition-colors hover:bg-(--color-border-soft) hover:text-(--color-text)"
+                @click="close"
+              >
+                <AppIcon name="x" :size="20" />
+              </button>
+            </template>
+          </SidebarNav>
         </div>
       </div>
     </Transition>

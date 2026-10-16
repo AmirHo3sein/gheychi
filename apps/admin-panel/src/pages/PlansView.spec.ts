@@ -199,7 +199,8 @@ describe('PlansView', () => {
     fetchMock.mockResolvedValueOnce({ data: [plusPlan()], error: null })
     const wrapper = await mountView()
 
-    expect(wrapper.get('[data-testid="toggle-salons-plus"]').text()).toContain('2')
+    // Persian digits, like every other count (was a raw Latin '2').
+    expect(wrapper.get('[data-testid="toggle-salons-plus"]').text()).toContain('۲ سالن مشترک')
 
     fetchMock.mockResolvedValueOnce({
       data: [

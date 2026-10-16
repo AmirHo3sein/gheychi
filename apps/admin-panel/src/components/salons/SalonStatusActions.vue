@@ -174,7 +174,7 @@ async function submitReason() {
         data-testid="reason-input"
         placeholder="برای اطلاع سالن‌دار، دلیل را واضح بنویسید…"
         rows="3"
-        class="w-full rounded-xl border border-(--color-text-muted) p-3 text-sm"
+        class="w-full rounded-xl border border-(--color-border-control) p-3 text-sm"
       />
       <p v-if="reasonError" data-testid="reason-error" class="text-sm text-(--tone-danger-text)">وارد کردن دلیل الزامی است.</p>
       <div class="flex flex-wrap gap-2.5">

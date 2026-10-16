@@ -16,6 +16,9 @@ import {
   bookingStatusLabel,
   configKeyMeta,
   notificationTypeMeta,
+  NOTIFICATION_TYPE_KEYS,
+  notificationSeverity,
+  apiNotificationSeverity,
   pricingTypeLabel,
   weekdayLabel,
   invoicePaymentMethodLabel,
@@ -57,15 +60,36 @@ describe('auditActionLabel', () => {
     // with a real scan of the backend source (see scanBackendAuditActions) instead of a
     // second hand-maintained list, since the hand-maintained one was exactly how this one
     // slipped through undetected in the first place.
+    // 1 more (salon.service.image.removed) came with the admin service-image takedown.
     // This length guard is deliberate: adding a backend @AuditAction without a Farsi label
     // must fail here.
-    expect(AUDIT_ACTION_KEYS).toHaveLength(51)
+    expect(AUDIT_ACTION_KEYS).toHaveLength(52)
     for (const action of AUDIT_ACTION_KEYS) {
       const entry = auditActionLabel(action)
       // A mapped entry never falls back to the raw dotted action name.
       expect(entry.label).not.toBe(action)
       expect(entry.label.length).toBeGreaterThan(0)
     }
+  })
+
+  it('labels the admin service-image takedown and its target type', () => {
+    // The image file is deleted from storage with no restore path (unlike story/portfolio
+    // takedowns, which flip a status) -- a destructive delete, so danger per the AUDIT_ACTION rule.
+    expect(auditActionLabel('salon.service.image.removed')).toEqual({ label: 'حذف تصویر خدمت', tone: 'danger' })
+    expect(targetTypeLabel('salonservice')).toBe('خدمت سالن')
+  })
+
+  it('keeps routine audit actions neutral and reserves danger for destructive ones', () => {
+    for (const action of ['category.create', 'post.update', 'coupon.update', 'plan.create', 'salon.handle.set']) {
+      expect(auditActionLabel(action).tone).toBe('neutral')
+    }
+    for (const action of ['category.delete', 'post.delete', 'booking.cancelled_by_admin', 'subscription.cancel']) {
+      expect(auditActionLabel(action).tone).toBe('danger')
+    }
+    const dangerous = AUDIT_ACTION_KEYS.filter((a) => auditActionLabel(a).tone === 'danger')
+    // salon.service.image.removed is the one non-"delete"-named destructive action: the file is
+    // erased from storage with no restore (unlike story/portfolio takedowns, which flip a status).
+    for (const action of dangerous) expect(action).toMatch(/delete|cancel|^salon\.service\.image\.removed$/)
   })
 
   it('falls back to the raw value with a neutral tone for unknown actions', () => {
@@ -447,6 +471,36 @@ describe('trust & launch readiness labels', () => {
   it('maps the salon_material_edit notification and falls back for unknown types', () => {
     expect(notificationTypeMeta('salon_material_edit')).toEqual({ label: 'تغییر مهم در اطلاعات سالن', icon: 'pencil' })
     expect(notificationTypeMeta('something_new').icon).toBe('bell')
+  })
+
+  it('labels every notification type the API emits, with operator alerts as critical', () => {
+    for (const type of ['alert', 'salon_submitted', 'salon_resubmitted', 'report_created', 'salon_material_edit', 'category_requested']) {
+      expect(notificationTypeMeta(type).label).not.toBe('اعلان')
+    }
+    expect(notificationTypeMeta('alert')).toEqual({ label: 'هشدار عملیاتی', icon: 'warning' })
+    expect(notificationSeverity({ type: 'alert', severity: 'critical' })).toBe('critical')
+    expect(notificationSeverity({ type: 'alert', severity: 'warning' })).toBe('warning')
+    expect(notificationSeverity({ type: 'salon_submitted', severity: 'info' })).toBe('action')
+    expect(notificationSeverity({ type: 'category_requested' })).toBe('action')
+    expect(notificationSeverity({ type: 'something_new', severity: 'info' })).toBe('info')
+  })
+
+  // The inbox's type filter is sent as ?type= and the API validates it against its closed
+  // ADMIN_NOTIFICATION_TYPES (@IsIn) -- offering any other key 400s the whole inbox into its
+  // error state. 'salon_submitted' is an analytics event, never an admin notification.
+  it('offers exactly the API\'s filterable notification types in the inbox filter', () => {
+    expect([...NOTIFICATION_TYPE_KEYS].sort()).toEqual(
+      ['alert', 'report_created', 'salon_resubmitted', 'salon_material_edit', 'category_requested'].sort(),
+    )
+  })
+
+  // Pre-column alert rows carry no stored severity. They must never be promoted to critical
+  // (the banner and dashboard would light up for ~100 historical rows); they read as warning.
+  it('treats a legacy alert with a null or missing severity as a warning, not critical', () => {
+    expect(notificationSeverity({ type: 'alert', severity: null })).toBe('warning')
+    expect(notificationSeverity({ type: 'alert' })).toBe('warning')
+    expect(apiNotificationSeverity({ type: 'alert', severity: null })).toBe('warning')
+    expect(apiNotificationSeverity({ type: 'report_created', severity: 'info' })).toBe('info')
   })
 
   it('labels pricing types and weekdays (0 = Sunday)', () => {

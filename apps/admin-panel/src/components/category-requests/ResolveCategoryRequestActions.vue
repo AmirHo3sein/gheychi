@@ -134,7 +134,7 @@ async function submitReject() {
         placeholder="مثلاً: این دسته‌بندی با موارد موجود همپوشانی دارد…"
         rows="2"
         maxlength="500"
-        class="w-full rounded-xl border border-(--color-border) p-3 text-sm [color-scheme:light_dark]"
+        class="w-full rounded-xl border border-(--color-border-control) p-3 text-sm [color-scheme:light_dark]"
       />
       <div class="flex flex-wrap gap-2.5">
         <AppButton

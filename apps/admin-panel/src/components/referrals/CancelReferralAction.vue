@@ -107,7 +107,7 @@ async function confirmSubmit() {
         maxlength="1000"
         :aria-invalid="reasonError"
         :aria-describedby="reasonError ? reasonErrorId : undefined"
-        class="w-full rounded-xl border border-(--color-border) p-3 text-sm"
+        class="w-full rounded-xl border border-(--color-border-control) p-3 text-sm"
       />
       <p v-if="reasonError" :id="reasonErrorId" data-testid="cancel-reason-error" class="text-sm text-(--tone-danger-text)">
         وارد کردن دلیل الزامی است.

@@ -14,6 +14,7 @@ import AppInput from '@/components/ui/AppInput.vue'
 import AppMoneyInput from '@/components/ui/AppMoneyInput.vue'
 import { configKeyMeta } from '@/utils/labels'
 import { formatToman } from '@/utils/format-toman'
+import { toEnglishDigits, toPersianDigits } from '@/utils/digits'
 
 interface ConfigRow {
   key: string
@@ -43,6 +44,33 @@ function boundsFor(key: string): { min: number; max: number | null; integer: boo
   if (EXPLICIT_BOUNDS[key]) return { ...EXPLICIT_BOUNDS[key], integer: true }
   return PERCENT_KEYS.has(key) ? { min: 0, max: 100, integer: false } : { min: 0, max: null, integer: false }
 }
+
+// Sections for the edit screen, in display order. Keys inside a section keep this order; any
+// key the API returns that no section lists (a newly added config key) lands in «سایر» rather
+// than disappearing.
+const SECTIONS: { id: string; title: string; hint: string; keys: string[] }[] = [
+  { id: 'money', title: 'بیعانه و کمیسیون', hint: 'مبلغ‌هایی که از مشتری و سالن گرفته می‌شود', keys: ['deposit_percent', 'deposit_min_toman', 'commission_percent'] },
+  {
+    id: 'booking',
+    title: 'رزرو و نوبت',
+    hint: 'مهلت‌ها و سقف نوبت‌های هم‌زمان',
+    keys: [
+      'cancellation_window_hours',
+      'booking_hold_ttl_minutes',
+      'booking_approval_timeout_minutes',
+      'booking_max_active_per_user',
+      'booking_max_active_per_salon_per_user',
+    ],
+  },
+  { id: 'no-show', title: 'عدم حضور', hint: '', keys: ['no_show_grace_minutes'] },
+  {
+    id: 'beauty',
+    title: 'راهنمای زیبایی',
+    hint: 'هر تحلیل یک فراخوانی پولی هوش مصنوعی است',
+    keys: ['beauty_guide_daily_limit_per_user', 'beauty_guide_daily_limit_global', 'beauty_guide_retention_days'],
+  },
+  { id: 'sms', title: 'پیامک', hint: '', keys: ['reminder_lead_hours'] },
+]
 
 const { apiFetch } = useApi()
 const { push: pushToast } = useToast()
@@ -112,6 +140,12 @@ function onRowInput(row: ConfigRow, raw: string | number) {
   row.value = parsed
 }
 
+// Persian/Arabic-Indic digits and the Persian decimal mark (٫) -> ASCII, so an admin typing on
+// a Persian keyboard gets exactly the same validation as one typing Latin digits.
+function onConfigText(row: ConfigRow, raw: string | number) {
+  onRowInput(row, toEnglishDigits(String(raw)).replace(/٫/g, '.'))
+}
+
 function rowError(key: string): string | undefined {
   if (!rowInvalid.value[key]) return undefined
   const text = (rowText.value[key] ?? '').trim()
@@ -119,7 +153,7 @@ function rowError(key: string): string | undefined {
   if (text === '') return 'این مقدار نمی‌تواند خالی باشد'
   if (Number.isNaN(Number(text))) return 'یک عدد معتبر وارد کنید'
   if (integer && !Number.isInteger(Number(text))) return 'یک عدد صحیح وارد کنید'
-  return max !== null ? `باید بین ${min} تا ${max} باشد` : `باید حداقل ${min} باشد`
+  return max !== null ? `باید بین ${toPersianDigits(min)} تا ${toPersianDigits(max)} باشد` : `باید حداقل ${toPersianDigits(min)} باشد`
 }
 
 // deposit_min_toman is the only toman-denominated config key today (the rest are %, hours,
@@ -132,6 +166,16 @@ function formatConfigValue(key: string, value: number | undefined): string {
 
 // Only the rows whose value actually differs from what's persisted -- the confirm summary
 // must list precisely what will change, not the full config table.
+const sections = computed(() => {
+  const listed = new Set(SECTIONS.flatMap((sec) => sec.keys))
+  const out = SECTIONS.map((sec) => ({
+    ...sec,
+    rows: sec.keys.map((k) => rows.value.find((r) => r.key === k)).filter((r): r is ConfigRow => !!r),
+  }))
+  out.push({ id: 'other', title: 'سایر', hint: '', keys: [], rows: rows.value.filter((r) => !listed.has(r.key)) })
+  return out.filter((sec) => sec.rows.length > 0)
+})
+
 const changedRows = computed(() => rows.value.filter((r) => originalValueOf(r.key) !== r.value))
 const hasChanges = computed(() => changedRows.value.length > 0)
 const hasInvalidRows = computed(() => Object.values(rowInvalid.value).some(Boolean))
@@ -180,7 +224,7 @@ onMounted(load)
 <!-- p-4 -> sm:p-6 -> lg:p-8 scale; 32px of gutter on each side of a 320px screen is a
      quarter of the usable width, so it relaxes to p-4 below that. -->
 <template>
-  <div class="mx-auto max-w-2xl space-y-5 p-4 sm:p-6 lg:p-8">
+  <div class="mx-auto max-w-3xl space-y-5 p-4 sm:p-6 lg:p-8">
     <div v-if="loading" data-testid="config-loading" class="flex items-center justify-center gap-2 py-16 text-sm text-(--color-text-muted)">
       <AppIcon name="spinner" :size="20" class="animate-spin" />
       در حال بارگذاری تنظیمات…
@@ -207,42 +251,60 @@ onMounted(load)
         این مقادیر رفتار کل پلتفرم را کنترل می‌کنند -- تغییرات پیش از ذخیره برای بازبینی نمایش داده می‌شوند.
       </p>
 
-      <AppCard :padded="false">
-        <!-- flex-wrap: the label column plus the fixed 96px field + unit is ~250px of
-             unshrinkable content, so below `sm` the field drops under its label instead of
-             the row overflowing the card. One line, exactly as today, from `sm` up. -->
-        <div v-for="(row, i) in rows" :key="row.key" class="flex flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-5" :class="i > 0 && 'border-t border-(--color-border-soft)'">
-          <div class="flex min-w-0 items-center gap-3">
-            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-(--color-border-soft) text-(--color-accent-text)">
-              <AppIcon :name="configKeyMeta(row.key).icon" :size="18" />
-            </span>
-            <div class="min-w-0">
-              <p class="text-sm font-semibold text-(--color-text)">{{ configKeyMeta(row.key).label }}</p>
-              <p v-if="configKeyMeta(row.key).hint" class="mt-0.5 text-xs text-(--color-text-muted)">{{ configKeyMeta(row.key).hint }}</p>
+      <!-- One row layout everywhere: label + hint on the start side, the field and its unit in
+           a fixed-width column on the end side, so every input lines up down the page whatever
+           the hint length. Below sm the field drops under its label, for every row alike. -->
+      <section v-for="section in sections" :key="section.id" :data-testid="`config-section-${section.id}`" class="space-y-2">
+        <div class="flex flex-wrap items-baseline gap-x-2 px-1">
+          <h2 class="text-sm font-bold text-(--color-text)">{{ section.title }}</h2>
+          <p v-if="section.hint" class="text-xs text-(--color-text-muted)">{{ section.hint }}</p>
+        </div>
+        <AppCard :padded="false">
+          <div
+            v-for="(row, i) in section.rows"
+            :key="row.key"
+            class="grid grid-cols-1 items-center gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_11rem] sm:gap-6 sm:px-5"
+            :class="i > 0 && 'border-t border-(--color-border-soft)'"
+          >
+            <div class="flex min-w-0 items-center gap-3">
+              <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-(--color-border-soft) text-(--color-accent-text)">
+                <AppIcon :name="configKeyMeta(row.key).icon" :size="18" />
+              </span>
+              <div class="min-w-0">
+                <p class="text-sm font-semibold text-(--color-text)">{{ configKeyMeta(row.key).label }}</p>
+                <p v-if="configKeyMeta(row.key).hint" class="mt-0.5 text-xs leading-5 text-(--color-text-muted)">{{ configKeyMeta(row.key).hint }}</p>
+              </div>
+            </div>
+            <div class="flex items-start gap-2 ps-13 sm:ps-0">
+              <AppMoneyInput
+                v-if="configKeyMeta(row.key).unit === 'تومان'"
+                :model-value="rowText[row.key]"
+                class="w-28"
+                :aria-label="configKeyMeta(row.key).label"
+                :error="rowError(row.key)"
+                @update:model-value="(v) => onRowInput(row, v)"
+              />
+              <!-- type="text", not "number": a number input can only ever display Latin digits.
+                   The field shows Persian digits and accepts either set (plus the Persian decimal
+                   mark) -- onConfigText normalizes to ASCII before validation, so the parsing
+                   and bounds logic below never sees anything but plain digits. -->
+              <AppInput
+                v-else
+                :model-value="toPersianDigits(rowText[row.key] ?? '')"
+                type="text"
+                :inputmode="boundsFor(row.key).integer ? 'numeric' : 'decimal'"
+                dir="ltr"
+                data-testid="config-input"
+                class="tnum w-28 text-left"
+                :aria-label="configKeyMeta(row.key).label"
+                :error="rowError(row.key)"
+                @update:model-value="(v) => onConfigText(row, v)"
+              />
+              <span v-if="configKeyMeta(row.key).unit" class="mt-3 w-12 shrink-0 text-xs text-(--color-text-muted)">{{ configKeyMeta(row.key).unit }}</span>
             </div>
           </div>
-          <div class="flex shrink-0 items-center gap-2">
-            <AppMoneyInput
-              v-if="configKeyMeta(row.key).unit === 'تومان'"
-              :model-value="rowText[row.key]"
-              class="w-24"
-              :aria-label="configKeyMeta(row.key).label"
-              :error="rowError(row.key)"
-              @update:model-value="(v) => onRowInput(row, v)"
-            />
-            <AppInput
-              v-else
-              :model-value="rowText[row.key]"
-              type="number"
-              class="tnum w-24 text-left"
-              :aria-label="configKeyMeta(row.key).label"
-              :error="rowError(row.key)"
-              @update:model-value="(v) => onRowInput(row, v)"
-            />
-            <span v-if="configKeyMeta(row.key).unit" class="w-14 text-xs text-(--color-text-muted)">{{ configKeyMeta(row.key).unit }}</span>
-          </div>
-        </div>
-      </AppCard>
+        </AppCard>
+      </section>
 
       <AppButton ref="saveButtonEl" variant="primary" data-testid="config-save-button" :disabled="saving || !canSave" @click="askConfirm">
         ذخیره تغییرات

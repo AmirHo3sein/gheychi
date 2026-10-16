@@ -39,8 +39,27 @@ describe('AuditLogView', () => {
     expect(wrapper.text()).toContain('تغییر وضعیت سالن')
     expect(wrapper.text()).not.toContain('salon.status.set')
     expect(wrapper.text()).toContain('مدیر کل')
-    expect(wrapper.text()).toContain('09121234567')
+    // Phone reads in Persian digits (LTR-isolated); the raw ASCII number stays on title/data-phone
+    // for copy-paste into the ASCII-only phone search fields.
+    const phone = wrapper.get('[data-testid="actor-phone"]')
+    expect(phone.text()).toBe('۰۹۱۲۱۲۳۴۵۶۷')
+    expect(phone.attributes('dir')).toBe('ltr')
+    expect(phone.attributes('title')).toBe('09121234567')
+    expect(phone.attributes('data-phone')).toBe('09121234567')
     expect(wrapper.get('[data-testid="success-badge"]').text()).toBe('موفق')
+  })
+
+  // Below md each row is a stacked card captioned by data-label, from the same single <tr>
+  // (no duplicated mobile markup) -- so every captioned cell must carry its column name.
+  it('captions every non-badge cell with its column name for the phone card layout', async () => {
+    fetchMock.mockResolvedValue({ data: { items: [row], total: 1, page: 1, pageSize: 20 }, error: null })
+    const wrapper = mount(AuditLogView, mountOptions)
+    await flushPromises()
+
+    expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+    const labels = wrapper.findAll('tbody td[data-label]').map((td) => td.attributes('data-label'))
+    expect(labels).toEqual(['زمان', 'مدیر', 'هدف', 'جزئیات'])
+    expect(wrapper.get('thead').classes()).toContain('max-md:hidden')
   })
 
   it('renders a failure badge for success=false rows', async () => {

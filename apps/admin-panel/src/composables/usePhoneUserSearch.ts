@@ -8,6 +8,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { debounce } from '@/utils/debounce'
+import { toEnglishDigits } from '@/utils/digits'
 
 export interface MatchedUser {
   id: string
@@ -35,7 +36,9 @@ export function usePhoneUserSearch() {
   let searchToken = 0
 
   async function searchUsers() {
-    const query = phoneQuery.value.trim()
+    // Phones are stored with ASCII digits and matched with ILIKE, so a query typed (or pasted
+    // from a Persian-digit display) as ۰۹۱۲… must be normalized or it never matches anyone.
+    const query = toEnglishDigits(phoneQuery.value.trim())
     if (selectedUser.value) return
     matches.value = []
     noResults.value = false

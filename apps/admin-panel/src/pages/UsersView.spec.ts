@@ -55,6 +55,22 @@ describe('UsersView', () => {
     expect(wrapper.text()).toContain('مشتری')
   })
 
+  it('normalizes a Persian-digit phone filter to ASCII before querying', async () => {
+    vi.useFakeTimers()
+    signInAs('admin-1')
+    respondWith([{ ...user }])
+    const wrapper = mount(UsersView)
+    await flushPromises()
+    fetchMock.mockClear()
+
+    await wrapper.get('input').setValue('۰۹۱۲')
+    vi.advanceTimersByTime(400)
+    await flushPromises()
+    vi.useRealTimers()
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('phone=0912'), { silent: true })
+  })
+
   // The backend rejects a self-targeted status change with a 400, so offering the button on
   // the acting admin's own row is an action that can only ever fail.
   it('replaces the suspend control with a "حساب شما" hint on the acting admin\'s own row', async () => {

@@ -7,7 +7,7 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import { CODE_EXPIRED_MESSAGE, CODE_REJECTED_MESSAGE, describeAuthError, formatCountdown } from '@/utils/auth-errors'
-import { toEnglishDigits } from '@/utils/digits'
+import { toEnglishDigits, toPersianDigits } from '@/utils/digits'
 
 const { apiFetch } = useApi()
 const session = useSessionStore()
@@ -77,6 +77,12 @@ function backToPhoneStep() {
   code.value = ''
 }
 
+// Shown back to the admin on the code step -- Persian digits for display only; `phone` itself
+// stays ASCII for the API.
+const phoneDisplay = computed(() => toPersianDigits(phone.value))
+// Solar Hijri year in Persian digits, not the Gregorian "2026" the footer used to show.
+const copyrightYear = new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric' }).format(new Date())
+
 async function verifyOtp() {
   errorMessage.value = ''
   submitting.value = true
@@ -98,40 +104,39 @@ async function verifyOtp() {
 </script>
 
 <template>
-  <!-- One centred composition, identical in structure across all three apps (user-app and
-       provider-panel carry the same markup with their own copy) -- login is the one screen
-       every product shares, so it is the one that should read the same. -->
-  <main class="login-bg relative flex min-h-dvh items-center justify-center p-6">
-    <!-- Decoration lives in its own absolutely-positioned, clipped layer: putting
-         `overflow-hidden` on the scrolling parent instead would clip the card itself on a
-         short viewport, where the composition needs to scroll rather than be cut off. -->
-    <div class="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-      <div class="mesh-a absolute -top-32 -start-24 h-96 w-96 rounded-full bg-(--color-accent) opacity-40 blur-3xl" />
-      <div class="mesh-b absolute -bottom-32 -end-24 h-96 w-96 rounded-full bg-(--color-accent-deep) opacity-30 blur-3xl" />
-    </div>
-
-    <div class="relative w-full max-w-md">
-      <!-- The mascot stands BEHIND the card: it is earlier in the DOM and unpositioned, while
-           the card below is `relative z-10` with an opaque background, so the negative margin
-           tucks the character's legs neatly behind the card's top edge instead of leaving it
-           floating in its own empty band. -->
-      <div class="login-stagger relative -mb-20 flex justify-center" style="animation-delay: 0s">
-        <div class="login-glow pointer-events-none absolute bottom-4 h-40 w-56 opacity-70" aria-hidden="true" />
-        <img src="/mascot-full.png" alt="" class="relative h-60 w-auto" />
+  <!-- Admin login: a deliberately quiet, single-card composition. The customer and provider
+       logins carry the full waving mascot; here the character only peeks over the card's top
+       edge at a small size, and the card itself leads with the brand lockup and a plain
+       statement of who this screen is for. -->
+  <main class="login-bg relative flex min-h-dvh items-center justify-center px-4 py-10">
+    <div class="relative w-full max-w-[400px]">
+      <!-- Mascot behind the card: earlier in the DOM and unpositioned, while the card is
+           `relative z-10` with an opaque background, so the negative margin tucks the
+           character's lower half behind the card's top edge. -->
+      <div class="login-stagger flex justify-center" style="animation-delay: 0s" aria-hidden="true">
+        <picture>
+          <source srcset="/mascot-full.webp" type="image/webp" />
+          <img src="/mascot-full.png" alt="" width="501" height="900" class="-mb-14 h-36 w-auto sm:h-40" />
+        </picture>
       </div>
 
       <div
-        class="login-stagger relative z-10 rounded-3xl border border-(--color-border) bg-(--color-surface-card) p-7 shadow-(--shadow-lg) sm:p-8"
-        style="animation-delay: 0.1s"
+        class="login-stagger relative z-10 rounded-[20px] border border-(--color-border) bg-(--color-surface-card) p-6 shadow-(--shadow-md) sm:p-8"
+        style="animation-delay: 0.06s"
       >
-        <div class="flex items-center justify-center gap-2.5">
-          <img src="/brand-icon.png" alt="" class="h-9 w-9 shrink-0 rounded-xl" />
-          <span class="text-base font-bold text-(--color-text)">پنل مدیریت قیچی</span>
+        <div class="flex items-center gap-3">
+          <img src="/brand-icon.png" alt="" width="44" height="44" class="h-11 w-11 shrink-0 rounded-xl" />
+          <div class="min-w-0 leading-tight">
+            <p class="text-xl font-black text-(--color-text)">قیچی</p>
+            <p class="text-sm font-medium text-(--color-text-muted)">پنل مدیریت</p>
+          </div>
         </div>
 
-        <div class="mt-5 text-center">
-          <h1 class="text-2xl font-bold text-(--color-text)">خوش آمدید</h1>
-          <p class="mt-1.5 text-sm text-(--color-text-muted)">برای ورود به پنل مدیریت، شماره موبایل خود را وارد کنید.</p>
+        <div class="mt-6">
+          <h1 class="text-xl font-bold text-(--color-text)">ورود مدیران</h1>
+          <p class="mt-1.5 text-sm leading-6 text-(--color-text-muted)">
+            {{ step === 'phone' ? 'شماره موبایل حساب مدیریتی خود را وارد کنید تا کد یک‌بارمصرف برایتان پیامک شود.' : 'کد ۶ رقمی پیامک‌شده را وارد کنید.' }}
+          </p>
         </div>
 
         <div class="mt-6">
@@ -148,7 +153,6 @@ async function verifyOtp() {
               dir="ltr"
               icon="phone"
               label="شماره موبایل"
-              placeholder="شماره موبایل"
               autocomplete="tel"
               autofocus
             />
@@ -168,7 +172,7 @@ async function verifyOtp() {
               align="center"
               icon="lock"
               class="tnum"
-              :label="`کد تایید ارسال‌شده به ${phone}`"
+              :label="`کد تایید ارسال‌شده به ${phoneDisplay}`"
               placeholder="------"
               autocomplete="one-time-code"
               :error="step === 'code' ? errorMessage : ''"
@@ -208,10 +212,17 @@ async function verifyOtp() {
             {{ errorMessage }}
           </p>
         </div>
+
+        <!-- Every admin mutation is written to the audit log (AuditInterceptor), so this is a
+             factual statement, not a deterrent prop. -->
+        <p class="mt-6 flex items-start gap-2 border-t border-(--color-border-soft) pt-4 text-xs leading-5 text-(--color-text-muted)">
+          <AppIcon name="shield" :size="16" class="mt-0.5 shrink-0 text-(--color-accent-text)" />
+          این بخش فقط برای مدیران مجاز است. اقدامات مدیریتی در تاریخچهٔ اقدامات ثبت می‌شود.
+        </p>
       </div>
 
-      <p class="login-stagger mt-6 text-center text-xs text-(--color-text-muted)" style="animation-delay: 0.2s">
-        © {{ new Date().getFullYear() }} قیچی
+      <p class="login-stagger mt-6 text-center text-xs text-(--color-text-muted)" style="animation-delay: 0.12s">
+        © {{ copyrightYear }} قیچی
       </p>
     </div>
   </main>

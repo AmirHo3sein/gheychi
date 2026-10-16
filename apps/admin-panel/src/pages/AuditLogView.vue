@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
+import { ISO_DATE_RE, useQueryFilters } from '@/composables/useQueryFilters'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -15,6 +16,8 @@ import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { debounce } from '@/utils/debounce'
 import { AUDIT_ACTION_KEYS, auditActionLabel, targetTypeLabel } from '@/utils/labels'
 import { endOfTehranDayIso, startOfTehranDayIso } from '@/utils/tehran-day'
+import { toPersianDigits } from '@/utils/digits'
+import { STACKED_CELL, STACKED_CELL_PLAIN, STACKED_ROW, STACKED_TABLE, STACKED_TBODY, STACKED_THEAD } from '@/utils/stacked-table'
 
 // Options derive from labels.ts's canonical key list -- single source of truth with
 // the backend's @AuditAction() names, no locally re-declared copy to drift.
@@ -62,14 +65,22 @@ const loading = ref(true)
 // Distinct from "genuinely no results": a fetch failure must not be silently repainted as an
 // empty list (the operator would read that as "nothing happened", not "the request failed").
 const loadError = ref(false)
-const page = ref(1)
 const total = ref(0)
 const pageSize = 20
 
-const actionFilter = ref('')
-const actorFilter = ref('')
-const fromDate = ref('')
-const toDate = ref('')
+// URL-persisted (useQueryFilters), so a filtered audit trail survives a click into a salon and
+// back, and can be pasted into a ticket.
+const {
+  page,
+  action: actionFilter,
+  actor: actorFilter,
+  from: fromDate,
+  to: toDate,
+  changedByUrl,
+} = useQueryFilters(
+  { page: 1, action: '', actor: '', from: '', to: '' },
+  { allowed: { action: AUDIT_ACTION_KEYS, from: ISO_DATE_RE, to: ISO_DATE_RE } },
+)
 
 // Mirrors class-validator's @IsUUID() shape (version nibble 1-8, variant nibble 8/9/a/b),
 // so anything we send is guaranteed to pass the backend DTO's validation.
@@ -111,7 +122,9 @@ function loadFromFilterChange() {
   // Any filter change invalidates the current page position. When we're past page 1,
   // just reset it -- the page watcher triggers the (single) reload; calling load() here
   // too would fire a duplicate request.
-  if (page.value !== 1) {
+  // A navigation (back/forward) that set the filters -- and maybe `page` with them -- is not
+  // an edit: keep the page the URL asked for.
+  if (page.value !== 1 && !changedByUrl()) {
     page.value = 1
   } else {
     load()
@@ -230,8 +243,8 @@ watch(page, load)
              scrollbar exists while the table fits, which is the ≥1280px case this app
              optimizes for. -->
         <ScrollTable label="تاریخچه اقدامات">
-          <table class="w-full text-start text-sm transition-opacity" :class="{ 'opacity-50': loading }">
-            <thead>
+          <table class="w-full text-start text-sm transition-opacity" :class="[STACKED_TABLE, { 'opacity-50': loading }]">
+            <thead :class="STACKED_THEAD">
               <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
                 <th scope="col" class="px-5 py-3 font-semibold">زمان</th>
                 <th scope="col" class="px-5 py-3 font-semibold">مدیر</th>
@@ -241,21 +254,26 @@ watch(page, load)
                 <th scope="col" class="px-5 py-3 font-semibold">نتیجه</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody :class="STACKED_TBODY">
               <tr
                 v-for="row in rows"
                 :key="row.id"
                 class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
+                :class="STACKED_ROW"
               >
-                <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDateTime(row.createdAt) }}</td>
-                <td class="px-5 py-3.5">
+                <td class="tnum px-5 py-3.5 text-(--color-text-muted) max-md:col-span-2" :class="STACKED_CELL" data-label="زمان">{{ formatDateTime(row.createdAt) }}</td>
+                <td class="px-5 py-3.5" :class="STACKED_CELL" data-label="مدیر">
                   <p class="font-semibold text-(--color-text)">{{ row.actorName ?? '—' }}</p>
-                  <p class="tnum text-xs text-(--color-text-muted)">{{ row.actorPhone }}</p>
+                  <!-- Persian digits for reading; title/data-phone keep the raw ASCII number. -->
+                  <p class="tnum text-xs text-(--color-text-muted)">
+                    <bdi data-testid="actor-phone" dir="ltr" :title="row.actorPhone" :data-phone="row.actorPhone">{{ toPersianDigits(row.actorPhone) }}</bdi>
+                  </p>
                 </td>
-                <td class="px-5 py-3.5">
+                <!-- Card layout: the action and outcome badges lead the card, side by side. -->
+                <td class="px-5 py-3.5 max-md:-order-2" :class="STACKED_CELL_PLAIN">
                   <StatusBadge :label="auditActionLabel(row.action).label" :tone="auditActionLabel(row.action).tone" />
                 </td>
-                <td class="px-5 py-3.5">
+                <td class="px-5 py-3.5" :class="STACKED_CELL" data-label="هدف">
                   <RouterLink
                     v-if="targetLink(row)"
                     :to="targetLink(row)!"
@@ -268,10 +286,11 @@ watch(page, load)
                     {{ row.targetId.slice(0, 8) }}…
                   </p>
                 </td>
-                <td data-testid="payload-cell" class="px-5 py-3.5">
+                <td data-testid="payload-cell" class="px-5 py-3.5 max-md:col-span-2" :class="STACKED_CELL" data-label="جزئیات">
                   <!-- Text interpolation only (never v-html) -- payloads contain user-supplied text. -->
                   <details v-if="row.payload" data-testid="payload-details">
-                    <summary class="cursor-pointer text-xs font-semibold text-(--color-text-muted) transition-colors hover:text-(--color-text)">
+                    <!-- py-3: a 40px tap target; md:-my-3 hands the height back to the table row. -->
+                    <summary class="w-fit cursor-pointer py-3 text-xs font-semibold text-(--color-text-muted) transition-colors hover:text-(--color-text) max-md:-mt-2 md:-my-3">
                       نمایش
                     </summary>
                     <!-- max-w-64 caps the column's contribution to the table's min-content width;
@@ -279,12 +298,12 @@ watch(page, load)
                          widen the row. -->
                     <pre
                       dir="ltr"
-                      class="mt-1.5 max-h-40 max-w-64 overflow-x-auto overflow-y-auto rounded-2xl bg-(--color-border-soft) p-2 text-left text-xs text-(--color-text-muted)"
+                      class="mt-1.5 max-h-40 max-w-64 overflow-x-auto max-md:max-w-full overflow-y-auto rounded-2xl bg-(--color-border-soft) p-2 text-left text-xs text-(--color-text-muted)"
                     >{{ formatPayload(row.payload) }}</pre>
                   </details>
                   <span v-else class="text-(--color-text-muted)">—</span>
                 </td>
-                <td class="px-5 py-3.5">
+                <td class="px-5 py-3.5 max-md:-order-1 max-md:justify-self-end" :class="STACKED_CELL_PLAIN">
                   <StatusBadge
                     data-testid="success-badge"
                     :label="row.success ? 'موفق' : 'ناموفق'"

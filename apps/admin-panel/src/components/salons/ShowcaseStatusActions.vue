@@ -135,7 +135,7 @@ async function setStatus(status: 'published' | 'removed') {
         placeholder="برای سابقه رسیدگی، دلیل حذف را بنویسید…"
         rows="2"
         maxlength="500"
-        class="w-full rounded-xl border border-(--color-text-muted) p-3 text-sm"
+        class="w-full rounded-xl border border-(--color-border-control) p-3 text-sm"
       />
       <div class="flex flex-wrap gap-2.5">
         <AppButton

@@ -1,3 +1,4 @@
+import { formatToman } from '@/utils/format-toman'
 import { weekdayLabel } from '@/utils/labels'
 
 /**
@@ -99,6 +100,11 @@ export interface SalonReviewData {
     priceMax: number | null
     durationMinutes: number
     isActive: boolean
+    /** The service's optional primary photo; absent on an older API. */
+    imageUrl?: string | null
+    /** Set when an admin took the image down (cleared by the owner's next upload or own
+        removal); absent on an older API. */
+    imageRemovedByAdminAt?: string | null
   }[]
   hours: HourInput[]
   riskSummary: {
@@ -110,6 +116,14 @@ export interface SalonReviewData {
     noShowMarked: number
     openReports: number
   }
+}
+
+/** One service's price as the public salon page would phrase it, per its pricing type. */
+export function servicePriceText(s: SalonReviewData['services'][number]): string {
+  if (s.pricingType === 'quote' || s.price === null) return 'پس از استعلام'
+  if (s.pricingType === 'from') return `از ${formatToman(s.price)} تومان`
+  if (s.pricingType === 'range' && s.priceMax !== null) return `${formatToman(s.price)} تا ${formatToman(s.priceMax)} تومان`
+  return `${formatToman(s.price)} تومان`
 }
 
 /** Plain-language labels for the 90-day counters; `warn` ones are highlighted when non-zero. */

@@ -1,5 +1,6 @@
 import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import SalonsView from './SalonsView.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import Pagination from '@/components/ui/Pagination.vue'
@@ -287,5 +288,68 @@ describe('SalonsView', () => {
     await flushPromises()
 
     expect(wrapper.get('table').element.parentElement?.className).toContain('overflow-x-auto')
+  })
+})
+
+// Filters live in the URL (useQueryFilters): the dashboard deep-links /salons?status=pending,
+// and coming back from a salon's page restores the exact filtered list.
+describe('SalonsView URL-persisted filters', () => {
+  beforeEach(() => {
+    fetchMock.mockReset()
+    mockSalons({ data: { items: [{ ...salon }], total: 45, page: 1, pageSize: 20 }, error: null })
+  })
+
+  async function mountAt(path: string) {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/salons', component: SalonsView },
+        { path: '/salons/:id', component: { template: '<div />' } },
+      ],
+    })
+    router.push(path)
+    await router.isReady()
+    const wrapper = mount(SalonsView, { global: { plugins: [router], stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises()
+    return { router, wrapper }
+  }
+
+  it('loads the filtered list a deep link asks for', async () => {
+    await mountAt('/salons?status=pending&page=2&gender=men')
+    expect(fetchMock).toHaveBeenCalledWith('/admin/salons?status=pending&page=2&pageSize=20&genderTarget=men', { silent: true })
+  })
+
+  it('writes filter and page changes into the URL so back navigation restores them', async () => {
+    const { router, wrapper } = await mountAt('/salons')
+    await wrapper.findAllComponents(AppSelect).find((s) => s.props('label') === 'وضعیت')!.vm.$emit('update:modelValue', 'suspended')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ status: 'suspended' })
+
+    wrapper.findComponent(Pagination).vm.$emit('update:page', 2)
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ status: 'suspended', page: '2' })
+    expect(fetchMock).toHaveBeenLastCalledWith('/admin/salons?status=suspended&page=2&pageSize=20', { silent: true })
+  })
+
+  // The page stays mounted across same-path navigations (the layout keys by path), so a URL
+  // change that moves a filter AND the page together (browser back from the sidebar's bare
+  // /salons to /salons?status=approved&page=3) must land on that page -- not have the
+  // filter-change handler treat it as a fresh filter edit and reset it to page 1.
+  it('restores the exact page when back navigation changes a filter and the page together', async () => {
+    const { router } = await mountAt('/salons?status=approved&page=3')
+    await router.push('/salons')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenLastCalledWith('/admin/salons?status=all&page=1&pageSize=20', { silent: true })
+
+    router.back()
+    await new Promise((r) => setTimeout(r, 0))
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ status: 'approved', page: '3' })
+    expect(fetchMock).toHaveBeenLastCalledWith('/admin/salons?status=approved&page=3&pageSize=20', { silent: true })
+  })
+
+  it('ignores an unknown status in the URL instead of sending it to the API', async () => {
+    await mountAt('/salons?status=bogus')
+    expect(fetchMock).toHaveBeenCalledWith('/admin/salons?status=all&page=1&pageSize=20', { silent: true })
   })
 })

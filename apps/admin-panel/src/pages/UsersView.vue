@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
+import { ISO_DATE_RE, useQueryFilters } from '@/composables/useQueryFilters'
 import SuspendUserButton from '@/components/users/SuspendUserButton.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
@@ -15,6 +16,7 @@ import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useSessionStore } from '@/stores/session'
 import { debounce } from '@/utils/debounce'
+import { toEnglishDigits } from '@/utils/digits'
 import { userRoleLabel, userStatusLabel } from '@/utils/labels'
 import { endOfTehranDayIso, startOfTehranDayIso } from '@/utils/tehran-day'
 
@@ -52,15 +54,23 @@ const loading = ref(true)
 // A fetch failure must not be silently repainted as an empty state -- see
 // SalonsView.vue's identical loadError pattern.
 const loadError = ref(false)
-const page = ref(1)
 const total = ref(0)
 const pageSize = 20
 
-const phoneFilter = ref('')
-const nameFilter = ref('')
-const roleFilter = ref<'' | 'customer' | 'provider' | 'admin'>('')
-const joinedFrom = ref('')
-const joinedTo = ref('')
+// URL-persisted (useQueryFilters): back from another page restores the exact filtered list.
+// Dates stay as the picker's own YYYY-MM-DD strings; a malformed one falls back to empty.
+const {
+  page,
+  phone: phoneFilter,
+  name: nameFilter,
+  role: roleFilter,
+  joinedFrom,
+  joinedTo,
+  changedByUrl,
+} = useQueryFilters(
+  { page: 1, phone: '', name: '', role: '' as '' | 'customer' | 'provider' | 'admin', joinedFrom: '', joinedTo: '' },
+  { allowed: { role: ['customer', 'provider', 'admin'], joinedFrom: ISO_DATE_RE, joinedTo: ISO_DATE_RE } },
+)
 
 // Guards against out-of-order responses: two watchers (debounced text filters, immediate
 // role/date filters) can both call load() in quick succession, and a slower earlier request
@@ -73,7 +83,7 @@ async function load() {
   loadError.value = false
   const currentRequestId = ++requestId.value
   const params = new URLSearchParams({ page: String(page.value), pageSize: String(pageSize) })
-  if (phoneFilter.value) params.set('phone', phoneFilter.value)
+  if (phoneFilter.value) params.set('phone', toEnglishDigits(phoneFilter.value.trim()))
   if (nameFilter.value) params.set('name', nameFilter.value)
   if (roleFilter.value) params.set('role', roleFilter.value)
   // Both bounds are anchored in LOCAL time -- `new Date('YYYY-MM-DD')` alone would parse
@@ -98,7 +108,9 @@ function loadFromFilterChange() {
   // Any filter change invalidates the current page position. When we're past page 1, just
   // reset it -- the page watcher below triggers the (single) reload; calling load() here too
   // would fire a redundant concurrent second request.
-  if (page.value !== 1) {
+  // A navigation (back/forward) that set the filters -- and maybe `page` with them -- is not
+  // an edit: keep the page the URL asked for.
+  if (page.value !== 1 && !changedByUrl()) {
     page.value = 1
   } else {
     load()

@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import SalonDetailView from './SalonDetailView.vue'
 import SalonBookingSettingsCard from '@/components/salons/SalonBookingSettingsCard.vue'
 import SalonSubscriptionCard from '@/components/salons/SalonSubscriptionCard.vue'
+import { resetToast, useToast } from '@/composables/useToast'
 
 const fetchMock = vi.fn()
 
@@ -446,6 +447,237 @@ describe('SalonDetailView', () => {
 
       expect(wrapper.find('[data-testid="review-panel"]').exists()).toBe(false)
       expect(wrapper.text()).toContain('سالن نمونه')
+    })
+  })
+  describe('service images tab', () => {
+    const withImages = {
+      ...reviewPayload,
+      services: [
+        { id: 'sv1', name: 'کوتاهی', pricingType: 'fixed', price: 200000, priceMax: null, durationMinutes: 45, isActive: true, imageUrl: 'http://cdn.example/sv1.jpg', imageRemovedByAdminAt: null },
+        { id: 'sv2', name: 'رنگ', pricingType: 'from', price: 500000, priceMax: null, durationMinutes: 90, isActive: true, imageUrl: null, imageRemovedByAdminAt: null },
+        { id: 'sv3', name: 'مانیکور', pricingType: 'fixed', price: 150000, priceMax: null, durationMinutes: 30, isActive: true, imageUrl: 'http://cdn.example/sv3.jpg', imageRemovedByAdminAt: null },
+      ],
+    }
+    const afterRemoval = {
+      ...withImages,
+      services: withImages.services.map((s) => (s.id === 'sv1' ? { ...s, imageUrl: null, imageRemovedByAdminAt: '2026-10-10T08:00:00.000Z' } : s)),
+    }
+
+    // Payloads are cloned per mock: the view clears a removed image on the object it was handed.
+    beforeEach(() => resetToast())
+
+    async function mountAttached() {
+      const router = createRouter({
+        history: createMemoryHistory(),
+        routes: [{ path: '/salons/:id', name: 'salon-detail', component: SalonDetailView }],
+      })
+      router.push('/salons/s1')
+      await router.isReady()
+      const wrapper = mount(SalonDetailView, {
+        attachTo: document.body,
+        global: { plugins: [router], stubs: { SalonBookingSettingsCard: true, SalonSubscriptionCard: true, SalonHandleCard: true } },
+      })
+      await flushPromises()
+      return wrapper
+    }
+
+    it('renders a card only for services that have an image, from the salon payload (no extra fetch)', async () => {
+      fetchMock.mockResolvedValueOnce({ data: structuredClone(withImages), error: null })
+      const wrapper = await mountWithRouter()
+      await wrapper.get('[data-testid="tab-service-images"]').trigger('click')
+      await flushPromises()
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      const panel = wrapper.get('#salon-panel-service-images')
+      expect(panel.attributes('role')).toBe('tabpanel')
+      const cards = wrapper.findAll('[data-testid="service-image-card"]')
+      expect(cards).toHaveLength(2)
+      expect(cards[0]!.text()).toContain('کوتاهی')
+      expect(cards[0]!.text()).toContain('۴۵ دقیقه')
+      expect(cards[0]!.get('img').attributes('src')).toBe('http://cdn.example/sv1.jpg')
+      expect(cards[0]!.get('img').attributes('alt')).toBe('تصویر خدمت کوتاهی')
+      const open = cards[0]!.get('[data-testid="service-image-open"]')
+      expect(open.attributes('href')).toBe('http://cdn.example/sv1.jpg')
+      expect(open.attributes('target')).toBe('_blank')
+      expect(open.attributes('rel')).toBe('noopener noreferrer')
+      expect(cards[0]!.find('[data-testid="remove-service-image"]').exists()).toBe(true)
+      expect(cards[1]!.text()).toContain('مانیکور')
+    })
+
+    it('shows an empty state when no service has an image', async () => {
+      fetchMock.mockResolvedValueOnce({ data: { ...withImages, services: withImages.services.map((s) => ({ ...s, imageUrl: null })) }, error: null })
+      const wrapper = await mountWithRouter()
+      await wrapper.get('[data-testid="tab-service-images"]').trigger('click')
+
+      expect(wrapper.find('[data-testid="service-image-card"]').exists()).toBe(false)
+      expect(wrapper.text()).toContain('هیچ‌یک از خدمات این سالن تصویری ندارد.')
+    })
+
+    it('removes an image from its card, refetches the salon and moves focus to the tab panel', async () => {
+      fetchMock
+        .mockResolvedValueOnce({ data: structuredClone(withImages), error: null })
+        // DELETE /admin/services/sv1/image
+        .mockResolvedValueOnce({ data: { id: 'sv1', salonId: 's1', name: 'کوتاهی', isActive: true, imageUrl: null }, error: null })
+        // silent refetch of the salon
+        .mockResolvedValueOnce({ data: afterRemoval, error: null })
+      const wrapper = await mountAttached()
+      await wrapper.get('[data-testid="tab-service-images"]').trigger('click')
+
+      const card = wrapper.findAll('[data-testid="service-image-card"]')[0]!
+      await card.get('[data-testid="remove-service-image"]').trigger('click')
+      await card.get('[data-testid="remove-service-image-confirm"]').trigger('click')
+      await flushPromises()
+
+      expect(fetchMock).toHaveBeenNthCalledWith(2, '/admin/services/sv1/image', { method: 'DELETE', silent: true })
+      expect(fetchMock).toHaveBeenNthCalledWith(3, '/admin/salons/s1')
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+      const cards = wrapper.findAll('[data-testid="service-image-card"]')
+      expect(cards).toHaveLength(1)
+      expect(cards[0]!.text()).toContain('مانیکور')
+      expect(document.activeElement).toBe(wrapper.get('#salon-panel-service-images').element)
+
+      // The info tab's services table reflects the same refetched payload.
+      await wrapper.get('[data-testid="tab-info"]').trigger('click')
+      expect(wrapper.get('[data-testid="service-image-removed-sv1"]').text()).toBe('حذف‌شده توسط مدیر')
+      wrapper.unmount()
+    })
+
+    it('treats a 409 as already removed: neutral toast, card dropped, salon refetched', async () => {
+      fetchMock
+        .mockResolvedValueOnce({ data: structuredClone(withImages), error: null })
+        .mockResolvedValueOnce({ data: null, error: { status: 409, message: 'این خدمت تصویری ندارد' } })
+        .mockResolvedValueOnce({ data: afterRemoval, error: null })
+      const wrapper = await mountAttached()
+      await wrapper.get('[data-testid="tab-service-images"]').trigger('click')
+
+      const card = wrapper.findAll('[data-testid="service-image-card"]')[0]!
+      await card.get('[data-testid="remove-service-image"]').trigger('click')
+      await card.get('[data-testid="remove-service-image-confirm"]').trigger('click')
+      await flushPromises()
+
+      expect(useToast().toasts.value).toEqual([expect.objectContaining({ tone: 'info', message: 'تصویر این خدمت پیش‌تر حذف شده است' })])
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+      expect(wrapper.findAll('[data-testid="service-image-card"]')).toHaveLength(1)
+      wrapper.unmount()
+    })
+
+    it('keeps the card and does not refetch when the takedown fails otherwise', async () => {
+      fetchMock
+        .mockResolvedValueOnce({ data: structuredClone(withImages), error: null })
+        .mockResolvedValueOnce({ data: null, error: { status: 500, message: 'خطایی رخ داد' } })
+      const wrapper = await mountAttached()
+      await wrapper.get('[data-testid="tab-service-images"]').trigger('click')
+
+      const card = wrapper.findAll('[data-testid="service-image-card"]')[0]!
+      await card.get('[data-testid="remove-service-image"]').trigger('click')
+      await card.get('[data-testid="remove-service-image-confirm"]').trigger('click')
+      await flushPromises()
+
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(wrapper.findAll('[data-testid="service-image-card"]')).toHaveLength(2)
+      expect(useToast().toasts.value).toEqual([expect.objectContaining({ tone: 'error', message: 'خطایی رخ داد' })])
+      expect(document.activeElement).toBe(wrapper.findAll('[data-testid="service-image-card"]')[0]!.get('[data-testid="remove-service-image"]').element)
+      wrapper.unmount()
+    })
+
+    it('keyboard reaches the service-images tab in order, with a roving tabindex and a matching panel', async () => {
+      fetchMock.mockResolvedValueOnce({ data: structuredClone(withImages), error: null })
+      fetchMock.mockResolvedValue({ data: [], error: null })
+      const wrapper = await mountAttached()
+
+      await wrapper.get('[data-testid="tab-info"]').trigger('keydown', { key: 'ArrowLeft' })
+      await wrapper.get('[data-testid="tab-stories"]').trigger('keydown', { key: 'ArrowLeft' })
+      await flushPromises()
+      const tab = wrapper.get('[data-testid="tab-service-images"]')
+      expect(tab.attributes('aria-selected')).toBe('true')
+      expect(tab.attributes('tabindex')).toBe('0')
+      expect(document.activeElement).toBe(tab.element)
+      expect(wrapper.findAll('[role="tab"][tabindex="0"]')).toHaveLength(1)
+      expect(wrapper.get('[role="tabpanel"]').attributes('id')).toBe(tab.attributes('aria-controls'))
+      await tab.trigger('keydown', { key: 'ArrowLeft' })
+      expect(wrapper.get('[data-testid="tab-portfolio"]').attributes('aria-selected')).toBe('true')
+      await wrapper.get('[data-testid="tab-portfolio"]').trigger('keydown', { key: 'ArrowRight' })
+      expect(wrapper.get('[data-testid="tab-service-images"]').attributes('aria-selected')).toBe('true')
+      wrapper.unmount()
+    })
+
+    it('removing the last image card shows the empty state and still focuses the tab panel', async () => {
+      const oneImage = { ...withImages, services: withImages.services.map((s) => (s.id === 'sv3' ? { ...s, imageUrl: null } : s)) }
+      const none = { ...afterRemoval, services: afterRemoval.services.map((s) => (s.id === 'sv3' ? { ...s, imageUrl: null } : s)) }
+      fetchMock
+        .mockResolvedValueOnce({ data: structuredClone(oneImage), error: null })
+        .mockResolvedValueOnce({ data: { id: 'sv1', imageUrl: null }, error: null })
+        .mockResolvedValueOnce({ data: none, error: null })
+      const wrapper = await mountAttached()
+      await wrapper.get('[data-testid="tab-service-images"]').trigger('click')
+
+      const card = wrapper.get('[data-testid="service-image-card"]')
+      await card.get('[data-testid="remove-service-image"]').trigger('click')
+      await card.get('[data-testid="remove-service-image-confirm"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="service-image-card"]').exists()).toBe(false)
+      expect(wrapper.text()).toContain('هیچ‌یک از خدمات این سالن تصویری ندارد.')
+      expect(document.activeElement).toBe(wrapper.get('#salon-panel-service-images').element)
+      expect(useToast().toasts.value).toHaveLength(1)
+      wrapper.unmount()
+    })
+
+    it('a stale refetch resolving after a newer one never brings a removed image back', async () => {
+      // Two takedowns in a row: the first takedown's refetch was answered before the second
+      // DELETE committed (still shows sv3's image) but arrives last.
+      const deferred = () => {
+        let resolve!: (v: unknown) => void
+        const promise = new Promise((r) => (resolve = r))
+        return { promise, resolve }
+      }
+      const firstRefetch = deferred()
+      const secondRefetch = deferred()
+      const bothRemoved = { ...afterRemoval, services: afterRemoval.services.map((s) => (s.id === 'sv3' ? { ...s, imageUrl: null, imageRemovedByAdminAt: '2026-10-10T08:01:00.000Z' } : s)) }
+      fetchMock
+        .mockResolvedValueOnce({ data: structuredClone(withImages), error: null })
+        .mockResolvedValueOnce({ data: { id: 'sv1', imageUrl: null }, error: null })
+        .mockReturnValueOnce(firstRefetch.promise)
+        .mockResolvedValueOnce({ data: { id: 'sv3', imageUrl: null }, error: null })
+        .mockReturnValueOnce(secondRefetch.promise)
+      const wrapper = await mountAttached()
+      await wrapper.get('[data-testid="tab-service-images"]').trigger('click')
+
+      const first = wrapper.findAll('[data-testid="service-image-card"]')[0]!
+      await first.get('[data-testid="remove-service-image"]').trigger('click')
+      await first.get('[data-testid="remove-service-image-confirm"]').trigger('click')
+      await flushPromises()
+      const card = wrapper.get('[data-testid="service-image-card"]')
+      await card.get('[data-testid="remove-service-image"]').trigger('click')
+      await card.get('[data-testid="remove-service-image-confirm"]').trigger('click')
+      await flushPromises()
+      expect(fetchMock).toHaveBeenCalledTimes(5)
+
+      secondRefetch.resolve({ data: structuredClone(bothRemoved), error: null })
+      await flushPromises()
+      firstRefetch.resolve({ data: structuredClone(afterRemoval), error: null })
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="service-image-card"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('a takedown from the info-tab table also refetches and focuses the info panel', async () => {
+      fetchMock
+        .mockResolvedValueOnce({ data: structuredClone(withImages), error: null })
+        .mockResolvedValueOnce({ data: { id: 'sv1', imageUrl: null }, error: null })
+        .mockResolvedValueOnce({ data: afterRemoval, error: null })
+      const wrapper = await mountAttached()
+
+      const row = wrapper.findAll('[data-testid="service-row"]')[0]!
+      await row.get('[data-testid="remove-service-image"]').trigger('click')
+      await row.get('[data-testid="remove-service-image-confirm"]').trigger('click')
+      await flushPromises()
+
+      expect(fetchMock).toHaveBeenNthCalledWith(3, '/admin/salons/s1')
+      expect(wrapper.find('[data-testid="service-image-removed-sv1"]').exists()).toBe(true)
+      expect(document.activeElement).toBe(wrapper.get('#salon-panel-info').element)
+      wrapper.unmount()
     })
   })
 })

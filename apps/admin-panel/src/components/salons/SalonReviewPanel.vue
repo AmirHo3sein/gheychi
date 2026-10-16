@@ -1,15 +1,16 @@
 <!-- apps/admin-panel/src/components/salons/SalonReviewPanel.vue -->
-<!-- Everything an admin needs to decide on a listing, read-only and in the order the review
-     checklist walks it: who owns it, where it is, what it looks like, what it sells, when it
+<!-- Everything an admin needs to decide on a listing, read-only (save for the per-service
+     image takedown) and in the order the review checklist walks it: who owns it, where it is, what it looks like, what it sells, when it
      opens, and how it has behaved. One card with divided sections -- no nested cards. -->
 <script setup lang="ts">
 import { computed } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import RemoveServiceImageAction from '@/components/salons/RemoveServiceImageAction.vue'
 import SafeImage from '@/components/ui/SafeImage.vue'
 import ScrollTable from '@/components/ui/ScrollTable.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
-import { formatToman } from '@/utils/format-toman'
 import { pricingTypeLabel, userStatusLabel } from '@/utils/labels'
+import { toPersianDigits } from '@/utils/digits'
 import {
   DEFAULT_TILE_ATTRIBUTION,
   DEFAULT_TILE_URL,
@@ -19,11 +20,15 @@ import {
   externalMapUrl,
   fillTileUrl,
   groupWorkingHours,
+  servicePriceText,
   tileForPoint,
 } from '@/utils/salon-review'
 import { buildEnv } from '@/utils/build-env'
 
 const props = defineProps<{ salon: SalonReviewData }>()
+// A service-image takedown is forwarded to the detail page, which owns the salon payload and
+// refetches it (the same refresh the showcase tabs do after a moderation action).
+const emit = defineEmits<{ 'image-removed': [serviceId: string] }>()
 
 const tileTemplate = buildEnv(import.meta.env.VITE_MAP_TILE_URL, DEFAULT_TILE_URL)
 const tileAttribution = buildEnv(import.meta.env.VITE_MAP_TILE_ATTRIBUTION, DEFAULT_TILE_ATTRIBUTION)
@@ -40,13 +45,6 @@ const preview = computed(() => {
 
 const days = computed(() => groupWorkingHours(props.salon.hours))
 const photos = computed(() => [...props.salon.photos].sort((a, b) => a.sortOrder - b.sortOrder))
-
-function priceText(s: SalonReviewData['services'][number]): string {
-  if (s.pricingType === 'quote' || s.price === null) return 'پس از استعلام'
-  if (s.pricingType === 'from') return `از ${formatToman(s.price)} تومان`
-  if (s.pricingType === 'range' && s.priceMax !== null) return `${formatToman(s.price)} تا ${formatToman(s.priceMax)} تومان`
-  return `${formatToman(s.price)} تومان`
-}
 
 function formatDate(iso: string): string {
   return new Intl.DateTimeFormat('fa-IR', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'long', day: 'numeric' }).format(new Date(iso))
@@ -68,10 +66,12 @@ function formatDate(iso: string): string {
             <a
               data-testid="owner-phone"
               :href="`tel:${salon.owner.phone}`"
+              :title="salon.owner.phone"
+              :data-phone="salon.owner.phone"
               dir="ltr"
               class="tnum inline-flex min-h-11 items-center gap-1.5 font-semibold text-(--color-accent-text) hover:underline"
             >
-              <AppIcon name="phone" :size="15" />{{ salon.owner.phone }}
+              <AppIcon name="phone" :size="15" /><bdi dir="ltr">{{ toPersianDigits(salon.owner.phone) }}</bdi>
             </a>
             <StatusBadge
               data-testid="owner-status"
@@ -83,7 +83,7 @@ function formatDate(iso: string): string {
         <div>
           <dt class="text-xs text-(--color-text-muted)">تلفن تماس سالن</dt>
           <dd class="mt-1 font-semibold">
-            <a v-if="salon.contactPhone" data-testid="contact-phone" :href="`tel:${salon.contactPhone}`" dir="ltr" class="tnum inline-flex min-h-11 items-center text-(--color-accent-text) hover:underline">{{ salon.contactPhone }}</a>
+            <a v-if="salon.contactPhone" data-testid="contact-phone" :href="`tel:${salon.contactPhone}`" :title="salon.contactPhone" :data-phone="salon.contactPhone" dir="ltr" class="tnum inline-flex min-h-11 items-center text-(--color-accent-text) hover:underline">{{ toPersianDigits(salon.contactPhone) }}</a>
             <span v-else data-testid="contact-phone-missing" class="text-(--color-text-muted)">ثبت نشده</span>
           </dd>
         </div>
@@ -147,18 +147,40 @@ function formatDate(iso: string): string {
                 <th scope="col" class="py-2 pe-4 font-semibold">خدمت</th>
                 <th scope="col" class="py-2 pe-4 font-semibold">نوع قیمت</th>
                 <th scope="col" class="py-2 pe-4 font-semibold">قیمت</th>
-                <th scope="col" class="py-2 font-semibold">مدت</th>
+                <th scope="col" class="py-2 pe-4 font-semibold">مدت</th>
+                <th scope="col" class="py-2 font-semibold">تصویر</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="s in salon.services" :key="s.id" data-testid="service-row" class="border-b border-(--color-border-soft) last:border-0" :class="!s.isActive && 'opacity-60'">
                 <td class="py-2.5 pe-4 font-semibold">
-                  {{ s.name }}
-                  <span v-if="!s.isActive" class="ms-1 text-xs font-normal text-(--color-text-muted)">(غیرفعال)</span>
+                  <!-- A provider-uploaded service photo is reviewed like the salon photos above:
+                       small inline thumbnail, opening the full image in a new tab. -->
+                  <div class="flex items-center gap-2.5">
+                    <a
+                      v-if="s.imageUrl"
+                      data-testid="service-image"
+                      :href="s.imageUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="size-10 shrink-0 overflow-hidden rounded-lg border border-(--color-border)"
+                    >
+                      <SafeImage :src="s.imageUrl" :alt="s.name" compact />
+                    </a>
+                    <span>
+                      {{ s.name }}
+                      <span v-if="!s.isActive" class="ms-1 text-xs font-normal text-(--color-text-muted)">(غیرفعال)</span>
+                    </span>
+                  </div>
                 </td>
                 <td class="py-2.5 pe-4 text-(--color-text-muted)">{{ pricingTypeLabel(s.pricingType) }}</td>
-                <td class="tnum py-2.5 pe-4">{{ priceText(s) }}</td>
-                <td class="tnum py-2.5 text-(--color-text-muted)">{{ s.durationMinutes.toLocaleString('fa-IR') }} دقیقه</td>
+                <td class="tnum py-2.5 pe-4">{{ servicePriceText(s) }}</td>
+                <td class="tnum py-2.5 pe-4 text-(--color-text-muted)">{{ s.durationMinutes.toLocaleString('fa-IR') }} دقیقه</td>
+                <td class="py-2.5">
+                  <RemoveServiceImageAction v-if="s.imageUrl" :service-id="s.id" :service-name="s.name" @removed="emit('image-removed', $event)" />
+                  <span v-else-if="s.imageRemovedByAdminAt" :data-testid="`service-image-removed-${s.id}`" class="text-xs text-(--color-text-muted)">حذف‌شده توسط مدیر</span>
+                  <span v-else class="text-(--color-text-muted)" :data-testid="`service-image-none-${s.id}`">—</span>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -173,7 +195,7 @@ function formatDate(iso: string): string {
           <dt class="text-(--color-text-muted)">{{ d.label }}</dt>
           <dd data-testid="hours-day" class="tnum font-semibold" :class="d.ranges.length === 0 && 'font-normal text-(--color-text-muted)'">
             <template v-if="d.ranges.length === 0">تعطیل</template>
-            <template v-else>{{ d.ranges.map((r) => `${r.open} تا ${r.close}`).join(' و ') }}</template>
+            <template v-else>{{ d.ranges.map((r) => `${toPersianDigits(r.open)} تا ${toPersianDigits(r.close)}`).join(' و ') }}</template>
           </dd>
         </template>
       </dl>

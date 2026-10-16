@@ -6,6 +6,7 @@ import { useApi } from '@/composables/useApi'
 import SalonApprovalChecklist from '@/components/salons/SalonApprovalChecklist.vue'
 import SalonBookingSettingsCard from '@/components/salons/SalonBookingSettingsCard.vue'
 import SalonHandleCard from '@/components/salons/SalonHandleCard.vue'
+import RemoveServiceImageAction from '@/components/salons/RemoveServiceImageAction.vue'
 import SalonReviewPanel from '@/components/salons/SalonReviewPanel.vue'
 import SalonStatusActions from '@/components/salons/SalonStatusActions.vue'
 import SalonSubscriptionCard from '@/components/salons/SalonSubscriptionCard.vue'
@@ -14,9 +15,11 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
+import SafeImage from '@/components/ui/SafeImage.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
-import { isChecklistComplete, type SalonReviewData } from '@/utils/salon-review'
+import { isChecklistComplete, servicePriceText, type SalonReviewData } from '@/utils/salon-review'
 import { genderTargetLabel, salonStatusLabel, showcaseStatusLabel } from '@/utils/labels'
+import { toPersianDigits } from '@/utils/digits'
 
 interface SalonDetail extends Partial<SalonReviewData> {
   id: string
@@ -53,11 +56,14 @@ interface PortfolioRow {
   createdAt: string
 }
 
-type Tab = 'info' | 'stories' | 'portfolio'
+type Tab = 'info' | 'stories' | 'service-images' | 'portfolio'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'info', label: 'مشخصات' },
   { key: 'stories', label: 'استوری‌ها' },
+  // Between the two showcase tabs (not last) so the existing keyboard order -- first/last
+  // tab for Home/End and wrap-around -- keeps landing on the same tabs.
+  { key: 'service-images', label: 'تصاویر خدمات' },
   { key: 'portfolio', label: 'نمونه کارها' },
 ]
 
@@ -92,11 +98,18 @@ const stories = ref<StoryRow[]>([])
 const portfolioStatus = ref<ListStatus>('idle')
 const portfolioItems = ref<PortfolioRow[]>([])
 
+// Refetches can overlap (two quick takedowns, or a status change right after one) and their
+// responses can arrive out of order; only the most recently started load may apply, or an
+// older snapshot would bring back an image (or status) that was already changed.
+let loadSeq = 0
+
 async function load() {
+  const seq = ++loadSeq
   // Only show the full-page loading state on the very first load, not on the silent
   // refetch triggered after a successful moderation action.
   loading.value = salon.value === null
   const { data, error } = await apiFetch<SalonDetail>(`/admin/salons/${route.params.id}`)
+  if (seq !== loadSeq) return
   loading.value = false
   if (data) {
     salon.value = data
@@ -162,6 +175,25 @@ function selectTab(tab: Tab) {
   if (tab === 'portfolio' && portfolioStatus.value === 'idle') loadPortfolio()
 }
 
+// Service photos come with the salon payload itself (no separate endpoint, unlike stories and
+// portfolio), so this tab has no loading/error state of its own.
+const servicesWithImage = computed(() =>
+  (salon.value?.services ?? []).filter((s): s is SalonReviewData['services'][number] & { imageUrl: string } => !!s.imageUrl),
+)
+
+// A takedown (from this tab or the info tab's services table) clears the row locally so the
+// image and its now-pointless button go at once, then silently refetches the salon -- the
+// same refresh-after-moderation the showcase tabs do -- so imageRemovedByAdminAt comes from
+// the server. The removed card/button unmounts; focus moves to the active tab panel (already
+// a tabindex=0 focus stop) rather than dropping to <body>.
+async function onServiceImageRemoved(serviceId: string) {
+  const service = salon.value?.services?.find((s) => s.id === serviceId)
+  if (service) service.imageUrl = null
+  await nextTick()
+  document.getElementById(`salon-panel-${activeTab.value}`)?.focus()
+  await load()
+}
+
 function onUpdated(updated: { id: string; status: string }) {
   if (salon.value) salon.value.status = updated.status as SalonDetail['status']
   load()
@@ -182,7 +214,9 @@ onMounted(load)
 
 <!-- p-4 -> sm:p-6 -> lg:p-8 scale; below that 64px of gutter is a fifth of a 320px screen. -->
 <template>
-  <div class="mx-auto space-y-5 p-4 sm:p-6 lg:p-8" :class="activeTab === 'info' ? 'max-w-2xl' : 'max-w-6xl'">
+  <!-- One width for every tab (it used to jump 2xl <-> 6xl when switching tabs, leaving most of
+       a desktop screen empty on the info tab, which is now two columns at lg instead). -->
+  <div class="mx-auto max-w-6xl space-y-5 p-4 sm:p-6 lg:p-8">
     <div v-if="loading && !salon" data-testid="salon-loading" class="flex justify-center py-20">
       <AppIcon name="spinner" :size="28" class="animate-spin text-(--color-accent-text)" />
     </div>
@@ -229,89 +263,107 @@ onMounted(load)
         </div>
       </AppCard>
 
-      <div v-if="activeTab === 'info'" id="salon-panel-info" role="tabpanel" aria-labelledby="salon-tab-info" tabindex="0" class="space-y-5">
-        <AppCard>
-          <!-- Salon name and address are provider-supplied free text: `min-w-0` down the
-               chain plus `break-words` so a long name (or an address with no break
-               opportunity) wraps instead of widening the card, and the status badge is
-               pinned rather than squeezed to nothing. -->
-          <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-            <div class="flex min-w-0 flex-1 items-start gap-3">
-              <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-(--color-border-soft) text-(--color-accent-text)">
-                <AppIcon name="building" :size="22" />
+      <!-- Two columns from lg: the salon's facts and review on the start (right) side, and a side
+           panel with everything an admin acts on -- status and approval, booking settings,
+           subscription. Below lg the side panel simply follows the facts, as before. -->
+      <div
+        v-if="activeTab === 'info'"
+        id="salon-panel-info"
+        role="tabpanel"
+        aria-labelledby="salon-tab-info"
+        tabindex="0"
+        class="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_24rem]"
+      >
+        <div class="min-w-0 space-y-5" data-testid="salon-info-main">
+          <AppCard>
+            <!-- Salon name and address are provider-supplied free text: `min-w-0` down the
+                 chain plus `break-words` so a long name (or an address with no break
+                 opportunity) wraps instead of widening the card, and the status badge is
+                 pinned rather than squeezed to nothing. -->
+            <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+              <div class="flex min-w-0 flex-1 items-start gap-3">
+                <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-(--color-border-soft) text-(--color-accent-text)">
+                  <AppIcon name="building" :size="22" />
+                </div>
+                <div class="min-w-0">
+                  <h2 class="break-words text-lg font-bold text-(--color-text)">{{ salon.name }}</h2>
+                  <p class="mt-0.5 break-words text-sm text-(--color-text-muted)">{{ salon.city }} — {{ salon.address }}</p>
+                </div>
               </div>
-              <div class="min-w-0">
-                <h2 class="break-words text-lg font-bold text-(--color-text)">{{ salon.name }}</h2>
-                <p class="mt-0.5 break-words text-sm text-(--color-text-muted)">{{ salon.city }} — {{ salon.address }}</p>
+              <StatusBadge
+                class="shrink-0"
+                :label="salonStatusLabel(salon.status).label"
+                :tone="salonStatusLabel(salon.status).tone"
+              />
+            </div>
+
+            <p v-if="salon.description" class="mt-4 text-sm leading-6 text-(--color-text)">{{ salon.description }}</p>
+
+            <div class="mt-5 grid grid-cols-2 gap-3 border-t border-(--color-border-soft) pt-4 text-sm">
+              <div>
+                <p class="text-xs text-(--color-text-muted)">مخاطب</p>
+                <p class="mt-1 font-semibold">{{ genderTargetLabel(salon.genderTarget) }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-(--color-text-muted)">ظرفیت همزمان</p>
+                <p class="tnum mt-1 font-semibold">{{ toPersianDigits(salon.capacity) }} نفر</p>
               </div>
             </div>
-            <StatusBadge
-              class="shrink-0"
-              :label="salonStatusLabel(salon.status).label"
-              :tone="salonStatusLabel(salon.status).tone"
+
+            <SalonHandleCard
+              :salon-id="salon.id"
+              :slug="salon.slug"
+              @updated="(slug) => (salon!.slug = slug)"
             />
-          </div>
 
-          <p v-if="salon.description" class="mt-4 text-sm leading-6 text-(--color-text)">{{ salon.description }}</p>
-
-          <div class="mt-5 grid grid-cols-2 gap-3 border-t border-(--color-border-soft) pt-4 text-sm">
-            <div>
-              <p class="text-xs text-(--color-text-muted)">مخاطب</p>
-              <p class="mt-1 font-semibold">{{ genderTargetLabel(salon.genderTarget) }}</p>
+            <div v-if="salon.rejectionReason" class="mt-5 flex gap-2.5 rounded-xl bg-(--tone-danger-bg) p-3.5">
+              <AppIcon name="warning" :size="17" class="mt-0.5 shrink-0 text-(--tone-danger-text)" />
+              <p class="text-sm text-(--tone-danger-text)">{{ salon.rejectionReason }}</p>
             </div>
-            <div>
-              <p class="text-xs text-(--color-text-muted)">ظرفیت همزمان</p>
-              <p class="tnum mt-1 font-semibold">{{ salon.capacity }} نفر</p>
+
+            <div
+              v-if="salon.status === 'suspended' && salon.suspendedCause === 'owner_suspended'"
+              data-testid="suspended-cause"
+              class="mt-5 flex gap-2.5 rounded-xl bg-(--tone-warning-bg) p-3.5"
+            >
+              <AppIcon name="warning" :size="17" class="mt-0.5 shrink-0 text-(--tone-warning-text)" />
+              <p class="text-sm text-(--tone-warning-text)">
+                این سالن به دلیل تعلیق حساب مالک آن معلق شده است و با رفع تعلیق مالک، به‌صورت خودکار به حالت تایید بازمی‌گردد.
+              </p>
             </div>
-          </div>
+          </AppCard>
 
-          <SalonHandleCard
-            :salon-id="salon.id"
-            :slug="salon.slug"
-            @updated="(slug) => (salon!.slug = slug)"
-          />
+          <AppCard v-if="reviewData">
+            <SalonReviewPanel :salon="reviewData" @image-removed="onServiceImageRemoved" />
+          </AppCard>
+        </div>
 
-          <div v-if="salon.rejectionReason" class="mt-5 flex gap-2.5 rounded-xl bg-(--tone-danger-bg) p-3.5">
-            <AppIcon name="warning" :size="17" class="mt-0.5 shrink-0 text-(--tone-danger-text)" />
-            <p class="text-sm text-(--tone-danger-text)">{{ salon.rejectionReason }}</p>
-          </div>
+        <aside class="min-w-0 space-y-5" aria-label="وضعیت و تنظیمات سالن" data-testid="salon-info-side">
+          <AppCard class="space-y-5">
+            <div class="flex items-center justify-between gap-2">
+              <h3 class="text-sm font-bold text-(--color-text)">وضعیت سالن</h3>
+              <StatusBadge :label="salonStatusLabel(salon.status).label" :tone="salonStatusLabel(salon.status).tone" />
+            </div>
+            <SalonApprovalChecklist v-if="salon.status === 'pending'" v-model="checklist" />
+            <!-- suspendedCause is passed through so the actions can refuse to offer a
+                 reapprove the backend would 409: an owner-suspension cascade is undone by
+                 reactivating the owner, not from here. -->
+            <SalonStatusActions
+              :salon-id="salon.id"
+              :status="salon.status"
+              :suspended-cause="salon.suspendedCause"
+              :approve-blocked="!checklistComplete"
+              @updated="onUpdated"
+            />
+          </AppCard>
 
-          <div
-            v-if="salon.status === 'suspended' && salon.suspendedCause === 'owner_suspended'"
-            data-testid="suspended-cause"
-            class="mt-5 flex gap-2.5 rounded-xl bg-(--tone-warning-bg) p-3.5"
-          >
-            <AppIcon name="warning" :size="17" class="mt-0.5 shrink-0 text-(--tone-warning-text)" />
-            <p class="text-sm text-(--tone-warning-text)">
-              این سالن به دلیل تعلیق حساب مالک آن معلق شده است و با رفع تعلیق مالک، به‌صورت خودکار به حالت تایید بازمی‌گردد.
-            </p>
-          </div>
-        </AppCard>
+          <!-- Fetches its own settings on mount (a separate admin endpoint from the salon
+               record itself), so it also owns its loading/error state rather than gating this
+               whole page on a second request. -->
+          <SalonBookingSettingsCard :salon-id="salon.id" />
 
-        <AppCard v-if="reviewData">
-          <SalonReviewPanel :salon="reviewData" />
-        </AppCard>
-
-        <!-- Fetches its own settings on mount (a separate admin endpoint from the salon
-             record itself), so it also owns its loading/error state rather than gating this
-             whole page on a second request. -->
-        <SalonBookingSettingsCard :salon-id="salon.id" />
-
-        <SalonSubscriptionCard :salon-id="salon.id" />
-
-        <AppCard class="space-y-5">
-          <SalonApprovalChecklist v-if="salon.status === 'pending'" v-model="checklist" />
-          <!-- suspendedCause is passed through so the actions can refuse to offer a
-               reapprove the backend would 409: an owner-suspension cascade is undone by
-               reactivating the owner, not from here. -->
-          <SalonStatusActions
-            :salon-id="salon.id"
-            :status="salon.status"
-            :suspended-cause="salon.suspendedCause"
-            :approve-blocked="!checklistComplete"
-            @updated="onUpdated"
-          />
-        </AppCard>
+          <SalonSubscriptionCard :salon-id="salon.id" />
+        </aside>
       </div>
 
       <div v-else-if="activeTab === 'stories'" id="salon-panel-stories" role="tabpanel" aria-labelledby="salon-tab-stories" tabindex="0" class="space-y-5">
@@ -354,6 +406,47 @@ onMounted(load)
               <p class="tnum mt-2 text-xs text-(--color-text-muted)">{{ formatDate(story.createdAt) }}</p>
               <div class="mt-4 border-t border-(--color-border-soft) pt-3.5">
                 <ShowcaseStatusActions kind="stories" :item-id="story.id" :status="story.status" @updated="loadStories" @refresh="loadStories" />
+              </div>
+            </div>
+          </AppCard>
+        </div>
+      </div>
+
+      <div
+        v-else-if="activeTab === 'service-images'"
+        id="salon-panel-service-images"
+        role="tabpanel"
+        aria-labelledby="salon-tab-service-images"
+        tabindex="0"
+        class="space-y-5"
+      >
+        <EmptyState
+          v-if="servicesWithImage.length === 0"
+          icon="scissors"
+          message="هیچ‌یک از خدمات این سالن تصویری ندارد."
+        />
+
+        <div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <AppCard v-for="service in servicesWithImage" :key="service.id" data-testid="service-image-card" :padded="false" class="overflow-hidden">
+            <div class="aspect-square w-full">
+              <SafeImage :src="service.imageUrl" :alt="`تصویر خدمت ${service.name}`" />
+            </div>
+            <div class="p-4">
+              <p class="break-words text-sm font-semibold text-(--color-text)">{{ service.name }}</p>
+              <p class="tnum mt-1 text-xs text-(--color-text-muted)">
+                {{ servicePriceText(service) }} · {{ service.durationMinutes.toLocaleString('fa-IR') }} دقیقه
+              </p>
+              <a
+                data-testid="service-image-open"
+                :href="service.imageUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-(--color-accent-text) hover:underline"
+              >
+                مشاهده تصویر کامل
+              </a>
+              <div class="mt-4 border-t border-(--color-border-soft) pt-3.5">
+                <RemoveServiceImageAction :service-id="service.id" :service-name="service.name" @removed="onServiceImageRemoved" />
               </div>
             </div>
           </AppCard>

@@ -74,7 +74,7 @@ describe('SidebarNav', () => {
         .findAllComponents(RouterLinkStub)
         .filter((l) => groups[i]!.element.contains(l.element))
         .map((l) => l.props('to'))
-    expect(routesOf(0)).toEqual(['/', '/analytics'])
+    expect(routesOf(0)).toEqual(['/', '/analytics', '/notifications'])
     expect(routesOf(1)).toEqual(['/salons', '/featured', '/bookings'])
     expect(routesOf(2)).toEqual(['/reviews', '/worker-ratings', '/reports', '/category-requests'])
     expect(routesOf(3)).toEqual(['/categories', '/beauty-concepts', '/blog'])
@@ -84,13 +84,13 @@ describe('SidebarNav', () => {
     expect(routesOf(5)).toEqual(['/users', '/audit-log', '/config', '/feature-flags'])
   })
 
-  it('links all 23 destinations exactly once, each with its own icon', () => {
+  it('links all 24 destinations exactly once, each with its own icon', () => {
     const wrapper = mountNav('/')
     const links = wrapper.findAllComponents(RouterLinkStub)
-    expect(links).toHaveLength(23)
-    expect(new Set(links.map((l) => l.props('to'))).size).toBe(23)
+    expect(links).toHaveLength(24)
+    expect(new Set(links.map((l) => l.props('to'))).size).toBe(24)
     const icons = links.map((l) => l.findComponent(AppIcon).props('name'))
-    expect(new Set(icons).size).toBe(23)
+    expect(new Set(icons).size).toBe(24)
   })
 
   it('names the platform pages exactly as their page titles do', () => {

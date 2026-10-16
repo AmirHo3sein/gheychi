@@ -18,7 +18,7 @@ import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { formatToman } from '@/utils/format-toman'
 import { startOfTehranDayIso } from '@/utils/tehran-day'
-import { entitlementLabel } from '@/utils/entitlement-label'
+import { formatEntitlements } from '@/utils/entitlement-label'
 
 const props = defineProps<{ salonId: string }>()
 
@@ -141,11 +141,6 @@ async function saveOverrides() {
     editingOverrides.value = false
     pushToast('استثنای امکانات این سالن ذخیره شد')
   }
-}
-
-function formatEntitlements(entitlements: Record<string, unknown>): string {
-  const keys = Object.keys(entitlements)
-  return keys.length === 0 ? 'بدون محدودیت' : keys.map((k) => `${entitlementLabel(k)}${entitlementLabel(k) === k ? '' : ` (${k})`}: ${JSON.stringify(entitlements[k])}`).join('، ')
 }
 
 // --- Billing periods (Phase 7 -- architecture-only: admin creates a period and later
@@ -328,7 +323,7 @@ async function resolvePeriod(period: BillingPeriod) {
             data-testid="overrides-input"
             rows="3"
             dir="ltr"
-            class="w-full rounded-xl border border-(--color-text-muted) p-3 font-mono text-xs"
+            class="w-full rounded-xl border border-(--color-border-control) p-3 font-mono text-xs"
           />
           <p v-if="overridesError" data-testid="overrides-error" class="text-xs text-(--tone-danger-text)">{{ overridesError }}</p>
           <div class="flex gap-2.5">

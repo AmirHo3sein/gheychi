@@ -10,8 +10,8 @@
      a generic status edit. -->
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
 import { useApi } from '@/composables/useApi'
+import { ISO_DATE_RE, useQueryFilters } from '@/composables/useQueryFilters'
 import CancelBookingAction from '@/components/bookings/CancelBookingAction.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
@@ -120,7 +120,6 @@ const CANCELLABLE_STATUSES = new Set(['pending_approval', 'pending_payment', 'co
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-const route = useRoute()
 const { apiFetch } = useApi()
 const bookings = ref<BookingRow[]>([])
 const loading = ref(true)
@@ -128,20 +127,41 @@ const loading = ref(true)
 // identical loadError pattern. Here it matters even more: "no bookings match" is a
 // conclusion an operator would act on while investigating a dispute.
 const loadError = ref(false)
-const page = ref(1)
 const total = ref(0)
 const pageSize = 20
 
-const statusFilter = ref('')
-const paymentStatusFilter = ref('')
-const sourceFilter = ref('')
-const modeFilter = ref('')
-// Pre-filled from the query string so another screen can deep-link straight into this
-// salon's (or customer's) bookings, e.g. /bookings?salonId=<id>.
-const salonIdFilter = ref(typeof route.query.salonId === 'string' ? route.query.salonId : '')
-const userIdFilter = ref(typeof route.query.userId === 'string' ? route.query.userId : '')
-const fromFilter = ref('')
-const toFilter = ref('')
+// URL-persisted (useQueryFilters), both ways: another screen deep-links straight into a filtered
+// list (the dashboard's «استرداد در انتظار» tile opens /bookings?paymentStatus=refund_pending, a
+// salon's page /bookings?salonId=<id>), "back" from a booking's timeline restores the list, and
+// the sidebar's bare /bookings link clears it -- this page stays mounted across that same-path
+// navigation, so a filter read from the URL only once would silently outlive it. A select value
+// outside its options is ignored rather than sent (the DTO would 400 the whole list); the id
+// filters stay free text, since load() already only sends a complete UUID.
+const optionValues = (options: { value: string }[]) => options.map((o) => o.value).filter(Boolean)
+const {
+  page,
+  status: statusFilter,
+  paymentStatus: paymentStatusFilter,
+  source: sourceFilter,
+  mode: modeFilter,
+  salonId: salonIdFilter,
+  userId: userIdFilter,
+  from: fromFilter,
+  to: toFilter,
+  changedByUrl,
+} = useQueryFilters(
+  { page: 1, status: '', paymentStatus: '', source: '', mode: '', salonId: '', userId: '', from: '', to: '' },
+  {
+    allowed: {
+      status: optionValues(STATUS_OPTIONS),
+      paymentStatus: optionValues(PAYMENT_STATUS_OPTIONS),
+      source: optionValues(SOURCE_OPTIONS),
+      mode: optionValues(MODE_OPTIONS),
+      from: ISO_DATE_RE,
+      to: ISO_DATE_RE,
+    },
+  },
+)
 
 // Guards against out-of-order responses: the debounced id filters and the immediate
 // select/date filters can both call load() in quick succession, and a slower earlier
@@ -184,7 +204,9 @@ function loadFromFilterChange() {
   // Any filter change invalidates the current page position. When we're past page 1, just
   // reset it -- the page watcher below triggers the (single) reload; calling load() here
   // too would fire a redundant concurrent second request.
-  if (page.value !== 1) page.value = 1
+  // A navigation (back/forward) that set the filters -- and maybe `page` with them -- is not an
+  // edit: keep the page the URL asked for.
+  if (page.value !== 1 && !changedByUrl()) page.value = 1
   else load()
 }
 

@@ -316,59 +316,66 @@ export function bookingEventCauseLabel(cause: string): string {
 }
 
 // Keys must stay in sync with the backend's @AuditAction() names (audit.decorator.ts).
+// Tones follow how much an action should catch the eye when scanning the log, not whether it
+// "went well": routine edits/creates are neutral (most of the log -- colouring every row made
+// the colour meaningless), consequential-but-reversible actions (status changes, moderation
+// takedowns, money and platform-behaviour edits) are warning, and danger is kept for actions
+// that destroy a record or terminate something for a customer/salon (deletes, platform
+// booking cancel, subscription cancel, referral cancel). The success column carries pass/fail.
 const AUDIT_ACTION: Record<string, LabelEntry> = {
   'salon.status.set': { label: 'تغییر وضعیت سالن', tone: 'warning' },
-  'salon.featured.set': { label: 'تغییر نشان ویژه', tone: 'info' },
+  'salon.featured.set': { label: 'تغییر نشان ویژه', tone: 'neutral' },
   'salon.story.status.set': { label: 'تعدیل استوری', tone: 'warning' },
   'salon.portfolio.status.set': { label: 'تعدیل نمونه کار', tone: 'warning' },
-  'user.status.set': { label: 'تغییر وضعیت کاربر', tone: 'danger' },
+  'salon.service.image.removed': { label: 'حذف تصویر خدمت', tone: 'danger' },
+  'user.status.set': { label: 'تغییر وضعیت کاربر', tone: 'warning' },
   'review.moderate': { label: 'تعدیل نظر', tone: 'warning' },
-  'category.create': { label: 'ایجاد دسته‌بندی', tone: 'success' },
-  'category.update': { label: 'ویرایش دسته‌بندی', tone: 'info' },
+  'category.create': { label: 'ایجاد دسته‌بندی', tone: 'neutral' },
+  'category.update': { label: 'ویرایش دسته‌بندی', tone: 'neutral' },
   'category.delete': { label: 'حذف دسته‌بندی', tone: 'danger' },
-  'category-request.approve': { label: 'تایید درخواست دسته‌بندی', tone: 'success' },
-  'category-request.reject': { label: 'رد درخواست دسته‌بندی', tone: 'danger' },
-  'beauty_concept.create': { label: 'ایجاد مفهوم راهنمای زیبایی', tone: 'success' },
-  'beauty_concept.update': { label: 'ویرایش مفهوم راهنمای زیبایی', tone: 'info' },
-  'config.update': { label: 'به‌روزرسانی تنظیمات', tone: 'info' },
-  'report.resolve': { label: 'رسیدگی به گزارش', tone: 'success' },
-  'post.create': { label: 'ایجاد مطلب بلاگ', tone: 'success' },
-  'post.update': { label: 'ویرایش مطلب بلاگ', tone: 'info' },
-  'post.publish': { label: 'انتشار مطلب بلاگ', tone: 'success' },
-  'post.unpublish': { label: 'لغو انتشار مطلب بلاگ', tone: 'warning' },
+  'category-request.approve': { label: 'تایید درخواست دسته‌بندی', tone: 'neutral' },
+  'category-request.reject': { label: 'رد درخواست دسته‌بندی', tone: 'neutral' },
+  'beauty_concept.create': { label: 'ایجاد مفهوم راهنمای زیبایی', tone: 'neutral' },
+  'beauty_concept.update': { label: 'ویرایش مفهوم راهنمای زیبایی', tone: 'neutral' },
+  'config.update': { label: 'به‌روزرسانی تنظیمات', tone: 'warning' },
+  'report.resolve': { label: 'رسیدگی به گزارش', tone: 'neutral' },
+  'post.create': { label: 'ایجاد مطلب بلاگ', tone: 'neutral' },
+  'post.update': { label: 'ویرایش مطلب بلاگ', tone: 'neutral' },
+  'post.publish': { label: 'انتشار مطلب بلاگ', tone: 'neutral' },
+  'post.unpublish': { label: 'لغو انتشار مطلب بلاگ', tone: 'neutral' },
   'post.delete': { label: 'حذف مطلب بلاگ', tone: 'danger' },
-  'post.cover.upload': { label: 'آپلود تصویر شاخص مطلب', tone: 'info' },
-  'post.cover.remove': { label: 'حذف تصویر شاخص مطلب', tone: 'warning' },
-  'blogcategory.create': { label: 'ایجاد دسته‌بندی بلاگ', tone: 'success' },
-  'blogcategory.update': { label: 'ویرایش دسته‌بندی بلاگ', tone: 'info' },
+  'post.cover.upload': { label: 'آپلود تصویر شاخص مطلب', tone: 'neutral' },
+  'post.cover.remove': { label: 'حذف تصویر شاخص مطلب', tone: 'neutral' },
+  'blogcategory.create': { label: 'ایجاد دسته‌بندی بلاگ', tone: 'neutral' },
+  'blogcategory.update': { label: 'ویرایش دسته‌بندی بلاگ', tone: 'neutral' },
   'blogcategory.delete': { label: 'حذف دسته‌بندی بلاگ', tone: 'danger' },
   'wallet.adjust': { label: 'تعدیل موجودی کیف پول', tone: 'warning' },
-  'referral-reward-type.update': { label: 'ویرایش نوع پاداش معرفی', tone: 'info' },
+  'referral-reward-type.update': { label: 'ویرایش نوع پاداش معرفی', tone: 'neutral' },
   'referral.cancel': { label: 'لغو معرفی', tone: 'danger' },
-  'coupon.create': { label: 'ایجاد کد تخفیف', tone: 'success' },
-  'coupon.update': { label: 'ویرایش کد تخفیف', tone: 'info' },
+  'coupon.create': { label: 'ایجاد کد تخفیف', tone: 'neutral' },
+  'coupon.update': { label: 'ویرایش کد تخفیف', tone: 'neutral' },
   'coupon.delete': { label: 'حذف کد تخفیف', tone: 'danger' },
   'worker-rating.moderate': { label: 'تعدیل ارزیابی کارمند', tone: 'warning' },
-  'booking.approval.approved': { label: 'تایید درخواست رزرو', tone: 'success' },
-  'booking.approval.rejected': { label: 'رد درخواست رزرو', tone: 'danger' },
+  'booking.approval.approved': { label: 'تایید درخواست رزرو', tone: 'neutral' },
+  'booking.approval.rejected': { label: 'رد درخواست رزرو', tone: 'neutral' },
   'booking.cancelled_by_admin': { label: 'لغو نوبت توسط پشتیبانی', tone: 'danger' },
-  'booking.rescheduled': { label: 'جابه‌جایی زمان نوبت', tone: 'info' },
-  'booking-settings.update': { label: 'ویرایش تنظیمات رزرو سالن', tone: 'info' },
+  'booking.rescheduled': { label: 'جابه‌جایی زمان نوبت', tone: 'neutral' },
+  'booking-settings.update': { label: 'ویرایش تنظیمات رزرو سالن', tone: 'neutral' },
   'feature-flags.update': { label: 'تغییر قابلیت‌های پلتفرم', tone: 'warning' },
-  'invoice.payment.record': { label: 'ثبت پرداخت صورتحساب', tone: 'success' },
-  'salon.handle.set': { label: 'تغییر شناسه عمومی سالن', tone: 'info' },
+  'invoice.payment.record': { label: 'ثبت پرداخت صورتحساب', tone: 'neutral' },
+  'salon.handle.set': { label: 'تغییر شناسه عمومی سالن', tone: 'neutral' },
   // Monetization initiative (plans, subscriptions, subscription coupons, billing periods).
-  'plan.create': { label: 'ایجاد پلن اشتراک', tone: 'success' },
-  'plan.update': { label: 'ویرایش پلن اشتراک', tone: 'info' },
+  'plan.create': { label: 'ایجاد پلن اشتراک', tone: 'neutral' },
+  'plan.update': { label: 'ویرایش پلن اشتراک', tone: 'neutral' },
   'plan.delete': { label: 'حذف پلن اشتراک', tone: 'danger' },
-  'subscription.plan.set': { label: 'تغییر پلن اشتراک سالن', tone: 'info' },
+  'subscription.plan.set': { label: 'تغییر پلن اشتراک سالن', tone: 'neutral' },
   'subscription.cancel': { label: 'لغو اشتراک سالن', tone: 'danger' },
   'subscription.overrides.set': { label: 'تغییر استثنای امکانات سالن', tone: 'warning' },
-  'subscription.billing-period.create': { label: 'ایجاد دوره صورتحساب اشتراک', tone: 'success' },
+  'subscription.billing-period.create': { label: 'ایجاد دوره صورتحساب اشتراک', tone: 'neutral' },
   'subscription.billing-period.status.set': { label: 'تسویه دوره صورتحساب اشتراک', tone: 'warning' },
-  'subscription-coupon.create': { label: 'ایجاد کد تخفیف اشتراک', tone: 'success' },
-  'subscription-coupon.update': { label: 'ویرایش کد تخفیف اشتراک', tone: 'info' },
-  'subscription-coupon.delete': { label: 'غیرفعال‌سازی کد تخفیف اشتراک', tone: 'danger' },
+  'subscription-coupon.create': { label: 'ایجاد کد تخفیف اشتراک', tone: 'neutral' },
+  'subscription-coupon.update': { label: 'ویرایش کد تخفیف اشتراک', tone: 'neutral' },
+  'subscription-coupon.delete': { label: 'غیرفعال‌سازی کد تخفیف اشتراک', tone: 'warning' },
 }
 
 // Canonical list of the audited action names -- filter dropdowns and tests derive from
@@ -381,6 +388,7 @@ const AUDIT_TARGET_TYPE: Record<string, string> = {
   review: 'نظر',
   story: 'استوری',
   portfolioitem: 'نمونه کار',
+  salonservice: 'خدمت سالن',
   category: 'دسته‌بندی',
   beauty_concept: 'مفهوم راهنمای زیبایی',
   booking: 'نوبت',
@@ -496,14 +504,73 @@ interface NotificationTypeMeta {
  * glyph and a fallback title; an unmapped type still renders with the generic bell.
  */
 const NOTIFICATION_TYPE: Record<string, NotificationTypeMeta> = {
+  alert: { label: 'هشدار عملیاتی', icon: 'warning' },
+  salon_submitted: { label: 'سالن جدید در انتظار بررسی', icon: 'salons' },
   salon_resubmitted: { label: 'ارسال مجدد سالن', icon: 'salons' },
   report_created: { label: 'گزارش جدید', icon: 'flag' },
   salon_material_edit: { label: 'تغییر مهم در اطلاعات سالن', icon: 'pencil' },
+  category_requested: { label: 'درخواست دسته‌بندی جدید', icon: 'inbox' },
 }
 
 export function notificationTypeMeta(type: string): NotificationTypeMeta {
   return NOTIFICATION_TYPE[type] ?? { label: 'اعلان', icon: 'bell' }
 }
+
+/**
+ * How loudly a notification should present, in four tiers:
+ *  - 'critical' / 'warning': an operator alert (type 'alert', AlertsService). The API now
+ *    stores and returns the severity each alert was raised with. An alert written before
+ *    that column existed comes back NULL (the API itself already maps it to 'warning', and a
+ *    stale cached payload may lack the field entirely) -- both read as 'warning' here, never
+ *    'critical': nothing records that the old row was critical, and promoting all ~100 legacy
+ *    rows to the loudest tier is exactly the "everything is red" noise this replaces.
+ *  - 'action': a workflow item waiting on an admin decision (salon submitted, report, ...).
+ *  - 'info': anything else.
+ */
+export type NotificationSeverity = 'critical' | 'warning' | 'action' | 'info'
+
+/** The severity filter values the API itself returns ('info' covers every non-alert type). */
+export type ApiNotificationSeverity = 'critical' | 'warning' | 'info'
+
+const ACTION_NOTIFICATION_TYPES = new Set([
+  'salon_submitted',
+  'salon_resubmitted',
+  'report_created',
+  'salon_material_edit',
+  'category_requested',
+])
+
+export function notificationSeverity(n: { type: string; severity?: string | null }): NotificationSeverity {
+  if (n.type === 'alert') return n.severity === 'critical' ? 'critical' : 'warning'
+  return ACTION_NOTIFICATION_TYPES.has(n.type) ? 'action' : 'info'
+}
+
+/** The API-level severity (critical | warning | info) of a row, with the same NULL rule. */
+export function apiNotificationSeverity(n: { type: string; severity?: string | null }): ApiNotificationSeverity {
+  const s = notificationSeverity(n)
+  return s === 'action' ? 'info' : s
+}
+
+export const NOTIFICATION_SEVERITY_LABEL: Record<NotificationSeverity, string> = {
+  critical: 'بحرانی',
+  warning: 'هشدار',
+  action: 'نیاز به اقدام',
+  info: 'اطلاع‌رسانی',
+}
+
+/**
+ * The inbox's type filter values. Mirrors the API's ADMIN_NOTIFICATION_TYPES exactly: ?type= is
+ * @IsIn-validated there, so any other key 400s the whole list. Deliberately not
+ * Object.keys(NOTIFICATION_TYPE) -- that map also labels 'salon_submitted', which is only an
+ * analytics event and never written as an admin notification.
+ */
+export const NOTIFICATION_TYPE_KEYS: readonly string[] = [
+  'alert',
+  'report_created',
+  'salon_resubmitted',
+  'salon_material_edit',
+  'category_requested',
+]
 
 /** Falls back to the raw key as its own label -- new config keys stay editable, just less pretty. */
 export function configKeyMeta(key: string): ConfigMeta {
