@@ -1,10 +1,14 @@
 <script setup lang="ts">
-const { isDark, toggle, apply } = useTheme()
+const { isDark, toggle, watchSystemScheme } = useTheme()
 
-// Re-sync the .dark class against the current cookie on mount: the inline anti-flash
-// script only runs once at initial page load, so if the theme cookie changed since then
-// (e.g. set in another tab) this catches the drift without requiring a reload.
-onMounted(() => apply())
+// Resolve the OS scheme and re-sync the .dark class against the current cookie on mount: the
+// inline anti-flash script only runs once at initial page load, so if the theme cookie changed
+// since then (e.g. set in another tab) this catches the drift without requiring a reload.
+let stopWatching = () => {}
+onMounted(() => {
+  stopWatching = watchSystemScheme()
+})
+onBeforeUnmount(() => stopWatching())
 </script>
 
 <template>
