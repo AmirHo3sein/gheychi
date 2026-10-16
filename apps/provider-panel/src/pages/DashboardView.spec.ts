@@ -1,6 +1,9 @@
 import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { resetFeatureFlags, useFeatureFlags } from '@/composables/useFeatureFlags'
+import { reportBookings, resetPendingApprovals } from '@/composables/usePendingApprovals'
+import { tehranDateString } from '@/utils/tehran-date'
 import DashboardView from './DashboardView.vue'
 
 function makeRouter() {
@@ -8,6 +11,7 @@ function makeRouter() {
     history: createMemoryHistory(),
     routes: [
       { path: '/', name: 'dashboard', component: DashboardView },
+      { path: '/bookings', name: 'bookings', component: { template: '<div />' } },
       { path: '/customers', name: 'customers', component: { template: '<div />' } },
       { path: '/hours', name: 'hours', component: { template: '<div />' } },
       { path: '/photos', name: 'photos', component: { template: '<div />' } },
@@ -71,6 +75,28 @@ const FUNNEL = {
   ],
 }
 
+function capDay(date: string, overrides: Record<string, unknown> = {}) {
+  return {
+    date, weekday: 0, closedReason: null, openMinutes: 600, capacityMinutes: 1200, bookedMinutes: 300,
+    freeMinutes: 900, freePercent: 75, bookingsCount: 3, ...overrides,
+  }
+}
+const CAPACITY = {
+  from: '2026-10-16',
+  to: '2026-10-23',
+  capacity: 2,
+  days: [
+    capDay('2026-10-16', { bookedMinutes: 1200, freeMinutes: 0, freePercent: 0, bookingsCount: 9 }),
+    capDay('2026-10-17'),
+    capDay('2026-10-18', { closedReason: 'closed_exception', openMinutes: 0, capacityMinutes: 0, bookedMinutes: 0, freeMinutes: 0, freePercent: null, bookingsCount: 0 }),
+    capDay('2026-10-19'),
+    capDay('2026-10-20'),
+    capDay('2026-10-21'),
+    capDay('2026-10-22'),
+  ],
+  totals: { openMinutes: 3600, capacityMinutes: 7200, bookedMinutes: 2700, freeMinutes: 4500, freePercent: 63 },
+}
+
 // Routed by URL, not call order: this screen fires four independent requests on mount
 // (bookings, services, dashboard-summary, funnel) and an order-coupled mock would break on
 // any change to which Promise.all a request belongs to.
@@ -82,8 +108,17 @@ function stubFetch(overrides: {
   summaryOk?: boolean
   funnelOk?: boolean
   bookingsOk?: boolean
+  capacity?: unknown
+  capacityOk?: boolean
 } = {}) {
   const fetchMock = vi.fn((url: string) => {
+    if (url.includes('/capacity')) {
+      return Promise.resolve({
+        ok: overrides.capacityOk ?? true,
+        status: overrides.capacityOk === false ? 500 : 200,
+        json: async () => overrides.capacity ?? CAPACITY,
+      })
+    }
     if (url.includes('/dashboard-summary')) {
       return Promise.resolve({
         ok: overrides.summaryOk ?? true,
@@ -123,6 +158,8 @@ async function mountDashboard() {
 describe('DashboardView', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+    resetFeatureFlags()
+    resetPendingApprovals()
   })
 
   it('shows a metrics skeleton (not a bare spinner) until the summary arrives', async () => {
@@ -139,19 +176,40 @@ describe('DashboardView', () => {
     expect(skeleton.findAll('.animate-pulse')).toHaveLength(8)
   })
 
-  it('links every secondary section from the quick-link grid', async () => {
+  // Intentional change: the quick-link tile grid was removed -- the sidebar (lg+) and the
+  // «بیشتر» page (phones) now reach every screen, so the grid only duplicated navigation.
+  it('no longer duplicates the navigation as a quick-link grid', async () => {
     stubFetch()
     const wrapper = await mountDashboard()
     const hrefs = wrapper.findAll('a').map((a) => a.attributes('href'))
-    for (const to of ['/customers', '/packages', '/hours', '/photos', '/stories', '/portfolio', '/coupons', '/team', '/settings', '/plan']) {
-      expect(hrefs).toContain(to)
+    for (const to of ['/customers', '/packages', '/hours', '/photos', '/team', '/settings', '/plan']) {
+      expect(hrefs).not.toContain(to)
     }
   })
 
+  it('leads with a callout linking to the bookings screen while requests await approval', async () => {
+    stubFetch()
+    const wrapper = await mountDashboard()
+    expect(wrapper.find('[data-testid="dashboard-pending-callout"]').exists()).toBe(false)
+
+    reportBookings([
+      { id: 'b1', status: 'pending_approval' },
+      { id: 'b2', status: 'pending_approval' },
+    ])
+    await wrapper.vm.$nextTick()
+
+    const callout = wrapper.get('[data-testid="dashboard-pending-callout"]')
+    expect(callout.attributes('href')).toBe('/bookings')
+    expect(callout.text()).toContain(`${(2).toLocaleString('fa-IR')} درخواست نوبت منتظر تأیید شماست`)
+  })
+
   it('does not show a today booking again in the upcoming list', async () => {
-    const today = new Date()
-    const todayIso = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59).toISOString()
-    const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1, 9, 0).toISOString()
+    // Built on the Tehran calendar day (the screen's own definition of "today"), not the test
+    // machine's local day. Iran has observed a fixed +03:30 since 2022.
+    const todayKey = tehranDateString(new Date())
+    const tomorrowKey = tehranDateString(new Date(Date.now() + 86_400_000))
+    const todayIso = new Date(`${todayKey}T23:59:00+03:30`).toISOString()
+    const tomorrow = new Date(`${tomorrowKey}T09:00:00+03:30`).toISOString()
 
     stubFetch({
       bookings: [
@@ -225,6 +283,93 @@ describe('DashboardView', () => {
     expect(tile.html()).toContain('--tone-success-text')
   })
 
+  it('shows the next 7 days of free capacity, today first and highlighted, with closed days as «تعطیل»', async () => {
+    const fetchMock = stubFetch()
+    const wrapper = await mountDashboard()
+
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/salons/mine/capacity'))).toBe(true)
+    const rows = wrapper.findAll('[data-testid="capacity-day"]')
+    expect(rows).toHaveLength(7)
+    expect(rows[0]!.text()).toContain('امروز')
+    expect(rows[0]!.text()).toContain(`${(0).toLocaleString('fa-IR')}٪`)
+    expect(rows[0]!.classes()).toContain('bg-(--color-accent-soft)')
+    expect(rows[1]!.text()).toContain(`${(75).toLocaleString('fa-IR')}٪`)
+    // Nothing on offer is "closed", never "0% free".
+    expect(rows[2]!.text()).toContain('تعطیل')
+    expect(wrapper.get('[data-testid="capacity-total"]').text()).toContain(`${(63).toLocaleString('fa-IR')}٪`)
+    // The explanation names the real basis, including the concurrent-capacity setting.
+    expect(wrapper.get('[data-testid="capacity-card"]').text()).toContain(`ظرفیت همزمان ${(2).toLocaleString('fa-IR')} نفر`)
+    expect(wrapper.get('[data-testid="capacity-week-link"]').attributes('href')).toBe('/bookings?view=week')
+  })
+
+  it('draws the booked share (not the free share) as the solid bar, so an empty day is an empty bar', async () => {
+    stubFetch({
+      capacity: {
+        ...CAPACITY,
+        days: [capDay('2026-10-16', { bookedMinutes: 0, freeMinutes: 1200, freePercent: 100, bookingsCount: 0 }), ...CAPACITY.days.slice(1)],
+      },
+    })
+    const wrapper = await mountDashboard()
+    const rows = wrapper.findAll('[data-testid="capacity-day"]')
+    // 100% free: no solid bar at all, and the label says «خالی» in words.
+    expect(rows[0]!.find('[data-testid="capacity-booked-bar"]').exists()).toBe(false)
+    expect(rows[0]!.text()).toContain(`${(100).toLocaleString('fa-IR')}٪ خالی`)
+    // 75% free: the solid bar is the booked quarter.
+    expect(rows[1]!.get('[data-testid="capacity-booked-bar"]').attributes('style')).toContain('width: 25%')
+    expect(rows[1]!.text()).toContain(`${(75).toLocaleString('fa-IR')}٪ خالی`)
+    // Closed: no bar.
+    expect(rows[2]!.find('[data-testid="capacity-booked-bar"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="capacity-legend"]').text()).toContain('رزروشده')
+  })
+
+  it('says why there is no capacity figure when no working hours are open in the window', async () => {
+    stubFetch({
+      capacity: {
+        ...CAPACITY,
+        days: CAPACITY.days.map((d) => ({ ...d, closedReason: 'no_hours', openMinutes: 0, capacityMinutes: 0, bookedMinutes: 0, freeMinutes: 0, freePercent: null })),
+        totals: { openMinutes: 0, capacityMinutes: 0, bookedMinutes: 0, freeMinutes: 0, freePercent: null },
+      },
+    })
+    const wrapper = await mountDashboard()
+    expect(wrapper.find('[data-testid="capacity-day"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="capacity-empty"]').text()).toContain('ساعت کاری باز ثبت نشده است')
+    expect(wrapper.find('[data-testid="capacity-total"]').exists()).toBe(false)
+  })
+
+  it('keeps the rest of the dashboard working when capacity fails, and retries only capacity', async () => {
+    const fetchMock = stubFetch({ capacityOk: false })
+    const wrapper = await mountDashboard()
+    expect(wrapper.find('[data-testid="retry-capacity"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="metric-bookings"]').exists()).toBe(true)
+
+    fetchMock.mockClear()
+    stubFetch()
+    await wrapper.get('[data-testid="retry-capacity"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(wrapper.findAll('[data-testid="capacity-day"]')).toHaveLength(7)
+    expect(wrapper.find('[data-testid="retry-capacity"]').exists()).toBe(false)
+  })
+
+  it('treats a malformed capacity response as an error, not as an empty week', async () => {
+    stubFetch({ capacity: { nope: true } })
+    const wrapper = await mountDashboard()
+    expect(wrapper.find('[data-testid="retry-capacity"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="capacity-empty"]').exists()).toBe(false)
+  })
+
+  it('orders the page today -> capacity -> performance and links today to the bookings tab', async () => {
+    stubFetch()
+    const wrapper = await mountDashboard()
+    const html = wrapper.html()
+    const today = html.indexOf('نوبت‌های امروز')
+    const capacity = html.indexOf('data-testid="capacity-card"')
+    const performance = html.indexOf('id="dashboard-performance"')
+    expect(today).toBeGreaterThan(-1)
+    expect(today).toBeLessThan(capacity)
+    expect(capacity).toBeLessThan(performance)
+    expect(wrapper.get('[data-testid="dashboard-today-link"]').attributes('href')).toBe('/bookings?tab=today')
+  })
+
   it('refetches the metrics (and only the metrics) when the period changes', async () => {
     const fetchMock = stubFetch()
 
@@ -275,6 +420,72 @@ describe('DashboardView', () => {
     expect(stages[1]!.text()).toContain(`${(25).toLocaleString('fa-IR')}٪`)
   })
 
+  it('labels the payment stage instead of showing its raw event key', async () => {
+    stubFetch({
+      funnel: {
+        stages: [
+          { stage: 'salon_profile_viewed', count: 200, conversionFromPreviousPercent: null },
+          { stage: 'booking_started', count: 50, conversionFromPreviousPercent: 25 },
+          { stage: 'payment_succeeded', count: 40, conversionFromPreviousPercent: 80 },
+          { stage: 'booking_confirmed', count: 40, conversionFromPreviousPercent: 100 },
+        ],
+      },
+    })
+
+    const wrapper = await mountDashboard()
+
+    const stages = wrapper.findAll('[data-testid="funnel-stage"]')
+    expect(stages).toHaveLength(4)
+    expect(stages[2]!.text()).toContain('پرداخت بیعانه')
+    expect(wrapper.text()).not.toContain('payment_succeeded')
+    expect(wrapper.get('[data-testid="funnel-description"]').text()).toContain('پرداخت بیعانه')
+  })
+
+  // Free mode: nobody can pay online, so the payment stage would be a 0 "rescued" by a larger
+  // confirmed count. It is hidden and conversion is recomputed between the shown rows.
+  it('skips the payment stage and recomputes conversion when online payment is off', async () => {
+    useFeatureFlags().flags.value.onlinePaymentEnabled = false
+    stubFetch({
+      funnel: {
+        stages: [
+          { stage: 'salon_profile_viewed', count: 67, conversionFromPreviousPercent: null },
+          { stage: 'booking_started', count: 24, conversionFromPreviousPercent: 36 },
+          { stage: 'payment_succeeded', count: 0, conversionFromPreviousPercent: 0 },
+          { stage: 'booking_confirmed', count: 15, conversionFromPreviousPercent: null },
+        ],
+      },
+    })
+
+    const wrapper = await mountDashboard()
+
+    const stages = wrapper.findAll('[data-testid="funnel-stage"]')
+    expect(stages).toHaveLength(3)
+    expect(wrapper.text()).not.toContain('پرداخت بیعانه')
+    // 15 of 24 started, off the stage actually shown above it.
+    expect(stages[2]!.text()).toContain(`${(63).toLocaleString('fa-IR')}٪`)
+    expect(wrapper.get('[data-testid="funnel-description"]').text()).toContain('پرداخت آنلاین فعلاً روی پلتفرم خاموش است')
+  })
+
+  it('caps a step above 100% and explains why it can happen', async () => {
+    stubFetch({
+      funnel: {
+        stages: [
+          { stage: 'salon_profile_viewed', count: 67, conversionFromPreviousPercent: null },
+          { stage: 'booking_started', count: 24, conversionFromPreviousPercent: 36 },
+          { stage: 'payment_succeeded', count: 6, conversionFromPreviousPercent: 25 },
+          { stage: 'booking_confirmed', count: 15, conversionFromPreviousPercent: 250 },
+        ],
+      },
+    })
+
+    const wrapper = await mountDashboard()
+
+    const stages = wrapper.findAll('[data-testid="funnel-stage"]')
+    expect(stages[3]!.text()).toContain('بیش از ۱۰۰٪')
+    expect(stages[3]!.text()).not.toContain((250).toLocaleString('fa-IR'))
+    expect(wrapper.find('[data-testid="funnel-overflow-note"]').exists()).toBe(true)
+  })
+
   it('shows an honest empty state for a funnel with no events yet, instead of a row of zeros', async () => {
     stubFetch({
       funnel: {
@@ -300,5 +511,99 @@ describe('DashboardView', () => {
     expect(wrapper.find('[data-testid="retry-metrics"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="retry-dashboard"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('نوبتی برای امروز ثبت نشده است.')
+  })
+
+  describe('performance charts', () => {
+    const DAILY = [
+      { date: '2026-08-29', bookingsCount: 2, completedCount: 1, cancelledCount: 0, grossBookingValue: 400_000 },
+      { date: '2026-08-30', bookingsCount: 0, completedCount: 0, cancelledCount: 1, grossBookingValue: 0 },
+      { date: '2026-08-31', bookingsCount: 5, completedCount: 3, cancelledCount: 0, grossBookingValue: 1_500_000 },
+    ]
+    const WITH_SERIES = {
+      ...SUMMARY,
+      daily: DAILY,
+      previousDaily: DAILY.map((d) => ({ ...d, bookingsCount: 1, grossBookingValue: 100_000 })),
+      heatmap: [{ weekday: 6, hour: 10, count: 4 }, { weekday: 3, hour: 18, count: 1 }],
+    }
+
+    it('draws the daily trend with a previous-period overlay, and switches to booking value', async () => {
+      stubFetch({ summary: WITH_SERIES })
+      const wrapper = await mountDashboard()
+
+      const card = wrapper.get('[data-testid="trend-card"]')
+      expect(card.find('[data-testid="trend-line"]').attributes('d')).toMatch(/^M/)
+      expect(card.find('[data-testid="trend-previous"]').exists()).toBe(true)
+      // Screen-reader table: one row per day, in the count unit.
+      expect(card.findAll('tbody tr')).toHaveLength(3)
+      expect(card.get('tbody tr:last-child').text()).toContain(`${(5).toLocaleString('fa-IR')} نوبت`)
+
+      await wrapper.get('[data-testid="trend-metric-gross"]').trigger('click')
+      expect(wrapper.get('[data-testid="trend-metric-gross"]').attributes('aria-pressed')).toBe('true')
+      expect(card.get('tbody tr:last-child').text()).toContain(`${(1_500_000).toLocaleString('fa-IR')} تومان`)
+    })
+
+    it('reports the active day through the keyboard, newest first', async () => {
+      stubFetch({ summary: WITH_SERIES })
+      const wrapper = await mountDashboard()
+      const chart = wrapper.get('[data-testid="trend-chart"]')
+
+      await chart.trigger('keydown', { key: 'End' })
+      expect(wrapper.get('[data-testid="trend-tooltip"]').text()).toContain(`${(5).toLocaleString('fa-IR')} نوبت`)
+      // RTL: the right arrow steps back in time.
+      await chart.trigger('keydown', { key: 'ArrowRight' })
+      expect(wrapper.get('[data-testid="trend-tooltip"]').text()).toContain(`${(0).toLocaleString('fa-IR')} نوبت`)
+    })
+
+    it('splits the period bookings by outcome, with upcoming = active minus completed', async () => {
+      stubFetch({ summary: WITH_SERIES })
+      const wrapper = await mountDashboard()
+
+      const legend = wrapper.findAll('[data-testid="donut-legend"]').map((b) => b.text())
+      // SUMMARY: 20 active of which 15 completed, 2 cancelled, 1 no-show → 23 in all.
+      expect(legend[0]).toContain('انجام‌شده')
+      expect(legend[0]).toContain((15).toLocaleString('fa-IR'))
+      expect(legend[1]).toContain((5).toLocaleString('fa-IR'))
+      expect(legend[2]).toContain((2).toLocaleString('fa-IR'))
+      expect(legend[3]).toContain((1).toLocaleString('fa-IR'))
+      expect(wrapper.get('[data-testid="donut-center"]').text()).toBe((23).toLocaleString('fa-IR'))
+    })
+
+    it('shows the new/returning split with its shares', async () => {
+      stubFetch({ summary: WITH_SERIES })
+      const wrapper = await mountDashboard()
+      const mix = wrapper.get('[data-testid="customer-mix-card"]').text()
+      expect(mix).toContain(`${(4).toLocaleString('fa-IR')} (${(33).toLocaleString('fa-IR')}٪)`)
+      expect(mix).toContain(`${(8).toLocaleString('fa-IR')} (${(67).toLocaleString('fa-IR')}٪)`)
+    })
+
+    it('places appointments in the weekday x hour heatmap', async () => {
+      stubFetch({ summary: WITH_SERIES })
+      const wrapper = await mountDashboard()
+      const heat = wrapper.get('[data-testid="heatmap"]')
+      expect(heat.findAll('[data-testid="heatmap-cell-active"]')).toHaveLength(2)
+      // Saturday leads the Iranian week.
+      expect(heat.get('tbody tr th').text()).toContain('شنبه')
+      expect(heat.get('tbody tr').text()).toContain(`${(4).toLocaleString('fa-IR')} نوبت`)
+    })
+
+    it('draws no charts from data it does not have (an API without the series)', async () => {
+      stubFetch()
+      const wrapper = await mountDashboard()
+      expect(wrapper.find('[data-testid="trend-card"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="heatmap"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="sparkline"]').exists()).toBe(false)
+      // The tiles and rankings still render from the totals.
+      expect(wrapper.find('[data-testid="metric-bookings"]').exists()).toBe(true)
+    })
+
+    it('says so honestly when the period is empty instead of drawing a fake shape', async () => {
+      const empty = DAILY.map((d) => ({ ...d, bookingsCount: 0, completedCount: 0, cancelledCount: 0, grossBookingValue: 0 }))
+      stubFetch({ summary: { ...SUMMARY, ...period(), previous: period(), topServices: [], topWorkers: [], busiestWeekday: null, busiestHour: null, daily: empty, previousDaily: empty, heatmap: [] } })
+      const wrapper = await mountDashboard()
+      expect(wrapper.find('[data-testid="trend-empty"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="trend-previous"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="outcome-empty"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="heatmap"]').exists()).toBe(false)
+    })
   })
 })

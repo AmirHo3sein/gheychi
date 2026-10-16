@@ -69,7 +69,7 @@ function removeRange(day: WorkingHourRow, index: number) {
             :disabled="!day.enabled"
             :aria-invalid="invalidWeekdays.includes(day.weekday) || undefined"
             type="time"
-            class="tnum min-h-11 w-full min-w-0 flex-1 rounded-xl border border-(--color-border) bg-(--color-surface) p-2 text-sm disabled:opacity-50"
+            class="tnum min-h-11 w-full min-w-0 flex-1 rounded-xl border border-(--color-border-control) bg-(--color-surface) p-2 text-sm disabled:opacity-50"
           />
           <span class="shrink-0 text-xs text-(--color-text-muted)">تا</span>
           <input
@@ -78,7 +78,7 @@ function removeRange(day: WorkingHourRow, index: number) {
             :disabled="!day.enabled"
             :aria-invalid="invalidWeekdays.includes(day.weekday) || undefined"
             type="time"
-            class="tnum min-h-11 w-full min-w-0 flex-1 rounded-xl border border-(--color-border) bg-(--color-surface) p-2 text-sm disabled:opacity-50"
+            class="tnum min-h-11 w-full min-w-0 flex-1 rounded-xl border border-(--color-border-control) bg-(--color-surface) p-2 text-sm disabled:opacity-50"
           />
           <!-- Only offered once there's a second range to remove -- a day always needs at
                least one range while enabled, so removing the only one would just be a

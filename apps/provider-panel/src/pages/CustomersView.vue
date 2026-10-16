@@ -22,6 +22,7 @@ import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { customerSegmentLabel } from '@/utils/labels'
 import { debounce } from '@/utils/debounce'
 import { formatToman } from '@/utils/format-toman'
+import { formatNumber, toPersianDigits } from '@/utils/digits'
 
 interface Customer {
   userId: string
@@ -53,6 +54,17 @@ interface DashboardSummary {
 interface SmsQuota { quota: number; used: number; remaining: number }
 
 const PAGE_SIZE = 20
+
+// ---- «مشتریان غیرفعال» highlight -------------------------------------------------
+// The server's own `lapsed` segment (no visit for LAPSED_AFTER_DAYS = 60, crm.service.ts).
+// Deliberately ONE-TO-ONE only: a call link, or opening that customer's page to write a
+// single SMS within the monthly quota. There is NO bulk / segment / promotional send here,
+// and there must not be one until a per-customer marketing-consent model exists (consent
+// timestamp, opt-out, suppression) -- the data model today has none, so a "message all
+// lapsed customers" button would be unsolicited marketing SMS.
+const LAPSED_PREVIEW_SIZE = 3
+const lapsed = ref<Customer[]>([])
+const lapsedTotal = ref(0)
 
 const { apiFetch } = useApi()
 const customers = ref<Customer[]>([])
@@ -119,12 +131,22 @@ async function loadCustomers() {
 // The summary and quota don't depend on any filter, so they're fetched once rather than on
 // every keystroke -- refiltering the list must not re-fetch (or re-render) the KPI tiles.
 async function loadHeader() {
-  const [summaryRes, quotaRes] = await Promise.all([
+  const lapsedParams = new URLSearchParams({ segment: 'lapsed', sort: 'recent', page: '1', pageSize: String(LAPSED_PREVIEW_SIZE) })
+  const [summaryRes, quotaRes, lapsedRes] = await Promise.all([
     apiFetch<DashboardSummary>('/salons/mine/dashboard-summary', { silent: true }),
     apiFetch<SmsQuota>('/salons/mine/sms-quota', { silent: true }),
+    // Silent and optional: a failure only hides the highlight card.
+    apiFetch<CustomerPage>(`/salons/mine/customers?${lapsedParams}`, { silent: true }),
   ])
   summary.value = summaryRes.data
   smsQuota.value = quotaRes.data
+  lapsed.value = lapsedRes.data?.items ?? []
+  lapsedTotal.value = lapsedRes.data?.total ?? 0
+}
+
+function showAllLapsed() {
+  search.value = ''
+  segment.value = 'lapsed'
 }
 
 async function load() {
@@ -163,11 +185,13 @@ function formatDate(iso: string | null): string {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-5xl space-y-4 p-4 lg:p-6">
-    <h1 class="text-lg font-bold text-(--color-text)">مشتریان</h1>
-    <p v-if="smsQuota" data-testid="sms-quota-summary" class="text-xs text-(--color-text-muted)">
-      پیامک این ماه: <span dir="ltr" class="tnum">{{ smsQuota.remaining }}</span> از <span dir="ltr" class="tnum">{{ smsQuota.quota }}</span> باقی مانده
-    </p>
+  <div class="mx-auto w-full max-w-6xl space-y-4 p-4 lg:p-6">
+    <div class="flex flex-wrap items-end justify-between gap-2">
+      <h1 class="text-lg font-bold text-(--color-text)">مشتریان</h1>
+      <p v-if="smsQuota" data-testid="sms-quota-summary" class="text-xs text-(--color-text-muted)">
+        پیامک این ماه: <span class="tnum">{{ formatNumber(smsQuota.remaining) }}</span> از <span class="tnum">{{ formatNumber(smsQuota.quota) }}</span> باقی مانده
+      </p>
+    </div>
 
     <div v-if="summary" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <AppCard class="bg-(--color-surface-subtle)">
@@ -192,6 +216,73 @@ function formatDate(iso: string | null): string {
         <p class="mt-1 text-xs text-(--color-text-muted)">تخمینی — بخش نقدی هرگز توسط پلتفرم مشاهده نمی‌شود.</p>
       </AppCard>
     </div>
+
+
+    <!-- One-to-one win-back prompts only -- see LAPSED_PREVIEW_SIZE's comment (no bulk SMS). -->
+    <section
+      v-if="lapsedTotal > 0"
+      data-testid="lapsed-customers-card"
+      aria-labelledby="lapsed-customers-title"
+      class="rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 shadow-(--shadow-sm)"
+    >
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h2 id="lapsed-customers-title" class="flex items-center gap-2 text-base font-bold text-(--color-text)">
+            مشتریان غیرفعال
+            <span class="tnum rounded-full bg-(--tone-warning-bg) px-2 py-0.5 text-xs font-semibold text-(--tone-warning-text)" data-testid="lapsed-total">
+              {{ formatNumber(lapsedTotal) }}
+            </span>
+          </h2>
+          <p class="mt-0.5 text-xs leading-5 text-(--color-text-muted)">
+            بیش از ۶۰ روز است که مراجعه نکرده‌اند. با یک تماس یا پیامک شخصی جویای حالشان شوید.
+          </p>
+        </div>
+        <AppButton variant="secondary" size="sm" touch data-testid="show-all-lapsed" @click="showAllLapsed">
+          نمایش همه در فهرست
+        </AppButton>
+      </div>
+
+      <ul class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <li
+          v-for="c in lapsed"
+          :key="c.userId"
+          data-testid="lapsed-customer"
+          class="flex flex-col gap-2 rounded-xl border border-(--color-border-soft) bg-(--color-surface) p-3"
+        >
+          <div class="min-w-0">
+            <RouterLink :to="`/customers/${c.userId}`" class="inline-flex min-h-10 items-center break-words text-sm font-semibold text-(--color-accent-text) hover:underline">
+              {{ c.name || 'بدون نام' }}
+            </RouterLink>
+            <p class="tnum text-xs text-(--color-text-muted)">آخرین مراجعه: {{ formatDate(c.lastVisitAt) }}</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <a
+              :href="`tel:${c.phone}`"
+              :aria-label="`تماس با ${c.name || c.phone}`"
+              data-testid="lapsed-call"
+              class="inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-(--color-border-control) px-3 text-xs font-semibold text-(--color-text) hover:bg-(--color-surface-subtle)"
+            >
+              <AppIcon name="phone" :size="14" />
+              تماس
+            </a>
+            <!-- Opens the customer page with the single-SMS composer focused; the send itself
+                 stays there, quota-checked by the server as before. -->
+            <RouterLink
+              v-if="!smsQuota || smsQuota.remaining > 0"
+              :to="{ path: `/customers/${c.userId}`, query: { compose: 'sms' } }"
+              :aria-label="`نوشتن پیامک برای ${c.name || c.phone}`"
+              data-testid="lapsed-sms"
+              class="inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-(--color-border-control) px-3 text-xs font-semibold text-(--color-text) hover:bg-(--color-surface-subtle)"
+            >
+              پیامک
+            </RouterLink>
+          </div>
+        </li>
+      </ul>
+      <p v-if="smsQuota && smsQuota.remaining <= 0" data-testid="lapsed-sms-exhausted" class="mt-2 text-xs text-(--color-text-muted)">
+        سهمیهٔ پیامک این ماه تمام شده است؛ تماس تلفنی همچنان در دسترس است.
+      </p>
+    </section>
 
     <!-- Filters stay mounted while the list reloads: hiding them behind the spinner would
          steal focus from the search box mid-typing. -->
@@ -226,6 +317,7 @@ function formatDate(iso: string | null): string {
       <EmptyState
         v-if="customers.length === 0 && !isFiltered"
         icon="customers"
+        mascot="happy"
         message="هنوز مشتری‌ای برای این سالن ثبت نشده است."
       />
       <div
@@ -267,10 +359,10 @@ function formatDate(iso: string | null): string {
                 class="block border-b border-(--color-border-soft) p-4 last:border-0 md:table-row md:p-0"
               >
                 <td role="cell" class="block py-1 md:table-cell md:px-4 md:py-3">
-                  <RouterLink :to="`/customers/${c.userId}`" class="font-semibold text-(--color-accent-text) hover:underline">
+                  <RouterLink :to="`/customers/${c.userId}`" class="inline-flex min-h-10 items-center font-semibold text-(--color-accent-text) hover:underline">
                     {{ c.name || 'بدون نام' }}
                   </RouterLink>
-                  <p dir="ltr" class="tnum text-xs text-(--color-text-muted)">{{ c.phone }}</p>
+                  <p dir="ltr" class="tnum text-xs text-(--color-text-muted)">{{ toPersianDigits(c.phone) }}</p>
                 </td>
                 <td role="cell" data-label="کل نوبت‌ها" class="flex items-center justify-between gap-3 py-1 before:text-xs before:text-(--color-text-muted) before:content-[attr(data-label)] md:table-cell md:px-4 md:py-3 md:before:content-none tnum text-(--color-text-muted)">{{ c.bookingsCount.toLocaleString('fa-IR') }}</td>
                 <td role="cell" data-label="مراجعه‌های انجام‌شده" class="flex items-center justify-between gap-3 py-1 before:text-xs before:text-(--color-text-muted) before:content-[attr(data-label)] md:table-cell md:px-4 md:py-3 md:before:content-none tnum text-(--color-text-muted)">{{ c.visitsCount.toLocaleString('fa-IR') }}</td>
@@ -288,12 +380,12 @@ function formatDate(iso: string | null): string {
 
       <div v-if="total > 0" class="flex flex-wrap items-center justify-between gap-3">
         <p data-testid="customer-range" class="text-xs text-(--color-text-muted)">
-          نمایش <span dir="ltr" class="tnum">{{ rangeStart }}</span>–<span dir="ltr" class="tnum">{{ rangeEnd }}</span>
-          از <span dir="ltr" class="tnum">{{ total }}</span> مشتری
+          نمایش <span class="tnum">{{ formatNumber(rangeStart) }}</span>–<span class="tnum">{{ formatNumber(rangeEnd) }}</span>
+          از <span class="tnum">{{ formatNumber(total) }}</span> مشتری
         </p>
         <div v-if="totalPages > 1" class="flex items-center gap-2">
           <AppButton variant="secondary" data-testid="prev-page" :disabled="page <= 1" @click="goToPage(page - 1)">قبلی</AppButton>
-          <span class="tnum text-xs text-(--color-text-muted)">صفحه {{ page }} از {{ totalPages }}</span>
+          <span class="tnum text-xs text-(--color-text-muted)">صفحه {{ formatNumber(page) }} از {{ formatNumber(totalPages) }}</span>
           <AppButton variant="secondary" data-testid="next-page" :disabled="page >= totalPages" @click="goToPage(page + 1)">بعدی</AppButton>
         </div>
       </div>

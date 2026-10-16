@@ -49,6 +49,8 @@ test('services and hours management: edit/add/deactivate a service, weekly hours
 
   const seededServiceCard = page.locator('[data-testid^="service-card-"]').filter({ hasText: 'کوتاهی مو' })
   await expect(seededServiceCard).toBeVisible()
+  // Rows are collapsed summaries; the editor opens from the row's own toggle.
+  await seededServiceCard.locator('[data-testid^="service-toggle-"]').click()
   await seededServiceCard.getByTestId('service-price-input').fill('350000')
   // Inline edits are drafts until the row's explicit «ذخیره»; the price change is then
   // confirmed in the in-app confirm sheet (not a native dialog).
@@ -61,6 +63,8 @@ test('services and hours management: edit/add/deactivate a service, weekly hours
   // field was filled with -- '350000' renders back as '۳۵۰٬۰۰۰'.
   await page.reload()
   await page.waitForLoadState('networkidle')
+  await expect(seededServiceCard.getByTestId('service-summary-price')).toHaveText('۳۵۰٬۰۰۰ تومان')
+  await seededServiceCard.locator('[data-testid^="service-toggle-"]').click()
   await expect(page.locator('[data-testid^="service-card-"]').filter({ hasText: 'کوتاهی مو' }).getByTestId('service-price-input'))
     .toHaveValue('۳۵۰٬۰۰۰')
 
@@ -78,6 +82,7 @@ test('services and hours management: edit/add/deactivate a service, weekly hours
   // The originally-seeded service is untouched by adding a second one.
   await expect(seededServiceCard).toBeVisible()
 
+  await newServiceCard.locator('[data-testid^="service-toggle-"]').click()
   await newServiceCard.getByTestId('deactivate-service').click()
   await page.getByTestId('confirm-accept').click()
   await expect(newServiceCard).not.toBeVisible()

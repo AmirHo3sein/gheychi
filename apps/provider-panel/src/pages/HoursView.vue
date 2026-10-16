@@ -158,7 +158,7 @@ function exceptionTimeRangeLabel(e: ScheduleException): string | null {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-5xl space-y-6 p-4 lg:p-6">
+  <div class="mx-auto w-full max-w-6xl space-y-6 p-4 lg:p-6">
     <h1 class="text-lg font-bold text-(--color-text)">ساعات کاری</h1>
 
     <div v-if="loadError" class="space-y-3 rounded-2xl border border-dashed border-(--color-border) p-4 text-center">
@@ -213,7 +213,7 @@ function exceptionTimeRangeLabel(e: ScheduleException): string | null {
             </div>
 
             <label class="flex min-h-11 items-center gap-2 text-sm text-(--color-text)">
-              <input v-model="newExceptionPartialDay" type="checkbox" data-testid="exception-partial-day" class="h-4 w-4 accent-(--color-accent)" />
+              <input v-model="newExceptionPartialDay" type="checkbox" data-testid="exception-partial-day" class="h-4 w-4 accent-(--color-accent-text)" />
               فقط بخشی از روز تعطیل است
             </label>
 
@@ -228,7 +228,7 @@ function exceptionTimeRangeLabel(e: ScheduleException): string | null {
                 type="time"
                 data-testid="exception-start-time"
                 aria-label="ساعت شروع تعطیلی"
-                class="tnum min-h-11 w-full min-w-0 flex-1 rounded-xl border border-(--color-border) bg-(--color-surface) p-2 text-sm"
+                class="tnum min-h-11 w-full min-w-0 flex-1 rounded-xl border border-(--color-border-control) bg-(--color-surface) p-2 text-sm"
               />
               <span class="shrink-0 text-xs text-(--color-text-muted)">تا</span>
               <input
@@ -236,7 +236,7 @@ function exceptionTimeRangeLabel(e: ScheduleException): string | null {
                 type="time"
                 data-testid="exception-end-time"
                 aria-label="ساعت پایان تعطیلی"
-                class="tnum min-h-11 w-full min-w-0 flex-1 rounded-xl border border-(--color-border) bg-(--color-surface) p-2 text-sm"
+                class="tnum min-h-11 w-full min-w-0 flex-1 rounded-xl border border-(--color-border-control) bg-(--color-surface) p-2 text-sm"
               />
             </div>
 
@@ -263,7 +263,16 @@ function exceptionTimeRangeLabel(e: ScheduleException): string | null {
                 </p>
                 <p v-if="e.reason" class="mt-0.5 truncate text-xs text-(--color-text-muted)">{{ e.reason }}</p>
               </div>
-              <AppButton type="button" variant="danger" class="shrink-0" aria-label="حذف تعطیلی" @click="removeException(e.id)">
+              <!-- Ghost + danger text, not a solid red fill: one per row, so a column of red
+                   blocks would out-shout the dates it belongs to. -->
+              <AppButton
+                type="button"
+                variant="ghost"
+                class="shrink-0 text-(--tone-danger-text)! hover:bg-(--tone-danger-bg)!"
+                aria-label="حذف تعطیلی"
+                :data-testid="`remove-exception-${e.id}`"
+                @click="removeException(e.id)"
+              >
                 <AppIcon name="trash" :size="16" />
               </AppButton>
             </AppCard>

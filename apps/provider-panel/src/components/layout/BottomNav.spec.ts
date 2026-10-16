@@ -9,9 +9,10 @@ vi.mock('vue-router', () => ({
   useRoute: () => route,
 }))
 
-function mountNav(path: string) {
+function mountNav(path: string, pendingCount = 0) {
   route.path = path
   return mount(BottomNav, {
+    props: { pendingCount },
     global: { stubs: { RouterLink: { template: '<a :class="$attrs.class"><slot /></a>' } } },
   })
 }
@@ -44,9 +45,9 @@ describe('BottomNav', () => {
   })
 
   // A phone bottom bar spanning a 1280px+ screen is the wrong shape for the desktop/tablet
-  // setup session PRODUCT.md treats as equally real -- from lg the same destinations render
-  // inline in the header instead (AppLayout.vue), so exactly one of the two is ever visible.
-  it('hides itself from lg up, where the header carries the same tabs', () => {
+  // setup session PRODUCT.md treats as equally real -- from lg the grouped sidebar carries
+  // every destination instead (AppLayout.vue), so exactly one of the two is ever visible.
+  it('hides itself from lg up, where the sidebar carries the same destinations', () => {
     expect(mountNav('/').get('nav').classes()).toContain('lg:hidden')
   })
 
@@ -55,7 +56,7 @@ describe('BottomNav', () => {
     const link = mountNav('/').get('a')
 
     expect(link.classes()).toContain('min-w-0')
-    expect(link.get('span').classes()).toContain('truncate')
+    expect(link.find('span.truncate').exists()).toBe(true)
   })
 
   // 6 tabs at the 320px minimum phone width must still clear the 44px touch-target floor.
@@ -76,5 +77,35 @@ describe('BottomNav', () => {
     const current = links.filter((a) => a.attributes('aria-current') === 'page')
     expect(current).toHaveLength(1)
     expect(current[0].text()).toContain('نوبت‌ها')
+  })
+
+  // The five key destinations come from the one grouped nav config, in this order.
+  it('carries dashboard, bookings, customers, services and earnings before «بیشتر»', () => {
+    expect(NAV_TABS.map((t) => t.to)).toEqual(['/', '/bookings', '/customers', '/services', '/earnings', '/more'])
+  })
+
+  it('shows the pending-approval count on the bookings tab without changing its accessible name', () => {
+    const wrapper = mountNav('/', 3)
+    const badge = wrapper.get('[data-testid="bottom-pending-badge"]')
+    expect(badge.text()).toBe((3).toLocaleString('fa-IR'))
+    expect(badge.attributes('aria-hidden')).toBe('true')
+    const bookings = wrapper.findAll('a').find((a) => a.text().includes('نوبت‌ها'))!
+    expect(bookings.attributes('aria-describedby')).toBe('bottom-pending-desc')
+    expect(wrapper.get('#bottom-pending-desc').text()).toContain('درخواست در انتظار تأیید')
+  })
+
+  it('shows no badge when nothing is pending', () => {
+    const wrapper = mountNav('/', 0)
+    expect(wrapper.find('[data-testid="bottom-pending-badge"]').exists()).toBe(false)
+    expect(wrapper.findAll('a[aria-describedby]')).toHaveLength(0)
+  })
+
+  // A screen reached through «بیشتر» highlights that tab, but only /more itself is the page.
+  it('highlights «بیشتر» on a secondary screen without claiming aria-current', () => {
+    const links = mountNav('/team').findAll('a')
+    const more = links[links.length - 1]!
+    expect(more.classes()).toContain('text-(--color-accent-text)')
+    expect(more.attributes('aria-current')).toBeUndefined()
+    expect(links.filter((a) => a.attributes('aria-current') === 'page')).toHaveLength(0)
   })
 })

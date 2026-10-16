@@ -150,6 +150,36 @@ describe('PendingApprovalView', () => {
     expect(wrapper.findAll('a').length).toBe(0)
   })
 
+  it('shows the calendar mascot and the next-steps list while pending', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ ...PENDING_SALON }) }))
+    const { refetch } = useSalon()
+    await refetch()
+
+    const router = makeRouter()
+    await router.push('/pending-approval')
+    await router.isReady()
+    const wrapper = mount(PendingApprovalView, { global: { plugins: [router] } })
+
+    const mascot = wrapper.get('[data-testid="pending-mascot"]')
+    expect(mascot.attributes('aria-hidden')).toBe('true')
+    expect(mascot.get('img').attributes('src')).toBe('/mascot/calendar.webp')
+    expect(wrapper.findAll('[data-testid="pending-next-steps"] li')).toHaveLength(3)
+  })
+
+  it('shows no mascot for a suspended salon', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ ...PENDING_SALON, status: 'suspended' }) }))
+    const { refetch } = useSalon()
+    await refetch()
+
+    const router = makeRouter()
+    await router.push('/pending-approval')
+    await router.isReady()
+    const wrapper = mount(PendingApprovalView, { global: { plugins: [router] } })
+
+    expect(wrapper.find('[data-testid="pending-mascot"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="pending-next-steps"]').exists()).toBe(false)
+  })
+
   describe('when the salon is rejected', () => {
     it('shows the rejection reason and a resubmit action', async () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({

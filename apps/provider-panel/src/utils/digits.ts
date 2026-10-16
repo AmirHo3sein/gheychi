@@ -20,3 +20,15 @@ export function toEnglishDigits(value: string): string {
 export function toPersianDigits(value: string | number): string {
   return String(value).replace(/[0-9]/g, (d) => PERSIAN_DIGITS[Number(d)]!)
 }
+
+// The one formatter for a visible number: Persian digits, fa-IR grouping ("۱۲٬۳۴۵"). Prefer it
+// over a bare `{{ n }}` (Latin digits) or a scattered `toLocaleString('fa-IR')`. A non-finite
+// value renders as an em dash rather than "NaN".
+export function formatNumber(value: number): string {
+  return Number.isFinite(value) ? value.toLocaleString('fa-IR') : '—'
+}
+
+/** Persian percent: `formatPercent(10)` → "۱۰٪". */
+export function formatPercent(value: number): string {
+  return Number.isFinite(value) ? `${formatNumber(value)}٪` : '—'
+}

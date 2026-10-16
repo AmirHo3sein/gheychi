@@ -1,18 +1,28 @@
 <!-- apps/provider-panel/src/pages/ServicesView.vue -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppMoneyInput from '@/components/ui/AppMoneyInput.vue'
 import AppSelect, { type SelectOption } from '@/components/ui/AppSelect.vue'
+import ServiceImageField from '@/components/services/ServiceImageField.vue'
+import {
+  SERVICE_IMAGE_SIZE_ERROR,
+  initialImageDraft,
+  pendingImageAction,
+  stagedImageFile,
+  withImageError,
+  type ServiceImageDraft,
+} from '@/components/services/service-image-draft'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useApi } from '@/composables/useApi'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { formatToman } from '@/utils/format-toman'
+import { formatNumber, formatPercent } from '@/utils/digits'
 
 type PricingType = 'fixed' | 'from' | 'range' | 'quote'
 
@@ -29,6 +39,12 @@ interface Service {
   durationMax: number | null
   isActive: boolean
   discountPercent: number | null
+  // Set only through the dedicated image endpoints, never through the JSON create/PATCH
+  // bodies -- the API's DTO whitelist strips them there.
+  imageUrl: string | null
+  // Set by the API when support removed this service's image for a content-policy reason;
+  // cleared by the owner's next upload or own removal. Drives the takedown notice below.
+  imageRemovedByAdminAt: string | null
 }
 
 interface CategoryRequestRow {
@@ -74,6 +90,18 @@ function priceDisplay(s: Pick<Service, 'pricingType' | 'price' | 'priceMax'>): s
   return `${formatToman(s.price ?? 0)} تومان`
 }
 
+// A takedown notice applies only while the image is still gone -- once the owner uploads a
+// replacement the API clears the timestamp anyway, but imageUrl is the user-visible truth.
+function imageRemovedByAdmin(s: Pick<Service, 'imageUrl' | 'imageRemovedByAdminAt'>): boolean {
+  return !!s.imageRemovedByAdminAt && !s.imageUrl
+}
+
+function formatRemovalDate(iso: string): string {
+  return new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Tehran' }).format(
+    new Date(iso),
+  )
+}
+
 const { apiFetch } = useApi()
 const { confirm } = useConfirm()
 const { push: pushToast } = useToast()
@@ -81,6 +109,7 @@ const services = ref<Service[]>([])
 const categories = ref<{ id: number; name: string }[]>([])
 const customCategories = ref<CustomCategory[]>([])
 const loading = ref(true)
+const adminRemovedImageCount = computed(() => services.value.filter(imageRemovedByAdmin).length)
 const loadError = ref(false)
 const createError = ref('')
 // In-flight guard for the add form -- same shape as categoryRequestSubmitting below. Without
@@ -98,6 +127,24 @@ const newService = reactive({
   durationMax: null as number | null,
   discountPercent: null as number | null,
 })
+// The add form's image is a second request after the service exists (the API only accepts
+// it on /services/:id/image), so it is staged here and sent by addService().
+const newServiceImage = ref<ServiceImageDraft>(initialImageDraft(null))
+// Set when the service was created but its image upload failed -- the form has already been
+// reset (a second «افزودن» must not create the service twice), so this says where the
+// staged file went: onto the new service's own row, ready for «ذخیره».
+// Derived rather than a stored string: it shows only while that row still holds the failed
+// upload, so an undo/«انصراف» on the row, a successful retry, or deactivating the service
+// can't leave it pointing the owner at a card with nothing left to retry.
+const createImageFailure = ref<{ id: string; name: string } | null>(null)
+const createImageNotice = computed(() => {
+  const failure = createImageFailure.value
+  if (!failure) return ''
+  const draft = imageDrafts[failure.id]
+  if (!draft || pendingImageAction(draft) !== 'upload') return ''
+  return `خدمت «${failure.name}» ذخیره شد اما تصویر بارگذاری نشد؛ از کارت همین خدمت در فهرست بالا دوباره تلاش کنید.`
+})
+const creatingImage = ref(false)
 
 // Inline "request a new category" form -- collapsed by default, opened via a link right
 // under the category select. Deliberately separate from newService: submitting a
@@ -161,6 +208,12 @@ const descriptionDrafts = reactive<Record<string, string>>({})
 // previously only set at creation, with no way to fix a wrong value afterward (e.g. a
 // service left at the "add service" form's 30-minute default that should really be 15).
 const durationDrafts = reactive<Record<string, string>>({})
+
+// Per-row image draft (see service-image-draft.ts). Sent by the row's «ذخیره» after the
+// field PATCHes, like any other pending edit, and discarded by «انصراف» with no request.
+const imageDrafts = reactive<Record<string, ServiceImageDraft>>({})
+// True only while an image request itself is in flight (drives the field's progress overlay).
+const imageSaving = reactive<Record<string, boolean>>({})
 
 // Common values a provider is likely to want, surfaced as one-tap presets so the fact
 // that this number is freely editable (not a fixed platform grid) is obvious at a glance
@@ -245,6 +298,7 @@ async function load() {
     discountDrafts[s.id] = s.discountPercent === null ? '' : String(s.discountPercent)
     descriptionDrafts[s.id] = s.description ?? ''
     durationDrafts[s.id] = String(s.durationMin)
+    imageDrafts[s.id] = initialImageDraft(s.imageUrl)
   }
   categories.value = categoriesRes.data ?? []
   customCategories.value = customCategoriesRes.data ?? []
@@ -321,6 +375,62 @@ async function submitCustomCategory() {
   pushToast('دسته‌بندی سفارشی ایجاد شد', 'success')
 }
 
+// ---- custom-category delete --------------------------------------------------------
+// DELETE /salons/mine/custom-categories/:id is restrict-on-delete at the DB level: it 409s
+// while ANY salon_services row still points at the category -- including a deactivated one,
+// which this screen no longer lists (deactivation is a soft isActive=false). So the client
+// never pre-decides "deletable"; it asks, and shows the server's Persian 409 text inline.
+const deletingCustomCategoryId = ref<string | null>(null)
+const customCategoryDeleteError = ref('')
+const CUSTOM_CATEGORY_IN_USE = 'این دسته‌بندی توسط خدماتی از سالن شما استفاده می‌شود و قابل حذف نیست'
+
+function activeServicesUsing(categoryId: string): number {
+  return services.value.filter((s) => s.customCategoryId === categoryId).length
+}
+
+function dropCustomCategory(id: string) {
+  customCategories.value = customCategories.value.filter((c) => c.id !== id)
+  if (newService.categorySelection === `custom:${id}`) newService.categorySelection = null
+}
+
+async function deleteCustomCategory(category: CustomCategory) {
+  if (deletingCustomCategoryId.value) return
+  customCategoryDeleteError.value = ''
+  const ok = await confirm({
+    title: `دسته‌بندی سفارشی «${category.name}» حذف شود؟`,
+    message: 'فقط دسته‌بندی‌ای قابل حذف است که هیچ خدمتی از سالن شما، حتی خدمت غیرفعال‌شده، به آن وصل نباشد.',
+    confirmLabel: 'حذف دسته‌بندی',
+    tone: 'danger',
+  })
+  if (!ok) return
+  deletingCustomCategoryId.value = category.id
+  const { error } = await apiFetch(`/salons/mine/custom-categories/${category.id}`, { method: 'DELETE', silent: true })
+  deletingCustomCategoryId.value = null
+  // 404: already gone (another tab) -- the outcome the owner asked for, so just drop it.
+  if (error && error.status !== 404) {
+    customCategoryDeleteError.value =
+      error.status === 409 ? error.message || CUSTOM_CATEGORY_IN_USE : 'حذف دسته‌بندی ناموفق بود؛ دوباره تلاش کنید.'
+    return
+  }
+  dropCustomCategory(category.id)
+  pushToast('دسته‌بندی سفارشی حذف شد', 'success')
+}
+
+// ---- list rows: collapsed summary, expand-to-edit -----------------------------------
+// Each service is a scannable summary row; its editor opens in place. The editor is
+// v-show'd, not v-if'd: collapsing a row must keep whatever the owner had half-edited
+// (drafts, a staged image and its preview, an inline pick error) exactly as it was, and a
+// collapsed row with unsaved edits says so in its summary.
+const expanded = reactive<Record<string, boolean>>({})
+function toggleExpanded(id: string) {
+  expanded[id] = !expanded[id]
+}
+
+function durationLabel(s: Pick<Service, 'durationMin' | 'durationMax'>): string {
+  const base = `${formatNumber(s.durationMin)} دقیقه`
+  return s.durationMax ? `${base} (تا ${formatNumber(s.durationMax)})` : base
+}
+
 function resetNewService() {
   newService.categorySelection = null
   newService.name = ''
@@ -331,6 +441,30 @@ function resetNewService() {
   newService.durationMin = 30
   newService.durationMax = null
   newService.discountPercent = null
+  newServiceImage.value = initialImageDraft(null)
+}
+
+// Server messages for a rejected image (422 undecodable/wrong type, 400 too small, 404 gone)
+// are Persian and specific; a 413 has no usable body, and anything else (network, 5xx) gets
+// the generic retry copy.
+const IMAGE_UPLOAD_FAILED = 'بارگذاری تصویر ناموفق بود؛ دوباره تلاش کنید.'
+function imageErrorMessage(error: { status: number; message: string }): string {
+  if (error.status === 413) return SERVICE_IMAGE_SIZE_ERROR
+  if ([400, 404, 409, 422].includes(error.status) && error.message) return error.message
+  return IMAGE_UPLOAD_FAILED
+}
+
+// POST (upload/replace) or DELETE for one service's image draft. `silent`: the failure is
+// shown inline on the image field, not as a toast as well.
+async function sendImageDraft(serviceId: string, draft: ServiceImageDraft) {
+  const action = pendingImageAction(draft)
+  const file = stagedImageFile(draft)
+  if (action === 'upload' && file) {
+    const form = new FormData()
+    form.append('file', file)
+    return apiFetch<Service>(`/salons/mine/services/${serviceId}/image`, { method: 'POST', body: form, silent: true })
+  }
+  return apiFetch<Service>(`/salons/mine/services/${serviceId}/image`, { method: 'DELETE', silent: true })
 }
 
 async function addService() {
@@ -380,12 +514,37 @@ async function addService() {
   if (newService.description.trim()) body.description = newService.description.trim()
 
   creating.value = true
-  const { error } = await apiFetch('/salons/mine/services', { method: 'POST', body })
+  createImageFailure.value = null
+  const { data: created, error } = await apiFetch<Service>('/salons/mine/services', { method: 'POST', body })
+  if (error) {
+    creating.value = false
+    return
+  }
+
+  // The service exists from here on, whatever happens to its image. `creating` stays set
+  // through the upload so «افزودن» can't be pressed again in between.
+  const stagedImage = created && pendingImageAction(newServiceImage.value) === 'upload' ? newServiceImage.value : null
+  let failedImage: ServiceImageDraft | null = null
+  if (created && stagedImage) {
+    creatingImage.value = true
+    const { error: imageError } = await sendImageDraft(created.id, stagedImage)
+    creatingImage.value = false
+    if (imageError) failedImage = withImageError(stagedImage, imageErrorMessage(imageError))
+  }
   creating.value = false
-  if (error) return
 
   resetNewService()
   await load()
+  if (created && failedImage) {
+    // Hand the staged file to the new service's row: it shows there as a pending, failed
+    // image, and that row's «ذخیره» retries just the upload against the existing service.
+    imageDrafts[created.id] = failedImage
+    expanded[created.id] = true
+    createImageFailure.value = { id: created.id, name: created.name }
+    pushToast('خدمت ذخیره شد اما تصویر بارگذاری نشد؛ دوباره تلاش کنید', 'error')
+    await nextTick()
+    document.querySelector(`[data-testid="service-card-${created.id}"]`)?.scrollIntoView?.({ block: 'center' })
+  }
 }
 
 // NOTE: GET /salons/mine/services only ever returns isActive: true rows, and
@@ -408,6 +567,9 @@ async function deactivate(service: Service) {
     services.value = services.value.filter((s) => s.id !== service.id)
     delete priceDrafts[service.id]
     delete discountDrafts[service.id]
+    delete imageDrafts[service.id]
+    delete imageSaving[service.id]
+    delete expanded[service.id]
     pushToast('خدمت غیرفعال شد', 'success')
   }
 }
@@ -559,7 +721,8 @@ function isDirty(s: Service): boolean {
   const discountDirty = s.pricingType === 'fixed' && String(discountDrafts[s.id] ?? '').trim() !== persistedDiscount(s)
   const durationDirty = String(durationDrafts[s.id] ?? '').trim() !== String(s.durationMin)
   const descriptionDirty = (descriptionDrafts[s.id] ?? '').trim() !== (s.description ?? '')
-  return priceDirty || discountDirty || durationDirty || descriptionDirty
+  const imageDirty = imageDrafts[s.id] !== undefined && pendingImageAction(imageDrafts[s.id]) !== null
+  return priceDirty || discountDirty || durationDirty || descriptionDirty || imageDirty
 }
 
 function resetDrafts(s: Service) {
@@ -567,6 +730,28 @@ function resetDrafts(s: Service) {
   discountDrafts[s.id] = persistedDiscount(s)
   durationDrafts[s.id] = String(s.durationMin)
   descriptionDrafts[s.id] = s.description ?? ''
+  imageDrafts[s.id] = initialImageDraft(s.imageUrl)
+}
+
+// Last step of a row save: only when the image draft has something pending (an untouched
+// image sends nothing). On success the returned service replaces the row's image fields, so
+// the preview switches to the stored (re-encoded) image without a reload; on failure the
+// draft keeps its file or removal intent plus an inline error, and «ذخیره» retries it.
+async function saveImage(s: Service): Promise<boolean> {
+  const draft = imageDrafts[s.id]
+  if (!draft || pendingImageAction(draft) === null) return true
+  imageSaving[s.id] = true
+  const { data, error } = await sendImageDraft(s.id, draft)
+  imageSaving[s.id] = false
+  if (error || !data) {
+    imageDrafts[s.id] = withImageError(draft, error ? imageErrorMessage(error) : IMAGE_UPLOAD_FAILED)
+    return false
+  }
+  s.imageUrl = data.imageUrl
+  s.imageRemovedByAdminAt = data.imageRemovedByAdminAt ?? null
+  imageDrafts[s.id] = initialImageDraft(data.imageUrl)
+  pushToast(data.imageUrl ? 'تصویر خدمت ذخیره شد' : 'تصویر خدمت حذف شد', 'success')
+  return true
 }
 
 // Runs the same per-field validation + PATCH as before, one dirty field at a time, and
@@ -581,7 +766,8 @@ async function saveRow(s: Service) {
       if (String(discountDrafts[s.id] ?? '').trim() !== persistedDiscount(s) && !(await updateDiscount(s))) return
     }
     if (String(durationDrafts[s.id] ?? '').trim() !== String(s.durationMin) && !(await updateDuration(s))) return
-    if ((descriptionDrafts[s.id] ?? '').trim() !== (s.description ?? '')) await updateDescription(s)
+    if ((descriptionDrafts[s.id] ?? '').trim() !== (s.description ?? '') && !(await updateDescription(s))) return
+    await saveImage(s)
   } finally {
     savingRows[s.id] = false
   }
@@ -589,14 +775,29 @@ async function saveRow(s: Service) {
 </script>
 
 <template>
-  <!-- max-w-2xl on the PAGE container, not just on the cards inside it -- capping only the
-     cards while the container (and so the heading, which fills it) stayed max-w-5xl left the
-     h1 aligned to a wider box than the content below it, reading as "the title is still on
-     the right" even after the cards themselves were centered. The services list is a single
-     column now (see below), so nothing on this page actually needs more width than the form. -->
-  <div class="mx-auto w-full max-w-2xl space-y-4 p-4 lg:p-6">
-    <h1 class="text-lg font-bold text-(--color-text)">خدمات و قیمت‌ها</h1>
+  <!-- Two columns from lg: the catalogue (RTL start, i.e. right) and a sticky side column with
+       the add form and category tools. Below lg it is one column, list first. -->
+  <div class="mx-auto w-full max-w-6xl p-4 lg:p-6">
+    <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h1 class="text-lg font-bold text-(--color-text)">خدمات و قیمت‌ها</h1>
+        <p v-if="!loading && !loadError" class="mt-0.5 text-sm text-(--color-text-muted)" data-testid="services-count">
+          {{ services.length ? `${formatNumber(services.length)} خدمت فعال` : 'هنوز خدمتی ندارید' }}
+        </p>
+      </div>
+      <!-- An anchor, not a button: on a phone the add form sits below the whole list. -->
+      <a
+        href="#new-service-form"
+        class="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-(--color-border-control) px-4 text-sm font-semibold text-(--color-text) hover:bg-(--color-surface-subtle) lg:hidden"
+        data-testid="jump-to-new-service"
+      >
+        <AppIcon name="plus" :size="16" />
+        خدمت جدید
+      </a>
+    </div>
 
+    <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start lg:gap-6">
+    <section class="min-w-0 space-y-3" aria-label="فهرست خدمات">
     <div v-if="loadError" class="space-y-3 rounded-xl border border-dashed border-(--color-border) p-4 text-center">
       <p class="text-sm text-(--tone-danger-text)">خدمات بارگذاری نشد.</p>
       <AppButton variant="secondary" data-testid="retry-services" @click="load">
@@ -610,62 +811,137 @@ async function saveRow(s: Service) {
       </div>
 
       <template v-else>
-        <EmptyState v-if="services.length === 0" icon="services" message="هنوز خدمتی ثبت نشده است." />
+        <p
+          v-if="adminRemovedImageCount > 0"
+          role="status"
+          class="flex items-center gap-2 rounded-xl bg-(--tone-warning-bg) p-3 text-sm text-(--tone-warning-text)"
+          data-testid="service-images-removed-banner"
+        >
+          <AppIcon name="warning" :size="16" class="shrink-0" />
+          تصویر {{ adminRemovedImageCount.toLocaleString('fa-IR') }} خدمت توسط پشتیبانی حذف شده است
+        </p>
 
-        <!-- Single column, matching the page container's own width (now max-w-2xl -- see the
-             top-level div) -- a 2-column grid here used to leave a lone/odd card at half the
-             container's width, hugging the RTL start (right) edge with visibly empty space
-             on the other side. -->
-        <div v-else class="space-y-4">
+        <EmptyState
+          v-if="services.length === 0"
+          icon="services"
+          mascot="hello"
+          title="اولین خدمت سالن را اضافه کنید"
+          message="هنوز خدمتی ثبت نشده است."
+        />
+
+        <ul v-else class="space-y-3">
           <!-- "service-card-" prefix, not "service-" -- the latter would collide with the
                per-row field testids nested inside this same card (service-price-input,
                service-description), making a prefix-based locator over ALL of them ambiguous. -->
-          <AppCard v-for="s in services" :key="s.id" :data-testid="`service-card-${s.id}`" :padded="false" class="space-y-3 p-4">
-            <!--
-              flex-wrap + min-w-0: the name, its discount badge and the ~140px
-              «غیرفعال‌سازی» button together need more than the ~256px a card has at 320px.
-              Wrapping keeps the button reachable and lets a long service name break instead
-              of pushing the row off the (left, in RTL) edge of the page.
-            -->
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <div class="flex min-w-0 flex-wrap items-center gap-2">
-                <p class="min-w-0 break-words text-sm font-bold text-(--color-text)">{{ s.name }}</p>
-                <StatusBadge :label="PRICING_TYPE_META[s.pricingType].label" tone="info" />
-                <StatusBadge v-if="s.discountPercent" :label="`٪${s.discountPercent} تخفیف`" tone="success" />
-              </div>
-              <AppButton type="button" variant="danger" class="shrink-0" data-testid="deactivate-service" @click="deactivate(s)">
-                <template #icon><AppIcon name="x" :size="15" /></template>
-                غیرفعال‌سازی
-              </AppButton>
-            </div>
+          <li v-for="s in services" :key="s.id">
+          <AppCard
+            :data-testid="`service-card-${s.id}`"
+            :padded="false"
+            class="overflow-hidden transition-shadow"
+            :class="expanded[s.id] ? 'shadow-(--shadow-md)' : ''"
+          >
+            <!-- Summary row: the whole row is the disclosure button. No `text-xs` class on it
+                 (the row's own small links are matched by that in the spec). -->
+            <button
+              type="button"
+              class="flex w-full items-center gap-3 p-3 text-start transition-colors hover:bg-(--color-surface-subtle)/50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--color-accent-text) sm:p-4"
+              :aria-expanded="expanded[s.id] ? 'true' : 'false'"
+              :aria-controls="`service-editor-${s.id}`"
+              :data-testid="`service-toggle-${s.id}`"
+              @click="toggleExpanded(s.id)"
+            >
+              <span
+                class="relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-(--color-border) bg-(--color-surface-subtle) text-(--color-text-muted)"
+                data-testid="service-thumb"
+              >
+                <img v-if="s.imageUrl" :src="s.imageUrl" alt="" class="size-full object-cover" loading="lazy" decoding="async" />
+                <AppIcon v-else-if="imageRemovedByAdmin(s)" name="warning" :size="20" class="text-(--tone-warning-text)" />
+                <AppIcon v-else name="image-off" :size="20" />
+              </span>
+
+              <span class="min-w-0 flex-1 space-y-1">
+                <span class="block break-words text-sm font-bold text-(--color-text)">{{ s.name }}</span>
+                <span class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                  <!-- priceDisplay keeps FROM as «از …» and QUOTE as words, never a bare number. -->
+                  <span class="tnum font-semibold text-(--color-text)" data-testid="service-summary-price">{{ priceDisplay(s) }}</span>
+                  <span class="tnum inline-flex items-center gap-1 text-(--color-text-muted)">
+                    <AppIcon name="hours" :size="14" />
+                    {{ durationLabel(s) }}
+                  </span>
+                </span>
+                <span class="flex flex-wrap items-center gap-1.5">
+                  <StatusBadge :label="PRICING_TYPE_META[s.pricingType].label" tone="info" />
+                  <StatusBadge v-if="s.discountPercent" :label="`${formatPercent(s.discountPercent)} تخفیف`" tone="success" />
+                  <StatusBadge label="فعال" tone="success" />
+                  <StatusBadge v-if="imageRemovedByAdmin(s)" label="تصویر حذف شد" tone="warning" />
+                  <StatusBadge v-if="!expanded[s.id] && isDirty(s)" label="تغییرات ذخیره‌نشده" tone="warning" />
+                </span>
+              </span>
+
+              <span
+                class="flex shrink-0 items-center gap-1 text-sm font-medium text-(--color-accent-text)"
+                aria-hidden="true"
+              >
+                <span class="hidden sm:inline">{{ expanded[s.id] ? 'بستن' : 'ویرایش' }}</span>
+                <AppIcon :name="expanded[s.id] ? 'chevron-up' : 'chevron-down'" :size="18" />
+              </span>
+            </button>
+
+            <div
+              v-show="expanded[s.id]"
+              :id="`service-editor-${s.id}`"
+              class="space-y-4 border-t border-(--color-border-soft) p-4"
+              :data-testid="`service-editor-${s.id}`"
+            >
+            <p
+              v-if="imageRemovedByAdmin(s)"
+              role="status"
+              class="flex items-start gap-2 rounded-xl bg-(--tone-warning-bg) p-3 text-sm text-(--tone-warning-text)"
+              data-testid="service-image-removed-notice"
+            >
+              <AppIcon name="warning" :size="16" class="mt-0.5 shrink-0" />
+              <span>
+                تصویر این خدمت به دلیل مغایرت با قوانین محتوای قیچی توسط پشتیبانی حذف شد. می‌توانید تصویر دیگری بارگذاری کنید.
+                <span class="tnum mt-1 block text-xs">تاریخ حذف: {{ formatRemovalDate(s.imageRemovedByAdminAt!) }}</span>
+              </span>
+            </p>
+
+            <ServiceImageField
+              v-if="imageDrafts[s.id]"
+              v-model="imageDrafts[s.id]"
+              :service-name="s.name"
+              :busy="imageSaving[s.id]"
+            />
 
             <!-- FIXED-only inline price/discount editors, unchanged from before pricing
                  types existed -- committing a bare number here never needs an atomic type
                  switch. -->
             <template v-if="s.pricingType === 'fixed' && !editingPricing[s.id]">
-              <div class="grid grid-cols-2 gap-3 sm:max-w-sm">
-                <AppMoneyInput
-                  v-model="priceDrafts[s.id]"
-                  label="قیمت (تومان)"
-                  data-testid="service-price-input"
-                />
-                <AppInput
-                  v-model="discountDrafts[s.id]"
-                  label="٪ تخفیف"
-                  type="number"
-                  min="1"
-                  max="100"
-                  placeholder="٪ تخفیف"
-                  class="tnum"
-                />
+              <div class="space-y-1.5">
+                <div class="grid grid-cols-2 gap-3 sm:max-w-md">
+                  <AppMoneyInput
+                    v-model="priceDrafts[s.id]"
+                    label="قیمت (تومان)"
+                    data-testid="service-price-input"
+                  />
+                  <AppInput
+                    v-model="discountDrafts[s.id]"
+                    label="٪ تخفیف"
+                    type="number"
+                    min="1"
+                    max="100"
+                    placeholder="٪ تخفیف"
+                    class="tnum"
+                  />
+                </div>
+                <button
+                  type="button"
+                  class="inline-flex min-h-10 items-center text-xs text-(--color-accent-text) underline-offset-2 hover:underline"
+                  @click="openPricingEditor(s)"
+                >
+                  تغییر نوع قیمت‌گذاری
+                </button>
               </div>
-              <button
-                type="button"
-                class="text-xs text-(--color-accent-text) underline-offset-2 hover:underline"
-                @click="openPricingEditor(s)"
-              >
-                تغییر نوع قیمت‌گذاری
-              </button>
             </template>
 
             <!-- FROM/RANGE/QUOTE: a compact read-only summary plus an edit affordance --
@@ -675,7 +951,7 @@ async function saveRow(s: Service) {
               <button
                 type="button"
                 data-testid="edit-pricing-type"
-                class="text-xs text-(--color-accent-text) underline-offset-2 hover:underline"
+                class="inline-flex min-h-10 items-center text-xs text-(--color-accent-text) underline-offset-2 hover:underline"
                 @click="openPricingEditor(s)"
               >
                 ویرایش قیمت‌گذاری
@@ -689,7 +965,7 @@ async function saveRow(s: Service) {
                   v-for="t in PRICING_TYPES"
                   :key="t"
                   class="flex cursor-pointer items-start gap-2 rounded-xl border p-2 text-xs"
-                  :class="pricingDrafts[s.id].pricingType === t ? 'border-(--color-accent-strong) bg-(--color-accent-soft)' : 'border-(--color-border)'"
+                  :class="pricingDrafts[s.id].pricingType === t ? 'border-(--color-accent-text) bg-(--color-accent-soft)' : 'border-(--color-border-control)'"
                 >
                   <input v-model="pricingDrafts[s.id].pricingType" type="radio" :value="t" class="mt-0.5" />
                   <span>
@@ -728,7 +1004,7 @@ async function saveRow(s: Service) {
               </div>
             </div>
 
-            <div class="sm:max-w-sm">
+            <div class="sm:max-w-md">
               <AppInput
                 v-model="durationDrafts[s.id]"
                 label="مدت زمان و فاصله نوبت‌ها (دقیقه)"
@@ -751,10 +1027,10 @@ async function saveRow(s: Service) {
                   :key="preset"
                   type="button"
                   :data-testid="`service-duration-preset-${preset}`"
-                  class="min-h-9 rounded-full border px-3 py-1.5 text-xs transition-colors"
+                  class="min-h-10 rounded-full border px-3 py-1.5 text-xs transition-colors"
                   :class="(Number(durationDrafts[s.id]) || s.durationMin) === preset
                     ? 'border-(--color-accent-text) bg-(--color-accent-soft) text-(--color-text)'
-                    : 'border-(--color-border) text-(--color-text-muted) hover:bg-(--color-surface-subtle)'"
+                    : 'border-(--color-border-control) text-(--color-text-muted) hover:bg-(--color-surface-subtle)'"
                   @click="setDurationPreset(s, preset)"
                 >
                   {{ preset.toLocaleString('fa-IR') }} دقیقه
@@ -762,53 +1038,76 @@ async function saveRow(s: Service) {
               </div>
             </div>
             <div>
-              <label class="mb-1 block text-xs font-medium text-(--color-text-muted)">توضیحات خدمت (اختیاری)</label>
+              <label :for="`service-description-${s.id}`" class="mb-1 block text-xs font-medium text-(--color-text-muted)">توضیحات خدمت (اختیاری)</label>
               <textarea
+                :id="`service-description-${s.id}`"
                 v-model="descriptionDrafts[s.id]"
                 rows="2"
                 :maxlength="DESCRIPTION_MAX_LENGTH"
                 placeholder="مثلاً: این زمان تقریبی است و ممکن است بیشتر طول بکشد"
-                class="w-full rounded-xl border border-(--color-border) bg-(--color-surface) p-2 text-sm"
+                class="w-full rounded-xl border border-(--color-border-control) bg-(--color-surface-card) p-2 text-sm"
                 data-testid="service-description"
               />
             </div>
 
-            <!-- Appears only while a field differs from what's saved; 44px buttons (the
-                 default size) because this is the primary action on a phone. -->
-            <div v-if="isDirty(s)" class="flex flex-wrap gap-2 border-t border-(--color-border-soft) pt-3" data-testid="service-row-actions">
+            <!-- Save/cancel appear only while a field differs from what's saved; deactivation
+                 is the row's quiet, last action (a one-way soft delete behind its own confirm),
+                 pushed to the far (left) end so it never sits where «ذخیره» is expected. -->
+            <div class="flex flex-wrap items-center gap-2 border-t border-(--color-border-soft) pt-3">
+              <div v-if="isDirty(s)" class="flex flex-wrap gap-2" data-testid="service-row-actions">
+                <AppButton
+                  type="button"
+                  :loading="savingRows[s.id]"
+                  data-testid="save-service-row"
+                  @click="saveRow(s)"
+                >
+                  ذخیره
+                </AppButton>
+                <AppButton
+                  type="button"
+                  variant="secondary"
+                  :disabled="savingRows[s.id]"
+                  data-testid="cancel-service-row"
+                  @click="resetDrafts(s)"
+                >
+                  انصراف
+                </AppButton>
+              </div>
               <AppButton
                 type="button"
-                :loading="savingRows[s.id]"
-                data-testid="save-service-row"
-                @click="saveRow(s)"
+                variant="ghost"
+                size="sm"
+                touch
+                class="ms-auto text-(--tone-danger-text)! hover:bg-(--tone-danger-bg)!"
+                data-testid="deactivate-service"
+                @click="deactivate(s)"
               >
-                ذخیره
-              </AppButton>
-              <AppButton
-                type="button"
-                variant="secondary"
-                :disabled="savingRows[s.id]"
-                data-testid="cancel-service-row"
-                @click="resetDrafts(s)"
-              >
-                انصراف
+                <template #icon><AppIcon name="x" :size="15" /></template>
+                غیرفعال‌سازی خدمت
               </AppButton>
             </div>
+            </div>
           </AppCard>
-        </div>
+          </li>
+        </ul>
       </template>
     </template>
+    </section>
 
-    <AppCard class="space-y-3">
-      <h2 class="font-bold text-(--color-text)">افزودن خدمت جدید</h2>
+    <aside class="min-w-0 space-y-4">
+    <AppCard id="new-service-form" class="scroll-mt-4 space-y-3">
+      <h2 class="flex items-center gap-2 font-bold text-(--color-text)">
+        <AppIcon name="plus" :size="18" class="text-(--color-accent-text)" />
+        افزودن خدمت جدید
+      </h2>
       <AppSelect v-model="newService.categorySelection" :options="categoryOptions" placeholder="دسته‌بندی" data-testid="new-service-category" />
 
-      <div class="flex flex-wrap gap-3">
+      <div class="flex flex-wrap gap-x-3">
         <button
           v-if="!requestingCategory"
           type="button"
           data-testid="open-category-request"
-          class="text-xs text-(--color-accent-text) underline-offset-2 hover:underline"
+          class="inline-flex min-h-10 items-center text-xs text-(--color-accent-text) underline-offset-2 hover:underline"
           @click="openCategoryRequest"
         >
           دسته‌بندی مدنظرتان در لیست نیست؟ درخواست دسته‌بندی جدید
@@ -817,7 +1116,7 @@ async function saveRow(s: Service) {
           v-if="!creatingCustomCategory"
           type="button"
           data-testid="open-custom-category"
-          class="text-xs text-(--color-accent-text) underline-offset-2 hover:underline"
+          class="inline-flex min-h-10 items-center text-xs text-(--color-accent-text) underline-offset-2 hover:underline"
           @click="openCustomCategory"
         >
           + دسته‌بندی سفارشی برای همین سالن
@@ -868,7 +1167,7 @@ async function saveRow(s: Service) {
             rows="2"
             maxlength="500"
             placeholder="چرا به این دسته‌بندی نیاز دارید؟"
-            class="w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-2 text-sm"
+            class="w-full rounded-xl border border-(--color-border-control) bg-(--color-surface-card) p-2 text-sm"
             data-testid="category-request-note"
           />
         </div>
@@ -902,7 +1201,7 @@ async function saveRow(s: Service) {
           v-for="t in PRICING_TYPES"
           :key="t"
           class="flex cursor-pointer items-start gap-2 rounded-xl border p-2.5 text-xs"
-          :class="newService.pricingType === t ? 'border-(--color-accent-strong) bg-(--color-accent-soft)' : 'border-(--color-border)'"
+          :class="newService.pricingType === t ? 'border-(--color-accent-text) bg-(--color-accent-soft)' : 'border-(--color-border-control)'"
           :data-testid="`new-service-pricing-type-${t}`"
         >
           <input v-model="newService.pricingType" type="radio" :value="t" class="mt-0.5" />
@@ -913,7 +1212,8 @@ async function saveRow(s: Service) {
         </label>
       </fieldset>
 
-      <div class="grid grid-cols-2 gap-3">
+      <!-- One column inside the lg side column (22rem), two on a wide phone/tablet. -->
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
         <AppMoneyInput
           v-if="newService.pricingType !== 'quote'"
           :model-value="String(newService.price)"
@@ -945,10 +1245,10 @@ async function saveRow(s: Service) {
               :key="preset"
               type="button"
               :data-testid="`new-service-duration-preset-${preset}`"
-              class="rounded-full border px-2.5 py-1 text-xs transition-colors"
+              class="min-h-10 rounded-full border px-3 py-1.5 text-xs transition-colors"
               :class="newService.durationMin === preset
                 ? 'border-(--color-accent-text) bg-(--color-accent-soft) text-(--color-text)'
-                : 'border-(--color-border) text-(--color-text-muted) hover:bg-(--color-surface-subtle)'"
+                : 'border-(--color-border-control) text-(--color-text-muted) hover:bg-(--color-surface-subtle)'"
               @click="setNewServiceDurationPreset(preset)"
             >
               {{ preset.toLocaleString('fa-IR') }} دقیقه
@@ -967,7 +1267,7 @@ async function saveRow(s: Service) {
           rows="2"
           :maxlength="DESCRIPTION_MAX_LENGTH"
           placeholder="مثلاً: این زمان تقریبی است و ممکن است بسته به شرایط بیشتر طول بکشد"
-          class="w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-3 text-sm"
+          class="w-full rounded-xl border border-(--color-border-control) bg-(--color-surface-card) p-3 text-sm"
         />
         <p class="mt-1 text-xs text-(--color-text-muted)">
           اگر مدت زمان انجام این خدمت می‌تواند بیشتر از عدد بالا طول بکشد، همین‌جا به مشتری توضیح دهید.
@@ -984,12 +1284,64 @@ async function saveRow(s: Service) {
         class="tnum"
         @update:model-value="(v) => (newService.discountPercent = v === '' ? null : Number(v))"
       />
+      <div data-testid="new-service-image">
+        <ServiceImageField v-model="newServiceImage" :service-name="newService.name" :busy="creatingImage" />
+      </div>
       <p v-if="createError" class="flex items-center gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)">
         {{ createError }}
+      </p>
+      <p
+        v-if="createImageNotice"
+        role="alert"
+        class="rounded-xl bg-(--tone-warning-bg) p-3 text-sm text-(--tone-warning-text)"
+        data-testid="create-image-notice"
+      >
+        {{ createImageNotice }}
       </p>
       <AppButton type="button" block data-testid="add-service" :disabled="creating" :loading="creating" @click="addService">
         افزودن
       </AppButton>
+    </AppCard>
+
+    <!-- The salon's own custom categories, with delete. A 409 (still used by a service,
+         including a deactivated one) is shown inline with the server's own message. -->
+    <AppCard v-if="customCategories.length" class="space-y-3" data-testid="custom-categories-card">
+      <div>
+        <h2 class="font-bold text-(--color-text)">دسته‌بندی‌های سفارشی سالن</h2>
+        <p class="mt-0.5 text-xs text-(--color-text-muted)">فقط برای سالن شما؛ در جستجوی عمومی نمایش داده نمی‌شوند.</p>
+      </div>
+      <ul class="flex flex-wrap gap-2">
+        <li
+          v-for="c in customCategories"
+          :key="c.id"
+          class="inline-flex min-h-11 items-center gap-1 rounded-full border border-(--color-border) bg-(--color-surface-subtle) ps-3 pe-1 text-sm text-(--color-text)"
+          :data-testid="`custom-category-chip-${c.id}`"
+        >
+          <span class="break-words">{{ c.name }}</span>
+          <span v-if="activeServicesUsing(c.id)" class="tnum text-xs text-(--color-text-muted)">
+            ({{ formatNumber(activeServicesUsing(c.id)) }} خدمت)
+          </span>
+          <button
+            type="button"
+            class="inline-flex size-9 items-center justify-center rounded-full text-(--color-text-muted) hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text) disabled:opacity-60"
+            :aria-label="`حذف دسته‌بندی سفارشی ${c.name}`"
+            :disabled="deletingCustomCategoryId !== null"
+            :data-testid="`delete-custom-category-${c.id}`"
+            @click="deleteCustomCategory(c)"
+          >
+            <AppIcon :name="deletingCustomCategoryId === c.id ? 'spinner' : 'trash'" :size="15" :class="deletingCustomCategoryId === c.id ? 'animate-spin' : ''" />
+          </button>
+        </li>
+      </ul>
+      <p
+        v-if="customCategoryDeleteError"
+        role="alert"
+        class="flex items-start gap-2 rounded-xl bg-(--tone-danger-bg) p-3 text-sm text-(--tone-danger-text)"
+        data-testid="custom-category-delete-error"
+      >
+        <AppIcon name="warning" :size="16" class="mt-0.5 shrink-0" />
+        {{ customCategoryDeleteError }}
+      </p>
     </AppCard>
 
     <AppCard v-if="categoryRequests.length" class="space-y-3">
@@ -1009,5 +1361,7 @@ async function saveRow(s: Service) {
         <StatusBadge :label="CATEGORY_REQUEST_STATUS_META[r.status].label" :tone="CATEGORY_REQUEST_STATUS_META[r.status].tone" />
       </div>
     </AppCard>
+    </aside>
+    </div>
   </div>
 </template>

@@ -1,4 +1,5 @@
 import { enableAutoUnmount, mount } from '@vue/test-utils'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
@@ -7,6 +8,9 @@ import { resetSalon, useSalon } from '@/composables/useSalon'
 import { resetToast, useToast } from '@/composables/useToast'
 import BookingsView from './BookingsView.vue'
 import { autoConfirm } from '@/test-utils/auto-confirm'
+import { tehranDateString } from '@/utils/tehran-date'
+import { startOfTehranDayIso } from '@/utils/tehran-day'
+import { addDaysToKey } from '@/utils/booking-schedule'
 
 // A manual-approval request exactly as GET /salons/mine/bookings returns one: nothing is
 // paid yet (paymentExpiresAt is still null) and approvalExpiresAt is the server's own
@@ -302,7 +306,7 @@ describe('BookingsView', () => {
 
     const card = wrapper.find('[data-testid="booking-b1"]')
     expect(card.text()).toContain('علی رضایی')
-    expect(card.text()).toContain('09120000000')
+    expect(card.text()).toContain('۰۹۱۲۰۰۰۰۰۰۰')
     expect(card.text()).toContain('ثبت دستی')
   })
 
@@ -344,28 +348,38 @@ describe('BookingsView', () => {
     expect(wrapper.find('[data-testid="booking-new-b"]').exists()).toBe(true)
   })
 
+  // Intentional change: the day view is now a time grid that reads its own window
+  // (GET /salons/mine/bookings?from&to), so the fetch is routed by URL rather than call order.
   it('jumps the day view to the new booking\'s own date so it does not silently vanish from the current filter', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET bookings
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET workers
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([{ id: 's1', name: 'کوتاهی مو' }]) }) // GET services
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          id: 'far-off-b', serviceId: 's1', serviceName: 'کوتاهی مو', priceSnapshot: 100000,
-          // A future date this suite can't collide with "today", whichever day it runs on.
-          startsAt: '2030-06-15T05:30:00.000Z', status: 'confirmed', workerId: null, workerName: null,
-          customerName: null, customerPhone: '09120000000', source: 'manual',
-        }),
-      }) // POST manual booking
+    const created = {
+      id: 'far-off-b', serviceId: 's1', serviceName: 'کوتاهی مو', priceSnapshot: 100000,
+      // A future date this suite can't collide with "today", whichever day it runs on.
+      startsAt: '2030-06-15T05:30:00.000Z', endsAt: '2030-06-15T06:30:00.000Z', status: 'confirmed', workerId: null, workerName: null,
+      customerName: null, customerPhone: '09120000000', source: 'manual',
+    }
+    let posted = false
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      const ok = (body: unknown) => Promise.resolve({ ok: true, status: 200, json: async () => body })
+      if (init?.method === 'POST') {
+        posted = true
+        return ok(created)
+      }
+      if (url.includes('/services')) return ok([{ id: 's1', name: 'کوتاهی مو' }])
+      if (url.includes('/workers')) return ok([])
+      // The window read: only the 2030-06-15 window contains the booking, and only once it exists.
+      if (url.includes('from=')) {
+        const from = new URL(url, 'http://x').searchParams.get('from')!
+        return ok(posted && from <= created.startsAt && created.startsAt < new Date(Date.parse(from) + 86_400_000).toISOString() ? [created] : [])
+      }
+      return ok([])
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     const wrapper = mount(BookingsView)
     await new Promise((r) => setTimeout(r, 0))
 
     // Switch into day view (defaults to today) BEFORE creating a booking for a far-off date.
-    await wrapper.find('[data-testid="toggle-show-all"]').setValue(false)
+    await wrapper.find('[data-testid="toggle-schedule"]').trigger('click')
     await new Promise((r) => setTimeout(r, 0))
     expect(wrapper.find('[data-testid="booking-far-off-b"]').exists()).toBe(false)
 
@@ -377,44 +391,52 @@ describe('BookingsView', () => {
     await new Promise((r) => setTimeout(r, 0))
     await wrapper.find('[data-testid="submit-manual-booking"]').trigger('click')
     await new Promise((r) => setTimeout(r, 0))
+    await new Promise((r) => setTimeout(r, 0))
 
     // Still in day view (never re-toggled to "show all"), yet the new booking is visible --
     // the day filter itself followed the booking, not the other way around.
-    expect((wrapper.find('[data-testid="toggle-show-all"]').element as HTMLInputElement).checked).toBe(false)
+    expect(wrapper.find('[data-testid="toggle-show-all"]').attributes('aria-pressed')).toBe('false')
     expect(wrapper.find('[data-testid="booking-far-off-b"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="schedule-block-far-off-b"]').exists()).toBe(true)
   })
 
-  it('filters to the selected day once the show-all toggle is switched off', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ([
-          {
-            id: 'today', serviceId: 's1', serviceName: 'امروز', priceSnapshot: 100000, startsAt: new Date().toISOString(),
-            status: 'confirmed', workerId: null, workerName: null, customerName: null, customerPhone: '', source: 'online',
-          },
-          {
-            id: 'later', serviceId: 's1', serviceName: 'دیرتر', priceSnapshot: 100000, startsAt: '2030-01-01T09:00:00.000Z',
-            status: 'confirmed', workerId: null, workerName: null, customerName: null, customerPhone: '', source: 'online',
-          },
-        ]),
-      }) // GET bookings
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET workers
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET services
+  // Intentional change: the old unfiltered "all bookings" list is now split into tabs, and the
+  // day view reads its own window (GET /salons/mine/bookings?from&to) instead of filtering the
+  // full list client-side.
+  it('shows the selected day from its own windowed read once the show-all toggle is switched off', async () => {
+    const todayBooking = {
+      id: 'today', serviceId: 's1', serviceName: 'امروز', priceSnapshot: 100000, startsAt: new Date().toISOString(),
+      endsAt: new Date(Date.now() + 3_600_000).toISOString(),
+      status: 'confirmed', workerId: null, workerName: null, customerName: null, customerPhone: '', source: 'online',
+    }
+    const later = {
+      id: 'later', serviceId: 's1', serviceName: 'دیرتر', priceSnapshot: 100000, startsAt: '2030-01-01T09:00:00.000Z',
+      status: 'confirmed', workerId: null, workerName: null, customerName: null, customerPhone: '', source: 'online',
+    }
+    const fetchMock = vi.fn((url: string) => {
+      const body = url.includes('from=') ? [todayBooking] : url.includes('/workers') || url.includes('/services') ? [] : [todayBooking, later]
+      return Promise.resolve({ ok: true, status: 200, json: async () => body })
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     const wrapper = mount(BookingsView)
     await new Promise((r) => setTimeout(r, 0))
+    // List mode issues no windowed read at all.
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes('from='))).toBe(false)
 
-    expect(wrapper.findAll('[data-testid^="booking-"]')).toHaveLength(2)
-
-    await wrapper.find('[data-testid="toggle-show-all"]').setValue(false)
+    await wrapper.find('[data-testid="toggle-schedule"]').trigger('click')
     await new Promise((r) => setTimeout(r, 0))
+
+    const rangeUrl = new URL(String(fetchMock.mock.calls.find(([u]) => String(u).includes('from='))![0]), 'http://x')
+    const today = tehranDateString(new Date())
+    expect(rangeUrl.pathname).toContain('/salons/mine/bookings')
+    expect(rangeUrl.searchParams.get('from')).toBe(startOfTehranDayIso(today))
+    expect(rangeUrl.searchParams.get('to')).toBe(startOfTehranDayIso(addDaysToKey(today, 1)))
 
     const cards = wrapper.findAll('[data-testid^="booking-"]')
     expect(cards).toHaveLength(1)
     expect(cards[0]!.attributes('data-testid')).toBe('booking-today')
+    expect(wrapper.find('[data-testid="schedule-block-today"]').exists()).toBe(true)
   })
 
   // -- Manual-approval queue --
@@ -432,7 +454,7 @@ describe('BookingsView', () => {
     const card = wrapper.get('[data-testid="pending-request-req1"]')
     expect(card.text()).toContain('رنگ مو')
     expect(card.text()).toContain('مریم احمدی')
-    expect(card.text()).toContain('09120000000')
+    expect(card.text()).toContain('۰۹۱۲۰۰۰۰۰۰۰')
     expect(card.text()).toContain('۶۰ دقیقه')
     // Display-only countdown off the server's own deadline snapshot.
     expect(wrapper.get('[data-testid="approval-remaining-req1"]').text()).toContain('مانده')
@@ -440,23 +462,30 @@ describe('BookingsView', () => {
     expect(wrapper.get('[data-testid="pending-requests"]').text()).toContain('مشتری هنوز پرداختی انجام نداده است')
   })
 
-  // The queue is deliberately outside the day filter: a request expires on its own deadline,
-  // so hiding it behind "today" would let it lapse unseen.
-  it('keeps the pending queue visible while the day view is filtered to another day', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([PENDING_REQUEST]) }) // GET bookings
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET workers
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) }) // GET services
+  // The queue is deliberately never hidden by a view: a request expires on its own deadline.
+  // Intentional change: outside «نیاز به اقدام» (here, the day grid) it is a compact alert strip
+  // with the live countdown and a jump back to the queue, instead of the full queue cards.
+  it('keeps pending requests visible as an alert strip while the day view shows another day', async () => {
+    const fetchMock = vi.fn((url: string) =>
+      Promise.resolve({ ok: true, status: 200, json: async () => (url.includes('from=') || url.includes('/workers') || url.includes('/services') ? [] : [PENDING_REQUEST]) }),
+    )
     vi.stubGlobal('fetch', fetchMock)
 
     const wrapper = mount(BookingsView)
     await new Promise((r) => setTimeout(r, 0))
 
-    await wrapper.find('[data-testid="toggle-show-all"]').setValue(false)
+    await wrapper.find('[data-testid="toggle-schedule"]').trigger('click')
     await new Promise((r) => setTimeout(r, 0))
 
-    // Its agenda card is filtered out (the request is for 2030), the queue card is not.
+    // Its agenda card is not on today's grid (the request is for 2030), the alert is.
     expect(wrapper.find('[data-testid="booking-req1"]').exists()).toBe(false)
+    const alert = wrapper.get('[data-testid="pending-alert"]')
+    expect(alert.text()).toContain((1).toLocaleString('fa-IR'))
+    expect(alert.text()).toContain('مانده')
+
+    await wrapper.get('[data-testid="pending-alert-open"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(wrapper.get('[data-testid="tab-needs-action"]').attributes('aria-selected')).toBe('true')
     expect(wrapper.find('[data-testid="pending-request-req1"]').exists()).toBe(true)
   })
 
@@ -551,7 +580,9 @@ describe('BookingsView', () => {
     expect(fetchMock).toHaveBeenCalledTimes(5)
     expect(fetchMock.mock.calls[4]![0]).toContain('/salons/mine/bookings')
     expect(wrapper.find('[data-testid="pending-request-req1"]').exists()).toBe(false)
-    // ...and the booking is still on the agenda, now reading as expired.
+    // ...and the booking is still on the agenda, now reading as expired. Intentional change:
+    // the agenda is tabbed, and an expired request for 2030 lives under «پیش‌رو».
+    await wrapper.get('[data-testid="tab-upcoming"]').trigger('click')
     expect(wrapper.get('[data-testid="booking-req1"]').text()).toContain('منقضی شده')
   })
 })
@@ -933,6 +964,8 @@ describe('BookingsView beauty guide', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     expect(wrapper.get('[data-testid="pending-request-req1"]').find('[data-testid="beauty-guide-card"]').exists()).toBe(true)
+    // Intentional change: the queue lives in «نیاز به اقدام»; the agenda cards are under «پیش‌رو».
+    await wrapper.get('[data-testid="tab-upcoming"]').trigger('click')
     expect(wrapper.get('[data-testid="booking-b1"]').find('[data-testid="beauty-guide-card"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="booking-b2"]').find('[data-testid="beauty-guide-card"]').exists()).toBe(false)
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/beauty-guide'))).toBe(false)
@@ -1062,5 +1095,357 @@ describe('BookingsView trust & launch readiness', () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(useToast().toasts.value.some((t) => t.message === 'ثبت نوبت برای صاحب یا همکار سالن ممکن نیست.')).toBe(true)
     expect((wrapper.get('[data-testid="manual-booking-phone"]').element as HTMLInputElement).value).toBe('09120000000')
+  })
+})
+
+// -- Wave 2: segmented tabs, live countdown, day/week grid --
+describe('BookingsView tabs and schedule', () => {
+  const NOW = Date.now()
+  const iso = (offsetMs: number) => new Date(NOW + offsetMs).toISOString()
+  const row = (id: string, startsAt: string, status = 'confirmed', extra: Record<string, unknown> = {}) => ({
+    id, serviceId: 's1', serviceName: `خدمت ${id}`, priceSnapshot: 100000, startsAt,
+    endsAt: new Date(Date.parse(startsAt) + 3_600_000).toISOString(), createdAt: startsAt, status,
+    confirmationMode: 'automatic', approvalExpiresAt: null, paymentExpiresAt: null, workerId: null, workerName: null,
+    customerName: 'مشتری', customerPhone: '09120000000', source: 'online', beautyGuideId: null, ...extra,
+  })
+
+  // Routed by URL: list, workers, services and the windowed read are independent requests.
+  function stub(list: unknown[], opts: { workers?: unknown[]; range?: (url: URL) => unknown[]; capacity?: (url: URL) => unknown } = {}) {
+    const fetchMock = vi.fn((url: string) => {
+      const u = new URL(url, 'http://x')
+      let body: unknown = list
+      if (u.pathname.endsWith('/capacity')) {
+        if (!opts.capacity) return Promise.resolve({ ok: false, status: 500, json: async () => ({}) })
+        body = opts.capacity(u)
+      } else if (u.pathname.endsWith('/workers')) body = opts.workers ?? []
+      else if (u.pathname.endsWith('/services')) body = []
+      else if (u.searchParams.has('from')) body = opts.range ? opts.range(u) : []
+      return Promise.resolve({ ok: true, status: 200, json: async () => body })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+  const flush = () => new Promise((r) => setTimeout(r, 0))
+
+  function makeRouter() {
+    return createRouter({ history: createMemoryHistory(), routes: [{ path: '/bookings', component: BookingsView }] })
+  }
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+    resetSalon()
+  })
+
+  it('lands on «نیاز به اقدام» when requests or owed outcomes exist, with counts on the tabs', async () => {
+    stub([
+      row('req', iso(5 * 86_400_000), 'pending_approval', { approvalExpiresAt: iso(8 * 60_000) }),
+      row('owed', iso(-3 * 86_400_000)),
+      row('soon', iso(4 * 86_400_000)),
+    ])
+    const wrapper = mount(BookingsView)
+    await flush()
+
+    const tab = wrapper.get('[data-testid="tab-needs-action"]')
+    expect(tab.attributes('aria-selected')).toBe('true')
+    expect(tab.text()).toContain((2).toLocaleString('fa-IR'))
+    // The queue and the owed-outcome card, but not the upcoming one.
+    expect(wrapper.find('[data-testid="pending-request-req"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="booking-owed"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="booking-soon"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="pending-alert"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="tab-upcoming"]').trigger('click')
+    expect(wrapper.find('[data-testid="booking-soon"]').exists()).toBe(true)
+    // Off the queue's tab, the requests stay visible as the alert strip.
+    expect(wrapper.find('[data-testid="pending-alert"]').exists()).toBe(true)
+  })
+
+  it('lists «گذشته» newest first', async () => {
+    stub([row('old', iso(-20 * 86_400_000), 'completed'), row('recent', iso(-2 * 86_400_000), 'completed')])
+    const wrapper = mount(BookingsView)
+    await flush()
+    expect(wrapper.get('[data-testid="tab-past"]').attributes('aria-selected')).toBe('true')
+    const ids = wrapper.findAll('[data-testid^="booking-"]').map((c) => c.attributes('data-testid'))
+    expect(ids).toEqual(['booking-recent', 'booking-old'])
+  })
+
+  it('says so when nothing is waiting on the owner', async () => {
+    stub([row('done', iso(-2 * 86_400_000), 'completed')])
+    const wrapper = mount(BookingsView)
+    await flush()
+    await wrapper.get('[data-testid="tab-needs-action"]').trigger('click')
+    expect(wrapper.get('[data-testid="needs-action-clear"]').text()).toContain('همه‌چیز مرتب است')
+  })
+
+  it('filters a tab by status chips built from the statuses actually in it', async () => {
+    stub([
+      row('c1', iso(3 * 86_400_000)),
+      row('x1', iso(4 * 86_400_000), 'cancelled_by_user'),
+      row('c2', iso(5 * 86_400_000)),
+    ])
+    const wrapper = mount(BookingsView)
+    await flush()
+    expect(wrapper.get('[data-testid="status-chip-all"]').text()).toContain((3).toLocaleString('fa-IR'))
+    expect(wrapper.find('[data-testid="status-chip-completed"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="status-chip-cancelled_by_user"]').trigger('click')
+    expect(wrapper.findAll('[data-testid^="booking-"]').map((c) => c.attributes('data-testid'))).toEqual(['booking-x1'])
+    expect(wrapper.get('[data-testid="status-chip-cancelled_by_user"]').attributes('aria-pressed')).toBe('true')
+
+    // Changing tab resets the filter.
+    await wrapper.get('[data-testid="tab-today"]').trigger('click')
+    await wrapper.get('[data-testid="tab-upcoming"]').trigger('click')
+    expect(wrapper.findAll('[data-testid^="booking-"]')).toHaveLength(3)
+  })
+
+  it('moves between tabs with the arrow keys (RTL: left is next)', async () => {
+    stub([])
+    const wrapper = mount(BookingsView, { attachTo: document.body })
+    await flush()
+    expect(wrapper.get('[data-testid="tab-today"]').attributes('aria-selected')).toBe('true')
+    await wrapper.get('[data-testid="tab-today"]').trigger('keydown', { key: 'ArrowLeft' })
+    expect(wrapper.get('[data-testid="tab-upcoming"]').attributes('aria-selected')).toBe('true')
+    await wrapper.get('[data-testid="tab-upcoming"]').trigger('keydown', { key: 'ArrowRight' })
+    expect(wrapper.get('[data-testid="tab-today"]').attributes('aria-selected')).toBe('true')
+  })
+
+  it('honours ?tab= and writes the chosen tab back to the URL', async () => {
+    stub([row('owed', iso(-3 * 86_400_000))])
+    const router = makeRouter()
+    await router.push('/bookings?tab=past')
+    await router.isReady()
+    const wrapper = mount(BookingsView, { global: { plugins: [router] } })
+    await flush()
+    expect(wrapper.get('[data-testid="tab-past"]').attributes('aria-selected')).toBe('true')
+
+    await wrapper.get('[data-testid="tab-needs-action"]').trigger('click')
+    await flush()
+    expect(router.currentRoute.value.query.tab).toBe('needs-action')
+  })
+
+  it('opens the week grid from ?view=week and reads exactly that Saturday-to-Friday window', async () => {
+    const fetchMock = stub([], { range: () => [row('w1', iso(60_000))] })
+    const router = makeRouter()
+    await router.push('/bookings?view=week&date=2026-10-14')
+    await router.isReady()
+    const wrapper = mount(BookingsView, { global: { plugins: [router] } })
+    await flush()
+
+    const rangeUrl = new URL(String(fetchMock.mock.calls.find(([u]) => String(u).includes('from='))![0]), 'http://x')
+    // 2026-10-14 (Wednesday) -> its week is Sat 10th .. Fri 16th, i.e. [Tehran midnight of the
+    // 10th, Tehran midnight of the 17th).
+    expect(rangeUrl.searchParams.get('from')).toBe('2026-10-09T20:30:00.000Z')
+    expect(rangeUrl.searchParams.get('to')).toBe('2026-10-16T20:30:00.000Z')
+    expect(wrapper.findAll('[data-testid^="schedule-col-"]')).toHaveLength(7)
+
+    // Next week: a new window, and the URL follows.
+    await wrapper.get('[data-testid="next-day"]').trigger('click')
+    await flush()
+    const urls = fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('/salons/mine/bookings?from='))
+    expect(new URL(urls[urls.length - 1]!, 'http://x').searchParams.get('from')).toBe('2026-10-16T20:30:00.000Z')
+    expect(router.currentRoute.value.query).toMatchObject({ view: 'week', date: '2026-10-21' })
+  })
+
+  it('shows a week block\'s full card, with its actions, once the block is picked', async () => {
+    const startsAt = iso(2 * 86_400_000)
+    stub([], { range: () => [row('w1', startsAt)] })
+    const router = makeRouter()
+    await router.push(`/bookings?view=week&date=${tehranDateString(new Date(startsAt))}`)
+    await router.isReady()
+    const wrapper = mount(BookingsView, { global: { plugins: [router] } })
+    await flush()
+
+    expect(wrapper.find('[data-testid="booking-w1"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="schedule-pick-hint"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="schedule-block-w1"]').trigger('click')
+    await flush()
+    const card = wrapper.get('[data-testid="booking-w1"]')
+    expect(card.find('[data-testid="cancel-booking"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="schedule-block-w1"]').attributes('aria-pressed')).toBe('true')
+  })
+
+  it('splits the day grid into one column per active worker plus unassigned, and leaves cancelled bookings off it', async () => {
+    const t = iso(60 * 60_000)
+    stub([], {
+      workers: [{ id: 'w1', name: 'سارا', active: true }, { id: 'w2', name: 'مینا', active: true }, { id: 'w3', name: 'قدیمی', active: false }],
+      range: () => [
+        row('a', t, 'confirmed', { workerId: 'w1', workerName: 'سارا' }),
+        row('b', t, 'confirmed'),
+        row('c', t, 'cancelled_by_user', { workerId: 'w2', workerName: 'مینا' }),
+      ],
+    })
+    const wrapper = mount(BookingsView)
+    await flush()
+    await wrapper.get('[data-testid="toggle-schedule"]').trigger('click')
+    await flush()
+
+    expect(wrapper.findAll('[data-testid^="schedule-col-"]').map((c) => c.attributes('data-testid'))).toEqual([
+      'schedule-col-w1', 'schedule-col-w2', 'schedule-col-unassigned',
+    ])
+    expect(wrapper.get('[data-testid="schedule-col-w1"]').find('[data-testid="schedule-block-a"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="schedule-col-unassigned"]').find('[data-testid="schedule-block-b"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="schedule-block-c"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="schedule-hidden-note"]').text()).toContain((1).toLocaleString('fa-IR'))
+    // The day's agenda cards (all statuses) sit beside the grid.
+    expect(wrapper.find('[data-testid="booking-c"]').exists()).toBe(true)
+  })
+
+  it('switches views with a two-button segmented control; picking the selected side is a no-op', async () => {
+    const fetchMock = stub([])
+    const wrapper = mount(BookingsView)
+    await flush()
+    const list = wrapper.get('[data-testid="toggle-show-all"]')
+    const grid = wrapper.get('[data-testid="toggle-schedule"]')
+    expect(list.element.tagName).toBe('BUTTON')
+    expect(list.attributes('aria-pressed')).toBe('true')
+    expect(grid.attributes('aria-pressed')).toBe('false')
+
+    // Clicking the already-selected «فهرست» must not flip to the grid.
+    await list.trigger('click')
+    await flush()
+    expect(list.attributes('aria-pressed')).toBe('true')
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes('from='))).toBe(false)
+
+    await grid.trigger('click')
+    await flush()
+    expect(grid.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-testid="schedule-grid"]').exists()).toBe(true)
+    await grid.trigger('click')
+    await flush()
+    expect(grid.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-testid="schedule-grid"]').exists()).toBe(true)
+  })
+
+  it('marks closed days on the week grid from the capacity read for the same window', async () => {
+    const fetchMock = stub([], {
+      capacity: (u) => ({
+        days: [
+          { date: '2026-10-10', closedReason: null },
+          { date: '2026-10-16', closedReason: 'no_hours' },
+          { date: '2026-10-12', closedReason: 'closed_exception' },
+        ],
+        from: u.searchParams.get('from'),
+      }),
+    })
+    const router = makeRouter()
+    await router.push('/bookings?view=week&date=2026-10-14')
+    await router.isReady()
+    const wrapper = mount(BookingsView, { global: { plugins: [router] } })
+    await flush()
+
+    const capUrl = new URL(String(fetchMock.mock.calls.find(([u]) => String(u).includes('/capacity'))![0]), 'http://x')
+    // Same Saturday-to-Friday window, as Tehran day keys with an exclusive end.
+    expect(capUrl.searchParams.get('from')).toBe('2026-10-10')
+    expect(capUrl.searchParams.get('to')).toBe('2026-10-17')
+    expect(wrapper.find('[data-testid="schedule-closed-2026-10-16"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="schedule-closed-2026-10-12"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="schedule-closed-2026-10-10"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="schedule-col-2026-10-16"]').text()).toContain('تعطیل')
+  })
+
+  it('says a closed day out loud in day view, and draws no marker when the capacity read fails', async () => {
+    stub([], { capacity: () => ({ days: [{ date: '2026-10-14', closedReason: 'no_hours' }] }) })
+    const router = makeRouter()
+    await router.push('/bookings?view=day&date=2026-10-14')
+    await router.isReady()
+    const wrapper = mount(BookingsView, { global: { plugins: [router] } })
+    await flush()
+    expect(wrapper.get('[data-testid="schedule-closed-day"]').text()).toContain('تعطیل')
+
+    stub([]) // capacity now 500s
+    const router2 = makeRouter()
+    await router2.push('/bookings?view=day&date=2026-10-14')
+    await router2.isReady()
+    const failed = mount(BookingsView, { global: { plugins: [router2] } })
+    await flush()
+    expect(failed.find('[data-testid="schedule-grid"]').exists()).toBe(true)
+    expect(failed.find('[data-testid="schedule-closed-day"]').exists()).toBe(false)
+    expect(failed.find('[data-testid^="schedule-closed-"]').exists()).toBe(false)
+  })
+
+  it('zero-pads schedule and card times («۰۹:۰۰»)', async () => {
+    // 05:30Z = 09:00 Tehran.
+    stub([], { range: () => [row('z', '2026-10-14T05:30:00.000Z')] })
+    const router = makeRouter()
+    await router.push('/bookings?view=day&date=2026-10-14')
+    await router.isReady()
+    const wrapper = mount(BookingsView, { global: { plugins: [router] } })
+    await flush()
+    expect(wrapper.get('[data-testid="schedule-block-z"]').text()).toContain('۰۹:۰۰')
+    expect(wrapper.get('[data-testid="schedule-grid"]').text()).toContain('۰۹:۰۰')
+    expect(wrapper.get('[data-testid="booking-z"]').text()).toContain('۰۹:۰۰')
+  })
+
+  it('offers a retry when the window read fails, instead of an empty grid', async () => {
+    const fetchMock = vi.fn((url: string) =>
+      Promise.resolve(url.includes('from=') ? { ok: false, status: 500, json: async () => ({}) } : { ok: true, status: 200, json: async () => [] }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(BookingsView)
+    await flush()
+    await wrapper.get('[data-testid="toggle-schedule"]').trigger('click')
+    await flush()
+    expect(wrapper.find('[data-testid="schedule-grid"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="retry-schedule"]').exists()).toBe(true)
+  })
+
+  // Regression: in week view a manual booking for ANOTHER week moved the window, and the
+  // window watcher then cleared the selection the submit had just made -- so the week view
+  // (which shows only the picked block's card) showed no card for the booking just created.
+  it('keeps the just-created manual booking selected when it jumps the week grid to another week', async () => {
+    const created = row('far-week', '2030-06-15T05:30:00.000Z', 'confirmed', { source: 'manual' })
+    let posted = false
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      const ok = (body: unknown) => Promise.resolve({ ok: true, status: 200, json: async () => body })
+      if (init?.method === 'POST') {
+        posted = true
+        return ok(created)
+      }
+      const u = new URL(url, 'http://x')
+      if (u.pathname.endsWith('/services')) return ok([{ id: 's1', name: 'کوتاهی مو' }])
+      if (u.pathname.endsWith('/workers')) return ok([])
+      if (u.searchParams.has('from')) {
+        const from = u.searchParams.get('from')!
+        const to = u.searchParams.get('to')!
+        return ok(posted && from <= created.startsAt && created.startsAt < to ? [created] : [])
+      }
+      return ok([])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const router = makeRouter()
+    await router.push('/bookings?view=week')
+    await router.isReady()
+    const wrapper = mount(BookingsView, { global: { plugins: [router] } })
+    await flush()
+
+    await wrapper.get('[data-testid="toggle-manual-booking"]').trigger('click')
+    await wrapper.get('[data-testid="manual-booking-phone"]').setValue('09120000000')
+    wrapper.findComponent<typeof AppSelect>('[data-testid="manual-booking-service"]').vm.$emit('update:modelValue', 's1')
+    wrapper.findComponent<typeof JalaliDatePicker>('[data-testid="manual-booking-date"]').vm.$emit('update:modelValue', '2030-06-15')
+    await wrapper.get('[data-testid="manual-booking-time"]').setValue('09:00')
+    await flush()
+    await wrapper.get('[data-testid="submit-manual-booking"]').trigger('click')
+    await flush()
+    await flush()
+
+    expect(wrapper.find('[data-testid="schedule-block-far-week"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="schedule-block-far-week"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-testid="booking-far-week"]').exists()).toBe(true)
+  })
+
+  it('ticks the approval countdown every second in mm:ss', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    vi.setSystemTime(new Date('2030-06-14T20:50:00.000Z'))
+    stub([{ ...PENDING_REQUEST, approvalExpiresAt: '2030-06-14T20:59:30.000Z' }])
+    const wrapper = mount(BookingsView)
+    await flush()
+
+    const badge = () => wrapper.get('[data-testid="approval-remaining-req1"]')
+    expect(badge().text()).toContain('۰۹:۳۰ مانده')
+    expect(badge().attributes('role')).toBe('timer')
+    vi.advanceTimersByTime(5_000)
+    await flush()
+    expect(badge().text()).toContain('۰۹:۲۵ مانده')
   })
 })

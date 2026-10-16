@@ -240,7 +240,7 @@ async function deactivate(coupon: Coupon) {
       </div>
 
       <template v-else>
-        <EmptyState v-if="coupons.length === 0" icon="coupons" message="هنوز کد تخفیفی ثبت نشده است." />
+        <EmptyState v-if="coupons.length === 0" icon="coupons" mascot="excited" message="هنوز کد تخفیفی ثبت نشده است." />
 
         <!-- auto-fit + justify-center, not a fixed md:/xl: column count: a lone or odd
              trailing card in a fixed grid strands in the RTL start (right) column with

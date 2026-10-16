@@ -47,7 +47,9 @@ describe('CustomerDetailView', () => {
     const wrapper = await mountView(async () => ({ ok: true, status: 200, json: async () => makeDetail() }))
 
     expect(wrapper.text()).toContain('Ali')
-    expect(wrapper.text()).toContain('0912')
+    // Persian digits for the visible phone (the tel: link keeps the raw number).
+    expect(wrapper.text()).toContain('۰۹۱۲')
+    expect(wrapper.get('[data-testid="customer-call"]').attributes('href')).toBe('tel:0912')
     const bookingRow = wrapper.get('[data-testid="customer-booking-row"]')
     expect(bookingRow.text()).toContain('کوتاهی مو')
     expect(bookingRow.text()).toContain('انجام شد')
@@ -99,8 +101,8 @@ describe('CustomerDetailView', () => {
     const wrapper = await mountView(async () => ({ ok: true, status: 200, json: async () => makeDetail() }))
 
     const line = wrapper.get('[data-testid="sms-quota-remaining"]')
-    expect(line.text()).toContain('18')
-    expect(line.text()).toContain('20')
+    expect(line.text()).toContain('۱۸')
+    expect(line.text()).toContain('۲۰')
   })
 
   it('sends an SMS to the customer and updates the remaining quota from the response', async () => {
@@ -117,6 +119,37 @@ describe('CustomerDetailView', () => {
 
     expect((wrapper.get('[data-testid="sms-message-input"]').element as HTMLTextAreaElement).value).toBe('')
     const line = wrapper.get('[data-testid="sms-quota-remaining"]')
-    expect(line.text()).toContain('17')
+    expect(line.text()).toContain('۱۷')
+  })
+
+  it('focuses the single-SMS composer when opened with ?compose=sms', async () => {
+    vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve({
+      ok: true, status: 200, json: async () => (url.includes('/sms-quota') ? makeQuota() : makeDetail()),
+    })))
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/customers/:id', component: CustomerDetailView }] })
+    router.push('/customers/u1?compose=sms')
+    await router.isReady()
+    const wrapper = mount(CustomerDetailView, { global: { plugins: [router] }, attachTo: document.body })
+    await new Promise((r) => setTimeout(r, 0))
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="sms-message-input"]').element)
+    wrapper.unmount()
+  })
+
+  it('disables the composer once the monthly quota is used up', async () => {
+    vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve({
+      ok: true, status: 200,
+      json: async () => (url.includes('/sms-quota') ? { quota: 20, used: 20, remaining: 0 } : makeDetail()),
+    })))
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/customers/:id', component: CustomerDetailView }] })
+    router.push('/customers/u1')
+    await router.isReady()
+    const wrapper = mount(CustomerDetailView, { global: { plugins: [router] } })
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(wrapper.get('[data-testid="sms-message-input"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="send-sms-button"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="sms-quota-exhausted"]').exists()).toBe(true)
   })
 })

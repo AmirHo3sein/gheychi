@@ -858,6 +858,142 @@ describe('ServicesView', () => {
     })
   })
 
+  describe('custom category delete', () => {
+    const CUSTOM = { id: 'cc-1', name: 'خدمات ویژه' }
+    const okJson = (body: unknown, status = 200) => ({ ok: status < 400, status, json: async () => body })
+    function mountWith(deleteReply: { ok: boolean; status: number; json: () => Promise<unknown> }, services: unknown[] = []) {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(okJson(services)) // GET services
+        .mockResolvedValueOnce(okJson([{ id: 1, name: 'مو' }])) // GET categories
+        .mockResolvedValueOnce(okJson([{ ...CUSTOM }])) // GET custom-categories
+        .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
+        .mockResolvedValueOnce(deleteReply) // DELETE custom-category
+      vi.stubGlobal('fetch', fetchMock)
+      return { fetchMock, wrapper: mount(ServicesView) }
+    }
+
+    it('lists custom categories with a delete button that confirms, sends DELETE and removes the chip', async () => {
+      const { fetchMock, wrapper } = mountWith({ ok: true, status: 204, json: async () => null })
+      const confirmSpy = autoConfirm(true)
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(wrapper.get('[data-testid="custom-category-chip-cc-1"]').text()).toContain('خدمات ویژه')
+      await wrapper.get('[data-testid="delete-custom-category-cc-1"]').trigger('click')
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(confirmSpy.calls).toHaveLength(1)
+      expect(confirmSpy.calls[0]!.tone).toBe('danger')
+      const deleteCall = fetchMock.mock.calls[4]!
+      expect(deleteCall[0]).toContain('/salons/mine/custom-categories/cc-1')
+      expect(deleteCall[1]).toMatchObject({ method: 'DELETE' })
+      expect(wrapper.find('[data-testid="custom-category-chip-cc-1"]').exists()).toBe(false)
+      expect(useToast().toasts.value.some((t) => t.message === 'دسته‌بندی سفارشی حذف شد')).toBe(true)
+    })
+
+    it('sends nothing when the delete confirm is declined', async () => {
+      const { fetchMock, wrapper } = mountWith({ ok: true, status: 204, json: async () => null })
+      autoConfirm(false)
+      await new Promise((r) => setTimeout(r, 0))
+
+      await wrapper.get('[data-testid="delete-custom-category-cc-1"]').trigger('click')
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(fetchMock.mock.calls).toHaveLength(4)
+      expect(wrapper.find('[data-testid="custom-category-chip-cc-1"]').exists()).toBe(true)
+    })
+
+    it('keeps the chip and shows the server\'s Persian message inline (not a toast) on a 409 in-use refusal', async () => {
+      const message = 'این دسته‌بندی توسط خدماتی از سالن شما استفاده می‌شود و قابل حذف نیست'
+      const { wrapper } = mountWith(okJson({ message }, 409), [{ ...SERVICE, categoryId: null, customCategoryId: 'cc-1' }])
+      autoConfirm(true)
+      await new Promise((r) => setTimeout(r, 0))
+
+      // The active-service usage hint is shown, but deletion is still left to the server
+      // (a deactivated service can hold the category too).
+      expect(wrapper.get('[data-testid="custom-category-chip-cc-1"]').text()).toContain('۱ خدمت')
+      await wrapper.get('[data-testid="delete-custom-category-cc-1"]').trigger('click')
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(wrapper.find('[data-testid="custom-category-chip-cc-1"]').exists()).toBe(true)
+      const error = wrapper.get('[data-testid="custom-category-delete-error"]')
+      expect(error.attributes('role')).toBe('alert')
+      expect(error.text()).toContain(message)
+      expect(useToast().toasts.value).toHaveLength(0)
+    })
+  })
+
+  describe('catalogue list (collapsed rows, expand to edit)', () => {
+    // v-show: the editor stays mounted (so a collapse keeps drafts) and is hidden by style.
+    const editorHidden = (wrapper: ReturnType<typeof mount>, id: string) =>
+      (wrapper.get(`[data-testid="service-editor-${id}"]`).attributes('style') ?? '').includes('display: none')
+
+    function mountList(list: unknown[]) {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => list }) // GET services
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{ id: 1, name: 'مو' }] }) // GET categories
+        .mockResolvedValueOnce(CUSTOM_CATEGORIES_EMPTY) // GET custom-categories
+        .mockResolvedValueOnce(CATEGORY_REQUESTS_EMPTY) // GET category-requests
+      vi.stubGlobal('fetch', fetchMock)
+      return mount(ServicesView)
+    }
+
+    it('renders each service as a collapsed summary row with price label, duration and pricing badge', async () => {
+      const wrapper = mountList([
+        { ...SERVICE, discountPercent: 10 },
+        { ...SERVICE, id: 'svc-from', name: 'رنگ', pricingType: 'from', price: 900000 },
+        { ...SERVICE, id: 'svc-quote', name: 'عروس', pricingType: 'quote', price: null, durationMin: 120, durationMax: 180 },
+      ])
+      await new Promise((r) => setTimeout(r, 0))
+
+      const toggle = wrapper.get('[data-testid="service-toggle-svc-1"]')
+      expect(toggle.attributes('aria-expanded')).toBe('false')
+      expect(toggle.attributes('aria-controls')).toBe('service-editor-svc-1')
+      expect(editorHidden(wrapper, 'svc-1')).toBe(true)
+      expect(toggle.text()).toContain('۱۰۰٬۰۰۰ تومان')
+      expect(toggle.text()).toContain('۳۰ دقیقه')
+      expect(toggle.text()).toContain('۱۰٪ تخفیف')
+      expect(toggle.text()).toContain('قیمت ثابت')
+
+      // FROM is never shown as an exact price, QUOTE never as a number.
+      const fromPrice = wrapper.get('[data-testid="service-card-svc-from"] [data-testid="service-summary-price"]').text()
+      expect(fromPrice).toBe('از ۹۰۰٬۰۰۰ تومان')
+      const quoteRow = wrapper.get('[data-testid="service-toggle-svc-quote"]')
+      expect(quoteRow.get('[data-testid="service-summary-price"]').text()).toBe('قیمت توافقی')
+      expect(quoteRow.text()).toContain('۱۲۰ دقیقه (تا ۱۸۰)')
+    })
+
+    it('expands and collapses a row from its summary button', async () => {
+      const wrapper = mountList([{ ...SERVICE }])
+      await new Promise((r) => setTimeout(r, 0))
+
+      const toggle = wrapper.get('[data-testid="service-toggle-svc-1"]')
+      await toggle.trigger('click')
+      expect(toggle.attributes('aria-expanded')).toBe('true')
+      expect(editorHidden(wrapper, 'svc-1')).toBe(false)
+
+      await toggle.trigger('click')
+      expect(toggle.attributes('aria-expanded')).toBe('false')
+      expect(editorHidden(wrapper, 'svc-1')).toBe(true)
+    })
+
+    it('keeps an unsaved edit across collapse and flags the collapsed row as having unsaved changes', async () => {
+      const wrapper = mountList([{ ...SERVICE }])
+      await new Promise((r) => setTimeout(r, 0))
+      const toggle = wrapper.get('[data-testid="service-toggle-svc-1"]')
+
+      await toggle.trigger('click')
+      await wrapper.get('[data-testid="service-duration-input"]').setValue('45')
+      await toggle.trigger('click')
+
+      expect(toggle.text()).toContain('تغییرات ذخیره‌نشده')
+      await toggle.trigger('click')
+      expect((wrapper.get('[data-testid="service-duration-input"]').element as HTMLInputElement).value).toBe('45')
+      // Expanded: the save row itself is the cue, so the summary badge goes away.
+      expect(toggle.text()).not.toContain('تغییرات ذخیره‌نشده')
+      expect(wrapper.find('[data-testid="save-service-row"]').exists()).toBe(true)
+    })
+  })
+
   describe('explicit per-row editing', () => {
     function initialFetch() {
       return vi.fn()
@@ -953,6 +1089,557 @@ describe('ServicesView', () => {
       resolvePatch({ ok: true, status: 200, json: async () => ({ ...SERVICE, durationMin: 45 }) })
       await new Promise((r) => setTimeout(r, 0))
       expect(wrapper.find('[data-testid="save-service-row"]').exists()).toBe(false)
+    })
+  })
+
+  describe('service image', () => {
+    const IMAGE_URL = 'http://localhost:3002/uploads/salons/s1/services/svc-1/old.jpg'
+    const NEW_URL = 'http://localhost:3002/uploads/salons/s1/services/svc-1/new.jpg'
+    type Reply = { ok: boolean; status: number; json: () => Promise<unknown> }
+    const reply = (status: number, body: unknown): Reply => ({ ok: status < 400, status, json: async () => body })
+
+    // Routed by method + path rather than call order: the create flow reloads the list
+    // mid-test, and what matters here is which image requests happened, not their index.
+    function routedFetch(servicesList: () => unknown[], handle: (method: string, path: string, init: RequestInit) => Reply | Promise<Reply> | undefined) {
+      return vi.fn(async (url: string, init: RequestInit = {}) => {
+        const method = init.method ?? 'GET'
+        const path = url.replace(/^.*\/api/, '')
+        const handled = await handle(method, path, init)
+        if (handled) return handled
+        if (method === 'GET' && path === '/salons/mine/services') return reply(200, servicesList())
+        if (method === 'GET' && path === '/categories') return reply(200, [{ id: 1, name: 'مو' }])
+        return reply(200, [])
+      })
+    }
+    const callsTo = (fetchMock: ReturnType<typeof vi.fn>, method: string, pathPart: string) =>
+      fetchMock.mock.calls.filter((c) => ((c[1] as RequestInit | undefined)?.method ?? 'GET') === method && String(c[0]).includes(pathPart))
+    const imageCalls = (fetchMock: ReturnType<typeof vi.fn>) => fetchMock.mock.calls.filter((c) => String(c[0]).endsWith('/image'))
+    const flush = () => new Promise((r) => setTimeout(r, 0))
+
+    async function pickImage(wrapper: ReturnType<typeof mount>, scope: string, file: File) {
+      const input = wrapper.get(`${scope} [data-testid="service-image-input"]`)
+      Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
+      await input.trigger('change')
+    }
+    async function fillNewService(wrapper: ReturnType<typeof mount>) {
+      await wrapper.findComponent(AppSelect).vm.$emit('update:modelValue', 'sys:1')
+      await wrapper.find('input[placeholder="نام خدمت"]').setValue('رنگ مو')
+      await wrapper.get('[data-testid="new-service-price-input"]').setValue('150000')
+    }
+    const ADD_FORM = '[data-testid="new-service-image"]'
+    const jpeg = () => new File([new Uint8Array(8)], 'photo.jpg', { type: 'image/jpeg' })
+
+    beforeEach(() => {
+      let n = 0
+      vi.spyOn(URL, 'createObjectURL').mockImplementation(() => `blob:preview-${++n}`)
+      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    })
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('shows a placeholder thumbnail for a service without an image and the image for one with', async () => {
+      const list = [{ ...SERVICE, imageUrl: null }, { ...SERVICE, id: 'svc-2', name: 'رنگ', imageUrl: IMAGE_URL }]
+      vi.stubGlobal('fetch', routedFetch(() => list, () => undefined))
+      const wrapper = mount(ServicesView)
+      await flush()
+
+      expect(wrapper.find('[data-testid="service-card-svc-1"] [data-testid="service-image-placeholder"]').exists()).toBe(true)
+      const img = wrapper.get('[data-testid="service-card-svc-2"] [data-testid="service-image-preview"]')
+      expect(img.attributes('src')).toBe(IMAGE_URL)
+      expect(img.attributes('alt')).toBe('رنگ')
+    })
+
+    it('creating a service without an image sends no image request', async () => {
+      const fetchMock = routedFetch(() => [], (method, path) =>
+        method === 'POST' && path === '/salons/mine/services' ? reply(201, { ...SERVICE, id: 'svc-2', imageUrl: null }) : undefined)
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ServicesView)
+      await flush()
+
+      await fillNewService(wrapper)
+      await wrapper.get('[data-testid="add-service"]').trigger('click')
+      await flush()
+
+      expect(callsTo(fetchMock, 'POST', '/salons/mine/services')).toHaveLength(1)
+      expect(imageCalls(fetchMock)).toHaveLength(0)
+    })
+
+    it('creating with an image POSTs the service first, then the file as FormData field "file" to its image endpoint', async () => {
+      let list: unknown[] = []
+      const file = jpeg()
+      const fetchMock = routedFetch(() => list, (method, path) => {
+        if (method === 'POST' && path === '/salons/mine/services') return reply(201, { ...SERVICE, id: 'svc-2', name: 'رنگ مو', imageUrl: null })
+        if (method === 'POST' && path === '/salons/mine/services/svc-2/image') {
+          list = [{ ...SERVICE, id: 'svc-2', name: 'رنگ مو', imageUrl: NEW_URL }]
+          return reply(201, list[0])
+        }
+        return undefined
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ServicesView)
+      await flush()
+
+      await fillNewService(wrapper)
+      await pickImage(wrapper, ADD_FORM, file)
+      await wrapper.get('[data-testid="add-service"]').trigger('click')
+      await flush()
+      await flush()
+
+      const createIdx = fetchMock.mock.calls.findIndex((c) => (c[1] as RequestInit)?.method === 'POST' && String(c[0]).endsWith('/salons/mine/services'))
+      const imageIdx = fetchMock.mock.calls.findIndex((c) => String(c[0]).endsWith('/salons/mine/services/svc-2/image'))
+      expect(createIdx).toBeGreaterThan(-1)
+      expect(imageIdx).toBeGreaterThan(createIdx)
+      const body = (fetchMock.mock.calls[imageIdx]![1] as RequestInit).body as FormData
+      expect(body).toBeInstanceOf(FormData)
+      expect(body.get('file')).toMatchObject({ name: file.name, size: file.size, type: file.type })
+      // The create JSON never carries image fields.
+      expect(JSON.parse((fetchMock.mock.calls[createIdx]![1] as { body: string }).body)).not.toHaveProperty('imageUrl')
+
+      // Form reset (including its image), and the new row shows the stored image.
+      expect((wrapper.find('input[placeholder="نام خدمت"]').element as HTMLInputElement).value).toBe('')
+      expect(wrapper.get(`${ADD_FORM} [data-testid="service-image-field"]`).attributes('data-state')).toBe('none')
+      expect(wrapper.get('[data-testid="service-card-svc-2"] [data-testid="service-image-preview"]').attributes('src')).toBe(NEW_URL)
+    })
+
+    it('keeps «افزودن» disabled while the image upload is in flight, so the service is never created twice', async () => {
+      let resolveImage!: (r: Reply) => void
+      const fetchMock = routedFetch(() => [], (method, path) => {
+        if (method === 'POST' && path === '/salons/mine/services') return reply(201, { ...SERVICE, id: 'svc-2', imageUrl: null })
+        if (method === 'POST' && path.endsWith('/image')) return new Promise<Reply>((r) => { resolveImage = r })
+        return undefined
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ServicesView)
+      await flush()
+
+      await fillNewService(wrapper)
+      await pickImage(wrapper, ADD_FORM, jpeg())
+      const addButton = wrapper.get('[data-testid="add-service"]')
+      await addButton.trigger('click')
+      await flush()
+      await addButton.trigger('click')
+      await flush()
+
+      expect((addButton.element as HTMLButtonElement).disabled).toBe(true)
+      expect(wrapper.get(`${ADD_FORM} [data-testid="service-image-status"]`).text()).toBe('در حال بارگذاری…')
+      expect(callsTo(fetchMock, 'POST', '/salons/mine/services').filter((c) => !String(c[0]).endsWith('/image'))).toHaveLength(1)
+
+      resolveImage(reply(201, { ...SERVICE, id: 'svc-2', imageUrl: NEW_URL }))
+      await flush()
+      await flush()
+      expect((addButton.element as HTMLButtonElement).disabled).toBe(false)
+    })
+
+    it('an image failure after create keeps the service, moves the staged file onto its row with an error, and «ذخیره» retries only the upload', async () => {
+      let list: unknown[] = []
+      const file = jpeg()
+      let imageAttempts = 0
+      const fetchMock = routedFetch(() => list, (method, path) => {
+        if (method === 'POST' && path === '/salons/mine/services') {
+          list = [{ ...SERVICE, id: 'svc-2', name: 'رنگ مو', imageUrl: null }]
+          return reply(201, list[0])
+        }
+        if (method === 'POST' && path === '/salons/mine/services/svc-2/image') {
+          imageAttempts++
+          if (imageAttempts === 1) return reply(500, { message: 'boom' })
+          return reply(201, { ...SERVICE, id: 'svc-2', name: 'رنگ مو', imageUrl: NEW_URL })
+        }
+        return undefined
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ServicesView)
+      await flush()
+
+      await fillNewService(wrapper)
+      await pickImage(wrapper, ADD_FORM, file)
+      await wrapper.get('[data-testid="add-service"]').trigger('click')
+      await flush()
+      await flush()
+
+      expect(wrapper.get('[data-testid="create-image-notice"]').text()).toContain('خدمت «رنگ مو» ذخیره شد اما تصویر بارگذاری نشد')
+      const row = '[data-testid="service-card-svc-2"]'
+      expect(wrapper.get(`${row} [data-testid="service-image-field"]`).attributes('data-state')).toBe('staged')
+      expect(wrapper.get(`${row} [data-testid="service-image-error"]`).text()).toContain('بارگذاری تصویر ناموفق بود')
+      expect(wrapper.get(`${row} [data-testid="service-image-preview"]`).attributes('src')).toMatch(/^blob:/)
+
+      await wrapper.get(`${row} [data-testid="save-service-row"]`).trigger('click')
+      await flush()
+
+      // One service create in total; the retry went to the existing service's image endpoint.
+      expect(callsTo(fetchMock, 'POST', '/salons/mine/services').filter((c) => !String(c[0]).endsWith('/image'))).toHaveLength(1)
+      expect(imageAttempts).toBe(2)
+      expect(((imageCalls(fetchMock)[1]![1] as RequestInit).body as FormData).get('file')).toMatchObject({ name: file.name, size: file.size, type: file.type })
+      expect(wrapper.get(`${row} [data-testid="service-image-preview"]`).attributes('src')).toBe(NEW_URL)
+      expect(wrapper.find('[data-testid="create-image-notice"]').exists()).toBe(false)
+    })
+
+    it('a server rejection message (e.g. image too small) is shown inline on the field', async () => {
+      const fetchMock = routedFetch(() => [{ ...SERVICE, imageUrl: null }], (method, path) =>
+        method === 'POST' && path.endsWith('/image') ? reply(400, { message: 'ابعاد تصویر باید حداقل ۲۰۰ پیکسل باشد.' }) : undefined)
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ServicesView)
+      await flush()
+
+      await pickImage(wrapper, '[data-testid="service-card-svc-1"]', jpeg())
+      await saveRowEdits(wrapper)
+
+      expect(wrapper.get('[data-testid="service-image-error"]').text()).toContain('ابعاد تصویر باید حداقل ۲۰۰ پیکسل باشد.')
+      expect(wrapper.get('[data-testid="service-image-field"]').attributes('data-state')).toBe('staged')
+      // Inline only -- no duplicate error toast.
+      expect(useToast().toasts.value.some((t) => t.message.includes('۲۰۰ پیکسل'))).toBe(false)
+    })
+
+    it('editing only a text field PATCHes it and never touches the image endpoints, and the thumbnail stays', async () => {
+      const fetchMock = routedFetch(() => [{ ...SERVICE, imageUrl: IMAGE_URL }], (method) =>
+        method === 'PATCH' ? reply(200, { ...SERVICE, imageUrl: IMAGE_URL, description: 'یادداشت' }) : undefined)
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ServicesView)
+      await flush()
+
+      await wrapper.get('[data-testid="service-description"]').setValue('یادداشت')
+      await saveRowEdits(wrapper)
+
+      expect(callsTo(fetchMock, 'PATCH', '/salons/mine/services/svc-1')).toHaveLength(1)
+      const patchBody = JSON.parse((callsTo(fetchMock, 'PATCH', '/salons/mine/services/svc-1')[0]![1] as { body: string }).body)
+      expect(patchBody).toEqual({ description: 'یادداشت' })
+      expect(imageCalls(fetchMock)).toHaveLength(0)
+      expect(wrapper.get('[data-testid="service-image-preview"]').attributes('src')).toBe(IMAGE_URL)
+      expect(wrapper.find('[data-testid="save-service-row"]').exists()).toBe(false)
+    })
+
+    it('replacing an image POSTs only the image (no PATCH) and swaps the thumbnail to the returned url', async () => {
+      const file = jpeg()
+      const fetchMock = routedFetch(() => [{ ...SERVICE, imageUrl: IMAGE_URL }], (method, path) =>
+        method === 'POST' && path === '/salons/mine/services/svc-1/image' ? reply(201, { ...SERVICE, imageUrl: NEW_URL }) : undefined)
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ServicesView)
+      await flush()
+
+      await pickImage(wrapper, '[data-testid="service-card-svc-1"]', file)
+      expect(wrapper.get('[data-testid="service-image-field"]').attributes('data-state')).toBe('replacing')
+      await saveRowEdits(wrapper)
+
+      expect(callsTo(fetchMock, 'PATCH', '/salons/mine/services')).toHaveLength(0)
+      expect(imageCalls(fetchMock)).toHaveLength(1)
+      expect(((imageCalls(fetchMock)[0]![1] as RequestInit).body as FormData).get('file')).toMatchObject({ name: file.name, size: file.size, type: file.type })
+      expect(wrapper.get('[data-testid="service-image-field"]').attributes('data-state')).toBe('existing')
+      expect(wrapper.get('[data-testid="service-image-preview"]').attributes('src')).toBe(NEW_URL)
+      expect(wrapper.find('[data-testid="save-service-row"]').exists()).toBe(false)
+    })
+
+    it('removing an image sends DELETE to the image endpoint and shows the placeholder afterwards', async () => {
+      const fetchMock = routedFetch(() => [{ ...SERVICE, imageUrl: IMAGE_URL }], (method, path) =>
+        method === 'DELETE' && path === '/salons/mine/services/svc-1/image' ? reply(200, { ...SERVICE, imageUrl: null }) : undefined)
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ServicesView)
+      await flush()
+
+      await wrapper.get('[data-testid="remove-service-image"]').trigger('click')
+      await saveRowEdits(wrapper)
+
+      expect(callsTo(fetchMock, 'DELETE', '/salons/mine/services/svc-1/image')).toHaveLength(1)
+      // The service itself is not archived.
+      expect(callsTo(fetchMock, 'DELETE', '/salons/mine/services/svc-1').filter((c) => !String(c[0]).endsWith('/image'))).toHaveLength(0)
+      expect(wrapper.find('[data-testid="service-image-placeholder"]').exists()).toBe(true)
+    })
+
+    it('PATCH succeeds but the image fails: fields saved, image error kept, retry re-sends only the image', async () => {
+      let imageAttempts = 0
+      const fetchMock = routedFetch(() => [{ ...SERVICE, imageUrl: null }], (method, path) => {
+        if (method === 'PATCH') return reply(200, { ...SERVICE, description: 'یادداشت', imageUrl: null })
+        if (method === 'POST' && path === '/salons/mine/services/svc-1/image') {
+          imageAttempts++
+          return imageAttempts === 1 ? reply(500, {}) : reply(201, { ...SERVICE, description: 'یادداشت', imageUrl: NEW_URL })
+        }
+        return undefined
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ServicesView)
+      await flush()
+
+      await wrapper.get('[data-testid="service-description"]').setValue('یادداشت')
+      await pickImage(wrapper, '[data-testid="service-card-svc-1"]', jpeg())
+      await saveRowEdits(wrapper)
+      await flush()
+
+      expect(callsTo(fetchMock, 'PATCH', '/salons/mine/services/svc-1')).toHaveLength(1)
+      expect(wrapper.get('[data-testid="service-image-error"]').text()).toContain('بارگذاری تصویر ناموفق بود')
+      expect(wrapper.get('[data-testid="service-image-field"]').attributes('data-state')).toBe('staged')
+
+      await saveRowEdits(wrapper)
+      await flush()
+      expect(callsTo(fetchMock, 'PATCH', '/salons/mine/services/svc-1')).toHaveLength(1)
+      expect(imageAttempts).toBe(2)
+      expect(wrapper.get('[data-testid="service-image-preview"]').attributes('src')).toBe(NEW_URL)
+      expect(wrapper.find('[data-testid="save-service-row"]').exists()).toBe(false)
+    })
+
+    it('double-clicking «ذخیره» while the image request is in flight sends it once, and the field is disabled meanwhile', async () => {
+      let resolveDelete!: (r: Reply) => void
+      const fetchMock = routedFetch(() => [{ ...SERVICE, imageUrl: IMAGE_URL }], (method, path) =>
+        method === 'DELETE' && path.endsWith('/image') ? new Promise<Reply>((r) => { resolveDelete = r }) : undefined)
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ServicesView)
+      await flush()
+
+      await wrapper.get('[data-testid="remove-service-image"]').trigger('click')
+      await wrapper.get('[data-testid="save-service-row"]').trigger('click')
+      await wrapper.get('[data-testid="save-service-row"]').trigger('click')
+      await flush()
+      expect(callsTo(fetchMock, 'DELETE', '/image')).toHaveLength(1)
+      expect((wrapper.get('[data-testid="undo-service-image"]').element as HTMLButtonElement).disabled).toBe(true)
+      expect((wrapper.get('[data-testid="cancel-service-row"]').element as HTMLButtonElement).disabled).toBe(true)
+
+      resolveDelete(reply(200, { ...SERVICE, imageUrl: null }))
+      await flush()
+      await flush()
+      expect(callsTo(fetchMock, 'DELETE', '/image')).toHaveLength(1)
+      expect(wrapper.find('[data-testid="service-image-placeholder"]').exists()).toBe(true)
+    })
+
+    it('the "image not uploaded" notice goes away once that row no longer holds the failed image (undo / cancel)', async () => {
+      let list: unknown[] = []
+      const fetchMock = routedFetch(() => list, (method, path) => {
+        if (method === 'POST' && path === '/salons/mine/services') {
+          list = [{ ...SERVICE, id: 'svc-2', name: 'رنگ مو', imageUrl: null }]
+          return reply(201, list[0])
+        }
+        if (method === 'POST' && path.endsWith('/image')) return reply(500, {})
+        return undefined
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ServicesView)
+      await flush()
+
+      await fillNewService(wrapper)
+      await pickImage(wrapper, ADD_FORM, jpeg())
+      await wrapper.get('[data-testid="add-service"]').trigger('click')
+      await flush()
+      await flush()
+      expect(wrapper.find('[data-testid="create-image-notice"]').exists()).toBe(true)
+
+      await wrapper.get('[data-testid="service-card-svc-2"] [data-testid="cancel-service-row"]').trigger('click')
+      expect(wrapper.get('[data-testid="service-card-svc-2"] [data-testid="service-image-field"]').attributes('data-state')).toBe('none')
+      // Telling the owner to retry from a card that has nothing to retry is wrong.
+      expect(wrapper.find('[data-testid="create-image-notice"]').exists()).toBe(false)
+    })
+
+    it('an invalid file picked in the add form does not leave its error behind after the service is created', async () => {
+      const fetchMock = routedFetch(() => [], (method, path) =>
+        method === 'POST' && path === '/salons/mine/services' ? reply(201, { ...SERVICE, id: 'svc-2', imageUrl: null }) : undefined)
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ServicesView)
+      await flush()
+
+      await fillNewService(wrapper)
+      await pickImage(wrapper, ADD_FORM, new File(['x'], 'a.gif', { type: 'image/gif' }))
+      expect(wrapper.get(`${ADD_FORM} [data-testid="service-image-error"]`).text()).toContain('فقط تصویر')
+      await wrapper.get('[data-testid="add-service"]').trigger('click')
+      await flush()
+      await flush()
+
+      expect(imageCalls(fetchMock)).toHaveLength(0)
+      expect(wrapper.get(`${ADD_FORM} [data-testid="service-image-error"]`).text()).toBe('')
+    })
+
+    it('object URLs: every preview created across create-failure handoff, retry and save is revoked', async () => {
+      let created = 0
+      let revoked = 0
+      vi.spyOn(URL, 'createObjectURL').mockImplementation(() => `blob:p-${++created}`)
+      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => { revoked++ })
+      let list: unknown[] = []
+      let imageAttempts = 0
+      const fetchMock = routedFetch(() => list, (method, path) => {
+        if (method === 'POST' && path === '/salons/mine/services') {
+          list = [{ ...SERVICE, id: 'svc-2', name: 'رنگ مو', imageUrl: null }]
+          return reply(201, list[0])
+        }
+        if (method === 'POST' && path.endsWith('/image')) {
+          imageAttempts++
+          return imageAttempts === 1 ? reply(500, {}) : reply(201, { ...SERVICE, id: 'svc-2', imageUrl: NEW_URL })
+        }
+        return undefined
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ServicesView)
+      await flush()
+
+      await fillNewService(wrapper)
+      await pickImage(wrapper, ADD_FORM, jpeg())
+      await wrapper.get('[data-testid="add-service"]').trigger('click')
+      await flush()
+      await flush()
+      await saveRowEdits(wrapper)
+      await flush()
+      expect(wrapper.get('[data-testid="service-card-svc-2"] [data-testid="service-image-preview"]').attributes('src')).toBe(NEW_URL)
+      expect(created).toBeGreaterThan(0)
+      expect(revoked).toBe(created)
+      wrapper.unmount()
+      expect(revoked).toBe(created)
+    })
+
+    it('«انصراف» discards a staged replacement or removal without any request', async () => {
+      const fetchMock = routedFetch(() => [{ ...SERVICE, imageUrl: IMAGE_URL }], () => undefined)
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ServicesView)
+      await flush()
+      const callsAfterLoad = fetchMock.mock.calls.length
+
+      await pickImage(wrapper, '[data-testid="service-card-svc-1"]', jpeg())
+      await wrapper.get('[data-testid="cancel-service-row"]').trigger('click')
+      expect(wrapper.get('[data-testid="service-image-field"]').attributes('data-state')).toBe('existing')
+      expect(wrapper.get('[data-testid="service-image-preview"]').attributes('src')).toBe(IMAGE_URL)
+
+      await wrapper.get('[data-testid="remove-service-image"]').trigger('click')
+      await wrapper.get('[data-testid="cancel-service-row"]').trigger('click')
+      expect(wrapper.get('[data-testid="service-image-field"]').attributes('data-state')).toBe('existing')
+
+      await flush()
+      expect(fetchMock.mock.calls.length).toBe(callsAfterLoad)
+      expect(wrapper.find('[data-testid="save-service-row"]').exists()).toBe(false)
+    })
+
+    describe('admin takedown notice', () => {
+      const REMOVED_AT = '2026-10-09T08:30:00.000Z'
+      const NOTICE = '[data-testid="service-image-removed-notice"]'
+      const BANNER = '[data-testid="service-images-removed-banner"]'
+
+      it('shows the per-card notice only for a service whose image support removed and that has no image now', async () => {
+        const list = [
+          { ...SERVICE, imageUrl: null, imageRemovedByAdminAt: REMOVED_AT },
+          { ...SERVICE, id: 'svc-2', name: 'رنگ', imageUrl: null, imageRemovedByAdminAt: null },
+          { ...SERVICE, id: 'svc-3', name: 'براشینگ', imageUrl: IMAGE_URL, imageRemovedByAdminAt: REMOVED_AT },
+        ]
+        vi.stubGlobal('fetch', routedFetch(() => list, () => undefined))
+        const wrapper = mount(ServicesView)
+        await flush()
+
+        const notice = wrapper.get(`[data-testid="service-card-svc-1"] ${NOTICE}`)
+        expect(notice.attributes('role')).toBe('status')
+        expect(notice.text()).toContain('تصویر این خدمت به دلیل مغایرت با قوانین محتوای قیچی توسط پشتیبانی حذف شد')
+        expect(notice.text()).toContain('می‌توانید تصویر دیگری بارگذاری کنید')
+        // A service that merely has no image is not a takedown.
+        expect(wrapper.find(`[data-testid="service-card-svc-2"] ${NOTICE}`).exists()).toBe(false)
+        // One that has an image again needs no notice, whatever the timestamp says.
+        expect(wrapper.find(`[data-testid="service-card-svc-3"] ${NOTICE}`).exists()).toBe(false)
+      })
+
+      it('shows one summary banner counting the services whose image support removed', async () => {
+        const list = [
+          { ...SERVICE, imageUrl: null, imageRemovedByAdminAt: REMOVED_AT },
+          { ...SERVICE, id: 'svc-2', name: 'رنگ', imageUrl: null, imageRemovedByAdminAt: REMOVED_AT },
+          { ...SERVICE, id: 'svc-3', name: 'براشینگ', imageUrl: null, imageRemovedByAdminAt: null },
+        ]
+        vi.stubGlobal('fetch', routedFetch(() => list, () => undefined))
+        const wrapper = mount(ServicesView)
+        await flush()
+
+        const banners = wrapper.findAll(BANNER)
+        expect(banners).toHaveLength(1)
+        expect(banners[0]!.attributes('role')).toBe('status')
+        expect(banners[0]!.text()).toContain('تصویر ۲ خدمت توسط پشتیبانی حذف شده است')
+      })
+
+      it('shows neither notice nor banner when no image was removed by support', async () => {
+        const list = [{ ...SERVICE, imageUrl: null, imageRemovedByAdminAt: null }]
+        vi.stubGlobal('fetch', routedFetch(() => list, () => undefined))
+        const wrapper = mount(ServicesView)
+        await flush()
+
+        expect(wrapper.find(NOTICE).exists()).toBe(false)
+        expect(wrapper.find(BANNER).exists()).toBe(false)
+      })
+
+      it('drops the notice and banner without a reload once a new upload returns imageRemovedByAdminAt null', async () => {
+        const list = [{ ...SERVICE, imageUrl: null, imageRemovedByAdminAt: REMOVED_AT }]
+        const fetchMock = routedFetch(() => list, (method, path) =>
+          method === 'POST' && path === '/salons/mine/services/svc-1/image'
+            ? reply(201, { ...SERVICE, imageUrl: NEW_URL, imageRemovedByAdminAt: null })
+            : undefined)
+        vi.stubGlobal('fetch', fetchMock)
+        const wrapper = mount(ServicesView)
+        await flush()
+        expect(wrapper.find(NOTICE).exists()).toBe(true)
+        expect(wrapper.find(BANNER).exists()).toBe(true)
+
+        await pickImage(wrapper, '[data-testid="service-card-svc-1"]', jpeg())
+        await saveRowEdits(wrapper)
+        await flush()
+
+        expect(callsTo(fetchMock, 'POST', '/salons/mine/services/svc-1/image')).toHaveLength(1)
+        // Only the initial list load -- the notice went away from the upload response alone.
+        expect(callsTo(fetchMock, 'GET', '/salons/mine/services')).toHaveLength(1)
+        expect(wrapper.find(NOTICE).exists()).toBe(false)
+        expect(wrapper.find(BANNER).exists()).toBe(false)
+      })
+
+      it('dates the removal in Asia/Tehran, not the browser timezone', async () => {
+        // 21:00Z on 9 Oct is already 00:30 on 10 Oct (18 Mehr 1405) in Tehran.
+        const list = [{ ...SERVICE, imageUrl: null, imageRemovedByAdminAt: '2026-10-09T21:00:00.000Z' }]
+        vi.stubGlobal('fetch', routedFetch(() => list, () => undefined))
+        const wrapper = mount(ServicesView)
+        await flush()
+
+        expect(wrapper.get(NOTICE).text()).toContain('تاریخ حذف: ۱۸ مهر ۱۴۰۵')
+      })
+
+      it('keeps the notice while a replacement is only staged and after its upload fails; the banner count follows saved state', async () => {
+        const list = [
+          { ...SERVICE, imageUrl: null, imageRemovedByAdminAt: REMOVED_AT },
+          { ...SERVICE, id: 'svc-2', name: 'رنگ', imageUrl: null, imageRemovedByAdminAt: REMOVED_AT },
+        ]
+        let failUpload = true
+        const fetchMock = routedFetch(() => list, (method, path) => {
+          if (method === 'POST' && path === '/salons/mine/services/svc-1/image') {
+            return failUpload ? reply(500, { message: 'x' }) : reply(200, { ...SERVICE, imageUrl: NEW_URL, imageRemovedByAdminAt: null })
+          }
+          return undefined
+        })
+        vi.stubGlobal('fetch', fetchMock)
+        const wrapper = mount(ServicesView)
+        await flush()
+        expect(wrapper.get(BANNER).text()).toContain('تصویر ۲ خدمت')
+
+        await pickImage(wrapper, '[data-testid="service-card-svc-1"]', jpeg())
+        // Staged, not saved: the image is still gone on the public page.
+        expect(wrapper.findAll(`[data-testid="service-card-svc-1"] ${NOTICE}`)).toHaveLength(1)
+        expect(wrapper.get(BANNER).text()).toContain('تصویر ۲ خدمت')
+
+        await saveRowEdits(wrapper)
+        await flush()
+        expect(wrapper.findAll(`[data-testid="service-card-svc-1"] ${NOTICE}`)).toHaveLength(1)
+        expect(wrapper.get(BANNER).text()).toContain('تصویر ۲ خدمت')
+
+        failUpload = false
+        await saveRowEdits(wrapper)
+        await flush()
+        expect(wrapper.find(`[data-testid="service-card-svc-1"] ${NOTICE}`).exists()).toBe(false)
+        expect(wrapper.findAll(NOTICE)).toHaveLength(1)
+        expect(wrapper.findAll(BANNER)).toHaveLength(1)
+        expect(wrapper.get(BANNER).text()).toContain('تصویر ۱ خدمت')
+      })
+
+      it('an owner removal clears a stale takedown timestamp from the DELETE response, with no reload', async () => {
+        // Stale local row (image + timestamp); the owner then removes the image herself.
+        const list = [{ ...SERVICE, imageUrl: IMAGE_URL, imageRemovedByAdminAt: REMOVED_AT }]
+        const fetchMock = routedFetch(() => list, (method, path) =>
+          method === 'DELETE' && path === '/salons/mine/services/svc-1/image'
+            ? reply(200, { ...SERVICE, imageUrl: null, imageRemovedByAdminAt: null })
+            : undefined)
+        vi.stubGlobal('fetch', fetchMock)
+        const wrapper = mount(ServicesView)
+        await flush()
+
+        await wrapper.get('[data-testid="remove-service-image"]').trigger('click')
+        await saveRowEdits(wrapper)
+        await flush()
+
+        expect(callsTo(fetchMock, 'DELETE', '/salons/mine/services/svc-1/image')).toHaveLength(1)
+        expect(callsTo(fetchMock, 'GET', '/salons/mine/services')).toHaveLength(1)
+        expect(wrapper.find(NOTICE).exists()).toBe(false)
+        expect(wrapper.find(BANNER).exists()).toBe(false)
+      })
     })
   })
 })

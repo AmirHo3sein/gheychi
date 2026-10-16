@@ -45,11 +45,16 @@ async function checkStatus() {
   </div>
 
   <div v-else class="mx-auto flex min-h-dvh max-w-sm flex-col items-center justify-center gap-4 p-4 text-center sm:p-6">
+    <!-- Waiting for review is a real milestone (the salon is submitted), so it gets the
+         calendar mascot; a suspension is not a moment for a cheerful character. -->
     <div
-      class="flex h-14 w-14 items-center justify-center rounded-full"
-      :class="salon?.status === 'suspended' ? 'bg-(--tone-danger-bg) text-(--tone-danger-text)' : 'bg-(--tone-warning-bg) text-(--tone-warning-text)'"
+      v-if="salon?.status === 'suspended'"
+      class="flex h-14 w-14 items-center justify-center rounded-full bg-(--tone-danger-bg) text-(--tone-danger-text)"
     >
-      <AppIcon :name="salon?.status === 'suspended' ? 'warning' : 'hours'" :size="26" />
+      <AppIcon name="warning" :size="26" />
+    </div>
+    <div v-else data-testid="pending-mascot" class="size-28 overflow-hidden rounded-3xl bg-(--color-mascot-tile) shadow-(--shadow-sm)" aria-hidden="true">
+      <img src="/mascot/calendar.webp" alt="" width="112" height="112" decoding="async" class="size-full object-contain" />
     </div>
     <h1 class="text-lg font-bold text-(--color-text)">
       {{ salon?.status === 'suspended' ? 'سالن شما معلق شده است' : 'سالن شما در حال بررسی است' }}
@@ -61,6 +66,27 @@ async function checkStatus() {
           : 'به محض تایید توسط تیم قیچی، به شما اطلاع داده می‌شود.'
       }}
     </p>
+    <!-- What happens next -- only claims the page already makes (review, then notification)
+         plus the platform rule that only approved salons are publicly listed. -->
+    <ol
+      v-if="salon?.status === 'pending'"
+      data-testid="pending-next-steps"
+      class="w-full space-y-2 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-4 text-start text-sm"
+    >
+      <li class="flex items-start gap-2.5">
+        <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-(--color-accent-strong) text-(--color-fill-text)" aria-hidden="true"><AppIcon name="check" :size="13" /></span>
+        <span class="text-(--color-text)">اطلاعات سالن ثبت و برای بررسی ارسال شد.</span>
+      </li>
+      <li class="flex items-start gap-2.5">
+        <span class="tnum flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-(--color-accent-text) text-xs font-bold text-(--color-accent-text)" aria-hidden="true">۲</span>
+        <span class="text-(--color-text)">تیم قیچی اطلاعات را بررسی می‌کند.</span>
+      </li>
+      <li class="flex items-start gap-2.5">
+        <span class="tnum flex size-6 shrink-0 items-center justify-center rounded-full border border-(--color-border-control) text-xs font-bold text-(--color-text-muted)" aria-hidden="true">۳</span>
+        <span class="text-(--color-text-muted)">پس از تایید، سالن شما در قیچی نمایش داده می‌شود و نوبت آنلاین می‌گیرد.</span>
+      </li>
+    </ol>
+
     <!-- The onboarding wizard creates the salon before it saves the hours and the first
          service, so a failure on either leaves a pending salon with those missing and no
          way back into the wizard after a reload. These two links are the only entry point

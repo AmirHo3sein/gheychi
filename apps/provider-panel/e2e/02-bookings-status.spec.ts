@@ -24,7 +24,12 @@ test('log in as an approved provider and mark a confirmed booking completed', as
   await expect(page).toHaveURL('/bookings')
 
   await page.getByTestId('mark-completed').first().click()
-  await expect(page.getByText('انجام شد')).toBeVisible()
+  // The redesigned bookings page moves a finished booking out of «نیاز به اقدام»; this one
+  // started earlier today, so it is filed under «امروز». Assert the outcome where it now
+  // lives: the action is gone and the card there carries the completed status badge.
+  await expect(page.getByTestId('mark-completed')).toHaveCount(0)
+  await page.getByRole('tab', { name: /امروز/ }).click()
+  await expect(page.locator('[data-testid^="booking-"]').getByText('انجام شد', { exact: true }).first()).toBeVisible()
 
   // Completing the booking is what accrues the CRM's own figures (Phase 5 of the
   // monetization initiative -- see docs/technical-overview/32-salon-crm.md): the customer
@@ -51,9 +56,10 @@ test('log in as an approved provider and mark a confirmed booking completed', as
   // docs/technical-overview/33-salon-sms-quota.md): reuses the same real SmsProvider send
   // path notifyConfirmed already exercises elsewhere, gated by the real entitlement engine
   // (20/month, the migration-seeded placeholder on this e2e salon's default plan).
-  await expect(page.getByTestId('sms-quota-remaining')).toContainText('20')
+  // The panel shows Persian digits.
+  await expect(page.getByTestId('sms-quota-remaining')).toContainText('۲۰')
   await page.getByTestId('sms-message-input').fill('یادآوری نوبت فردا شما ساعت ۱۰')
   await page.getByTestId('send-sms-button').click()
-  await expect(page.getByTestId('sms-quota-remaining')).toContainText('19')
+  await expect(page.getByTestId('sms-quota-remaining')).toContainText('۱۹')
   await expect(page.getByTestId('sms-message-input')).toHaveValue('')
 })

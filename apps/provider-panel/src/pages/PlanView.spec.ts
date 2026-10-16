@@ -52,15 +52,18 @@ describe('PlanView', () => {
       vi.fn().mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({ ...RESPONSE, resolvedEntitlements: { smsMonthlyQuota: 100, crmCustomerCap: 50 } }),
+        // crmCustomerCap now has a Persian label (registry key); an unregistered key still
+        // falls back to its raw name.
+        json: async () => ({ ...RESPONSE, resolvedEntitlements: { smsMonthlyQuota: 100, crmCustomerCap: 50, someFutureKey: true } }),
       }),
     )
 
     const wrapper = await mountPlan()
 
     expect(wrapper.text()).toContain('سقف پیامک ماهانه')
-    expect(wrapper.text()).toContain('100')
-    expect(wrapper.text()).toContain('crmCustomerCap')
+    expect(wrapper.text()).toContain('۱۰۰')
+    expect(wrapper.text()).toContain('سقف مشتریان CRM')
+    expect(wrapper.text()).toContain('someFutureKey')
   })
 
   it('shows a placeholder message instead of an empty list when the plan has no entitlements yet', async () => {
@@ -122,5 +125,63 @@ describe('PlanView', () => {
     const wrapper = await mountPlan()
 
     expect(wrapper.find('[data-testid="canceled-note"]').exists()).toBe(true)
+  })
+
+  describe('usage meters and plan-change note', () => {
+    const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body })
+    // Routed by URL: the meters load alongside the plan and billing history.
+    function routed(overrides: { entitlements?: Record<string, unknown>; quota?: unknown; customersTotal?: number } = {}) {
+      const fetchMock = vi.fn(async (url: string) => {
+        if (url.includes('/sms-quota')) return overrides.quota === undefined ? ok({ quota: 20, used: 5, remaining: 15 }) : ok(overrides.quota)
+        if (url.includes('/billing-periods')) return ok([])
+        if (url.includes('/salons/mine/customers')) return ok({ items: [], total: overrides.customersTotal ?? 0, page: 1, pageSize: 1 })
+        return ok({ ...RESPONSE, resolvedEntitlements: overrides.entitlements ?? {} })
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      return fetchMock
+    }
+
+    it('meters SMS used against the monthly quota from /sms-quota, in Persian digits', async () => {
+      routed()
+      const wrapper = await mountPlan()
+
+      const meter = wrapper.get('[data-testid="sms-usage-meter"]')
+      expect(meter.get('[data-testid="usage-meter-value"]').text()).toBe('۵ از ۲۰ پیامک')
+      const bar = meter.get('[role="meter"]')
+      expect(bar.attributes('aria-valuenow')).toBe('5')
+      expect(bar.attributes('aria-valuemax')).toBe('20')
+      expect(meter.attributes('data-state')).toBe('ok')
+    })
+
+    it('marks the SMS meter full when the quota is used up', async () => {
+      routed({ quota: { quota: 20, used: 20, remaining: 0 } })
+      const wrapper = await mountPlan()
+
+      const meter = wrapper.get('[data-testid="sms-usage-meter"]')
+      expect(meter.attributes('data-state')).toBe('full')
+      expect(meter.find('[data-testid="usage-meter-full"]').exists()).toBe(true)
+    })
+
+    it('meters CRM customers only when the plan caps them, and never fetches the count otherwise', async () => {
+      const uncapped = routed()
+      let wrapper = await mountPlan()
+      expect(wrapper.find('[data-testid="crm-usage-meter"]').exists()).toBe(false)
+      expect(uncapped.mock.calls.some((c) => String(c[0]).includes('/salons/mine/customers'))).toBe(false)
+      wrapper.unmount()
+
+      routed({ entitlements: { crmCustomerCap: 50 }, customersTotal: 42 })
+      wrapper = await mountPlan()
+      await new Promise((r) => setTimeout(r, 0))
+      expect(wrapper.get('[data-testid="crm-usage-meter"] [data-testid="usage-meter-value"]').text()).toBe('۴۲ از ۵۰ مشتری')
+      expect(wrapper.get('[data-testid="crm-usage-meter"]').attributes('data-state')).toBe('high')
+    })
+
+    it('says plan changes go through support, with no self-serve upgrade control', async () => {
+      routed()
+      const wrapper = await mountPlan()
+
+      expect(wrapper.get('[data-testid="plan-change-note"]').text()).toContain('تغییر پلن با پشتیبانی')
+      expect(wrapper.findAll('button')).toHaveLength(0)
+    })
   })
 })

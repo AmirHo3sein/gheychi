@@ -145,7 +145,7 @@ async function sendReply(id: string) {
     </div>
 
     <template v-else>
-      <EmptyState v-if="!loading && reviews.length === 0" icon="reviews" message="هنوز نظری ثبت نشده است." />
+      <EmptyState v-if="!loading && reviews.length === 0" icon="reviews" mascot="happy" message="هنوز نظری ثبت نشده است." />
 
       <AppCard v-for="r in sortedReviews" :key="r.id" class="space-y-3">
         <div class="flex flex-wrap items-center justify-between gap-2">

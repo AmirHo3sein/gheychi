@@ -166,7 +166,7 @@ async function move(index: number, direction: -1 | 1) {
       </div>
 
       <template v-else>
-        <EmptyState v-if="items.length === 0" icon="portfolio" message="هنوز نمونه کاری ثبت نشده است." />
+        <EmptyState v-if="items.length === 0" icon="portfolio" mascot="curious" message="هنوز نمونه کاری ثبت نشده است." />
 
         <!-- auto-fit + justify-center, not a fixed xl:grid-cols-2: each row is a fixed 96px
              thumbnail plus a compact edit column, so one row per line wastes most of a

@@ -176,7 +176,7 @@ function serviceName(id: string | null) {
       </div>
 
       <template v-else>
-        <EmptyState v-if="stories.length === 0" icon="stories" message="هنوز استوری فعالی ندارید." />
+        <EmptyState v-if="stories.length === 0" icon="stories" mascot="wink" message="هنوز استوری فعالی ندارید." />
 
         <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           <div

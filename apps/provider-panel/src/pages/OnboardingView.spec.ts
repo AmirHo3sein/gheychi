@@ -94,6 +94,31 @@ describe('OnboardingView', () => {
     expect((next.element as HTMLButtonElement).disabled).toBe(false)
   })
 
+  it('greets with the hello mascot on step 1 only, and marks the current step with Persian numerals', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ([]) }))
+    const router = makeRouter()
+    await router.push('/onboarding')
+    await router.isReady()
+    const wrapper = mount(OnboardingView, { global: { plugins: [router] } })
+
+    const welcome = wrapper.get('[data-testid="onboarding-welcome"]')
+    expect(welcome.get('img').attributes('src')).toBe('/mascot/hello.webp')
+    const current = wrapper.get('[aria-current="step"]')
+    expect(current.text()).toContain('۱')
+    expect(current.text()).toContain('اطلاعات سالن')
+
+    await wrapper.find('[data-testid="salon-name"]').setValue('سالن سارا')
+    await selectGenderTarget(wrapper)
+    await selectSalonCity(wrapper)
+    await wrapper.find('[data-testid="address"]').setValue('خیابان ولیعصر، پلاک ۱')
+    await setPinViaFallbackInputs(wrapper)
+    await selectSalonCategory(wrapper)
+    await wrapper.find('[data-testid="wizard-next"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="onboarding-welcome"]').exists()).toBe(false)
+    expect(wrapper.get('[aria-current="step"]').text()).toContain('ساعات کاری')
+  })
+
   it('keeps the next button disabled when capacity is out of the 1-50 range', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ([]) }))
     const router = makeRouter()

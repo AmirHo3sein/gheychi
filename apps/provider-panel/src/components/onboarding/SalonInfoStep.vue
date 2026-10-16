@@ -85,7 +85,7 @@ function onPin(pos: { lat: number; lng: number }) {
         v-model="model.description"
         rows="3"
         placeholder="چند جمله درباره سالن شما"
-        class="w-full rounded-xl border border-(--color-border) bg-(--color-surface-card) p-3 text-sm"
+        class="w-full rounded-xl border border-(--color-border-control) bg-(--color-surface-card) p-3 text-sm"
       />
     </div>
 

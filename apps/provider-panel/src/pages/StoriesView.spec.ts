@@ -13,8 +13,10 @@ vi.mock('@/composables/useApi', () => ({
   useApi: () => ({ apiFetch: fetchMock }),
 }))
 
+// One fixed instant the fixtures are relative to, so a test can pin the clock to it.
+const FIXTURE_NOW = Date.now()
 function inHours(hours: number) {
-  return new Date(Date.now() + hours * 3_600_000).toISOString()
+  return new Date(FIXTURE_NOW + hours * 3_600_000).toISOString()
 }
 
 // GET /salons/mine/stories returns ALL unexpired rows including removed ones (the
@@ -104,11 +106,19 @@ describe('StoriesView', () => {
   })
 
   it('shows the remaining time per story', async () => {
-    const wrapper = await mountView()
+    // Remaining time is floored, so pin the clock to the fixtures' own instant: a few real
+    // seconds after it, «۱۸ ساعت» is honestly «۱۷ ساعت و ۵۹ دقیقه».
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(FIXTURE_NOW)
+    try {
+      const wrapper = await mountView()
 
-    expect(wrapper.text()).toContain('۱۸ ساعت مانده')
-    expect(wrapper.text()).toContain('۲ ساعت مانده')
-    wrapper.unmount()
+      expect(wrapper.text()).toContain('۱۸ ساعت مانده')
+      expect(wrapper.text()).toContain('۲ ساعت مانده')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('deletes a story only after confirmation, then refetches the list', async () => {

@@ -12,7 +12,7 @@ import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import { useApi } from '@/composables/useApi'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
-import { toEnglishDigits } from '@/utils/digits'
+import { formatNumber, toEnglishDigits } from '@/utils/digits'
 
 interface Worker {
   id: string
@@ -246,18 +246,18 @@ async function copyReferralCode(code: string) {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-5xl space-y-4 p-4 lg:p-6">
-    <!-- text-center, not just start-aligned: the content below (the add-form, the roster
-         grid) is independently centered within this wide container via its own mx-auto/
-         justify-center, not stretched to fill it -- a start-aligned heading above centered
-         content reads as visibly offset from it ("the title is on the right"). Centering the
-         heading text keeps it aligned with whatever's centered below, at any content width. -->
-    <h1 class="text-center text-lg font-bold text-(--color-text)">تیم</h1>
+  <!-- From lg: the roster (RTL start, right) and a narrow side column with the add form, so a
+       desktop owner sees the whole team at once instead of a centred 640px strip. -->
+  <div class="mx-auto w-full max-w-6xl p-4 lg:p-6">
+    <h1 class="mb-4 text-lg font-bold text-(--color-text)">
+      تیم
+      <span v-if="!loading && !loadError && workers.length" class="tnum text-sm font-normal text-(--color-text-muted)">
+        ({{ formatNumber(workers.length) }} نفر)
+      </span>
+    </h1>
 
-    <!-- Capped AND centered independently of the page container -- the two short fields
-         shouldn't stretch across a laptop, and centering (not just capping) keeps this from
-         hugging the RTL start (right) edge with visibly empty space on the other side. -->
-    <AppCard class="mx-auto max-w-2xl space-y-3">
+    <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start lg:gap-6">
+    <AppCard class="space-y-3 lg:order-last">
       <h2 class="font-bold text-(--color-text)">افزودن عضو جدید</h2>
       <AppInput v-model="newWorker.name" placeholder="نام" />
       <AppInput v-model="newWorker.phone" type="tel" inputmode="tel" placeholder="شماره موبایل" class="tnum" />
@@ -277,6 +277,7 @@ async function copyReferralCode(code: string) {
       </AppButton>
     </AppCard>
 
+    <section class="min-w-0 space-y-4" aria-label="اعضای تیم">
     <div v-if="loadError" data-testid="load-error" class="space-y-3 rounded-xl border border-dashed border-(--color-border) p-4 text-center">
       <p class="text-sm text-(--tone-danger-text)">تیم بارگذاری نشد.</p>
       <AppButton variant="secondary" data-testid="retry-load" @click="load">
@@ -288,7 +289,7 @@ async function copyReferralCode(code: string) {
       <div v-if="loading" data-testid="loading-spinner" class="flex items-center justify-center py-8 text-(--color-text-muted)">
         <AppIcon name="spinner" :size="20" class="animate-spin" />
       </div>
-      <EmptyState v-else-if="workers.length === 0" icon="team" message="هنوز عضوی به تیم اضافه نشده است." />
+      <EmptyState v-else-if="workers.length === 0" icon="team" mascot="hello" message="هنوز عضوی به تیم اضافه نشده است." />
 
     <!-- auto-fit + justify-center, not a fixed md:/xl: column count: with a fixed grid, a
          lone (or odd) card at the tail lands in the RTL start (right) column and strands
@@ -299,7 +300,7 @@ async function copyReferralCode(code: string) {
          its own content up to that cap, producing visibly uneven column widths when cards
          differ (the bug BookingsView.vue had); 1fr splits the row's leftover space equally
          across every populated column instead. -->
-    <div v-else class="grid items-start justify-center gap-4 [grid-template-columns:repeat(auto-fit,minmax(280px,1fr))]">
+    <div v-else class="grid items-start gap-4 [grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr))]">
       <AppCard v-for="w in workers" :key="w.id" :padded="false" class="space-y-3 p-4">
         <div class="flex items-center justify-between gap-2">
           <div class="min-w-0">
@@ -310,7 +311,7 @@ async function copyReferralCode(code: string) {
             </p>
           </div>
           <label class="-mx-1 flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-1 py-2 text-sm text-(--color-text)">
-            <input type="checkbox" class="h-4 w-4 accent-(--color-accent)" :checked="w.active" @change="toggleActive(w, $event)" />
+            <input type="checkbox" class="h-4 w-4 accent-(--color-accent-text)" :checked="w.active" @change="toggleActive(w, $event)" />
             فعال
           </label>
         </div>
@@ -358,14 +359,14 @@ async function copyReferralCode(code: string) {
               v-for="e in workerOffDays(w.id)"
               :key="e.id"
               :data-testid="`worker-off-${e.id}`"
-              class="flex items-center justify-between gap-2 rounded-lg bg-(--color-surface) px-3 py-1.5 text-sm text-(--color-text)"
+              class="flex items-center justify-between gap-2 rounded-lg bg-(--color-surface-subtle) px-3 py-0.5 text-sm text-(--color-text)"
             >
               <span class="tnum">{{ offDayLabel(e) }}</span>
               <button
                 type="button"
                 aria-label="حذف روز مرخصی"
                 :data-testid="`remove-worker-off-${e.id}`"
-                class="shrink-0 text-(--color-text-muted) hover:text-(--tone-danger-text)"
+                class="-me-2 inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-(--color-text-muted) hover:bg-(--tone-danger-bg) hover:text-(--tone-danger-text)"
                 @click="removeWorkerOffDay(e.id)"
               >
                 <AppIcon name="trash" :size="14" />
@@ -416,5 +417,7 @@ async function copyReferralCode(code: string) {
       </AppCard>
     </div>
     </template>
+    </section>
+    </div>
   </div>
 </template>

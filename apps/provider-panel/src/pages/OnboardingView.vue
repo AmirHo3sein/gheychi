@@ -14,6 +14,7 @@ import { useServiceCategories } from '@/composables/useServiceCategories'
 import { useSessionStore } from '@/stores/session'
 import { contactPhoneError, normalizeContactPhone } from '@/utils/contact-phone'
 import { validateWorkingHours } from '@/utils/working-hours'
+import { formatNumber } from '@/utils/digits'
 
 const STEP_LABELS = ['اطلاعات سالن', 'ساعات کاری', 'اولین خدمت']
 
@@ -247,29 +248,48 @@ async function submit() {
       </button>
     </div>
 
+    <!-- The wizard's one mascot moment: a hello on the very first step only. Decorative --
+         the heading beside it carries the meaning. -->
+    <div v-if="step === 1" data-testid="onboarding-welcome" class="mb-5 flex items-center gap-3 rounded-2xl bg-(--color-surface-card) p-3 shadow-(--shadow-sm)">
+      <div class="size-18 shrink-0 overflow-hidden rounded-2xl bg-(--color-mascot-tile)" aria-hidden="true">
+        <img src="/mascot/hello.webp" alt="" width="72" height="72" decoding="async" class="size-full object-contain" />
+      </div>
+      <div class="min-w-0">
+        <p class="text-sm font-bold text-(--color-text)">به قیچی خوش آمدید!</p>
+        <p class="mt-0.5 text-xs leading-5 text-(--color-text-muted)">
+          در سه قدم کوتاه سالن‌تان را ثبت کنید؛ پس از بررسی تیم قیچی، مشتری‌ها می‌توانند آنلاین نوبت بگیرند.
+        </p>
+      </div>
+    </div>
+
     <!-- gap-1 at 320px: with three labelled steps and two connectors, gap-2 spent 16px of a
          272px row on whitespace. -->
-    <div class="mb-6 flex items-center gap-1 sm:gap-2">
+    <ol class="mb-6 flex items-center gap-1 sm:gap-2" aria-label="مراحل ثبت‌نام">
       <template v-for="(label, i) in STEP_LABELS" :key="label">
-        <div class="flex min-w-0 flex-1 flex-col items-center gap-1.5">
+        <li class="flex min-w-0 flex-1 flex-col items-center gap-1.5" :aria-current="i + 1 === step ? 'step' : undefined">
           <div
-            class="flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition-colors"
+            class="flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition-colors motion-reduce:transition-none"
             :class="
               i + 1 < step
                 ? 'bg-(--color-accent-strong) text-(--color-fill-text)'
                 : i + 1 === step
-                  ? 'border-2 border-(--color-accent) text-(--color-accent-text)'
-                  : 'border border-(--color-border) text-(--color-text-muted)'
+                  ? 'border-2 border-(--color-accent-text) bg-(--color-accent-soft) text-(--color-accent-text)'
+                  : 'border border-(--color-border-control) text-(--color-text-muted)'
             "
           >
             <AppIcon v-if="i + 1 < step" name="check" :size="14" />
-            <span v-else>{{ i + 1 }}</span>
+            <span v-else class="tnum">{{ formatNumber(i + 1) }}</span>
           </div>
-          <span class="text-center text-[11px] text-balance text-(--color-text-muted)">{{ label }}</span>
-        </div>
-        <div v-if="i < STEP_LABELS.length - 1" class="mb-4 h-px flex-1 bg-(--color-border)" />
+          <span
+            class="text-center text-[11px] text-balance"
+            :class="i + 1 === step ? 'font-semibold text-(--color-text)' : 'text-(--color-text-muted)'"
+          >
+            <span class="sr-only">{{ i + 1 < step ? 'انجام‌شده: ' : '' }}</span>{{ label }}
+          </span>
+        </li>
+        <li v-if="i < STEP_LABELS.length - 1" class="mb-4 h-px flex-1" :class="i + 1 < step ? 'bg-(--color-accent-text)' : 'bg-(--color-border)'" aria-hidden="true" />
       </template>
-    </div>
+    </ol>
 
     <div
       ref="stepCard"

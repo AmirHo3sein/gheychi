@@ -62,7 +62,9 @@ test('manual bookings, double-booking prevention, and per-worker time off', asyn
   await page.getByTestId('submit-manual-booking').click()
 
   await expect(page.getByText('نوبت با موفقیت ثبت شد')).toBeVisible()
-  const card = page.locator('[data-testid^="booking-"]').filter({ hasText: walkInPhone })
+  // Booking cards render phones with Persian digits (LTR-isolated), so match that form.
+  const walkInPhoneFa = walkInPhone.replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)])
+  const card = page.locator('[data-testid^="booking-"]').filter({ hasText: walkInPhoneFa })
   await expect(card).toBeVisible()
   await expect(card.getByText('ثبت دستی')).toBeVisible()
   await expect(card.getByText('مشتری واک‌این')).toBeVisible()

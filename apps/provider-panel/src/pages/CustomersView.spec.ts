@@ -21,9 +21,12 @@ function page(items: unknown[], total = items.length) {
 }
 
 function stubFetchByUrl(
-  overrides: { customers?: unknown; summary?: unknown; customersOk?: boolean; smsQuota?: unknown } = {},
+  overrides: { customers?: unknown; summary?: unknown; customersOk?: boolean; smsQuota?: unknown; lapsed?: unknown } = {},
 ) {
   const fetchMock = vi.fn((url: string) => {
+    if (overrides.lapsed !== undefined && url.includes('segment=lapsed') && url.includes('pageSize=3')) {
+      return Promise.resolve({ ok: true, status: 200, json: async () => overrides.lapsed })
+    }
     if (url.includes('/dashboard-summary')) return Promise.resolve({ ok: true, status: 200, json: async () => overrides.summary ?? SUMMARY })
     if (url.includes('/sms-quota')) return Promise.resolve({ ok: true, status: 200, json: async () => overrides.smsQuota ?? SMS_QUOTA })
     return Promise.resolve({
@@ -83,8 +86,8 @@ describe('CustomersView', () => {
     stubFetchByUrl()
     const wrapper = await mountView()
 
-    expect(wrapper.get('[data-testid="sms-quota-summary"]').text()).toContain('17')
-    expect(wrapper.get('[data-testid="sms-quota-summary"]').text()).toContain('20')
+    expect(wrapper.get('[data-testid="sms-quota-summary"]').text()).toContain('۱۷')
+    expect(wrapper.get('[data-testid="sms-quota-summary"]').text()).toContain('۲۰')
   })
 
   it('lists each customer with their name, phone, and segment badge', async () => {
@@ -243,7 +246,8 @@ describe('CustomersView', () => {
     const fetchMock = stubFetchByUrl({ customers: { items: CUSTOMERS, total: 45, page: 1, pageSize: 20 } })
     const wrapper = await mountView()
 
-    expect(wrapper.get('[data-testid="customer-range"]').text()).toContain('45')
+    // Persian digits, like every other visible number in the panel.
+    expect(wrapper.get('[data-testid="customer-range"]').text()).toContain('از ۴۵ مشتری')
 
     await wrapper.get('[data-testid="next-page"]').trigger('click')
     await new Promise((r) => setTimeout(r, 0))
@@ -258,11 +262,74 @@ describe('CustomersView', () => {
     expect(wrapper.get('[data-testid="prev-page"]').attributes('disabled')).toBeDefined()
   })
 
+  describe('lapsed customers highlight', () => {
+    const LAPSED = [
+      {
+        userId: 'u9', name: 'Mina', phone: '09120000009', bookingsCount: 3, completedCount: 3, visitsCount: 3,
+        firstVisitAt: '2026-01-01T10:00:00.000Z', lastVisitAt: '2026-06-01T10:00:00.000Z', grossValue: 900_000, segment: 'lapsed',
+      },
+    ]
+
+    it('fetches a small preview of the server-side lapsed segment and shows its true total', async () => {
+      const fetchMock = stubFetchByUrl({ lapsed: page(LAPSED, 7) })
+      const wrapper = await mountView()
+
+      const lapsedUrl = customersUrls(fetchMock).find((u) => u.includes('segment=lapsed'))!
+      expect(lapsedUrl).toContain('pageSize=3')
+      const card = wrapper.get('[data-testid="lapsed-customers-card"]')
+      expect(card.text()).toContain('مشتریان غیرفعال')
+      expect(card.get('[data-testid="lapsed-total"]').text()).toBe('۷')
+      expect(card.findAll('[data-testid="lapsed-customer"]')).toHaveLength(1)
+      expect(card.text()).toContain('Mina')
+    })
+
+    it('offers only one-to-one actions: a call link and a single-SMS link to that customer, no bulk send', async () => {
+      stubFetchByUrl({ lapsed: page(LAPSED) })
+      const wrapper = await mountView()
+
+      const card = wrapper.get('[data-testid="lapsed-customers-card"]')
+      expect(card.get('[data-testid="lapsed-call"]').attributes('href')).toBe('tel:09120000009')
+      expect(card.get('[data-testid="lapsed-sms"]').attributes('href')).toBe('/customers/u9?compose=sms')
+      // Nothing on the card sends anything by itself.
+      expect(card.text()).not.toContain('ارسال')
+      expect(card.findAll('button').map((b) => b.attributes('data-testid'))).toEqual(['show-all-lapsed'])
+    })
+
+    it('hides the SMS link (keeping the call link) once the monthly quota is used up', async () => {
+      stubFetchByUrl({ lapsed: page(LAPSED), smsQuota: { quota: 20, used: 20, remaining: 0 } })
+      const wrapper = await mountView()
+
+      expect(wrapper.find('[data-testid="lapsed-sms"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="lapsed-call"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="lapsed-sms-exhausted"]').exists()).toBe(true)
+    })
+
+    it('«نمایش همه» switches the list to the lapsed segment filter', async () => {
+      const fetchMock = stubFetchByUrl({ lapsed: page(LAPSED) })
+      const wrapper = await mountView()
+      fetchMock.mockClear()
+
+      await wrapper.get('[data-testid="show-all-lapsed"]').trigger('click')
+      await new Promise((r) => setTimeout(r, 0))
+
+      const last = customersUrls(fetchMock).at(-1)!
+      expect(last).toContain('segment=lapsed')
+      expect(last).toContain('pageSize=20')
+    })
+
+    it('renders no card when the salon has no lapsed customers', async () => {
+      stubFetchByUrl({ lapsed: page([]) })
+      const wrapper = await mountView()
+
+      expect(wrapper.find('[data-testid="lapsed-customers-card"]').exists()).toBe(false)
+    })
+  })
+
   it('hides the pager entirely when everything fits on one page', async () => {
     stubFetchByUrl()
     const wrapper = await mountView()
 
     expect(wrapper.find('[data-testid="next-page"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="customer-range"]').text()).toContain('2')
+    expect(wrapper.get('[data-testid="customer-range"]').text()).toContain('از ۲ مشتری')
   })
 })

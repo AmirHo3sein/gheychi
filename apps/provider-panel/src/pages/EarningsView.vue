@@ -9,6 +9,7 @@ import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useApi } from '@/composables/useApi'
 import { invoiceStatusLabel, jalaliMonthLabel } from '@/utils/labels'
 import { formatToman } from '@/utils/format-toman'
+import { formatPercent } from '@/utils/digits'
 
 interface Earnings {
   totalCollected: number
@@ -128,7 +129,7 @@ function isValidAmount(amount: number | null | undefined): boolean {
             <AppIcon name="coupons" :size="18" />
           </div>
           <div class="min-w-0">
-            <p class="text-xs text-(--color-text-muted)">کارمزد پلتفرم ({{ earnings.commissionPercent }}٪)</p>
+            <p class="text-xs text-(--color-text-muted)">کارمزد پلتفرم ({{ formatPercent(earnings.commissionPercent) }})</p>
             <p class="break-words text-xl font-bold text-(--color-text-muted)"><span dir="ltr" class="tnum">{{ isValidAmount(earnings.commissionAmount) ? '−' : '' }}{{ formattedAmount(earnings.commissionAmount) }}</span><span v-if="isValidAmount(earnings.commissionAmount)"> تومان</span></p>
           </div>
         </div>
