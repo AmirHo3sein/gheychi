@@ -45,7 +45,8 @@ Guard shorthand: **Auth** = the global `AuthGuard` only (valid session). **Admin
 | `salon-stories.controller.ts` | `GET/POST /salons/mine/stories`, `DELETE /salons/mine/stories/:id` |
 | `salon-workers.controller.ts` | `POST/GET /salons/mine/workers`, `PATCH /salons/mine/workers/:id`, `PATCH /salons/mine/workers/:id/services`, `GET /salons/mine/workers/:id/referral-code` |
 | `schedule.controller.ts` | `PUT/GET /salons/mine/hours`, `POST/GET /salons/mine/exceptions` (`GET ?workerId=`; `POST {date, startTime?, endTime?, reason?, workerId?}` — see [10](./10-scheduling.md)), `DELETE /salons/mine/exceptions/:id` |
-| `booking/salon-bookings.controller.ts` | `GET /salons/mine/bookings`, `POST /salons/mine/bookings` (owner-entered manual booking — `createManual`, `source='manual'`), `PATCH /salons/mine/bookings/:id` (completed/no_show), `POST /salons/mine/bookings/:id/approve`, `POST /salons/mine/bookings/:id/reject` (see "Booking approval workflow" below), `PATCH /salons/mine/bookings/:id/assign-worker`, `POST /salons/mine/bookings/:id/reschedule` (audited, `booking.rescheduled`) |
+| `booking/salon-bookings.controller.ts` | `GET /salons/mine/bookings?from=&to=` (optional ISO window on `starts_at`, `[from, to)`; omitted = full list — [38](./38-dashboard-aggregates.md)), `POST /salons/mine/bookings` (owner-entered manual booking — `createManual`, `source='manual'`), `PATCH /salons/mine/bookings/:id` (completed/no_show), `POST /salons/mine/bookings/:id/approve`, `POST /salons/mine/bookings/:id/reject` (see "Booking approval workflow" below), `PATCH /salons/mine/bookings/:id/assign-worker`, `POST /salons/mine/bookings/:id/reschedule` (audited, `booking.rescheduled`) |
+| `booking/salon-capacity.controller.ts` | `GET /salons/mine/capacity?from=&to=` (Tehran dates, `[from, to)`, default today..+7, max 31 days; per-day open/capacity/booked chair-minutes and `freePercent` — [38](./38-dashboard-aggregates.md)) |
 | `booking/salon-earnings.controller.ts` | `GET /salons/mine/earnings` (ledger-backed — [14](./14-commission.md)) |
 | `coupons/salon-coupons.controller.ts` | `POST/GET /salons/mine/coupons`, `PATCH/DELETE /salons/mine/coupons/:id` |
 | `reviews/salon-review-reply.controller.ts` | `PATCH /salons/mine/reviews/:id/reply` |
@@ -69,7 +70,7 @@ Guard shorthand: **Auth** = the global `AuthGuard` only (valid session). **Admin
 | Controller | Routes |
 |---|---|
 | `salons/admin-salons.controller.ts` | `GET /admin/salons` (filtered/paginated), `GET /admin/salons/:id` (every salon column plus `owner`, `location {lat,lng}`, `photos`, `services`, `hours`, and a `riskSummary` — bookings created in the last 90 days by source, `cancelledBySalon`/`rejectedBySalon`/`noShowMarked`, and all currently open reports), `GET /admin/salons/:id/stories`, `/portfolio` (unfiltered moderation view), `PATCH /admin/salons/:id/status` (audited; 409 if the owner is suspended and the target is `approved`), `PATCH /admin/salons/:id/featured` (audited), `PATCH /admin/salons/:id/handle` (audited — admin override of the public handle) |
-| `salons/admin-showcase.controller.ts` | `PATCH /admin/stories/:id/status` (audited), `PATCH /admin/portfolio/:id/status` (audited) |
+| `salons/admin-showcase.controller.ts` | `PATCH /admin/stories/:id/status` (audited), `PATCH /admin/portfolio/:id/status` (audited), `DELETE /admin/services/:id/image` (audited as `salon.service.image.removed`; see [36](./36-service-pricing-and-packages.md#service-images)) |
 | `booking/admin-booking-settings.controller.ts` | `GET/PATCH /admin/salons/:id/booking-settings`, `GET /admin/bookings/:id/events` — see "Booking approval workflow" below |
 | `booking/admin-bookings.controller.ts` | `GET /admin/bookings` — paginated, filterable booking list (`status`, `salonId`, `userId`, `confirmationMode`, `source`, `paymentStatus`, `from`/`to` on `startsAt`) — and `POST /admin/bookings/:id/cancel`, the **one** admin mutation: a platform cancel that goes through the booking state machine (status `cancelled_by_admin`) rather than around it. The list stays read-only otherwise. Each row carries customer/salon/service/worker names, money, payment state and commission, with `payment: null`/`commissionAmount: null` left as real states rather than flattened to zero |
 | `subscriptions/admin-salon-subscriptions.controller.ts` | `GET /admin/salons/:salonId/subscription`, `PATCH … {planId}` (audited `subscription.plan.set`; refuses inactive plans), `POST …/cancel` (audited; also clears overrides), `PATCH …/overrides {overrides|null}` (audited `subscription.overrides.set`) |
@@ -152,8 +153,9 @@ A booking-conflict 409 from `POST /bookings`/`assign-worker` (createHold/createM
 
 | Route | Guard |
 |---|---|
-| `GET /admin/notifications` | Admin |
+| `GET /admin/notifications` | Admin — each item carries `severity: 'critical' \| 'warning' \| 'info'`; optional `?type=` and `?severity=` filters ([38](./38-dashboard-aggregates.md#4-admin-notification-severity)) |
 | `GET /admin/notifications/unread-count` | Admin |
+| `GET /admin/notifications/unread-counts` | Admin — `{ total, critical, warning, info }`; a NULL-severity alert counts as `warning` |
 | `PATCH /admin/notifications/:id/read` | Admin |
 | `POST /admin/notifications/read-all` | Admin |
 
@@ -198,6 +200,12 @@ A booking-conflict 409 from `POST /bookings`/`assign-worker` (createHold/createM
 | Route | Guard |
 |---|---|
 | `GET /admin/analytics/summary?from=&to=` | Admin — per-event totals + day-by-day booking-funnel breakdown (defaults to the last 30 days); rendered by the admin-panel's `AnalyticsView.vue` |
+
+## Admin dashboard (`admin-dashboard/admin-dashboard.controller.ts`)
+
+| Route | Guard |
+|---|---|
+| `GET /admin/dashboard-summary` | Admin — DB-computed platform KPIs (salons/users/bookings by Tehran day, queues, 30-day commission ledger, plans, unread alerts, backup state) — [38](./38-dashboard-aggregates.md) |
 
 ## Favorites (`favorites/favorites.controller.ts`)
 

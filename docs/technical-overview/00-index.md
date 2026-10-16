@@ -57,6 +57,7 @@ This documentation is a snapshot as of **2026-09-03**. The codebase is under act
 | 34 | [Subscription Coupons & Billing](./34-subscription-coupons-and-billing.md) | `SubscriptionCoupon` (separate from booking coupons), `SubscriptionBillingPeriod`, admin-only settlement — architecture-only billing |
 | 35 | [Entitlement Engine](./35-entitlement-engine.md) | The capability seam paid features read from — key registry, per-key absent-defaults, `hasFeature`/`getLimit`/`getQuota` |
 | 37 | [Beauty Guide](./37-beauty-guide.md) | AI inspiration analysis → controlled vocabulary → real services/salons/portfolio → existing booking; private image store, cost limits, mock/OpenAI-compatible providers |
+| 38 | [Dashboard Aggregates](./38-dashboard-aggregates.md) | `GET /admin/dashboard-summary`, `GET /salons/mine/capacity`, the `?from&to` window on salon bookings, admin notification `severity` — exact response shapes |
 
 
 ## Conventions used throughout this documentation

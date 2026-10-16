@@ -65,7 +65,9 @@ Five emit points exist:
 2. **`salon_resubmitted`** (`SalonsService.resubmitMine`) — called **without** a transaction, wrapped in try/catch that only logs on failure ("a fire-safe side effect... a lost notification must never fail the owner's resubmission"). This is a genuinely lossy delivery path — no retry, no dead-letter.
 3. **`category_requested`** (`catalog/category-requests.service.ts`) — a provider asking for a new service category; same fire-and-forget `.catch(() => {})` posture as `salon_resubmitted`, linking to `/category-requests`.
 4. **`salon_material_edit`** (`SalonsService.updateMine` → `reportMaterialEdit`) — an **approved** salon changed `name`, `genderTarget`, location (`lat`/`lng`) or `address`/`city`. The salon stays live; the notification (link `/salons/:id`) and a `salon.material_edit` audit row (actor = the owner, payload `{fields: [...]}`) carry the changed field **names** only, never values (the address is PII-adjacent). Same fire-safe posture as `salon_resubmitted`: a lost notification never fails the owner's save.
-5. **`alert`** (`AlertsService.raise`, below) — every operator alert, regardless of severity.
+5. **`alert`** (`AlertsService.raise`, below) — every operator alert, regardless of severity. The severity is stored on the row (`admin_notifications.severity`, since 1758400000000) and returned as `severity` by `GET /admin/notifications` ([38](./38-dashboard-aggregates.md#4-admin-notification-severity)).
+
+These five values are `ADMIN_NOTIFICATION_TYPES` (`admin-notification.entity.ts`), which validates the list endpoint's `?type=` filter — **a new `emit()` type must be added there**, or filtering on it is a 400. The list also takes `?severity=` and there is a per-severity `GET /admin/notifications/unread-counts`; both use the displayed severity (non-alert → `info`, NULL alert → `warning`).
 
 **Read state is per admin**: `admin_notification_reads` (join table, `PRIMARY KEY (notification_id, admin_id)`) records who read what; list/unread-count queries `LEFT JOIN` it on the caller's `admin_id`, and `markRead` is an idempotent `INSERT ... ON CONFLICT (notification_id, admin_id) DO UPDATE` with a harmless self-set (so `RETURNING read_at` always yields the original read time). One admin marking a notification read never affects any other admin. (The legacy `admin_notifications.read_at` column still exists on the entity but is not what the service reads.)
 
@@ -77,7 +79,7 @@ Five emit points exist:
 flowchart TD
     A["AlertsService.raise({key, severity, title, body, dedupHours?})"] --> B["Redis SET alert:dedup:{key} NX EX dedupSeconds"]
     B -->|already claimed = duplicate| Z[return, no-op]
-    B -->|claimed fresh| C["AdminNotificationsService.emit('alert', ...)\nALWAYS, regardless of severity, uncapped"]
+    B -->|claimed fresh| C["AdminNotificationsService.emitAlert(severity, ...)\nALWAYS, regardless of severity, uncapped"]
     C --> D{severity == critical?}
     D -->|no| E[done]
     D -->|yes| F["for each phone in ALERT_ADMIN_PHONE"]

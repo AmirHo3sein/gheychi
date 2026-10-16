@@ -213,6 +213,103 @@ throughout: don't give admin unnecessary control over salon-internal organizatio
 carry no new moderation surface since they're not user-generated content in the same risk
 class as, say, a public review or a story image.
 
+## Service images
+
+Each `salon_services` row may carry one optional primary image (`image_url` +
+`image_storage_key`, migration `1758200000000-service-images.ts`; CHECK
+`salon_services_image_shape_chk` keeps the pair both-or-neither). Purely presentational:
+booking, pricing, deposit, availability, coupons, search and commission never read it.
+
+- **Endpoints** (owner-only, `SalonOwnerGuard`): `POST /api/salons/mine/services/:id/image`
+  (multipart, field `file`) and `DELETE /api/salons/mine/services/:id/image`, both returning
+  the full updated service (200). The image is deliberately **not** settable through the JSON
+  create/update DTOs, so an ordinary PATCH can never clear or forge it. Another salon's,
+  archived or unknown service ids 404. DELETE is idempotent. A POST with no file part is
+  422 (`ParseFilePipe` requires one).
+- **Validation**: 5 MB multer limit (413), magic-number `FileTypeValidator` (422) and
+  `assertTrustedImageMimeType` (400) — the same chain as portfolio uploads — then
+  `normalizeServiceImage()` (`salons/service-image.util.ts`): sharp decode (~40 MP
+  decompression-bomb cap, enforced when the pixels are decoded — an oversized canvas
+  passes the header read and is refused with 422 at decode; undecodable → 422), min 200px per side (400), EXIF-rotate,
+  long edge ≤ 1200px, flatten onto white, JPEG q82 mozjpeg. Re-encoding strips all
+  EXIF/GPS; the stored Content-Type is always `image/jpeg`. Key:
+  `salons/{salonId}/services/{serviceId}/{uuid}.jpg`, never derived from the filename.
+- **Lifecycle** (`SalonServicesService.setImage`/`removeImage`): normalize → upload under a
+  fresh key → swap url/key on the row under `SELECT … FOR UPDATE` → after commit,
+  best-effort delete of the previous object (logged, never fails the request). If the DB
+  step fails the new object is deleted and the error rethrown; the old object is never
+  deleted before the row stops referencing it.
+- **Archive clears the image.** The owner's `DELETE /api/salons/mine/services/:id` sets
+  `is_active = false` and clears both image columns in one transaction under a row lock,
+  then best-effort deletes the object after commit (`SalonServicesService.archive`). Earlier
+  the image was kept "because past bookings reference the service"; that reason did not
+  hold, and keeping it left a public file the owner could never withdraw (the image
+  endpoints 404 for an archived service). Verified before changing it:
+  - there is **no un-archive path** — no reactivate endpoint, the owner list and every
+    mutation path filter `is_active = true`;
+  - **nothing renders an archived service's image** — the public services list, the booking
+    page and Beauty Guide matches all filter `is_active`, and booking/history responses
+    carry no service image at all (only the admin salon detail lists inactive rows).
+  Archive's existing semantics are unchanged: another salon's id 404s, an already-archived
+  row of the same salon 204s again.
+- **Invariant: an archived service never holds an image.** CHECK
+  `salon_services_archived_no_image_chk` (`is_active OR image_url IS NULL`), added by
+  migration `1758300000000-service-image-removal-and-archive-invariant.ts`, which first
+  cleared the image columns of every row archived before archive started clearing them.
+  Those objects are no longer referenced and are deleted by `StorageReconciliationJob`'s
+  orphan pass on its next hourly run (its 24 h grace is measured from each object's own
+  upload time, `lastModified`). `down()` drops the constraint and the new column only — the
+  cleared images are not restorable.
+- **Admin takedown**: `DELETE /api/admin/services/:id/image` (`AdminShowcaseController`,
+  `RolesGuard` + `@Roles('admin')`) removes the image of a service, addressed by id alone
+  (an archived row holds no image under the invariant above, so it simply 409s). 200 → `{ id, salonId, name, isActive, imageUrl: null }`;
+  404 unknown id; 409 `این خدمت تصویری ندارد` when the row has no image (also what a second,
+  racing admin gets — the check runs under the row lock). Same storage lifecycle as the
+  owner remove (`SalonServicesService.adminRemoveImage`, sharing the locked
+  read-modify-write with `removeImage`/`archive`): both columns cleared in a locked
+  transaction, object deleted best-effort after commit; the same transaction stamps
+  `image_removed_by_admin_at`. Nothing else on the row (price,
+  duration, `is_active`) and no booking is touched. Unlike story/portfolio moderation this
+  is a real delete, not a reversible status flip — the image is presentational, its URL
+  and key are retained in the audit row, and the owner can simply upload a new one.
+  Audited as **`salon.service.image.removed`** (target type `salonservice`) with
+  `payload.before = { imageUrl, imageStorageKey, salonId, serviceName }` and
+  `payload.after = { imageUrl: null }`; the acting admin is the row's `actor_id`. Deleting
+  the object is safe because keys are per-upload UUIDs under
+  `salons/{salonId}/services/{serviceId}/` and no other table stores a key there (photos
+  `salons/{salonId}/{uuid}`, portfolio `…/portfolio/`, stories `…/stories/`, blog `blog/`;
+  Beauty Guide images live in a separate private store).
+- **Owner takedown notice**: `salon_services.image_removed_by_admin_at` (`timestamptz`,
+  nullable; entity `imageRemovedByAdminAt`) is set by the admin takedown and cleared by the
+  owner's next upload **or** remove (`swapImage` — the owner acted, the notice is no longer
+  relevant; a remove with no image left still clears it). A field PATCH leaves it alone. It
+  appears in the owner list and every owner mutation response and in the admin salon
+  detail's `services[]`, and is mapped out of the public services list. The provider panel's
+  Services page renders it as the notice — there is no provider in-app notification feed
+  to post to, and no SMS is sent (cost).
+- **Service images are public catalog content** — a deliberate decision, the same as salon
+  photos and portfolio: served from the public uploads/S3 prefix with no auth. The URL
+  reveals only the salon id and service id (both already public in API responses) plus a
+  random UUIDv4, so it cannot be enumerated, and the re-encode strips all EXIF/GPS
+  metadata. Owners should treat anything they upload here as publicly visible.
+- **Field PATCH never writes the image columns.** `SalonServicesService.update()` issues a
+  targeted `UPDATE` of only the DTO-editable columns (scoped to `isActive = true`, 404 when
+  nothing matched) rather than `save(entity)`: `save()` diffs the entity it read earlier
+  against the current row, so an image swap committing between the PATCH's read and write
+  would be reverted to the already-deleted old object (and a concurrent archive undone).
+  Pinned by the two race tests in `test/salon-service-images.e2e-spec.ts`.
+- **Exposure**: the owner list includes `imageUrl`, `imageStorageKey` and
+  `imageRemovedByAdminAt`; public `GET /api/salons/:slug/services` maps `imageStorageKey` and
+  `imageRemovedByAdminAt` out; admin `GET /api/admin/salons/:id` returns `imageUrl` and
+  `imageRemovedByAdminAt` per service;
+  Beauty Guide matches return `imageUrl` on each matched service
+  (`salons[].services[].imageUrl`, `string | null`) and never the key.
+- **Reconciliation**: `StorageReconciliationJob.loadKnownKeys()` includes every non-null
+  `salon_services.image_storage_key` (no `is_active` filter, though the CHECK means only
+  active rows hold one) — without it the hourly orphan
+  sweep would delete every service image after its 24 h grace period. Objects left by a
+  crash between upload and commit are unreferenced and swept by that same job.
+
 ## What deliberately is NOT here
 
 - **No service options/variants** (hair length, with/without bleach, etc.). A salon

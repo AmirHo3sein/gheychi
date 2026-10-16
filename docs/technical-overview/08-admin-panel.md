@@ -87,7 +87,7 @@ A salon an admin suspended **directly** (`suspended_cause='admin'`) never matche
 
 ### Story/portfolio content moderation
 
-`apps/api/src/salons/admin-showcase.controller.ts` — `PATCH /admin/stories/:id/status` and `PATCH /admin/portfolio/:id/status`, body `{ status: 'published'|'removed', reason? }`. Deliberately **not** a hard delete (keeps the row as evidence, reversible). Uses a conditional CAS update keyed on the *opposite* status — a concurrent double-moderation attempt gets a 409 instead of a silent no-op re-application.
+`apps/api/src/salons/admin-showcase.controller.ts` — `PATCH /admin/stories/:id/status` and `PATCH /admin/portfolio/:id/status`, body `{ status: 'published'|'removed', reason? }`. Deliberately **not** a hard delete (keeps the row as evidence, reversible). Uses a conditional CAS update keyed on the *opposite* status — a concurrent double-moderation attempt gets a 409 instead of a silent no-op re-application. The same controller also hosts `DELETE /admin/services/:id/image` — an audited (`salon.service.image.removed`) hard takedown of a service's image (409 when there is none — archived rows never hold one), which also stamps `image_removed_by_admin_at` as the owner's notice; see [36](./36-service-pricing-and-packages.md#service-images).
 
 ### Review & report moderation
 

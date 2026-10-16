@@ -222,7 +222,7 @@ Composite PK `(user_id, salon_id)`, both cascade.
 `id`, `reporter_id`, `salon_id (not null)`, `review_id? (SET NULL)`, `story_id? (SET NULL)`, `portfolio_item_id? (SET NULL)`, `target_type ('salon'|'review'|'story'|'portfolio')`, `reason (5–500 chars)`, `status ('open'|...)`, `resolution_note?`, `resolved_by?`, `resolved_at?`, `created_at`. Partial unique index `reports_open_target_uidx` dedupes one open report per reporter per target, deliberately excluding orphaned story/portfolio reports (see [08-admin-panel.md](./08-admin-panel.md)).
 
 ### `admin_notifications`
-`id`, `type (≤40)`, `title`, `body?`, `link?`, `read_at?` (legacy shared column, kept for rollback safety but no longer the source of truth — see `admin_notification_reads` below), `created_at`.
+`id`, `type (≤40)`, `title`, `body?`, `link?`, `severity? ('critical'|'warning', CHECK; written only on `type='alert'` rows by `AlertsService`, NULL elsewhere and on pre-column alerts — migration 1758400000000, partial index `(severity, created_at) WHERE type='alert'`; read side reports NULL alerts as `warning`, non-alerts as `info` — see [38](./38-dashboard-aggregates.md#4-admin-notification-severity))`, `read_at?` (legacy shared column, kept for rollback safety but no longer the source of truth — see `admin_notification_reads` below), `created_at`.
 
 ### `admin_notification_reads` — join table
 Composite PK `(notification_id, admin_id)`, both cascade. `read_at`. The real per-admin read state as of `1754400000000-admin-notification-reads`: one admin marking a notification read no longer marks it read for every admin. No backfill on introduction — every notification starts unread for every admin under the new model.
