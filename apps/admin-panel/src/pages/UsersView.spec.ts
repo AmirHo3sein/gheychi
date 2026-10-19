@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import UsersView from './UsersView.vue'
@@ -123,5 +123,27 @@ describe('UsersView', () => {
 
     expect(wrapper.find('[data-testid="load-error"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('کاربر نمونه')
+  })
+
+  it('sorts server-side from the column headers and links each name to the user page', async () => {
+    signInAs('admin-1')
+    respondWith([{ ...user }])
+    const wrapper = mount(UsersView, { global: { stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises()
+
+    expect(wrapper.getComponent(RouterLinkStub).props('to')).toEqual({ name: 'user-detail', params: { id: 'u1' } })
+
+    await wrapper.get('[data-testid="sort-phone"]').trigger('click')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenLastCalledWith('/admin/users?page=1&pageSize=20&sort=phone&order=asc', { silent: true })
+    await wrapper.get('[data-testid="sort-phone"]').trigger('click')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenLastCalledWith('/admin/users?page=1&pageSize=20&sort=phone&order=desc', { silent: true })
+    expect(wrapper.get('[data-testid="sort-phone"]').element.closest('th')!.getAttribute('aria-sort')).toBe('descending')
+
+    // Back to the default (newest first) drops the params again.
+    await wrapper.get('[data-testid="sort-createdAt"]').trigger('click')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenLastCalledWith('/admin/users?page=1&pageSize=20', { silent: true })
   })
 })

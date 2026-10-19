@@ -12,10 +12,25 @@ import AppSelect from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import ScrollTable from '@/components/ui/ScrollTable.vue'
 import Pagination from '@/components/ui/Pagination.vue'
+import SortableTh from '@/components/ui/SortableTh.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { debounce } from '@/utils/debounce'
 import { genderTargetLabel, salonStatusLabel } from '@/utils/labels'
 import { STACKED_CELL, STACKED_CELL_PLAIN, STACKED_ROW, STACKED_TABLE, STACKED_TBODY, STACKED_THEAD } from '@/utils/stacked-table'
+import { SORT_ORDERS, type SortOrder } from '@/utils/table-sort'
+
+const SALON_SORTS = ['createdAt', 'name', 'city'] as const
+type SalonSort = (typeof SALON_SORTS)[number]
+// Phones stack the table into cards, which hides the header row -- this select is the same
+// sort choice for them (`sort:order` pairs).
+const MOBILE_SORT_OPTIONS = [
+  { value: 'createdAt:asc', label: 'قدیمی‌ترین ثبت' },
+  { value: 'createdAt:desc', label: 'جدیدترین ثبت' },
+  { value: 'name:asc', label: 'نام (الف تا ی)' },
+  { value: 'name:desc', label: 'نام (ی تا الف)' },
+  { value: 'city:asc', label: 'شهر (الف تا ی)' },
+  { value: 'city:desc', label: 'شهر (ی تا الف)' },
+]
 
 const GENDER_OPTIONS = [
   { value: '', label: 'همه مخاطب‌ها' },
@@ -73,16 +88,35 @@ const {
   city: cityFilter,
   name: nameFilter,
   gender: genderFilter,
+  sort,
+  order,
   changedByUrl,
 } = useQueryFilters(
-  { page: 1, status: 'all' as StatusValue, city: '', name: '', gender: '' as '' | 'women' | 'men' },
-  { allowed: { status: STATUS_OPTIONS.map((o) => o.value), gender: ['women', 'men'] } },
+  { page: 1, status: 'all' as StatusValue, city: '', name: '', gender: '' as '' | 'women' | 'men', sort: 'createdAt' as SalonSort, order: 'asc' as SortOrder },
+  { allowed: { status: STATUS_OPTIONS.map((o) => o.value), gender: ['women', 'men'], sort: SALON_SORTS, order: SORT_ORDERS } },
 )
+
+function onSort(value: { sort: string; order: SortOrder }) {
+  sort.value = value.sort as SalonSort
+  order.value = value.order
+}
+const mobileSort = computed({
+  get: () => `${sort.value}:${order.value}`,
+  set: (v: string) => {
+    const [s, o] = v.split(':')
+    onSort({ sort: s!, order: o as SortOrder })
+  },
+})
 
 async function load() {
   loading.value = true
   loadError.value = false
   const params = new URLSearchParams({ status: statusFilter.value, page: String(page.value), pageSize: String(pageSize) })
+  // Sent only when not the API's own default (the queue order: oldest first).
+  if (sort.value !== 'createdAt' || order.value !== 'asc') {
+    params.set('sort', sort.value)
+    params.set('order', order.value)
+  }
   if (cityFilter.value) params.set('city', cityFilter.value)
   if (nameFilter.value) params.set('name', nameFilter.value)
   if (genderFilter.value) params.set('genderTarget', genderFilter.value)
@@ -155,7 +189,7 @@ onMounted(() => {
 // nameFilter is free-text (fires on every keystroke) -- debounced so it doesn't hammer the
 // API mid-word. The dropdown filters are discrete clicks, so they still trigger immediately.
 watch(nameFilter, debounce(loadFromFilterChange, 350))
-watch([statusFilter, cityFilter, genderFilter], loadFromFilterChange)
+watch([statusFilter, cityFilter, genderFilter, sort, order], loadFromFilterChange)
 watch(page, load)
 </script>
 
@@ -181,6 +215,9 @@ watch(page, load)
         <AppSelect v-model="genderFilter" :options="GENDER_OPTIONS" label="مخاطب" width="11rem" />
         <div data-testid="status-filter">
           <AppSelect v-model="statusFilter" :options="STATUS_OPTIONS" label="وضعیت" width="11rem" />
+        </div>
+        <div class="md:hidden" data-testid="mobile-sort">
+          <AppSelect v-model="mobileSort" :options="MOBILE_SORT_OPTIONS" label="ترتیب" width="11rem" />
         </div>
         <AppButton
           v-if="hasActiveFilters"
@@ -228,11 +265,11 @@ watch(page, load)
           <table class="w-full text-start text-sm transition-opacity" :class="[STACKED_TABLE, { 'opacity-50': loading }]">
             <thead :class="STACKED_THEAD">
               <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
-                <th scope="col" class="px-5 py-3 font-semibold">نام</th>
-                <th scope="col" class="px-5 py-3 font-semibold">شهر</th>
+                <SortableTh label="نام" field="name" :sort="sort" :order="order" @sort="onSort" />
+                <SortableTh label="شهر" field="city" :sort="sort" :order="order" @sort="onSort" />
                 <th scope="col" class="px-5 py-3 font-semibold">مخاطب</th>
                 <th scope="col" class="px-5 py-3 font-semibold">وضعیت</th>
-                <th scope="col" class="px-5 py-3 font-semibold">تاریخ ثبت</th>
+                <SortableTh label="تاریخ ثبت" field="createdAt" :sort="sort" :order="order" @sort="onSort" />
               </tr>
             </thead>
             <tbody :class="STACKED_TBODY">

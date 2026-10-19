@@ -253,7 +253,7 @@ describe('SalonsView', () => {
     expect(fetchMock).toHaveBeenLastCalledWith('/admin/salons?status=all&page=2&pageSize=20', { silent: true })
 
     fetchMock.mockClear()
-    const statusSelect = wrapper.findAllComponents(AppSelect).at(-1)!
+    const statusSelect = wrapper.get('[data-testid="status-filter"]').getComponent(AppSelect)
     await statusSelect.vm.$emit('update:modelValue', 'approved')
     await flushPromises()
 
@@ -270,7 +270,7 @@ describe('SalonsView', () => {
     await flushPromises()
 
     fetchMock.mockClear()
-    const statusSelect = wrapper.findAllComponents(AppSelect).at(-1)!
+    const statusSelect = wrapper.get('[data-testid="status-filter"]').getComponent(AppSelect)
     await statusSelect.vm.$emit('update:modelValue', 'pending')
     await flushPromises()
 
@@ -350,6 +350,24 @@ describe('SalonsView URL-persisted filters', () => {
 
   it('ignores an unknown status in the URL instead of sending it to the API', async () => {
     await mountAt('/salons?status=bogus')
+    expect(fetchMock).toHaveBeenCalledWith('/admin/salons?status=all&page=1&pageSize=20', { silent: true })
+  })
+
+  it('sorts from the headers (desktop) or the «ترتیب» select (phones), kept in the URL', async () => {
+    const { router, wrapper } = await mountAt('/salons')
+    await wrapper.get('[data-testid="sort-name"]').trigger('click')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenLastCalledWith('/admin/salons?status=all&page=1&pageSize=20&sort=name&order=asc', { silent: true })
+    expect(router.currentRoute.value.query).toEqual({ sort: 'name' })
+
+    await wrapper.get('[data-testid="mobile-sort"]').getComponent(AppSelect).vm.$emit('update:modelValue', 'city:desc')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenLastCalledWith('/admin/salons?status=all&page=1&pageSize=20&sort=city&order=desc', { silent: true })
+    expect(router.currentRoute.value.query).toEqual({ sort: 'city', order: 'desc' })
+  })
+
+  it('ignores an unknown sort column in the URL instead of sending it to the API', async () => {
+    await mountAt('/salons?sort=owner&order=sideways')
     expect(fetchMock).toHaveBeenCalledWith('/admin/salons?status=all&page=1&pageSize=20', { silent: true })
   })
 })

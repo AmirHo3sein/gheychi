@@ -11,6 +11,7 @@ import {
   Eye, Zap, Tag, Phone, Calendar, Lock, Sun, Moon, RotateCcw,
   History, Flag, Bell, Newspaper, TicketPercent, UserCog, Wallet, Gift, UserPlus, LoaderCircle, Receipt, BarChart3,
   ToggleRight, Layers, Crown, MessageSquareText, Inbox, BadgePercent, Menu, ChevronDown, User, ShieldCheck,
+  ArrowUp, ArrowDown, ArrowUpDown,
 } from '@lucide/vue'
 
 export type IconName =
@@ -21,6 +22,7 @@ export type IconName =
   | 'sun' | 'moon' | 'reset' | 'history' | 'flag' | 'bell' | 'newspaper' | 'coupon' | 'worker-ratings' | 'wallet'
   | 'gift' | 'user-plus' | 'spinner' | 'invoice' | 'chart' | 'toggle' | 'plan'
   | 'crown' | 'message' | 'inbox' | 'badge-percent' | 'menu' | 'chevron-down' | 'user' | 'shield'
+  | 'sort-asc' | 'sort-desc' | 'sort'
 
 const ICONS = {
   dashboard: LayoutDashboard,
@@ -78,6 +80,9 @@ const ICONS = {
   'chevron-down': ChevronDown,
   user: User,
   shield: ShieldCheck,
+  'sort-asc': ArrowUp,
+  'sort-desc': ArrowDown,
+  sort: ArrowUpDown,
 } as const
 
 const props = defineProps<{ name: IconName; size?: number }>()

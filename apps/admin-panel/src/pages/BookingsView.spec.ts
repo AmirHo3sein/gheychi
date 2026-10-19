@@ -129,8 +129,22 @@ describe('BookingsView', () => {
     const wrapper = await mountView()
     await flushPromises()
 
-    const link = wrapper.getComponent(RouterLinkStub)
-    expect(link.props('to')).toEqual({ name: 'booking-timeline', params: { id: BOOKING_ID } })
+    const targets = wrapper.findAllComponents(RouterLinkStub).map((l) => l.props('to'))
+    expect(targets).toContainEqual({ name: 'booking-timeline', params: { id: BOOKING_ID } })
+  })
+
+  it('sorts by price from the header and links the customer to their user page', async () => {
+    respondWith([paidBooking])
+    const wrapper = await mountView()
+    await flushPromises()
+
+    const targets = wrapper.findAllComponents(RouterLinkStub).map((l) => l.props('to'))
+    expect(targets).toContainEqual({ name: 'user-detail', params: { id: paidBooking.userId } })
+
+    await wrapper.get('[data-testid="sort-price"]').trigger('click')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenLastCalledWith('/admin/bookings?page=1&pageSize=20&sort=price&order=desc', { silent: true })
+    expect(router.currentRoute.value.query).toMatchObject({ sort: 'price' })
   })
 
   it('applies a select filter and resets to page 1', async () => {

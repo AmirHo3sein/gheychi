@@ -1,52 +1,20 @@
 @import "tailwindcss";
 @import "@fontsource-variable/vazirmatn/wght.css";
+/* The shared قیچی tokens (palette, type, shadows); this file only adds what is specific to this app. */
+@import "@gheychi/brand-tokens/tokens.css";
 
 /* Manual light/dark toggle (see composables/useTheme.ts) -- same mechanism as user-app's
    useTheme.ts, but backed by localStorage instead of a cookie since this SPA has no SSR. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* static: prevents Tailwind from tree-shaking these before every consumer is registered */
+/* Admin-panel tokens on top of the shared set (@gheychi/brand-tokens): status-badge tones and
+   the few values this panel tunes for its denser screens. */
 @theme static {
-  --font-sans: 'Vazirmatn Variable', ui-sans-serif, system-ui, sans-serif;
-
-  /* Light mode -- the canonical قیچی brand tokens (scratchpad spec brand-tokens.md, identical
-     values in all three apps): blush page, white cards, brand peach #FFC0B6 as the accent FILL
-     and a deep terracotta for accent TEXT. Contrast (WCAG 2.x) is the rule behind every pair:
-     - peach is a fill only, always under charcoal (--color-fill-text, 8.83:1). White on peach
-       is 1.56:1, so nothing in this file ever pairs the two.
-     - --color-accent-text #A8473A clears 5.79 on white / 5.36 on the page / 4.77 on
-       --color-accent-soft (the active-nav fill); --color-accent-text-strong is for small text
-       sitting on blush.
-     - gold #D4AF37 is a FILL (premium/featured badges, charcoal text 6.55); as text it fails
-       (2.10), hence the separate --color-gold-text.
-     - silver is decorative only (1.88); form controls get --color-border-control (3.74 on
-       white, WCAG 1.4.11), while cards keep the soft decorative --color-border. */
-  --color-surface: #FBF5F3;
-  --color-surface-card: #FFFFFF;
-  --color-surface-subtle: #F7E6E2;
-  --color-text: #2D2D2D;
-  --color-text-muted: #5E5552;
-  --color-border: #EADBD6;
   /* Also the generic hover/chip fill across the panel -- muted text on it stays above 6:1. */
   --color-border-soft: #F5ECE9;
-  --color-border-control: #8C8280;
-  --color-accent: #FFC0B6;
-  --color-accent-strong: #FFC0B6;
-  --color-accent-deep: #FFAD9F;
   --color-accent-pressed: #F99A8A;
-  --color-accent-soft: #FFE3DD;
-  --color-accent-text: #A8473A;
-  --color-accent-text-strong: #94392D;
-  --color-fill-text: #2D2D2D;
-  --color-gold: #D4AF37;
-  --color-gold-text: #7A5F0E;
-  --color-silver: #BDBDBD;
-  /* Pose tiles in /mascot/*.webp are cut on exactly this colour -- their container must match. */
-  --color-mascot-tile: #FBF6F2;
-  --color-danger: #B42318;
-  --color-danger-strong: #E76F6F;
 
-  /* Status tone system -- replaces raw enum strings everywhere with a consistent color language */
+  /* Status badges: each -text clears 4.5:1 on its own -bg as well as on white. */
   --tone-success-bg: #E6F4EC;
   --tone-success-text: #2E7D4F;
   --tone-warning-bg: #FBF0DC;
@@ -58,42 +26,18 @@
   --tone-info-bg: #E4EEF8;
   --tone-info-text: #1F5F99;
 
-  --color-premium: #D4AF37;
-  --color-wallet: #5EC9A3;
-  --color-ai: #A78BFA;
-  --color-reports: #6FA8FF;
-
-  /* Warm charcoal (#2D2D2D) at low alpha -- the spec's rgba(45,45,45,.06) card shadow. */
-  --shadow-color: 0 0% 18%;
+  /* Card shadow (warm charcoal). */
   --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.06), 0 1px 1px hsl(var(--shadow-color) / 0.03);
-  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.10), 0 2px 6px -2px hsl(var(--shadow-color) / 0.06);
-  --shadow-lg: 0 24px 48px -16px hsl(var(--shadow-color) / 0.14), 0 8px 16px -4px hsl(var(--shadow-color) / 0.08);
 }
 
-/* Dark mode -- warm charcoal from the same brand spec. --color-fill-text isn't redefined: every
-   fill it sits on (peach, gold, the pastel danger) is still light in dark mode too, so the
-   constant charcoal still applies. Accent TEXT becomes the peach itself (9.60 on the card). */
 .dark {
-  --color-surface: #1F1C1B;
-  --color-surface-card: #2A2625;
-  --color-surface-subtle: #342F2D;
-  --color-text: #F3ECEA;
-  --color-text-muted: #B8ADA9;
-  --color-border: #433C3A;
   --color-border-soft: #383230;
-  --color-border-control: #7A6F6C;
-  --color-accent: #FFC0B6;
-  --color-accent-strong: #FFC0B6;
-  --color-accent-deep: #FFAD9F;
   --color-accent-pressed: #FF9C8C;
   --color-accent-soft: #4A2E29;
-  --color-accent-text: #FFC0B6;
+  /* Small accent text on the dark subtle fill needs the lighter peach. */
   --color-accent-text-strong: #FFD3CB;
-  --color-gold: #D4AF37;
-  --color-gold-text: #D4AF37;
   --color-silver: #6E6866;
   --color-danger: #F08A80;
-  --color-danger-strong: #E76F6F;
 
   --tone-success-bg: #1C3527;
   --tone-success-text: #6CC495;
@@ -105,16 +49,6 @@
   --tone-neutral-text: #C4BAB6;
   --tone-info-bg: #1A2D40;
   --tone-info-text: #7DB3E8;
-
-  --color-premium: #D4AF37;
-  --color-wallet: #5EC9A3;
-  --color-ai: #A78BFA;
-  --color-reports: #6FA8FF;
-
-  --shadow-color: 0 0% 0%;
-  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.35), 0 1px 1px hsl(var(--shadow-color) / 0.25);
-  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.45), 0 2px 6px -2px hsl(var(--shadow-color) / 0.35);
-  --shadow-lg: 0 24px 48px -16px hsl(var(--shadow-color) / 0.65), 0 8px 16px -4px hsl(var(--shadow-color) / 0.5);
 }
 
 html, body {

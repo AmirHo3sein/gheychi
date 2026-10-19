@@ -21,11 +21,16 @@ import AppSelect from '@/components/ui/AppSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import ScrollTable from '@/components/ui/ScrollTable.vue'
+import SortableTh from '@/components/ui/SortableTh.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { debounce } from '@/utils/debounce'
 import { formatToman } from '@/utils/format-toman'
 import { endOfTehranDayIso, startOfTehranDayIso } from '@/utils/tehran-day'
+import { SORT_ORDERS, type SortOrder } from '@/utils/table-sort'
+
+const BOOKING_SORTS = ['startsAt', 'createdAt', 'price'] as const
+type BookingSort = (typeof BOOKING_SORTS)[number]
 import {
   bookingAttributionSourceLabel,
   bookingConfirmationModeLabel,
@@ -148,9 +153,23 @@ const {
   userId: userIdFilter,
   from: fromFilter,
   to: toFilter,
+  sort,
+  order,
   changedByUrl,
 } = useQueryFilters(
-  { page: 1, status: '', paymentStatus: '', source: '', mode: '', salonId: '', userId: '', from: '', to: '' },
+  {
+    page: 1,
+    status: '',
+    paymentStatus: '',
+    source: '',
+    mode: '',
+    salonId: '',
+    userId: '',
+    from: '',
+    to: '',
+    sort: 'startsAt' as BookingSort,
+    order: 'desc' as SortOrder,
+  },
   {
     allowed: {
       status: optionValues(STATUS_OPTIONS),
@@ -159,9 +178,16 @@ const {
       mode: optionValues(MODE_OPTIONS),
       from: ISO_DATE_RE,
       to: ISO_DATE_RE,
+      sort: BOOKING_SORTS,
+      order: SORT_ORDERS,
     },
   },
 )
+
+function onSort(value: { sort: string; order: SortOrder }) {
+  sort.value = value.sort as BookingSort
+  order.value = value.order
+}
 
 // Guards against out-of-order responses: the debounced id filters and the immediate
 // select/date filters can both call load() in quick succession, and a slower earlier
@@ -175,6 +201,11 @@ async function load() {
   const currentRequestId = ++requestId.value
 
   const params = new URLSearchParams({ page: String(page.value), pageSize: String(pageSize) })
+  // Sent only when not the API's own default (most recent appointment first).
+  if (sort.value !== 'startsAt' || order.value !== 'desc') {
+    params.set('sort', sort.value)
+    params.set('order', order.value)
+  }
   if (statusFilter.value) params.set('status', statusFilter.value)
   if (paymentStatusFilter.value) params.set('paymentStatus', paymentStatusFilter.value)
   if (sourceFilter.value) params.set('source', sourceFilter.value)
@@ -252,7 +283,7 @@ function toman(amount: number): string {
 
 onMounted(load)
 watch([salonIdFilter, userIdFilter], debounce(loadFromFilterChange, 350))
-watch([statusFilter, paymentStatusFilter, sourceFilter, modeFilter, fromFilter, toFilter], loadFromFilterChange)
+watch([statusFilter, paymentStatusFilter, sourceFilter, modeFilter, fromFilter, toFilter, sort, order], loadFromFilterChange)
 watch(page, load)
 </script>
 
@@ -326,9 +357,9 @@ watch(page, load)
                 <th scope="col" class="px-5 py-3 font-semibold">مشتری</th>
                 <th scope="col" class="px-5 py-3 font-semibold">سالن</th>
                 <th scope="col" class="px-5 py-3 font-semibold">خدمت</th>
-                <th scope="col" class="px-5 py-3 font-semibold">زمان نوبت</th>
+                <SortableTh label="زمان نوبت" field="startsAt" first-order="desc" :sort="sort" :order="order" @sort="onSort" />
                 <th scope="col" class="px-5 py-3 font-semibold">وضعیت</th>
-                <th scope="col" class="px-5 py-3 font-semibold">مبلغ / بیعانه</th>
+                <SortableTh label="مبلغ / بیعانه" field="price" first-order="desc" :sort="sort" :order="order" @sort="onSort" />
                 <th scope="col" class="px-5 py-3 font-semibold">پرداخت</th>
                 <th scope="col" class="px-5 py-3 font-semibold">کارمزد</th>
                 <th scope="col" class="px-5 py-3"><span class="sr-only">عملیات</span></th>
@@ -342,7 +373,11 @@ watch(page, load)
                 class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
               >
                 <td class="px-5 py-3.5">
-                  <p class="font-semibold text-(--color-text)">{{ booking.customerName ?? '—' }}</p>
+                  <RouterLink
+                    :to="{ name: 'user-detail', params: { id: booking.userId } }"
+                    data-testid="booking-customer-link"
+                    class="font-semibold text-(--color-text) underline-offset-4 hover:text-(--color-accent-text) hover:underline"
+                  >{{ booking.customerName ?? 'بدون نام' }}</RouterLink>
                   <!-- dir="ltr": a Persian-digit-free phone number reads right-to-left
                        otherwise and the leading 0 lands at the wrong end. -->
                   <p v-if="booking.customerPhone" dir="ltr" class="tnum mt-0.5 text-right text-xs text-(--color-text-muted)">

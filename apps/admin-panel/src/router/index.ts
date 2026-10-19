@@ -68,6 +68,7 @@ const routes = [
       { path: 'blog/new', name: 'blog-new', component: () => import('@/pages/BlogEditorView.vue'), meta: { title: 'مطلب جدید' } },
       { path: 'blog/:id', name: 'blog-editor', component: () => import('@/pages/BlogEditorView.vue'), meta: { title: 'ویرایش مطلب' } },
       { path: 'users', name: 'users', component: () => import('@/pages/UsersView.vue'), meta: { title: 'کاربران' } },
+      { path: 'users/:id', name: 'user-detail', component: () => import('@/pages/UserDetailView.vue'), meta: { title: 'جزئیات کاربر' } },
       { path: 'audit-log', name: 'audit-log', component: () => import('@/pages/AuditLogView.vue'), meta: { title: 'تاریخچه اقدامات' } },
       { path: 'config', name: 'config', component: () => import('@/pages/ConfigView.vue'), meta: { title: 'تنظیمات پلتفرم' } },
       {

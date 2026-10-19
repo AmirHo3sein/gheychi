@@ -13,12 +13,17 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import JalaliDatePicker from '@/components/ui/JalaliDatePicker.vue'
 import ScrollTable from '@/components/ui/ScrollTable.vue'
 import Pagination from '@/components/ui/Pagination.vue'
+import SortableTh from '@/components/ui/SortableTh.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useSessionStore } from '@/stores/session'
 import { debounce } from '@/utils/debounce'
 import { toEnglishDigits } from '@/utils/digits'
 import { userRoleLabel, userStatusLabel } from '@/utils/labels'
 import { endOfTehranDayIso, startOfTehranDayIso } from '@/utils/tehran-day'
+import { SORT_ORDERS, type SortOrder } from '@/utils/table-sort'
+
+const USER_SORTS = ['createdAt', 'name', 'phone'] as const
+type UserSort = (typeof USER_SORTS)[number]
 
 const ROLE_OPTIONS = [
   { value: '', label: 'همه نقش‌ها' },
@@ -66,11 +71,27 @@ const {
   role: roleFilter,
   joinedFrom,
   joinedTo,
+  sort,
+  order,
   changedByUrl,
 } = useQueryFilters(
-  { page: 1, phone: '', name: '', role: '' as '' | 'customer' | 'provider' | 'admin', joinedFrom: '', joinedTo: '' },
-  { allowed: { role: ['customer', 'provider', 'admin'], joinedFrom: ISO_DATE_RE, joinedTo: ISO_DATE_RE } },
+  {
+    page: 1,
+    phone: '',
+    name: '',
+    role: '' as '' | 'customer' | 'provider' | 'admin',
+    joinedFrom: '',
+    joinedTo: '',
+    sort: 'createdAt' as UserSort,
+    order: 'desc' as SortOrder,
+  },
+  { allowed: { role: ['customer', 'provider', 'admin'], joinedFrom: ISO_DATE_RE, joinedTo: ISO_DATE_RE, sort: USER_SORTS, order: SORT_ORDERS } },
 )
+
+function onSort(value: { sort: string; order: SortOrder }) {
+  sort.value = value.sort as UserSort
+  order.value = value.order
+}
 
 // Guards against out-of-order responses: two watchers (debounced text filters, immediate
 // role/date filters) can both call load() in quick succession, and a slower earlier request
@@ -83,6 +104,11 @@ async function load() {
   loadError.value = false
   const currentRequestId = ++requestId.value
   const params = new URLSearchParams({ page: String(page.value), pageSize: String(pageSize) })
+  // Sent only when not the API's own default (newest members first).
+  if (sort.value !== 'createdAt' || order.value !== 'desc') {
+    params.set('sort', sort.value)
+    params.set('order', order.value)
+  }
   if (phoneFilter.value) params.set('phone', toEnglishDigits(phoneFilter.value.trim()))
   if (nameFilter.value) params.set('name', nameFilter.value)
   if (roleFilter.value) params.set('role', roleFilter.value)
@@ -140,7 +166,7 @@ const hasActiveFilters = computed(
 
 onMounted(load)
 watch([phoneFilter, nameFilter], debounce(loadFromFilterChange, 350))
-watch([roleFilter, joinedFrom, joinedTo], loadFromFilterChange)
+watch([roleFilter, joinedFrom, joinedTo, sort, order], loadFromFilterChange)
 watch(page, load)
 </script>
 
@@ -211,10 +237,10 @@ watch(page, load)
           <table class="w-full text-start text-sm transition-opacity" :class="{ 'opacity-50': loading }">
             <thead>
               <tr class="border-b border-(--color-border) bg-(--color-border-soft) text-xs text-(--color-text-muted)">
-                <th scope="col" class="px-5 py-3 font-semibold">نام</th>
-                <th scope="col" class="px-5 py-3 font-semibold">موبایل</th>
+                <SortableTh label="نام" field="name" :sort="sort" :order="order" @sort="onSort" />
+                <SortableTh label="موبایل" field="phone" :sort="sort" :order="order" @sort="onSort" />
                 <th scope="col" class="px-5 py-3 font-semibold">نقش</th>
-                <th scope="col" class="px-5 py-3 font-semibold">تاریخ عضویت</th>
+                <SortableTh label="تاریخ عضویت" field="createdAt" first-order="desc" :sort="sort" :order="order" @sort="onSort" />
                 <th scope="col" class="px-5 py-3 font-semibold">وضعیت</th>
                 <th scope="col" class="px-5 py-3"><span class="sr-only">عملیات</span></th>
               </tr>
@@ -225,7 +251,13 @@ watch(page, load)
                 :key="user.id"
                 class="border-b border-(--color-border-soft) transition-colors last:border-0 hover:bg-(--color-border-soft)"
               >
-                <td class="px-5 py-3.5 font-semibold text-(--color-text)">{{ user.name ?? '—' }}</td>
+                <td class="px-5 py-3.5 font-semibold text-(--color-text)">
+                  <RouterLink
+                    :to="{ name: 'user-detail', params: { id: user.id } }"
+                    data-testid="user-detail-link"
+                    class="inline-flex min-h-10 items-center underline-offset-4 hover:text-(--color-accent-text) hover:underline md:-my-2.5"
+                  >{{ user.name ?? 'بدون نام' }}</RouterLink>
+                </td>
                 <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ user.phone }}</td>
                 <td class="px-5 py-3.5 text-(--color-text-muted)">{{ userRoleLabel(user.role) }}</td>
                 <td class="tnum px-5 py-3.5 text-(--color-text-muted)">{{ formatDate(user.createdAt) }}</td>
