@@ -455,4 +455,103 @@ describe('home page', () => {
     expect(fetchMock).toHaveBeenCalledWith('/search', expect.objectContaining({ query: expect.objectContaining({ lat: 35.7, lng: 51.4 }) }))
     expect(wrapper.get('[data-testid="salon-card-distance"]').text()).toContain('کیلومتر')
   })
+
+  describe('radius and price filters', () => {
+    const searches = () => fetchMock.mock.calls.filter(([p]) => p === '/search').map(([, o]) => (o as { query: Record<string, unknown> }).query)
+
+    async function openFilters() {
+      stub()
+      const wrapper = await mountSuspended(IndexPage)
+      await flushPromises()
+      fetchMock.mockClear()
+      await wrapper.get('[data-testid="filters-toggle"]').trigger('click')
+      return wrapper
+    }
+
+    it('sends nothing extra by default, and applies radius + price in ONE search only on «اعمال»', async () => {
+      stub()
+      const wrapper0 = await mountSuspended(IndexPage)
+      await flushPromises()
+      const first = searches()[0]!
+      expect(first.radiusKm).toBeUndefined()
+      expect(first.priceMin).toBeUndefined()
+      wrapper0.unmount()
+
+      const wrapper = await openFilters()
+      expect(wrapper.get('[data-testid="filters-toggle"]').attributes('aria-expanded')).toBe('true')
+      await wrapper.get('[data-testid="radius-5"]').trigger('click')
+      await wrapper.get('[data-testid="price-min"]').setValue('۲۰۰۰۰۰')
+      await wrapper.get('[data-testid="price-max"]').setValue('1,500,000')
+      await flushPromises()
+      expect(searches()).toHaveLength(0) // a draft, not a search per keystroke
+
+      await wrapper.get('[data-testid="search-filters"]').trigger('submit')
+      await flushPromises()
+      expect(searches()).toHaveLength(1)
+      expect(searches()[0]).toMatchObject({ radiusKm: 5, priceMin: 200000, priceMax: 1500000 })
+      expect(wrapper.find('[data-testid="search-filters"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="filters-count"]').text()).toContain('۲')
+      expect(wrapper.get('[data-testid="chip-radius"]').text()).toContain('۵')
+      expect(wrapper.get('[data-testid="chip-price"]').text()).toContain('۲۰۰٬۰۰۰ تا ۱٬۵۰۰٬۰۰۰ تومان')
+    })
+
+    it('refuses a minimum above the maximum without searching', async () => {
+      const wrapper = await openFilters()
+      await wrapper.get('[data-testid="price-min"]').setValue('900000')
+      await wrapper.get('[data-testid="price-max"]').setValue('100000')
+      expect(wrapper.get('[data-testid="price-error"]').text()).toContain('حداقل قیمت')
+      expect(wrapper.get('[data-testid="filters-apply"]').attributes('disabled')).toBeDefined()
+      await wrapper.get('[data-testid="search-filters"]').trigger('submit')
+      await flushPromises()
+      expect(searches()).toHaveLength(0)
+    })
+
+    it('shows the over-maximum error for a pasted 11-digit price instead of silently cutting it down', async () => {
+      const wrapper = await openFilters()
+      await wrapper.get('[data-testid="price-max"]').setValue('10,000,000,000')
+      expect(wrapper.get('[data-testid="price-error"]').text()).toContain('حداکثر قیمت')
+      expect(wrapper.get('[data-testid="filters-apply"]').attributes('disabled')).toBeDefined()
+    })
+
+    it('removing a chip re-runs the search without that filter; the empty state offers to clear them', async () => {
+      const wrapper = await openFilters()
+      await wrapper.get('[data-testid="radius-3"]').trigger('click')
+      await wrapper.get('[data-testid="price-max"]').setValue('500000')
+      await wrapper.get('[data-testid="search-filters"]').trigger('submit')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="empty-clear-filters"]').exists()).toBe(true)
+
+      fetchMock.mockClear()
+      await wrapper.get('[data-testid="chip-price"]').trigger('click')
+      await flushPromises()
+      expect(searches()).toHaveLength(1)
+      expect(searches()[0]).toMatchObject({ radiusKm: 3 })
+      expect(searches()[0]!.priceMax).toBeUndefined()
+
+      fetchMock.mockClear()
+      await wrapper.get('[data-testid="empty-clear-filters"]').trigger('click')
+      await flushPromises()
+      expect(searches()[0]!.radiusKm).toBeUndefined()
+      expect(wrapper.find('[data-testid="active-filters"]').exists()).toBe(false)
+    })
+
+    it('«بیشتر» repeats the applied filters with the cursor', async () => {
+      fetchMock.mockImplementation(async (path: string, opts: { query: Record<string, unknown> }) => {
+        if (path === '/categories') return []
+        if (path === '/cities') return []
+        if (path === '/search') return opts.query.cursor ? { items: [salon('b')], nextCursor: null, hasMore: false } : { items: [salon('a')], nextCursor: 'c2', hasMore: true }
+        throw new Error(path)
+      })
+      const wrapper = await mountSuspended(IndexPage)
+      await flushPromises()
+      await wrapper.get('[data-testid="filters-toggle"]').trigger('click')
+      await wrapper.get('[data-testid="radius-25"]').trigger('click')
+      await wrapper.get('[data-testid="search-filters"]').trigger('submit')
+      await flushPromises()
+      fetchMock.mockClear()
+      await wrapper.get('[data-testid="load-more"]').trigger('click')
+      await flushPromises()
+      expect(searches()[0]).toMatchObject({ radiusKm: 25, cursor: 'c2' })
+    })
+  })
 })

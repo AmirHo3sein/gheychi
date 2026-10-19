@@ -43,6 +43,9 @@ export type IconName =
   | 'copy'
   | 'calendar-plus'
   | 'navigation'
+  | 'sliders'
+  | 'qr'
+  | 'download'
 
 const props = withDefaults(defineProps<{ name: IconName; size?: number }>(), { size: 20 })
 </script>
@@ -113,6 +116,20 @@ const props = withDefaults(defineProps<{ name: IconName; size?: number }>(), { s
     <template v-else-if="name === 'camera'">
       <path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z" />
       <circle cx="12" cy="13" r="3.3" />
+    </template>
+    <template v-else-if="name === 'sliders'">
+      <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
+      <circle cx="16" cy="7" r="2" />
+      <circle cx="10" cy="17" r="2" />
+    </template>
+    <template v-else-if="name === 'qr'">
+      <rect x="4" y="4" width="6" height="6" rx="1" />
+      <rect x="14" y="4" width="6" height="6" rx="1" />
+      <rect x="4" y="14" width="6" height="6" rx="1" />
+      <path d="M14 14h2v2h-2zM18 14h2M14 18v2M17 17h3v3h-3" />
+    </template>
+    <template v-else-if="name === 'download'">
+      <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
     </template>
     <template v-else-if="name === 'search'">
       <circle cx="11" cy="11" r="7" />

@@ -190,6 +190,20 @@ describe('salon detail page', () => {
     expect(wrapper.find('[data-testid="salon-member-since"]').exists()).toBe(false)
   })
 
+  it('offers the QR code only when the salon\'s plan includes it (qrCodeEnabled)', async () => {
+    mockEndpoints({ salon: { qrCodeEnabled: true } })
+    wrapper = await mountSuspended(SalonDetailPage)
+    expect(wrapper.find('[data-testid="salon-qr-button"]').exists()).toBe(true)
+
+    for (const salon of [{ qrCodeEnabled: false }, {}]) {
+      wrapper.unmount()
+      clearNuxtData('salon-test-salon')
+      mockEndpoints({ salon })
+      wrapper = await mountSuspended(SalonDetailPage)
+      expect(wrapper.find('[data-testid="salon-qr-button"]').exists()).toBe(false)
+    }
+  })
+
   it('offers a tel: link (ASCII href, Persian digits shown) on mobile and desktop when contactPhone is set', async () => {
     mockEndpoints({ salon: { contactPhone: '02112345678' } })
     wrapper = await mountSuspended(SalonDetailPage)

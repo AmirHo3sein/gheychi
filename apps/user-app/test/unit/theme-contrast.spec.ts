@@ -4,23 +4,29 @@ import { resolve } from 'node:path'
 
 // The status badges («انجام شده», «لغو شده», …) are 12px bold text on their own -soft tint, so
 // each text/tint pair has to clear WCAG AA's 4.5:1 for normal-size text in BOTH themes. This reads
-// the real tokens out of main.css, so a palette change that breaks a pair fails here.
-const css = readFileSync(resolve(__dirname, '../../app/assets/css/main.css'), 'utf8')
+// the real tokens -- the shared @gheychi/brand-tokens file first, then this app's main.css on top,
+// the same order the stylesheet applies them -- so a palette change that breaks a pair fails here.
+const sharedCss = readFileSync(resolve(__dirname, '../../../../packages/brand-tokens/tokens.css'), 'utf8')
+const appCss = readFileSync(resolve(__dirname, '../../app/assets/css/main.css'), 'utf8')
 
-function block(selector: RegExp): string {
+function block(css: string, selector: RegExp): string {
   const m = css.match(selector)
   if (!m) throw new Error(`no block for ${selector}`)
   return m[1]!
 }
-const lightBlock = block(/@theme static \{([\s\S]*?)\n\}/)
-const darkBlock = block(/\n\.dark \{([\s\S]*?)\n\}/)
+function colours(src: string): Record<string, string> {
+  return Object.fromEntries([...src.matchAll(/--color-([\w-]+):\s*(#[0-9a-fA-F]{6})/g)].map((m) => [m[1]!, m[2]!]))
+}
+const THEME = /@theme static \{([\s\S]*?)\n\}/
+const DARK = /\n\.dark \{([\s\S]*?)\n\}/
+const light = { ...colours(block(sharedCss, THEME)), ...colours(block(appCss, THEME)) }
+// A token the dark blocks don't redefine inherits the light value, exactly as in the browser.
+const dark = { ...light, ...colours(block(sharedCss, DARK)), ...colours(block(appCss, DARK)) }
 
-// A token the dark block doesn't redefine inherits the light value, exactly as in the browser.
-function token(src: string, name: string): string {
-  const re = new RegExp(`--color-${name}:\\s*(#[0-9a-fA-F]{6})`)
-  const m = src.match(re) ?? lightBlock.match(re)
-  if (!m) throw new Error(`token --color-${name} not found`)
-  return m[1]!
+function token(resolved: Record<string, string>, name: string): string {
+  const v = resolved[name]
+  if (!v) throw new Error(`token --color-${name} not found`)
+  return v
 }
 
 function luminance(hex: string): number {
@@ -45,7 +51,7 @@ const PAIRS: Array<[string, string]> = [
 ]
 
 describe('theme token contrast (WCAG AA, normal text)', () => {
-  for (const [theme, src] of [['light', lightBlock], ['dark', darkBlock]] as const) {
+  for (const [theme, src] of [['light', light], ['dark', dark]] as const) {
     for (const [fg, bg] of PAIRS) {
       it(`${theme}: --color-${fg} on --color-${bg} >= 4.5`, () => {
         expect(contrast(token(src, fg), token(src, bg))).toBeGreaterThanOrEqual(4.5)

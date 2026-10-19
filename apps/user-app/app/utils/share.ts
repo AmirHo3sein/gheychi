@@ -49,3 +49,12 @@ export async function shareLink(payload: SharePayload, env: ShareEnvironment | u
 export function salonShareUrl(origin: string, slug: string): string {
   return `${origin.replace(/\/$/, '')}/salons/${encodeURIComponent(slug)}?source=direct`
 }
+
+/**
+ * The link a salon QR code carries: the public page with `?source=qr`, the same payload the
+ * provider panel's printable QR uses (PublicLinkCard.vue), so a booking that starts from a
+ * scan is attributed the same way wherever the code was shown.
+ */
+export function salonQrUrl(origin: string, slug: string): string {
+  return `${origin.replace(/\/$/, '')}/salons/${encodeURIComponent(slug)}?source=qr`
+}

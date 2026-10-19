@@ -3,6 +3,7 @@ import { iconForCategory } from '../utils/category-icon'
 import { toSearchGender } from '../utils/gender-map'
 import { geoJsonToLatLng } from '../utils/geo'
 import { buildCanonicalUrl } from '../utils/canonical-url'
+import { DEFAULT_FILTERS, DEFAULT_RADIUS_KM, activeFilterCount, filterQuery, priceBandLabel, type SearchFilters } from '../utils/search-filters'
 import type { SearchPage, SearchResult } from '../utils/types'
 import type { SelectOption } from '../components/ui/AppSelect.client.vue'
 
@@ -69,6 +70,15 @@ const categories = ref<{ id: number; name: string; icon: string }[]>([])
 const salons = ref<SearchResult[]>([])
 const selectedCategoryId = ref<number | null>(null)
 const sort = ref<'distance' | 'rating'>('distance')
+// Radius and price band («فیلترها»). Applied as a whole from the panel, so a half-typed price
+// never runs a search; each active one also shows as a removable chip above the results.
+const filters = ref<SearchFilters>({ ...DEFAULT_FILTERS })
+const filtersOpen = ref(false)
+const filterCount = computed(() => activeFilterCount(filters.value))
+const priceLabel = computed(() => priceBandLabel(filters.value.priceMin, filters.value.priceMax))
+function clearFilters() {
+  filters.value = { ...DEFAULT_FILTERS }
+}
 // Tehran as a hardcoded initial default -- the full city list now loads async from
 // GET /cities, so this can't read the fetched list's first entry synchronously.
 const coords = ref<{ lat: number; lng: number }>({ lat: 35.6892, lng: 51.389 })
@@ -127,6 +137,7 @@ function currentSearchQuery() {
     categoryId: selectedCategoryId.value ?? undefined,
     sort: sort.value,
     q: searchQuery.value || undefined,
+    ...filterQuery(filters.value),
   }
 }
 
@@ -220,7 +231,9 @@ async function loadMore() {
 // list, so a suggestion is never a salon the list itself would hide. None while the account
 // still needs a gender (there is no valid search to suggest from).
 const suggestionContext = computed(() =>
-  searchGender.value ? { lat: coords.value.lat, lng: coords.value.lng, gender: searchGender.value } : null,
+  searchGender.value
+    ? { lat: coords.value.lat, lng: coords.value.lng, gender: searchGender.value, radiusKm: filters.value.radiusKm }
+    : null,
 )
 
 function submitSearch() {
@@ -275,7 +288,7 @@ onMounted(async () => {
   await salonsLoaded
 })
 
-watch([selectedCategoryId, sort, coords, anonGender, searchQuery], loadSalons, { deep: true })
+watch([selectedCategoryId, sort, coords, anonGender, searchQuery, filters], loadSalons, { deep: true })
 
 async function loadCoordsForMap() {
   const missing = salons.value.filter((s) => !salonCoords.value[s.id])
@@ -570,7 +583,66 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
             بهترین امتیاز
           </button>
         </div>
+
+        <button
+          type="button"
+          data-testid="filters-toggle"
+          :aria-expanded="filtersOpen"
+          aria-controls="home-filters-panel"
+          class="inline-flex min-h-11 items-center gap-1.5 rounded-full border px-4 text-sm font-medium transition-colors duration-150"
+          :class="filtersOpen || filterCount
+            ? 'border-(--color-text) bg-(--color-surface-card) text-(--color-text)'
+            : 'border-(--color-border) bg-(--color-surface-card) text-(--color-text-muted) hover:text-(--color-text)'"
+          @click="filtersOpen = !filtersOpen"
+        >
+          <BaseIcon name="sliders" :size="16" />
+          فیلترها
+          <span
+            v-if="filterCount"
+            class="tnum inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-(--color-text) px-1 text-xs font-bold text-(--color-surface-card)"
+            data-testid="filters-count"
+          ><span class="sr-only">، </span>{{ filterCount.toLocaleString('fa-IR') }}<span class="sr-only"> فیلتر فعال</span></span>
+        </button>
       </div>
+    </div>
+
+    <div v-if="filtersOpen" id="home-filters-panel" class="lg:max-w-2xl">
+      <SearchFiltersPanel v-model="filters" @close="filtersOpen = false" />
+    </div>
+
+    <!-- Applied radius/price, each removable on its own. -->
+    <div v-if="filterCount" class="flex flex-wrap items-center gap-2 text-sm" data-testid="active-filters">
+      <span class="text-(--color-text-muted)">فیلترها:</span>
+      <button
+        v-if="filters.radiusKm !== DEFAULT_RADIUS_KM"
+        type="button"
+        data-testid="chip-radius"
+        class="inline-flex min-h-9 items-center gap-1 rounded-full bg-(--color-surface-subtle) ps-3 pe-2 text-(--color-text) transition-colors hover:bg-(--color-border-soft)"
+        :aria-label="`حذف فیلتر فاصله تا ${filters.radiusKm.toLocaleString('fa-IR')} کیلومتر`"
+        @click="filters = { ...filters, radiusKm: DEFAULT_RADIUS_KM }"
+      >
+        تا {{ filters.radiusKm.toLocaleString('fa-IR') }} کیلومتر
+        <BaseIcon name="x" :size="14" />
+      </button>
+      <button
+        v-if="priceLabel"
+        type="button"
+        data-testid="chip-price"
+        class="tnum inline-flex min-h-9 items-center gap-1 rounded-full bg-(--color-surface-subtle) ps-3 pe-2 text-(--color-text) transition-colors hover:bg-(--color-border-soft)"
+        :aria-label="`حذف فیلتر قیمت ${priceLabel}`"
+        @click="filters = { ...filters, priceMin: null, priceMax: null }"
+      >
+        {{ priceLabel }}
+        <BaseIcon name="x" :size="14" />
+      </button>
+      <button
+        v-if="filterCount > 1"
+        type="button"
+        class="min-h-9 px-2 font-medium text-(--color-accent-text) hover:underline"
+        @click="clearFilters"
+      >
+        حذف همه
+      </button>
     </div>
 
     <!-- No gender on the account means no searchable request exists at all, so say what's
@@ -622,9 +694,10 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
           data-testid="salons-empty"
           pose="curious"
           :title="searchQuery ? `سالنی با نام «${searchQuery}» پیدا نشد` : 'سالنی در این منطقه پیدا نشد'"
-          :description="searchQuery ? 'بخشی از نام را امتحان کنید یا جستجو را پاک کنید.' : 'شهر دیگری را امتحان کنید یا دسته‌بندی را روی «همه» بگذارید.'"
+          :description="searchQuery ? 'بخشی از نام را امتحان کنید یا جستجو را پاک کنید.' : filterCount ? 'فاصله را بیشتر یا بازهٔ قیمت را بازتر کنید.' : 'شهر دیگری را امتحان کنید یا دسته‌بندی را روی «همه» بگذارید.'"
         >
           <div class="flex flex-wrap justify-center gap-2">
+            <BaseButton v-if="filterCount" variant="secondary" size="md" data-testid="empty-clear-filters" @click="clearFilters">حذف فیلترها</BaseButton>
             <BaseButton v-if="searchQuery" variant="secondary" size="md" @click="clearSearch">پاک کردن جستجو</BaseButton>
             <BaseButton v-if="selectedCategoryId !== null" variant="secondary" size="md" @click="selectedCategoryId = null">نمایش همه دسته‌ها</BaseButton>
           </div>

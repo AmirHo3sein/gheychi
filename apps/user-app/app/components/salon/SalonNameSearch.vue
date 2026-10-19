@@ -18,6 +18,8 @@ export interface SuggestionContext {
   lat: number
   lng: number
   gender: 'women' | 'men'
+  /** The results list's radius, so a suggestion never lies outside the area being searched. */
+  radiusKm?: number
 }
 
 const props = withDefaults(
@@ -61,7 +63,7 @@ function reset() {
 async function fetchSuggestions(q: string, ctx: SuggestionContext) {
   const mine = ++seq
   const { data, error } = await apiFetch<{ items: SearchResult[] }>('/search/suggestions', {
-    query: { q, lat: ctx.lat, lng: ctx.lng, gender: ctx.gender },
+    query: { q, lat: ctx.lat, lng: ctx.lng, gender: ctx.gender, radiusKm: ctx.radiusKm },
     silent: true,
     redirectOn401: false,
   })

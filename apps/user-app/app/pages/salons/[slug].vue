@@ -27,6 +27,8 @@ interface Salon {
   // gave no contact number.
   contactPhone?: string | null
   memberSince?: string | null
+  /** Whether the salon's plan includes a QR code (the qrCode entitlement); absent on an older API. */
+  qrCodeEnabled?: boolean
 }
 type PricingType = 'fixed' | 'from' | 'range' | 'quote'
 interface SalonServiceItem {
@@ -481,7 +483,10 @@ function scrollToSection(id: string) {
                    admin reviewed self-declared data, so nothing here claims the salon is "verified". -->
               <p v-if="memberSince" data-testid="salon-member-since" class="mt-1 text-xs text-(--color-text-muted)">{{ memberSince }}</p>
             </div>
-            <SalonShareButton :slug="slug" :salon-name="page.salon.name" class="shrink-0" />
+            <div class="flex shrink-0 items-center gap-2">
+              <SalonQrButton v-if="page.salon.qrCodeEnabled" :slug="slug" :salon-name="page.salon.name" />
+              <SalonShareButton :slug="slug" :salon-name="page.salon.name" />
+            </div>
           </div>
           <p v-if="page.salon.tagline" data-testid="salon-tagline" class="mt-1 text-sm text-(--color-text-muted)">{{ page.salon.tagline }}</p>
           <a

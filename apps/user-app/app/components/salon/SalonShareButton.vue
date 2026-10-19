@@ -1,8 +1,8 @@
 <!-- apps/user-app/app/components/salon/SalonShareButton.vue
      «اشتراک‌گذاری» on a salon page: the phone's native share sheet when there is one, else the
      link is copied and a toast says so. The shared link carries ?source=direct so a booking
-     that arrives through it is attributed (utils/attribution.ts). No QR here: the customer app
-     has no QR library, and the provider panel already prints the salon's QR. -->
+     that arrives through it is attributed (utils/attribution.ts). The QR code is its own
+     button beside this one (SalonQrButton.vue). -->
 <script setup lang="ts">
 import { salonShareUrl, shareLink } from '../../utils/share'
 
