@@ -1,0 +1,89 @@
+/*
+ * @gheychi/brand-tokens -- the قیچی design tokens every app shares (user-app, provider-panel,
+ * admin-panel). Canonical values and their verified contrast ratios: docs/design/brand-tokens.md.
+ *
+ * Only tokens whose value is the SAME in all three apps live here. A token an app tunes for its
+ * own job (e.g. --color-border-soft, which the panels use as a hover/chip fill) stays in that
+ * app's main.css, next to the comment explaining why. Change a value here once and every app
+ * follows; never re-declare one of these in an app.
+ *
+ * Imported by each app's main.css right after Tailwind, so Tailwind sees the @theme block.
+ */
+
+/* static: keep every token emitted even before a component references it. */
+@theme static {
+  --font-sans: 'Vazirmatn Variable', ui-sans-serif, system-ui, sans-serif;
+
+  /* Light mode: the brand sheet (blush #F7E6E2, peach #FFC0B6, gold #D4AF37, silver #BDBDBD,
+     charcoal #2D2D2D) with darker text shades wherever a brand hex fails WCAG as text.
+     Ratios are against white unless stated. */
+  --color-surface: #FBF5F3;          /* page: blush tint, charcoal 12.76 */
+  --color-surface-card: #FFFFFF;
+  --color-surface-subtle: #F7E6E2;   /* brand blush: chips, section fills, placeholders */
+  --color-text: #2D2D2D;             /* 13.77 */
+  --color-text-muted: #5E5552;       /* 7.25 white / 6.72 page / 6.00 blush */
+  /* A decorative hairline, and a control border that clears WCAG 1.4.11 (3:1) for anything
+     whose outline IS the affordance (inputs, selects). */
+  --color-border: #EADBD6;
+  --color-border-control: #8C8280;   /* 3.74 white / 3.46 page */
+  /* Peach is a FILL only: text on it is always --color-fill-text (charcoal 8.83), never white (1.56). */
+  --color-accent: #FFC0B6;           /* brand peach -- fill only */
+  --color-accent-strong: #FFC0B6;
+  --color-accent-deep: #FFAD9F;      /* hover, charcoal 7.69 */
+  --color-accent-soft: #FFE3DD;      /* tinted backgrounds, active nav pill */
+  --color-accent-text: #A8473A;      /* links, icon accents, focus ring: 5.79 white / 4.79 blush */
+  --color-accent-text-strong: #94392D; /* small accent text sitting on blush: 6.03 */
+  --color-fill-text: #2D2D2D;
+  /* Gold is the premium/featured tier: fill with charcoal text, or --color-gold-text when gold
+     has to be the text colour (#D4AF37 as text is 2.10). */
+  --color-gold: #D4AF37;
+  --color-gold-text: #7A5F0E;        /* 6.05 white / 5.61 page */
+  --color-premium: #D4AF37;
+  /* Silver: decorative dividers only (1.88), never text or an input border. Danger stays crimson,
+     not coral, so a destructive action never reads as a duller primary. */
+  --color-silver: #BDBDBD;
+  --color-danger: #B42318;           /* 6.57 */
+  --color-danger-strong: #E76F6F;    /* fill, charcoal text */
+  /* The /mascot/*.webp pose tiles are cut on exactly this colour; their container must match. */
+  --color-mascot-tile: #FBF6F2;
+  /* Feature accents (wallet, AI, reports). */
+  --color-wallet: #5EC9A3;
+  --color-ai: #A78BFA;
+  --color-reports: #6FA8FF;
+
+  /* Warm charcoal shadows (#2D2D2D): subtle for cards, stronger only for overlays. --shadow-sm is
+     per app (the customer app's is a touch softer). */
+  --shadow-color: 0 0% 18%;
+  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.10), 0 2px 6px -2px hsl(var(--shadow-color) / 0.06);
+  --shadow-lg: 0 24px 48px -16px hsl(var(--shadow-color) / 0.14), 0 8px 16px -4px hsl(var(--shadow-color) / 0.08);
+}
+
+/* Dark mode -- warm charcoal, not an inverted black-and-white. Peach and gold are light enough
+   to work directly as text here (9.60 / 7.12 on the card colour), so the -text tokens collapse
+   onto the brand hexes; --color-fill-text stays charcoal (every fill it sits on is still pastel). */
+.dark {
+  --color-surface: #1F1C1B;
+  --color-surface-card: #2A2625;
+  --color-surface-subtle: #342F2D;
+  --color-text: #F3ECEA;             /* 14.5 */
+  --color-text-muted: #B8ADA9;       /* 6.84 on card */
+  --color-border: #433C3A;
+  --color-border-control: #7A6F6C;
+  --color-accent: #FFC0B6;
+  --color-accent-strong: #FFC0B6;
+  --color-accent-deep: #FFAD9F;
+  --color-accent-text: #FFC0B6;
+  --color-gold: #D4AF37;
+  --color-gold-text: #D4AF37;
+  --color-premium: #D4AF37;
+  --color-danger-strong: #E76F6F;
+  --color-wallet: #5EC9A3;
+  --color-ai: #A78BFA;
+  --color-reports: #6FA8FF;
+
+  /* Pure black for dark shadows, not graphite-tinted. */
+  --shadow-color: 0 0% 0%;
+  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.35), 0 1px 1px hsl(var(--shadow-color) / 0.25);
+  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.45), 0 2px 6px -2px hsl(var(--shadow-color) / 0.35);
+  --shadow-lg: 0 24px 48px -16px hsl(var(--shadow-color) / 0.65), 0 8px 16px -4px hsl(var(--shadow-color) / 0.5);
+}

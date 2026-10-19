@@ -17,6 +17,9 @@ importers:
       '@fontsource-variable/vazirmatn':
         specifier: ^5.2.8
         version: 5.2.8
+      '@gheychi/brand-tokens':
+        specifier: workspace:*
+        version: link:../../packages/brand-tokens
       '@lucide/vue':
         specifier: ^1.23.0
         version: 1.23.0(vue@3.5.39(typescript@5.9.3))
@@ -271,6 +274,9 @@ importers:
       '@fontsource-variable/vazirmatn':
         specifier: ^5.2.8
         version: 5.2.8
+      '@gheychi/brand-tokens':
+        specifier: workspace:*
+        version: link:../../packages/brand-tokens
       '@lucide/vue':
         specifier: ^1.23.0
         version: 1.23.0(vue@3.5.39(typescript@5.9.3))
@@ -356,6 +362,9 @@ importers:
       '@fontsource-variable/vazirmatn':
         specifier: ^5.2.8
         version: 5.2.8
+      '@gheychi/brand-tokens':
+        specifier: workspace:*
+        version: link:../../packages/brand-tokens
       '@nuxt/image':
         specifier: ^2.0.0
         version: 2.0.0(db0@0.3.4)(ioredis@5.11.1)(magicast@0.5.4)(srvx@0.11.22)
@@ -383,6 +392,9 @@ importers:
       pinia:
         specifier: ^3.0.4
         version: 3.0.4(typescript@5.9.3)(vue@3.5.42(typescript@5.9.3))
+      qrcode:
+        specifier: ^1.5.4
+        version: 1.5.4
       tailwindcss:
         specifier: ^4.3.2
         version: 4.3.2
@@ -402,6 +414,9 @@ importers:
       '@types/markdown-it':
         specifier: ^14.1.2
         version: 14.1.2
+      '@types/qrcode':
+        specifier: ^1.5.6
+        version: 1.5.6
       '@vite-pwa/nuxt':
         specifier: ^1.1.1
         version: 1.1.1(magicast@0.5.4)(vite@7.3.6(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.51.2)(yaml@2.9.0))(workbox-build@7.4.1(@types/babel__core@7.20.5))(workbox-window@7.4.1)
@@ -438,6 +453,8 @@ importers:
       workbox-precaching:
         specifier: ^7.4.1
         version: 7.4.1
+
+  packages/brand-tokens: {}
 
 packages:
 

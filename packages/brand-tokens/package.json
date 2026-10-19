@@ -1,0 +1,10 @@
+{
+  "name": "@gheychi/brand-tokens",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The قیچی design tokens (colours, type, shadows) shared by user-app, provider-panel and admin-panel.",
+  "exports": {
+    "./tokens.css": "./tokens.css"
+  },
+  "files": ["tokens.css"]
+}
