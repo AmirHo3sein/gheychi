@@ -34,7 +34,7 @@ The salon-owner back office. Vue 3 + Vite SPA (no SSR need — fully authenticat
 | `PhotosView.vue` | Salon photo gallery: upload, set-cover, delete |
 | `StoriesView.vue` | 24h-expiring stories (cap 10 active), live countdown |
 | `PortfolioView.vue` | Portfolio items (cap 40), caption edit, service link, manual reorder |
-| `SalonSettingsView.vue` | Edit salon (reuses onboarding's `SalonInfoStep`) + showcase profile fields + public handle/QR (`PublicLinkCard`) + booking-confirmation mode + live preview. Sends `''` to clear `description` (the DTO's `''→null` transform, same as `tagline`/`about`) |
+| `SalonSettingsView.vue` | Edit salon (reuses onboarding's `SalonInfoStep`) + showcase profile fields + public handle/QR (`PublicLinkCard`) + browser push for this device (`PushNotificationsCard`, see [16](./16-notifications.md)) + booking-confirmation mode + live preview. Sends `''` to clear `description` (the DTO's `''→null` transform, same as `tagline`/`about`) |
 | `ReviewsView.vue` | Customer reviews, unanswered-first sort, reply composer. Paginates the same public listing the customer app reads (`?page=`, 50/page) instead of silently capping at 50; when the reviews feature flag is off it shows a banner rather than a fake empty state |
 | `EarningsView.vue` | Read-only: totals row + monthly invoice history (see [14-commission.md](./14-commission.md) — accrues only on online-captured money) |
 | `PlanView.vue` | Read-only "my plan": resolved entitlements + billing-period history; no controls by owner decision ([30](./30-subscription-plan-foundation.md), [34](./34-subscription-coupons-and-billing.md)) |

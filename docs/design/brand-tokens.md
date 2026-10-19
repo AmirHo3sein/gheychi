@@ -1,8 +1,10 @@
 # قیچی brand tokens (canonical — identical values in all three apps)
 
+Implemented once in `packages/brand-tokens/tokens.css` (`@gheychi/brand-tokens`), which every app's `main.css` imports. Only tokens shared by all three apps live there; an app-specific tuning stays in that app's `main.css` with its reason.
+
 Source: supplied brand sheet (blush #F7E6E2, peach #FFC0B6, gold #D4AF37, silver #BDBDBD, white, charcoal #2D2D2D).
-Contrast verified (WCAG 2.x). Map these onto each app's EXISTING token names in its main.css (do not rename
-tokens that components already use; add missing ones). Keep the existing dark-mode mechanism (.dark class).
+Contrast verified (WCAG 2.x). A new shared token goes into `packages/brand-tokens/tokens.css` (never into the three main.css files); keep the
+existing token names components already use. Keep the existing dark-mode mechanism (.dark class).
 
 ## Light
 | role | value | notes / verified contrast |

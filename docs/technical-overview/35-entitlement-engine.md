@@ -52,6 +52,7 @@ absent-behaviour decided once.
 
 ## Wired today
 
+- `qrCode` — read by the public salon profile (`GET /salons/:slug` → `qrCodeEnabled`), which shows or hides the customer page's «کد QR» button; the provider panel's `PublicLinkCard` hides its QR download on the same key. Turning it off for a plan (or a salon override) hides both.
 - `smsMonthlyQuota` — enforced against **every** salon-triggered SMS, reading the same
   entitlement key and writing the same `salon_sms_messages` log either way. The worker-invite
   and manual-booking-confirmation paths route through the shared `SalonSmsQuotaService`; the

@@ -344,6 +344,7 @@ jobs:
             VITE_CUSTOMER_APP_BASE=${{ vars.VITE_CUSTOMER_APP_BASE_PROD }}
             VITE_MAP_TILE_URL=${{ vars.VITE_MAP_TILE_URL_PROD }}
             VITE_MAP_TILE_ATTRIBUTION=${{ vars.VITE_MAP_TILE_ATTRIBUTION_PROD }}
+            VITE_VAPID_PUBLIC_KEY=${{ vars.VITE_VAPID_PUBLIC_KEY_PROD }}
           tags: |
             ghcr.io/${{ env.OWNER_LC }}/gheychi-provider-panel:${{ github.sha }}
             ghcr.io/${{ env.OWNER_LC }}/gheychi-provider-panel:latest

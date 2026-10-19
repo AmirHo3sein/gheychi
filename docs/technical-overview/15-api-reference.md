@@ -18,7 +18,8 @@ Guard shorthand: **Auth** = the global `AuthGuard` only (valid session). **Admin
 
 | Route | Guard | Purpose |
 |---|---|---|
-| `GET /admin/users` | Admin | Filtered/paginated user list |
+| `GET /admin/users` | Admin | Filtered/paginated user list; `sort` `createdAt|name|phone` + `order` `asc|desc` (default newest first; nameless accounts sort last) |
+| `GET /admin/users/:id` | Admin | One account for support: profile, owned salon, staff memberships, own bookings (counts by status + latest 10), wallet balances, review count, and the admin actions on it (`user.status.set`, `wallet.adjust`; latest 10) — all counted from the source tables |
 | `PATCH /admin/users/:id/status` | Admin, audited | Suspend/reactivate (cascades to owned salon) |
 
 ## Salons — owner-facing (`salons/salons.controller.ts`)
@@ -30,7 +31,7 @@ Guard shorthand: **Auth** = the global `AuthGuard` only (valid session). **Admin
 | `PATCH /salons/mine` | Owner | Update own salon (incl. `bookingConfirmationMode` and the public `contactPhone` — `''`/`null` clears; timeouts deliberately excluded). Material edits to an approved salon raise an admin `salon_material_edit` notification |
 | `PATCH /salons/mine/handle` | Owner | Change the public handle (`slug`; reserved-word-checked, 409 if taken) — [31](./31-public-handle-and-attribution.md) |
 | `POST /salons/mine/resubmit` | Owner | Rejected → pending |
-| `GET /salons/:slug` | Public | Public profile (approved-only); includes `contactPhone` and `memberSince` (ISO `created_at`) |
+| `GET /salons/:slug` | Public | Public profile (approved-only); includes `contactPhone`, `memberSince` (ISO `created_at`) and `qrCodeEnabled` (the salon's `qrCode` entitlement — gates the customer page's «کد QR» button, the same capability as the owner's QR) |
 | `GET /salons/:slug/canonical` | Public | `{slug, moved}` — resolves a released handle via `salon_slug_history` (404 if the salon is no longer `approved`, never leaking existence); `moved: true` is what `user-app` turns into a real SSR 301 — [31](./31-public-handle-and-attribution.md) |
 
 ## Salons — `mine/*` sub-resources (all Owner-guarded)
@@ -69,10 +70,10 @@ Guard shorthand: **Auth** = the global `AuthGuard` only (valid session). **Admin
 
 | Controller | Routes |
 |---|---|
-| `salons/admin-salons.controller.ts` | `GET /admin/salons` (filtered/paginated), `GET /admin/salons/:id` (every salon column plus `owner`, `location {lat,lng}`, `photos`, `services`, `hours`, and a `riskSummary` — bookings created in the last 90 days by source, `cancelledBySalon`/`rejectedBySalon`/`noShowMarked`, and all currently open reports), `GET /admin/salons/:id/stories`, `/portfolio` (unfiltered moderation view), `PATCH /admin/salons/:id/status` (audited; 409 if the owner is suspended and the target is `approved`), `PATCH /admin/salons/:id/featured` (audited), `PATCH /admin/salons/:id/handle` (audited — admin override of the public handle) |
+| `salons/admin-salons.controller.ts` | `GET /admin/salons` (filtered/paginated; `sort` `createdAt|name|city` + `order`, default oldest first — the approval queue), `GET /admin/salons/:id` (every salon column plus `owner`, `location {lat,lng}`, `photos`, `services`, `hours`, and a `riskSummary` — bookings created in the last 90 days by source, `cancelledBySalon`/`rejectedBySalon`/`noShowMarked`, and all currently open reports), `GET /admin/salons/:id/stories`, `/portfolio` (unfiltered moderation view), `PATCH /admin/salons/:id/status` (audited; 409 if the owner is suspended and the target is `approved`), `PATCH /admin/salons/:id/featured` (audited), `PATCH /admin/salons/:id/handle` (audited — admin override of the public handle) |
 | `salons/admin-showcase.controller.ts` | `PATCH /admin/stories/:id/status` (audited), `PATCH /admin/portfolio/:id/status` (audited), `DELETE /admin/services/:id/image` (audited as `salon.service.image.removed`; see [36](./36-service-pricing-and-packages.md#service-images)) |
 | `booking/admin-booking-settings.controller.ts` | `GET/PATCH /admin/salons/:id/booking-settings`, `GET /admin/bookings/:id/events` — see "Booking approval workflow" below |
-| `booking/admin-bookings.controller.ts` | `GET /admin/bookings` — paginated, filterable booking list (`status`, `salonId`, `userId`, `confirmationMode`, `source`, `paymentStatus`, `from`/`to` on `startsAt`) — and `POST /admin/bookings/:id/cancel`, the **one** admin mutation: a platform cancel that goes through the booking state machine (status `cancelled_by_admin`) rather than around it. The list stays read-only otherwise. Each row carries customer/salon/service/worker names, money, payment state and commission, with `payment: null`/`commissionAmount: null` left as real states rather than flattened to zero |
+| `booking/admin-bookings.controller.ts` | `GET /admin/bookings` — paginated, filterable booking list (`status`, `salonId`, `userId`, `confirmationMode`, `source`, `paymentStatus`, `from`/`to` on `startsAt`; `sort` `startsAt|createdAt|price` + `order`, default most recent appointment first) — and `POST /admin/bookings/:id/cancel`, the **one** admin mutation: a platform cancel that goes through the booking state machine (status `cancelled_by_admin`) rather than around it. The list stays read-only otherwise. Each row carries customer/salon/service/worker names, money, payment state and commission, with `payment: null`/`commissionAmount: null` left as real states rather than flattened to zero |
 | `subscriptions/admin-salon-subscriptions.controller.ts` | `GET /admin/salons/:salonId/subscription`, `PATCH … {planId}` (audited `subscription.plan.set`; refuses inactive plans), `POST …/cancel` (audited; also clears overrides), `PATCH …/overrides {overrides|null}` (audited `subscription.overrides.set`) |
 | `billing/admin-subscription-billing.controller.ts` | `GET/POST /admin/salons/:salonId/subscription/billing-periods` (`POST {periodStart, periodEnd, couponCode?}`; 409 unless the subscription is `active`), `PATCH …/:periodId/status {status: 'paid'|'comped'|'void'}` (salon-scoped, compare-and-swap from `pending` — 409 if already settled; `void` releases the coupon redemption) — all audited |
 
@@ -187,7 +188,8 @@ A booking-conflict 409 from `POST /bookings`/`assign-worker` (createHold/createM
 
 | Route | Guard |
 |---|---|
-| `GET /search?lat=&lng=&gender=&q=&radiusKm=&categoryId=&priceMin=&priceMax=&sort=&cursor=&pageSize=` | Public — `gender` required; `radiusKm` 0.5–50; `priceMin`/`priceMax` integer toman, 0–`MAX_PRICE_TOMAN` (`common/money-limits.ts`, 1,000,000,000 — non-integers/`Infinity` are 400, not 500); `sort` `distance|rating`; cursor-paginated, `pageSize` 1–100 |
+| `GET /search?lat=&lng=&gender=&q=&radiusKm=&categoryId=&priceMin=&priceMax=&sort=&cursor=&pageSize=` | Public — `gender` required; `radiusKm` 0.5–50; `priceMin`/`priceMax` integer toman, 0–`MAX_PRICE_TOMAN` (`common/money-limits.ts`, 1,000,000,000 — non-integers/`Infinity` are 400, not 500); `sort` `distance|rating`; cursor-paginated, `pageSize` 1–100. `q` matches the business name, folding Arabic ي/ك and treating `%`/`_` literally |
+| `GET /search/suggestions?q=&lat=&lng=&gender=&radiusKm=` | Public — the home page's type-ahead: up to 6 salons from the same query as `/search` (approved, gender, radius), `q` required (1–100). Not tracked as `search_performed` |
 
 ## Activity (`activity/activity.controller.ts`)
 
@@ -248,7 +250,7 @@ A booking-conflict 409 from `POST /bookings`/`assign-worker` (createHold/createM
 
 | Route | Guard |
 |---|---|
-| `POST /push/subscribe` | Auth (idempotent upsert) |
+| `POST /push/subscribe` | Auth (idempotent upsert); optional `audience` `customer` (default) or `provider` — which app's service worker owns the subscription |
 | `DELETE /push/subscribe` | Auth |
 
 ## Health

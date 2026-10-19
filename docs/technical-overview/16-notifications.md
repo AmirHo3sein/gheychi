@@ -32,7 +32,8 @@ Confirmation/cancellation/refund/approval sends are all `.catch(()=>{})` — bes
 Interface `PushProvider` (`apps/api/src/push/push.provider.ts`), selected via `PUSH_PROVIDER=console|webpush`.
 
 - **`WebPushProvider`** wraps the `web-push` npm library, configured once at construction with `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT`.
-- `push.service.ts`'s `sendToUser(userId, payload)` fans a notification out to **every** subscription the user has registered (multiple devices/browsers), each independently `.catch(()=>{})`'d so one dead device never blocks or fails the others.
+- `push.service.ts`'s `sendToUser(userId, payload, audience = 'customer')` fans a notification out to **every** subscription the user has registered **for that app** (multiple devices/browsers), each independently `.catch(()=>{})`'d so one dead device never blocks or fails the others.
+- **Audience** (`push_subscriptions.audience`, migration `1758500000000`): `customer` subscriptions come from the user-app, `provider` ones from the provider panel. A customer's own booking notifications go to `customer`; every salon-owner notification (`PaymentsService.notifyOwner` — new booking, approval request, customer cancel, reschedule, platform cancel) goes to `provider` with `data: { type: 'salon-booking', bookingId }`. Before this, owner pushes reached the owner's customer-app devices and opened a customer booking page that was not theirs.
 
 ```mermaid
 sequenceDiagram
@@ -54,7 +55,9 @@ sequenceDiagram
 
 **Ownership rebinding**: because a `PushSubscription` is per-browser, not per-user, `usePushSubscription.rebindOwnership()` (user-app) re-POSTs `/push/subscribe` on every login/status refresh to reclaim the endpoint for whoever is currently logged in — this prevents a shared-device scenario where a second user keeps receiving the first user's push notifications.
 
-**Deep linking**: every booking-related push carries `data: { type: 'booking', bookingId }`; `sw.ts`'s `resolveTargetUrl` opens `/bookings/{bookingId}` on tap when the id passes a UUID check, and falls back to the `/bookings` list for anything else (malformed data, non-booking payloads).
+**Provider panel**: Settings → «اعلان‌های مرورگر» (`PushNotificationsCard.vue`, `usePushNotifications.ts`) registers `public/sw.js` (served `no-cache` by `docker/nginx-spa.conf`), subscribes with `VITE_VAPID_PUBLIC_KEY` (build-time; empty = the card says push is not set up) and POSTs `audience: 'provider'`. Same rebind-on-refresh rule as the user-app, and logout DELETEs the subscription before the session ends. A click opens (or focuses) the panel's `/bookings`.
+
+**Deep linking**: every customer booking push carries `data: { type: 'booking', bookingId }`; `sw.ts`'s `resolveTargetUrl` opens `/bookings/{bookingId}` on tap when the id passes a UUID check, and falls back to the `/bookings` list for anything else (malformed data, non-booking payloads).
 
 ## Admin notification queue
 

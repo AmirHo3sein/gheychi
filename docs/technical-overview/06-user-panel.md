@@ -8,13 +8,13 @@ File-based routing under `app/pages/`. `components: [{ path: '~/components', pat
 
 | Route | Access | SSR/SEO | Purpose |
 |---|---|---|---|
-| `/` (`index.vue`) | **Public** | Client-fetched | Home/search: category pills, city picker, geolocation "near me", list/map toggle (loading/error states shown in map view too; `SalonMap.client.vue` re-renders markers/center on prop change). An anonymous visitor gets a login prompt, not a "complete your profile" nudge — there is no profile to complete yet |
+| `/` (`index.vue`) | **Public** | Client-fetched | Home/search: business-name type-ahead (`SalonNameSearch.vue`, `GET /search/suggestions` — same area/gender/radius as the list), category pills, city picker, geolocation "near me", sort, «فیلترها» panel (`SearchFiltersPanel.vue`: radius 3–50 km and a toman price band, applied as one search, each shown as a removable chip; the hint states the API's price-honesty rule), list/map toggle (loading/error states shown in map view too; `SalonMap.client.vue` re-renders markers/center on prop change). An anonymous visitor gets a login prompt, not a "complete your profile" nudge — there is no profile to complete yet |
 | `/login` | Public | `bare` layout | 3-step OTP flow (phone → code → profile completion), referral code entry; resend has a re-entry guard so a double-tap can't burn two of the 3/hour issue quota |
 | `/profile` | Auth required | — | Name/gender edit, push toggle, links to favorites/wallet/referral/activity, logout |
 | `/account/favorites` | Auth required | — | Favorited salons (`GET /favorites`) |
 | `/account/activity` | Auth required | — | Unified personal timeline (`GET /activity/mine`): bookings, wallet transactions, reviews, referral rewards |
 | `/salons` | **Public** | **Yes — `useAsyncData` + `useSeoMeta`** | Crawlable public salon listing — filter/paginate over the same search the home page hits client-side, but SSR'd so it's a real indexable surface rather than a search-only client fetch |
-| `/salons/[slug]` | **Public** | **Yes — `useAsyncData` + `useSeoMeta` + JSON-LD `BeautySalon`** | Salon profile — services, hours, photos, stories, portfolio, reviews, workers, favorite/report actions. **The primary SEO surface.** |
+| `/salons/[slug]` | **Public** | **Yes — `useAsyncData` + `useSeoMeta` + JSON-LD `BeautySalon`** | Salon profile — services, hours, photos, stories, portfolio, reviews, workers, favorite/report actions, share and «کد QR» (`SalonQrButton.vue`: `?source=qr` link, generated client-side with `qrcode` loaded only on open, downloadable PNG; shown only when `qrCodeEnabled`, i.e. the salon's plan includes QR). **The primary SEO surface.** |
 | `/blog`, `/blog/[slug]` | **Public** | **Yes — SSR + `useSeoMeta` + JSON-LD `Article` (article page)** | Content-marketing blog. Second SEO surface. |
 | `/booking/[slug]/[serviceId]` | Auth required | `useAsyncData` | Service booking: worker picker, slot picker, coupon validation, wallet-balance apply, deposit math, Zarinpal redirect |
 | `/booking/callback` | Auth required, `bare` layout | — | Zarinpal return page — 3 outcomes: success / refunding / failed |

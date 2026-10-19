@@ -21,9 +21,9 @@ This is real client-side defense-in-depth on top of the backend's own `RolesGuar
 | `ForbiddenView.vue` | Shown to non-admin logged-in users; only action is logout |
 | `DashboardView.vue` | ECharts pie/bar charts (salon status, gender split, user roles, review rating distribution) + stat tiles + quick-links |
 | `AnalyticsView.vue` | Product-analytics funnel (`GET /admin/analytics/summary`): per-event totals + day-by-day booking-funnel breakdown over an optional date range (server default: last 30 days) |
-| `SalonsView.vue` | Paginated/filterable (status/city/gender/name) salon table, featured-badge logic |
+| `SalonsView.vue` | Paginated/filterable (status/city/gender/name) salon table, featured-badge logic; sortable name/city/registered columns (`SortableTh.vue`, server-side, kept in the URL; a «ترتیب» select on phones where the table stacks) |
 | `SalonDetailView.vue` | Tabbed detail (info/stories/portfolio) for one salon; hosts status-change, showcase-moderation, per-salon booking-timeout overrides, and the `SalonSubscriptionCard` (plan assign/cancel, entitlement overrides, billing periods — each paid/comped/void settle behind an inline confirm step, since a settled period is irreversible) |
-| `BookingsView.vue` | `/bookings` — paginated, filterable cross-salon booking list (`GET /admin/bookings`, read-only by design), added 2026-09-03; links into `BookingTimelineView.vue` below |
+| `BookingsView.vue` | `/bookings` — paginated, filterable cross-salon booking list (`GET /admin/bookings`, read-only by design), added 2026-09-03; sortable appointment-time/price columns; the customer's name opens `UserDetailView.vue`; links into `BookingTimelineView.vue` below |
 | `BookingTimelineView.vue` | `/bookings/:id` — the `booking_events` lifecycle timeline (`GET /admin/bookings/:id/events`), the admin's only cross-salon booking view ([28](./28-booking-approval-workflow.md)) |
 | `FeaturedView.vue` | Paginated table of approved salons; toggles a salon's featured flag and its (optional) expiry via `PATCH /admin/salons/:id/featured` — moved here from `user-app`'s `/admin/featured`, see [24-technical-debt.md](./24-technical-debt.md) |
 | `ReviewsView.vue` | Review moderation queue, distinguishes `withdrawn` (customer self-deleted) from admin `rejected`. Honors a `?salonId=` deep link (the exact-id filter `ReportsView`'s escalation link uses — backend gives `salonId` precedence over `salonName`), with a request-sequence guard so a slow earlier response can't overwrite a newer filter's result, and no double-fetch on filter change |
@@ -41,7 +41,8 @@ This is real client-side defense-in-depth on top of the backend's own `RolesGuar
 | `ReferralSettingsView.vue` | Fixed 3-row (user/salon_owner/worker) reward-terms editor, "disabled" banner for zero-value defaults |
 | `BlogPostsView.vue` | Blog post list + a side blog-categories mini-CRUD panel |
 | `BlogEditorView.vue` | Full post editor: title/slug/category/author/excerpt/SEO panel/cover upload/Markdown body with live `v-html` preview, publish/unpublish/delete |
-| `UsersView.vue` | Paginated user table (phone/name/role/joined-date filters), suspend/unsuspend action (hidden on the acting admin's own row) |
+| `UsersView.vue` | Paginated user table (phone/name/role/joined-date filters), sortable name/phone/joined columns, suspend/unsuspend action (hidden on the acting admin's own row); each name opens `UserDetailView.vue` |
+| `UserDetailView.vue` | `/users/:id` (`GET /admin/users/:id`) — account, owned/staff salons, own bookings (status counts, latest 10 linking to the booking timeline, «همهٔ نوبت‌ها» → `/bookings?userId=`), wallet balance, review count, and the admin actions on the account; the same suspend/reactivate control as the list |
 | `AuditLogView.vue` | Immutable audit trail viewer, action/actor/date filters, JSON payload expander. `utils/labels.ts` carries a Persian label for all 48 backend `@AuditAction` keys and every target type; `labels.spec.ts` pins the list length AND (since 2026-09-04) scans `apps/api/src` directly for the real `@AuditAction` set, rather than a second hand-maintained copy — so a new backend action without a matching label genuinely fails the build, not just the reader |
 | `ConfigView.vue` | Platform config key/value editor, confirm-summary step before submit |
 
