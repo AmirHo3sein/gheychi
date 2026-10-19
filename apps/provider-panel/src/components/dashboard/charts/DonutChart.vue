@@ -82,7 +82,8 @@ const center = computed(() => {
     </div>
 
     <figcaption class="sr-only">{{ caption }}</figcaption>
-    <ul class="w-full min-w-0 flex-1 space-y-1">
+    <!-- Capped width: on a wide card the counts used to sit a whole card-width away from their labels. -->
+    <ul class="w-full min-w-0 flex-1 space-y-1 sm:max-w-72">
       <li v-for="s in segments" :key="s.key">
         <button
           type="button"

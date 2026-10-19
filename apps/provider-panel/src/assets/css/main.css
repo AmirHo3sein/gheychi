@@ -1,61 +1,19 @@
 @import "tailwindcss";
 @import "@fontsource-variable/vazirmatn/wght.css";
+/* The shared قیچی tokens (palette, type, shadows); this file only adds what is specific to this app. */
+@import "@gheychi/brand-tokens/tokens.css";
 
 /* Manual light/dark toggle (see composables/useTheme.ts) -- own copy of the mechanism
    admin-panel/user-app use, backed by localStorage since this SPA has no SSR. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* static: prevents Tailwind from tree-shaking these before every consumer is registered */
+/* Provider-panel tokens on top of the shared set (@gheychi/brand-tokens): status-badge tones,
+   dashboard chart aliases, and the few values this panel tunes for its own surfaces. */
 @theme static {
-  --font-sans: 'Vazirmatn Variable', ui-sans-serif, system-ui, sans-serif;
-
-  /* Light mode -- the canonical قیچی brand tokens (blush #F7E6E2, peach #FFC0B6, gold #D4AF37,
-     silver #BDBDBD, charcoal #2D2D2D), identical in all three apps -- see the shared brand-token
-     spec. Token NAMES are unchanged from the previous palette so no component had to move; only
-     the values (and a few additions at the bottom of each block) changed.
-
-     The brand's own hexes are pastel, so every token has one role -- FILL or TEXT -- and they
-     are not interchangeable just because they share a hue. Peach never carries white text
-     (1.56:1); the foreground on every peach/gold/status fill is charcoal (--color-fill-text,
-     8.83:1 on peach, 6.55:1 on gold). Text drawn directly on a light surface uses the darkened
-     -text variants (accent 5.79:1 on white / 4.79:1 on blush, gold 6.05:1). Silver is a
-     decorative hairline only (1.88:1) -- form-control outlines use --color-border-control,
-     which clears WCAG 1.4.11's 3:1 non-text bar. */
-  --color-surface: #FBF5F3;
-  --color-surface-card: #FFFFFF;
-  /* Brand blush: section backgrounds, chips, placeholders. Muted text still reads 6.00:1 on it. */
-  --color-surface-subtle: #F7E6E2;
-  --color-text: #2D2D2D;
-  /* 7.25:1 on white, 6.72:1 on the page, 6.00:1 on blush. */
-  --color-text-muted: #5E5552;
-  /* Decorative card/separator borders -- deliberately soft, never the only cue for a control. */
-  --color-border: #EADBD6;
   /* Hover backgrounds, dividers, secondary-button fills: one step lighter than --color-border. */
   --color-border-soft: #F5E9E5;
-  /* Outline of an interactive control (inputs, selects): 3.74:1 on white, 3.46:1 on the page. */
-  --color-border-control: #8C8280;
-  /* Silver hairline -- decoration only, never text or a control outline. */
-  --color-silver: #BDBDBD;
-  --color-accent: #FFC0B6;
-  --color-accent-strong: #FFC0B6;
-  /* Hover/pressed fills; charcoal on them is still 7.69:1 / 7.0:1. */
-  --color-accent-deep: #FFAD9F;
+  /* Pressed fill; charcoal on it is still 7.0:1. */
   --color-accent-pressed: #FF9F8F;
-  /* Tinted background for an active nav item or a highlighted row. */
-  --color-accent-soft: #FFE3DD;
-  /* accent-text: TEXT drawn directly on a light surface (links, "today" markers, active nav
-     labels, the focus ring) -- 5.79:1 on white, 5.36:1 on the page, 4.79:1 on blush. */
-  --color-accent-text: #A8473A;
-  /* For small accent text on blush, where 4.79:1 is tighter than we like: 6.03:1. */
-  --color-accent-text-strong: #94392D;
-  /* Foreground for text drawn ON TOP OF an accent/gold/status fill (buttons, badges) --
-     constant charcoal in both themes, since those fills stay light/pastel in dark mode too. */
-  --color-fill-text: #2D2D2D;
-  /* Danger keeps its own crimson hue, distinct from accent, so a destructive action never
-     reads as just a duller "primary" button. Text-role (borders, error copy) is 6.57:1 on
-     white; -strong is a FILL under --color-fill-text (4.53:1). */
-  --color-danger: #B42318;
-  --color-danger-strong: #E76F6F;
 
   /* Status badges: each -text clears 4.5:1 on its own -bg as well as on white. */
   --tone-success-bg: #EDF7F0;
@@ -69,23 +27,8 @@
   --tone-info-bg: #E6EFF8;
   --tone-info-text: #1F5F99;
 
-  /* Brand gold: a FILL for premium/plan/featured badges (charcoal text on it, 6.55:1), used
-     sparingly. As text on a light surface it fails (2.10:1) -- use --color-gold-text there. */
-  --color-premium: #D4AF37;
-  --color-gold: #D4AF37;
-  --color-gold-text: #7A5F0E;
-  /* Reserved domain accents -- not consumed by any component yet, kept so a future feature
-     reaches for a palette color instead of an arbitrary one. */
-  --color-wallet: #5EC9A3;
-  --color-ai: #A78BFA;
-  --color-reports: #6FA8FF;
-
-  /* The mascot pose tiles (/mascot/*.webp) are cut on exactly this color, so their container
-     must use it in BOTH themes for the image edge to disappear. */
-  --color-mascot-tile: #FBF6F2;
-
-  /* Dashboard charts (components/dashboard/charts). Aliases of the palette above, never new
-     raw colours, so both themes follow automatically. The line is accent-TEXT, not the pastel
+  /* Dashboard charts (components/dashboard/charts). Aliases of the palette, never new raw
+     colours, so both themes follow automatically. The line is accent-TEXT, not the pastel
      fill: a 2px #FFC0B6 stroke on white is 1.6:1 and fails WCAG 1.4.11 for graphics; the
      pastel is kept for the area under it. Series colours stay distinguishable without hue
      too -- the previous period is dashed, and every segment carries a text label. */
@@ -101,38 +44,17 @@
   --chart-new: var(--color-gold);
   --chart-returning: var(--color-accent-text);
 
-  /* Subtle warm charcoal shadows -- rgb(45,45,45) is literally #2D2D2D. */
-  --shadow-color: 0 0% 18%;
+  /* Card shadow (warm charcoal, rgb(45,45,45) = #2D2D2D). */
   --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.06), 0 1px 1px hsl(var(--shadow-color) / 0.03);
-  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.10), 0 2px 6px -2px hsl(var(--shadow-color) / 0.06);
-  --shadow-lg: 0 24px 48px -16px hsl(var(--shadow-color) / 0.14), 0 8px 16px -4px hsl(var(--shadow-color) / 0.08);
 }
 
-/* Dark mode -- warm charcoal, not an inverted black-and-white. The accent stays the same
-   literal peach: it is bright enough on these surfaces to work as text too (9.6:1 on the
-   card), so accent-text and the accent fill share a value here. --color-fill-text stays the
-   light mode's constant charcoal (not redefined): every fill it sits on is still a light
-   pastel in dark mode. The mascot tile keeps its light value -- it is an image background. */
 .dark {
-  --color-surface: #1F1C1B;
-  --color-surface-card: #2A2625;
-  --color-surface-subtle: #342F2D;
-  --color-text: #F3ECEA;
-  /* 6.84:1 on the card. */
-  --color-text-muted: #B8ADA9;
-  --color-border: #433C3A;
   --color-border-soft: #39332F;
-  --color-border-control: #7A6F6C;
   --color-silver: #5A5250;
-  --color-accent: #FFC0B6;
-  --color-accent-strong: #FFC0B6;
-  --color-accent-deep: #FFAD9F;
   --color-accent-pressed: #FF9F8F;
   --color-accent-soft: #4A2E29;
-  --color-accent-text: #FFC0B6;
   --color-accent-text-strong: #FFC0B6;
   --color-danger: #F08A80;
-  --color-danger-strong: #E76F6F;
 
   --tone-success-bg: #193826;
   --tone-success-text: #6BC48F;
@@ -144,20 +66,6 @@
   --tone-neutral-text: #C4BAB6;
   --tone-info-bg: #142A40;
   --tone-info-text: #7DB4EC;
-
-  --color-premium: #D4AF37;
-  --color-gold: #D4AF37;
-  /* 7.12:1 on the card. */
-  --color-gold-text: #D4AF37;
-  --color-wallet: #5EC9A3;
-  --color-ai: #A78BFA;
-  --color-reports: #6FA8FF;
-
-  /* Pure black shadows on dark surfaces, not charcoal-tinted. */
-  --shadow-color: 0 0% 0%;
-  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.35), 0 1px 1px hsl(var(--shadow-color) / 0.25);
-  --shadow-md: 0 8px 24px -8px hsl(var(--shadow-color) / 0.45), 0 2px 6px -2px hsl(var(--shadow-color) / 0.35);
-  --shadow-lg: 0 24px 48px -16px hsl(var(--shadow-color) / 0.65), 0 8px 16px -4px hsl(var(--shadow-color) / 0.5);
 }
 
 html, body {

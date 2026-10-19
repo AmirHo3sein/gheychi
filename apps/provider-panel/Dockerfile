@@ -29,6 +29,9 @@ ARG VITE_MAP_TILE_URL=
 ENV VITE_MAP_TILE_URL=$VITE_MAP_TILE_URL
 ARG VITE_MAP_TILE_ATTRIBUTION=
 ENV VITE_MAP_TILE_ATTRIBUTION=$VITE_MAP_TILE_ATTRIBUTION
+# Public VAPID key for owner push (see .env.example); empty leaves push switched off.
+ARG VITE_VAPID_PUBLIC_KEY=
+ENV VITE_VAPID_PUBLIC_KEY=$VITE_VAPID_PUBLIC_KEY
 RUN pnpm turbo run build --filter=@gheychi/provider-panel
 
 FROM nginx:1.27-alpine AS runner

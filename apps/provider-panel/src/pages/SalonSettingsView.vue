@@ -8,6 +8,7 @@ import { useServiceCategories } from '@/composables/useServiceCategories'
 import { useToast } from '@/composables/useToast'
 import SalonInfoStep from '@/components/onboarding/SalonInfoStep.vue'
 import PublicLinkCard from '@/components/salon/PublicLinkCard.vue'
+import PushNotificationsCard from '@/components/salon/PushNotificationsCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
@@ -277,6 +278,8 @@ onMounted(loadCities)
       </div>
 
       <PublicLinkCard />
+
+      <PushNotificationsCard />
 
       <div class="space-y-4 rounded-2xl border border-(--color-border) bg-(--color-surface-card) p-5 shadow-(--shadow-sm)">
         <div>

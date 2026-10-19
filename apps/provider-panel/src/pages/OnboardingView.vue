@@ -7,6 +7,7 @@ import ScheduleStep from '@/components/onboarding/ScheduleStep.vue'
 import FirstServiceStep from '@/components/onboarding/FirstServiceStep.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import { unbindPushBeforeLogout } from '@/composables/usePushNotifications'
 import { useApi } from '@/composables/useApi'
 import { useCities } from '@/composables/useCities'
 import { resetSalon, useSalon } from '@/composables/useSalon'
@@ -37,6 +38,7 @@ const stepCard = useTemplateRef<HTMLDivElement>('stepCard')
 // wrong account (the nav guard forces every route back here while salon is null) has no
 // way out short of manually clearing cookies. Mirrors AppLayout.vue's logout().
 async function logout() {
+  await unbindPushBeforeLogout()
   await apiFetch('/auth/logout', { method: 'POST', silent: true })
   session.setUser(null)
   // Same reason as AppLayout's: `checked` is true here (the guard already probed and

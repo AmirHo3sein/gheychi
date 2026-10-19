@@ -3,6 +3,7 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import { unbindPushBeforeLogout } from '@/composables/usePushNotifications'
 import { useApi } from '@/composables/useApi'
 import { resetPendingApprovals, usePendingApprovalCount, usePendingApprovalPolling } from '@/composables/usePendingApprovals'
 import { resetSalon, useSalon } from '@/composables/useSalon'
@@ -29,6 +30,8 @@ function toggleTheme() {
 }
 
 async function logout() {
+  // While the session still exists: DELETE /push/subscribe is scoped to the signed-in account.
+  await unbindPushBeforeLogout()
   await apiFetch('/auth/logout', { method: 'POST', silent: true })
   session.setUser(null)
   // useSalon() is a module-level singleton the router guard only probes while `checked`

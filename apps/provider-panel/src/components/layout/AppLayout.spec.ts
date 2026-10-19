@@ -83,6 +83,35 @@ describe('AppLayout logout', () => {
     expect(router.currentRoute.value.name).toBe('login')
   })
 
+  it('removes this device\'s push subscription BEFORE ending the session (DELETE is scoped to the signed-in account)', async () => {
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? 'GET'} ${String(url).replace(/^.*\/api/, '')}`)
+      return { ok: true, status: 204, json: async () => null }
+    }))
+    const sub = { endpoint: 'https://push.example/d1', unsubscribe: vi.fn().mockResolvedValue(true) }
+    Object.defineProperty(navigator, 'serviceWorker', {
+      value: { getRegistration: vi.fn(async () => ({ pushManager: { getSubscription: async () => sub } })) },
+      configurable: true,
+    })
+    vi.stubGlobal('PushManager', function PushManager() {})
+    vi.stubGlobal('Notification', { permission: 'granted' })
+    useSessionStore().setUser({ id: 'u1', phone: '0912', name: 'Sara', gender: 'female', role: 'provider' })
+    approvedSalon()
+
+    const router = makeRouter()
+    await router.push('/')
+    await router.isReady()
+    const wrapper = mount(AppLayout, { global: { plugins: [router] } })
+    await wrapper.get('button[title="خروج"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(calls.filter((c) => c.includes('/push/') || c.includes('/auth/logout'))).toEqual(['DELETE /push/subscribe', 'POST /auth/logout'])
+    expect(sub.unsubscribe).toHaveBeenCalled()
+    // @ts-expect-error -- test cleanup of the stubbed property
+    delete navigator.serviceWorker
+  })
+
   it('gives the icon-only controls an aria-label, marks the current nav link, and hosts the confirm sheet', async () => {
     const router = makeRouter()
     await router.push('/')

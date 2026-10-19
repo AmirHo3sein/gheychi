@@ -664,7 +664,7 @@ function formatBookingTime(iso: string): string {
           </AppCard>
         </div>
 
-        <div class="grid gap-3 lg:grid-cols-2 lg:items-start">
+        <div class="grid gap-3 lg:grid-cols-2">
           <RankedListCard
             title="پرمراجعه‌ترین خدمات"
             empty-text="در این دوره نوبتی ثبت نشده است."

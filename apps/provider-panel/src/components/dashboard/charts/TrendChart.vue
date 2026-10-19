@@ -94,8 +94,12 @@ const areaPath = computed(() => {
 })
 const previousPath = computed(() => (hasPrevious.value ? pathFor(props.previous.slice(0, n.value)) : ''))
 
+const allZero = computed(() => n.value > 0 && props.points.every((p) => p.value === 0))
+
 const ticks = computed(() => {
   const out: Array<{ y: number; label: string }> = []
+  // Nothing recorded: only the baseline is meaningful (a 0-4 scale would invent a range).
+  if (allZero.value) return [{ y: yAt(0), label: formatCompact(0) }]
   for (let v = 0; v <= scale.value.max + 1e-9; v += scale.value.step) {
     out.push({ y: yAt(v), label: formatCompact(v) })
   }
@@ -106,7 +110,6 @@ const xLabels = computed(() =>
   labelIndices(n.value, Math.floor(plotW.value / 74)).map((i) => ({ i, x: xAt(i), label: props.points[i]!.label })),
 )
 
-const allZero = computed(() => n.value > 0 && props.points.every((p) => p.value === 0))
 
 // ---- cursor -------------------------------------------------------------------------------
 const active = ref<number | null>(null)
@@ -186,7 +189,10 @@ const liveText = computed(() => {
           </linearGradient>
         </defs>
 
-        <!-- Gridlines + value axis on the right (RTL start). -->
+        <!-- Gridlines + value axis on the right (RTL start).
+             SVG text inherits the page's RTL direction, which MIRRORS text-anchor: "start" is
+             the right end of the text and "end" its left end. Every anchor below is chosen in
+             those terms so a label grows away from the edge it sits on, never past it. -->
         <g>
           <template v-for="t in ticks" :key="t.label + t.y">
             <line :x1="PAD.end" :x2="PAD.end + plotW" :y1="t.y" :y2="t.y" stroke="var(--chart-grid)" stroke-width="1" />
@@ -194,7 +200,7 @@ const liveText = computed(() => {
               :x="width - 4"
               :y="t.y"
               dy="0.32em"
-              text-anchor="end"
+              text-anchor="start"
               fill="var(--chart-axis)"
               class="tnum text-xs"
             >{{ t.label }}</text>
@@ -208,7 +214,7 @@ const liveText = computed(() => {
             :key="l.i"
             :x="l.x"
             :y="height - 8"
-            :text-anchor="l.i === 0 ? 'end' : l.i === points.length - 1 ? 'start' : 'middle'"
+            :text-anchor="l.i === 0 ? 'start' : l.i === points.length - 1 ? 'end' : 'middle'"
             fill="var(--chart-axis)"
             class="text-xs"
           >{{ l.label }}</text>
