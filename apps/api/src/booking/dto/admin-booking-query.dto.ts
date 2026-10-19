@@ -2,6 +2,10 @@ import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsISO8601, IsOptional, IsUUID, Max, Min } from 'class-validator';
 import { BookingConfirmationMode, BookingStatus } from '../booking.entity';
 import { PaymentStatus } from '../payment.entity';
+import { SORT_ORDERS, SortOrder } from '../../common/admin-sort';
+
+export const ADMIN_BOOKING_SORTS = ['startsAt', 'createdAt', 'price'] as const;
+export type AdminBookingSort = (typeof ADMIN_BOOKING_SORTS)[number];
 
 // Spelled out rather than derived from the union type -- @IsIn needs runtime values, and
 // listing them here means adding a BookingStatus member without deciding whether admins
@@ -81,4 +85,13 @@ export class AdminBookingQueryDto {
   @Min(1)
   @Max(100)
   pageSize?: number;
+
+  /** Default: most recent appointment first. `price` is the booking's own price snapshot. */
+  @IsOptional()
+  @IsIn(ADMIN_BOOKING_SORTS)
+  sort?: AdminBookingSort;
+
+  @IsOptional()
+  @IsIn(SORT_ORDERS)
+  order?: SortOrder;
 }

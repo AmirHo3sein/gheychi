@@ -106,7 +106,12 @@ describe('Payments — callback (e2e)', () => {
       .expect(302);
 
     expect(sendToUserSpy).toHaveBeenCalledWith(customerId, expect.objectContaining({ title: expect.any(String) }));
-    expect(sendToUserSpy).toHaveBeenCalledWith(ownerId, expect.objectContaining({ title: expect.any(String) }));
+    // The owner's push goes to their provider-panel subscriptions, with a salon-booking link.
+    expect(sendToUserSpy).toHaveBeenCalledWith(
+      ownerId,
+      expect.objectContaining({ title: expect.any(String), data: expect.objectContaining({ type: 'salon-booking' }) }),
+      'provider',
+    );
   });
 
   it('is idempotent — calling the callback again on an already-paid booking redirects with success, not an error', async () => {

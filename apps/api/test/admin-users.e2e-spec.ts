@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import { DataSource } from 'typeorm';
 import { loginAs, loginAsAdmin } from './utils/auth-helper';
 import { resetDatabase } from './utils/db';
 import { createTestApp } from './utils/test-app';
@@ -100,5 +101,25 @@ describe('Admin users list and suspend (e2e)', () => {
       .set('Cookie', adminCookie)
       .send({ status: 'suspended' })
       .expect(400);
+  });
+
+  it('sorts by phone in either direction; nameless accounts sort after named ones', async () => {
+    const list = async (query: string) =>
+      (await request(app.getHttpServer()).get(`/api/admin/users?${query}`).set('Cookie', adminCookie).expect(200)).body.items as Array<{
+        phone: string;
+        name: string | null;
+      }>;
+    const asc = (await list('sort=phone&order=asc')).map((u) => u.phone);
+    expect(asc).toEqual([...asc].sort());
+    expect((await list('sort=phone&order=desc')).map((u) => u.phone)).toEqual([...asc].reverse());
+
+    const ds = app.get(DataSource);
+    await ds.query(`UPDATE users SET name = 'آ' WHERE phone = '09122300002'`);
+    for (const order of ['asc', 'desc']) {
+      const names = (await list(`sort=name&order=${order}`)).map((u) => u.name);
+      expect(names[0]).toBe('آ');
+      expect(names.slice(1).every((n) => n === null)).toBe(true);
+    }
+    await request(app.getHttpServer()).get('/api/admin/users?sort=role').set('Cookie', adminCookie).expect(400);
   });
 });

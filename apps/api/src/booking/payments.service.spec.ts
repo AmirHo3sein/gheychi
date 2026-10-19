@@ -305,9 +305,12 @@ describe('PaymentsService.notifyCancelled', () => {
       'user-1',
       expect.objectContaining({ data: { type: 'booking', bookingId: 'booking-1' } }),
     );
+    // The owner's push goes to their provider-panel subscriptions with a salon-booking link,
+    // never the customer app's /bookings/:id (that booking is not theirs as a customer).
     expect(pushSend).toHaveBeenCalledWith(
       'owner-1',
-      expect.objectContaining({ data: { type: 'booking', bookingId: 'booking-1' } }),
+      expect.objectContaining({ data: { type: 'salon-booking', bookingId: 'booking-1' } }),
+      'provider',
     );
   });
 
@@ -383,7 +386,8 @@ describe('PaymentsService.notifyConfirmed', () => {
     );
     expect(pushSend).toHaveBeenCalledWith(
       'owner-1',
-      expect.objectContaining({ title: 'نوبت جدید', data: { type: 'booking', bookingId: 'booking-1' } }),
+      expect.objectContaining({ title: 'نوبت جدید', data: { type: 'salon-booking', bookingId: 'booking-1' } }),
+      'provider',
     );
   });
 
@@ -936,7 +940,7 @@ describe('PaymentsService.notifyNoShow / notifyCancelledByAdmin', () => {
 
       expect(smsSend).not.toHaveBeenCalled();
       expect(pushSend).toHaveBeenCalledWith('user-1', expect.anything());
-      expect(pushSend).toHaveBeenCalledWith('owner-1', expect.anything());
+      expect(pushSend).toHaveBeenCalledWith('owner-1', expect.anything(), 'provider');
     });
   });
 });

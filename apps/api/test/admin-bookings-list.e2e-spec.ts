@@ -279,4 +279,15 @@ describe('Admin booking list (e2e)', () => {
     expect(items[0].payment?.status).toBe('refund_pending');
     expect(items[0].payment?.refundRequestedAt).not.toBeNull();
   });
+
+  it('sorts by price in either direction, and rejects an unknown sort column', async () => {
+    const prices = async (order: 'asc' | 'desc') =>
+      ((await list(`?sort=price&order=${order}`).expect(200)).body.items as AdminBookingRowBody[]).map((b) => b.priceSnapshot);
+    const asc = await prices('asc');
+    expect(asc.length).toBeGreaterThan(1);
+    expect(asc).toEqual([...asc].sort((a, b) => a - b));
+    expect(await prices('desc')).toEqual([...asc].sort((a, b) => b - a));
+    await list('?sort=customerPhone').expect(400);
+    await list('?sort=price&order=sideways').expect(400);
+  });
 });

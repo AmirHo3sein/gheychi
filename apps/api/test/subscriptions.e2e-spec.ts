@@ -400,4 +400,35 @@ describe('Plans & salon subscriptions (e2e)', () => {
       await request(app.getHttpServer()).get('/api/salons/mine/subscription').expect(401);
     });
   });
+
+  describe('public profile qrCodeEnabled (the customer-side QR follows the qrCode entitlement)', () => {
+    let qrSalonId: string;
+    let qrSlug: string;
+
+    beforeAll(async () => {
+      const cookie = await loginAs(app, '09191110009');
+      ({ salonId: qrSalonId, slug: qrSlug } = await createApprovedSalon(app, cookie, { name: 'QR Salon' }));
+    });
+
+    it('is true by default (the key defaults to granted)', async () => {
+      const res = await request(app.getHttpServer()).get(`/api/salons/${qrSlug}`).expect(200);
+      expect(res.body.qrCodeEnabled).toBe(true);
+    });
+
+    it('turns false when an admin switches qrCode off for the salon, and back on when cleared', async () => {
+      await request(app.getHttpServer())
+        .patch(`/api/admin/salons/${qrSalonId}/subscription/overrides`)
+        .set('Cookie', adminCookie)
+        .send({ overrides: { qrCode: false } })
+        .expect(200);
+      expect((await request(app.getHttpServer()).get(`/api/salons/${qrSlug}`).expect(200)).body.qrCodeEnabled).toBe(false);
+
+      await request(app.getHttpServer())
+        .patch(`/api/admin/salons/${qrSalonId}/subscription/overrides`)
+        .set('Cookie', adminCookie)
+        .send({ overrides: null })
+        .expect(200);
+      expect((await request(app.getHttpServer()).get(`/api/salons/${qrSlug}`).expect(200)).body.qrCodeEnabled).toBe(true);
+    });
+  });
 });

@@ -16,6 +16,7 @@ export class PushController {
   @Post('subscribe')
   async subscribe(@Req() req: Request, @Body() dto: SubscribePushDto) {
     const userId = (req.user as User).id;
+    const audience = dto.audience ?? 'customer';
     const existing = await this.subs.findOneBy({ endpoint: dto.endpoint });
     if (existing) {
       // Re-pointing an endpoint to a DIFFERENT user is refused. A browser push endpoint is
@@ -26,11 +27,11 @@ export class PushController {
       // The legitimate case this used to serve -- the same person re-subscribing on the
       // same device -- is unaffected, since the userId matches.
       if (existing.userId !== userId) throw new ForbiddenException();
-      await this.subs.update({ endpoint: dto.endpoint }, { userId, p256dh: dto.p256dh, auth: dto.auth });
+      await this.subs.update({ endpoint: dto.endpoint }, { userId, p256dh: dto.p256dh, auth: dto.auth, audience });
       return { ok: true };
     }
     try {
-      await this.subs.save(this.subs.create({ userId, ...dto }));
+      await this.subs.save(this.subs.create({ userId, endpoint: dto.endpoint, p256dh: dto.p256dh, auth: dto.auth, audience }));
     } catch (err) {
       // The pre-check above handles the common case, but the endpoint's UNIQUE
       // constraint is the actual source of truth -- two truly concurrent
@@ -38,7 +39,7 @@ export class PushController {
       // above before either inserts. Fall back to the update the loser "meant"
       // to do rather than letting it surface as an unhandled 500.
       if (isUniqueViolation(err)) {
-        await this.subs.update({ endpoint: dto.endpoint }, { userId, p256dh: dto.p256dh, auth: dto.auth });
+        await this.subs.update({ endpoint: dto.endpoint }, { userId, p256dh: dto.p256dh, auth: dto.auth, audience });
       } else {
         throw err;
       }

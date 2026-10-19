@@ -522,7 +522,7 @@ export class PaymentsService {
           )
         : Promise.resolve(),
       owner
-        ? this.notifyOne(
+        ? this.notifyOwner(
             owner,
             `یک نوبت در ${salon.name} برای ${when} لغو شد.`,
             { title: 'لغو نوبت', body: `${salon.name} — ${when}` },
@@ -570,7 +570,7 @@ export class PaymentsService {
           )
         : Promise.resolve(),
       owner
-        ? this.notifyOne(
+        ? this.notifyOwner(
             owner,
             `یک درخواست نوبت جدید در ${salon.name} برای ${when} دارید. لطفا آن را تایید یا رد کنید.`,
             { title: 'درخواست نوبت جدید', body: `${salon.name} — ${when}` },
@@ -650,7 +650,7 @@ export class PaymentsService {
 
     const owner = await this.usersService.findById(salon.ownerId);
     if (owner) {
-      await this.notifyOne(
+      await this.notifyOwner(
         owner,
         `زمان یک نوبت در ${salon.name} تغییر کرد: از ${from} به ${to}.`,
         { title: 'زمان یک نوبت تغییر کرد', body: to },
@@ -719,7 +719,7 @@ export class PaymentsService {
           )
         : Promise.resolve(),
       owner
-        ? this.notifyOne(
+        ? this.notifyOwner(
             owner,
             `نوبت ${when} در ${salon.name} توسط پشتیبانی قیچی لغو شد.`,
             { title: 'لغو نوبت توسط پشتیبانی', body: `${salon.name} — ${when}` },
@@ -887,7 +887,7 @@ export class PaymentsService {
           )
         : Promise.resolve(),
       owner
-        ? this.notifyOne(
+        ? this.notifyOwner(
             owner,
             `یک نوبت جدید در ${salon.name} برای ${when} ثبت شد.`,
             { title: 'نوبت جدید', body: `${salon.name} — ${when}` },
@@ -915,5 +915,22 @@ export class PaymentsService {
     }
     const data: PushNotificationData = { type: 'booking', bookingId };
     await this.push.sendToUser(user.id, { ...push, data }).catch(() => {});
+  }
+
+  // The salon-owner side of a booking notification: same SMS, but the push goes to the
+  // owner's PROVIDER-panel subscriptions with a salon-booking link. Sent to their customer-app
+  // subscriptions it opened a customer booking page that is not theirs (push.provider.ts).
+  private async notifyOwner(
+    owner: User,
+    smsBody: string,
+    push: { title: string; body: string },
+    bookingId: string,
+    channels: { sms: boolean } = { sms: true },
+  ): Promise<void> {
+    if (channels.sms) {
+      await this.sms.send(owner.phone, smsBody).catch(() => {});
+    }
+    const data: PushNotificationData = { type: 'salon-booking', bookingId };
+    await this.push.sendToUser(owner.id, { ...push, data }, 'provider').catch(() => {});
   }
 }

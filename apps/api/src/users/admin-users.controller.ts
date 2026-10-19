@@ -18,7 +18,8 @@ import { AuditInterceptor } from '../audit/audit.interceptor';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { AdminUsersService } from './admin-users.service';
-import { AdminUserQueryDto, UpdateUserStatusDto } from './dto/admin-user.dto';
+import { sqlOrder } from '../common/admin-sort';
+import { AdminUserQueryDto, AdminUserSort, UpdateUserStatusDto } from './dto/admin-user.dto';
 import { User } from './user.entity';
 
 @Controller('admin/users')
@@ -34,8 +35,14 @@ export class AdminUsersController {
   async list(@Query() query: AdminUserQueryDto) {
     const qb = this.users
       .createQueryBuilder('user')
-      .select(['user.id', 'user.phone', 'user.name', 'user.role', 'user.status', 'user.createdAt'])
-      .orderBy('user.createdAt', 'DESC');
+      .select(['user.id', 'user.phone', 'user.name', 'user.role', 'user.status', 'user.createdAt']);
+
+    // Allowlisted by the DTO's @IsIn; mapped to a fixed column here, never interpolated.
+    const SORT_COLUMNS: Record<AdminUserSort, string> = { createdAt: 'user.createdAt', name: 'user.name', phone: 'user.phone' };
+    const sort = query.sort ?? 'createdAt';
+    const direction = sqlOrder(query.order, sort === 'createdAt' ? 'DESC' : 'ASC');
+    // A nameless account sorts after every named one in both directions -- "—" is not a name.
+    qb.orderBy(SORT_COLUMNS[sort], direction, sort === 'name' ? 'NULLS LAST' : undefined).addOrderBy('user.id', direction);
 
     if (query.phone) qb.andWhere('user.phone ILIKE :phone', { phone: `%${query.phone}%` });
     if (query.name) qb.andWhere('user.name ILIKE :name', { name: `%${query.name}%` });
@@ -49,6 +56,11 @@ export class AdminUsersController {
 
     const [items, total] = await qb.getManyAndCount();
     return { items, total, page, pageSize };
+  }
+
+  @Get(':id')
+  detail(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminUsers.getDetail(id);
   }
 
   @Patch(':id/status')

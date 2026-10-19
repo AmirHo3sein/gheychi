@@ -74,9 +74,10 @@ export class SearchQueryDto {
 }
 
 /**
- * GET /search/suggestions -- the type-ahead under the home search field. The same location
- * and gender as a full search (results must never cross the gender filter), a required name
- * fragment, and nothing else: no paging, no price/category filters.
+ * GET /search/suggestions -- the type-ahead under the home search field. The same location,
+ * radius and gender as a full search (results must never cross the gender filter or lie
+ * outside the searched area), a required name fragment, and nothing else: no paging, no
+ * price/category filters.
  */
 export class SearchSuggestionsQueryDto {
   @IsString()
@@ -93,4 +94,10 @@ export class SearchSuggestionsQueryDto {
 
   @IsIn(['women', 'men'])
   gender: 'women' | 'men';
+
+  @IsOptional()
+  @Type(() => Number)
+  @Min(0.5)
+  @Max(50)
+  radiusKm?: number;
 }

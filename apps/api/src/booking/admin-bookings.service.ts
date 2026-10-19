@@ -6,7 +6,8 @@ import { SalonService } from '../salons/salon-service.entity';
 import { Worker } from '../salons/worker.entity';
 import { User } from '../users/user.entity';
 import { Booking, BookingConfirmationMode, BookingStatus } from './booking.entity';
-import { AdminBookingQueryDto } from './dto/admin-booking-query.dto';
+import { sqlOrder } from '../common/admin-sort';
+import { AdminBookingQueryDto, AdminBookingSort } from './dto/admin-booking-query.dto';
 import { Payment, PaymentStatus } from './payment.entity';
 
 /** Matches AdminSalonQueryDto/AdminInvoiceQueryDto's own defaults and ceiling. */
@@ -82,6 +83,12 @@ export interface AdminBookingListResult {
  * them apart also keeps the read path independently unit-testable without standing up the
  * dozen collaborators BookingsService's constructor requires.
  */
+const ADMIN_BOOKING_SORT_COLUMNS: Record<AdminBookingSort, string> = {
+  startsAt: 'booking.startsAt',
+  createdAt: 'booking.createdAt',
+  price: 'booking.priceSnapshot',
+};
+
 @Injectable()
 export class AdminBookingsService {
   constructor(@InjectRepository(Booking) private readonly bookings: Repository<Booking>) {}
@@ -151,11 +158,12 @@ export class AdminBookingsService {
             FROM financial_transactions ft WHERE ft.booking_id = booking.id)`,
         'commissionAmount',
       )
-      // Most-recent appointment first -- the support-triage default. booking.id is a
-      // deterministic tiebreaker so two bookings sharing a startsAt can't swap places
-      // between page 1 and page 2 and hide a row.
-      .orderBy('booking.startsAt', 'DESC')
-      .addOrderBy('booking.id', 'DESC');
+      // Most-recent appointment first is the support-triage default; the table header can
+      // pick another allowlisted column (mapped to a fixed expression, never interpolated).
+      // booking.id is a deterministic tiebreaker so two bookings sharing a value can't swap
+      // places between page 1 and page 2 and hide a row.
+      .orderBy(ADMIN_BOOKING_SORT_COLUMNS[query.sort ?? 'startsAt'], sqlOrder(query.order, 'DESC'))
+      .addOrderBy('booking.id', sqlOrder(query.order, 'DESC'));
 
     if (query.status) qb.andWhere('booking.status = :status', { status: query.status });
     if (query.salonId) qb.andWhere('booking.salonId = :salonId', { salonId: query.salonId });

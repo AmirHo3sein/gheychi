@@ -6,7 +6,8 @@ import { AuditAction } from '../audit/audit.decorator';
 import { AuditInterceptor } from '../audit/audit.interceptor';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
-import { AdminSalonQueryDto } from './dto/admin-salon-query.dto';
+import { sqlOrder } from '../common/admin-sort';
+import { AdminSalonQueryDto, AdminSalonSort } from './dto/admin-salon-query.dto';
 import { UpdateSalonStatusDto } from './dto/admin-salon-status.dto';
 import { SetFeaturedDto } from './dto/admin-salon.dto';
 import { UpdateHandleDto } from './dto/salon-handle.dto';
@@ -30,10 +31,14 @@ export class AdminSalonsController {
   async list(@Query() query: AdminSalonQueryDto) {
     const qb = this.salons
       .createQueryBuilder('salon')
-      .select(['salon.id', 'salon.name', 'salon.city', 'salon.status', 'salon.genderTarget', 'salon.isFeatured', 'salon.featuredUntil', 'salon.createdAt'])
-      // Oldest-pending-first: this is a moderation queue, so admins should clear the
-      // longest-waiting requests first rather than see them alphabetically by name.
-      .orderBy('salon.createdAt', 'ASC');
+      .select(['salon.id', 'salon.name', 'salon.city', 'salon.status', 'salon.genderTarget', 'salon.isFeatured', 'salon.featuredUntil', 'salon.createdAt']);
+
+    // Default oldest-pending-first: this is a moderation queue, so admins clear the
+    // longest-waiting requests first. Other columns are an explicit choice from the table
+    // header, allowlisted by the DTO and mapped to fixed columns here.
+    const SORT_COLUMNS: Record<AdminSalonSort, string> = { createdAt: 'salon.createdAt', name: 'salon.name', city: 'salon.city' };
+    const direction = sqlOrder(query.order, 'ASC');
+    qb.orderBy(SORT_COLUMNS[query.sort ?? 'createdAt'], direction).addOrderBy('salon.id', direction);
 
     const status = query.status ?? 'pending';
     if (status !== 'all') qb.andWhere('salon.status = :status', { status });

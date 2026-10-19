@@ -1,5 +1,9 @@
 import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { SORT_ORDERS, SortOrder } from '../../common/admin-sort';
+
+export const ADMIN_SALON_SORTS = ['createdAt', 'name', 'city'] as const;
+export type AdminSalonSort = (typeof ADMIN_SALON_SORTS)[number];
 
 export class AdminSalonQueryDto {
   @IsOptional()
@@ -30,4 +34,13 @@ export class AdminSalonQueryDto {
   @Min(1)
   @Max(100)
   pageSize?: number;
+
+  /** Default: oldest first (the approval queue's longest-waiting request on top). */
+  @IsOptional()
+  @IsIn(ADMIN_SALON_SORTS)
+  sort?: AdminSalonSort;
+
+  @IsOptional()
+  @IsIn(SORT_ORDERS)
+  order?: SortOrder;
 }

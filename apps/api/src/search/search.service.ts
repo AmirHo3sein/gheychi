@@ -213,6 +213,10 @@ export class SearchService {
           ($7::bigint IS NULL AND $8::bigint IS NULL) OR EXISTS (
             SELECT 1 FROM salon_services ss2
             WHERE ss2.salon_id = s.id AND ss2.is_active
+              -- With a category picked, the service proving the band must be IN that category,
+              -- the same scope as min_price above -- otherwise a salon matched through a nails
+              -- service while its card showed the (category-scoped) hair price outside the band.
+              AND ($5::int IS NULL OR ss2.category_id = $5)
               AND ($7::bigint IS NULL OR (
                 (ss2.pricing_type = 'fixed' AND round(ss2.price::numeric * (100 - COALESCE(ss2.discount_percent, 0)) / 100) >= $7)
                 OR (ss2.pricing_type IN ('from', 'range') AND ss2.price >= $7)

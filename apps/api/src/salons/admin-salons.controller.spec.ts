@@ -16,6 +16,7 @@ describe('AdminSalonsController (delegates to SalonsService)', () => {
   let qb: {
     select: jest.Mock;
     orderBy: jest.Mock;
+    addOrderBy: jest.Mock;
     andWhere: jest.Mock;
     skip: jest.Mock;
     take: jest.Mock;
@@ -35,6 +36,7 @@ describe('AdminSalonsController (delegates to SalonsService)', () => {
     qb = {
       select: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       skip: jest.fn().mockReturnThis(),
       take: jest.fn().mockReturnThis(),
@@ -61,6 +63,14 @@ describe('AdminSalonsController (delegates to SalonsService)', () => {
 
     expect(qb.orderBy).toHaveBeenCalledWith('salon.createdAt', 'ASC');
     expect(qb.orderBy).not.toHaveBeenCalledWith('salon.name', 'ASC');
+    // A unique tiebreaker, so two salons registered in the same instant can't swap pages.
+    expect(qb.addOrderBy).toHaveBeenCalledWith('salon.id', 'ASC');
+  });
+
+  it('sorts by an allowlisted column on request, mapped to a fixed column', async () => {
+    await controller.list({ sort: 'name', order: 'desc' });
+    expect(qb.orderBy).toHaveBeenCalledWith('salon.name', 'DESC');
+    expect(qb.addOrderBy).toHaveBeenCalledWith('salon.id', 'DESC');
   });
 
   it('setStatus passes the id and dto through to SalonsService.setStatus and returns its result', async () => {

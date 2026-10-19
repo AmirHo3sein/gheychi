@@ -541,6 +541,19 @@ describe('Search (e2e)', () => {
       expect(res.body.items[0]).toEqual(expect.objectContaining({ name: expect.any(String), slug: expect.any(String), city: 'Tehran' }));
     });
 
+    it('honours the radius, so a suggestion never lies outside the searched area', async () => {
+      // far-salon is ~2.2km from ANCHOR: inside 3km, outside 1km.
+      const slugsWithin = async (radiusKm: number) =>
+        (await request(app.getHttpServer()).get('/api/search/suggestions').query({ ...base, q: 'salon', radiusKm }).expect(200)).body.items.map(
+          (s: { slug: string }) => s.slug,
+        );
+      expect(await slugsWithin(3)).toContain('far-salon');
+      const within1 = await slugsWithin(1);
+      expect(within1).toContain('near-salon');
+      expect(within1).not.toContain('far-salon');
+      await request(app.getHttpServer()).get('/api/search/suggestions').query({ ...base, q: 'salon', radiusKm: 51 }).expect(400);
+    });
+
     it('matches a Persian name typed with Arabic ي/ك', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/search/suggestions')
@@ -559,6 +572,31 @@ describe('Search (e2e)', () => {
     it('requires a name fragment and a gender', async () => {
       await request(app.getHttpServer()).get('/api/search/suggestions').query(base).expect(400);
       await request(app.getHttpServer()).get('/api/search/suggestions').query({ lat: ANCHOR.lat, lng: ANCHOR.lng, q: 'salon' }).expect(400);
+    });
+
+    it('with a category picked, only a service IN that category can satisfy the price band', async () => {
+      const ds = app.get(DataSource);
+      await ds.query(`INSERT INTO users (id, phone, role) VALUES ('00000000-0000-4000-8000-000000000019', '09120000019', 'provider')`);
+      await ds.query(`
+        INSERT INTO salons (id, owner_id, name, slug, gender_target, status, address, city, location) VALUES
+          ('10000000-0000-4000-8000-000000000019', '00000000-0000-4000-8000-000000000019',
+           'Category Price Check', 'price-scope', 'women', 'approved', 'F', 'Tehran',
+           ST_SetSRID(ST_MakePoint(51.3349, 35.7220), 4326)::geography)`);
+      await ds.query(
+        `INSERT INTO salon_categories (salon_id, category_id) VALUES ($1, $2), ($1, $3)`,
+        ['10000000-0000-4000-8000-000000000019', firstCategoryId, secondCategoryId],
+      );
+      // Cheap in the second category, expensive in the first.
+      await ds.query(
+        `INSERT INTO salon_services (salon_id, category_id, name, price, duration_min) VALUES ($1, $2, 'Hair', 900000, 60), ($1, $3, 'Nails', 100000, 30)`,
+        ['10000000-0000-4000-8000-000000000019', firstCategoryId, secondCategoryId],
+      );
+      const slugs = async (categoryId: number) =>
+        (await request(app.getHttpServer()).get('/api/search').query({ ...base, categoryId, priceMax: 150000 }).expect(200)).body.items.map(
+          (x: { slug: string }) => x.slug,
+        );
+      expect(await slugs(firstCategoryId)).not.toContain('price-scope');
+      expect(await slugs(secondCategoryId)).toContain('price-scope');
     });
 
     it('is not recorded as a search in analytics', async () => {

@@ -170,4 +170,15 @@ describe('Admin salon list filters (e2e)', () => {
     // ignoring the query params.
     expect(page1.body.items[0].id).not.toBe(page2.body.items[0].id);
   });
+
+  it('sorts by name or city on request, keeping the queue order as the default', async () => {
+    const names = async (query: string) =>
+      (await request(app.getHttpServer()).get(`/api/admin/salons?status=all${query}`).set('Cookie', adminCookie).expect(200)).body.items.map(
+        (s: { name: string }) => s.name,
+      );
+    expect(await names('&sort=name&order=asc')).toEqual(['Pending Salon Shiraz', 'Pending Salon Tehran']);
+    expect(await names('&sort=name&order=desc')).toEqual(['Pending Salon Tehran', 'Pending Salon Shiraz']);
+    expect(await names('&sort=city')).toEqual(['Pending Salon Shiraz', 'Pending Salon Tehran']);
+    await request(app.getHttpServer()).get('/api/admin/salons?sort=owner').set('Cookie', adminCookie).expect(400);
+  });
 });
