@@ -479,7 +479,7 @@ describe('home page', () => {
 
       const wrapper = await openFilters()
       expect(wrapper.get('[data-testid="filters-toggle"]').attributes('aria-expanded')).toBe('true')
-      await wrapper.get('[data-testid="radius-5"]').trigger('click')
+      await wrapper.get('[data-testid="radius-input"]').setValue('۵')
       await wrapper.get('[data-testid="price-min"]').setValue('۲۰۰۰۰۰')
       await wrapper.get('[data-testid="price-max"]').setValue('1,500,000')
       await flushPromises()
@@ -515,7 +515,7 @@ describe('home page', () => {
 
     it('removing a chip re-runs the search without that filter; the empty state offers to clear them', async () => {
       const wrapper = await openFilters()
-      await wrapper.get('[data-testid="radius-3"]').trigger('click')
+      await wrapper.get('[data-testid="radius-input"]').setValue('3')
       await wrapper.get('[data-testid="price-max"]').setValue('500000')
       await wrapper.get('[data-testid="search-filters"]').trigger('submit')
       await flushPromises()
@@ -535,6 +535,91 @@ describe('home page', () => {
       expect(wrapper.find('[data-testid="active-filters"]').exists()).toBe(false)
     })
 
+    it('refuses a radius outside 1–50 km, and treats an emptied field as the default distance', async () => {
+      const wrapper = await openFilters()
+      await wrapper.get('[data-testid="radius-input"]').setValue('۶۰')
+      expect(wrapper.get('[data-testid="radius-error"]').text()).toContain('۵۰')
+      expect(wrapper.get('[data-testid="filters-apply"]').attributes('disabled')).toBeDefined()
+      await wrapper.get('[data-testid="search-filters"]').trigger('submit')
+      await flushPromises()
+      expect(searches()).toHaveLength(0)
+
+      await wrapper.get('[data-testid="radius-input"]').setValue('0')
+      expect(wrapper.find('[data-testid="radius-error"]').exists()).toBe(true)
+
+      await wrapper.get('[data-testid="radius-input"]').setValue('')
+      expect(wrapper.find('[data-testid="radius-error"]').exists()).toBe(false)
+      await wrapper.get('[data-testid="price-max"]').setValue('500000')
+      await wrapper.get('[data-testid="search-filters"]').trigger('submit')
+      await flushPromises()
+      expect(searches()[0]!.radiusKm).toBeUndefined()
+      expect(wrapper.find('[data-testid="chip-radius"]').exists()).toBe(false)
+    })
+
+    it('«قیمت توافقی» is sent as includeQuote, with or without a band, and has its own chip', async () => {
+      const wrapper = await openFilters()
+      expect(wrapper.get('[data-testid="price-quote-hint"]').text()).toContain('فقط')
+      await wrapper.get('[data-testid="price-quote"]').setValue(true)
+      await wrapper.get('[data-testid="search-filters"]').trigger('submit')
+      await flushPromises()
+      expect(searches()).toHaveLength(1)
+      expect(searches()[0]).toMatchObject({ includeQuote: true })
+      expect(searches()[0]!.priceMin).toBeUndefined()
+      expect(wrapper.get('[data-testid="filters-count"]').text()).toContain('۱')
+
+      fetchMock.mockClear()
+      await wrapper.get('[data-testid="filters-toggle"]').trigger('click')
+      await wrapper.get('[data-testid="price-max"]').setValue('800000')
+      expect(wrapper.get('[data-testid="price-quote-hint"]').text()).toContain('هم نمایش')
+      await wrapper.get('[data-testid="search-filters"]').trigger('submit')
+      await flushPromises()
+      expect(searches()[0]).toMatchObject({ includeQuote: true, priceMax: 800000 })
+
+      // Removing the price chip keeps «توافقی»; removing its own chip drops it.
+      fetchMock.mockClear()
+      await wrapper.get('[data-testid="chip-price"]').trigger('click')
+      await flushPromises()
+      expect(searches()[0]).toMatchObject({ includeQuote: true })
+      expect(searches()[0]!.priceMax).toBeUndefined()
+      fetchMock.mockClear()
+      await wrapper.get('[data-testid="chip-quote"]').trigger('click')
+      await flushPromises()
+      expect(searches()[0]!.includeQuote).toBeUndefined()
+    })
+
+    it('on a phone, opens the filters in a bottom sheet that applies and closes like a modal', async () => {
+      const realMatchMedia = window.matchMedia
+      window.matchMedia = ((query: string) => ({
+        matches: query.includes('max-width'), media: query, onchange: null,
+        addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false,
+      })) as typeof window.matchMedia
+      try {
+        const wrapper = await openFilters()
+        await flushPromises()
+        const sheet = () => document.body.querySelector<HTMLElement>('[data-testid="filters-sheet"]')
+        expect(sheet()?.getAttribute('role')).toBe('dialog')
+        // Not rendered inline as well.
+        expect(wrapper.find('[data-testid="search-filters"]').exists()).toBe(false)
+
+        ;(document.body.querySelector('[data-testid="bottom-sheet-close"]') as HTMLButtonElement).click()
+        await flushPromises()
+        expect(wrapper.get('[data-testid="filters-toggle"]').attributes('aria-expanded')).toBe('false')
+        expect(searches()).toHaveLength(0)
+
+        await wrapper.get('[data-testid="filters-toggle"]').trigger('click')
+        await flushPromises()
+        const radius = document.body.querySelector<HTMLInputElement>('[data-testid="radius-input"]')!
+        radius.value = '۵'
+        radius.dispatchEvent(new Event('input'))
+        document.body.querySelector<HTMLFormElement>('[data-testid="search-filters"]')!.dispatchEvent(new Event('submit'))
+        await flushPromises()
+        expect(searches()[0]).toMatchObject({ radiusKm: 5 })
+        expect(wrapper.get('[data-testid="filters-toggle"]').attributes('aria-expanded')).toBe('false')
+      } finally {
+        window.matchMedia = realMatchMedia
+      }
+    })
+
     it('«بیشتر» repeats the applied filters with the cursor', async () => {
       fetchMock.mockImplementation(async (path: string, opts: { query: Record<string, unknown> }) => {
         if (path === '/categories') return []
@@ -545,7 +630,7 @@ describe('home page', () => {
       const wrapper = await mountSuspended(IndexPage)
       await flushPromises()
       await wrapper.get('[data-testid="filters-toggle"]').trigger('click')
-      await wrapper.get('[data-testid="radius-25"]').trigger('click')
+      await wrapper.get('[data-testid="radius-input"]').setValue('۲۵')
       await wrapper.get('[data-testid="search-filters"]').trigger('submit')
       await flushPromises()
       fetchMock.mockClear()

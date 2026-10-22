@@ -74,6 +74,17 @@ const sort = ref<'distance' | 'rating'>('distance')
 // never runs a search; each active one also shows as a removable chip above the results.
 const filters = ref<SearchFilters>({ ...DEFAULT_FILTERS })
 const filtersOpen = ref(false)
+// Below Tailwind's sm breakpoint the filters open as a bottom sheet. Read after mount (the
+// server can't know the viewport) -- the panel starts closed, so nothing differs at hydration.
+const isPhone = ref(false)
+let phoneQuery: MediaQueryList | null = null
+const syncPhone = () => { isPhone.value = !!phoneQuery?.matches }
+onMounted(() => {
+  phoneQuery = window.matchMedia('(max-width: 639.98px)')
+  syncPhone()
+  phoneQuery.addEventListener('change', syncPhone)
+})
+onBeforeUnmount(() => phoneQuery?.removeEventListener('change', syncPhone))
 const filterCount = computed(() => activeFilterCount(filters.value))
 const priceLabel = computed(() => priceBandLabel(filters.value.priceMin, filters.value.priceMax))
 function clearFilters() {
@@ -606,11 +617,16 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
       </div>
     </div>
 
-    <div v-if="filtersOpen" id="home-filters-panel" class="lg:max-w-2xl">
+    <!-- Phones get a bottom sheet (thumb-reachable, closes like a modal); wider screens keep
+         the panel inline under the toolbar. -->
+    <BottomSheet v-if="isPhone" id="home-filters-panel" :open="filtersOpen" title="فیلترها" data-testid="filters-sheet" @close="filtersOpen = false">
+      <SearchFiltersPanel v-model="filters" in-sheet @close="filtersOpen = false" />
+    </BottomSheet>
+    <div v-else-if="filtersOpen" id="home-filters-panel" class="lg:max-w-2xl">
       <SearchFiltersPanel v-model="filters" @close="filtersOpen = false" />
     </div>
 
-    <!-- Applied radius/price, each removable on its own. -->
+    <!-- Applied radius/price/«توافقی», each removable on its own. -->
     <div v-if="filterCount" class="flex flex-wrap items-center gap-2 text-sm" data-testid="active-filters">
       <span class="text-(--color-text-muted)">فیلترها:</span>
       <button
@@ -633,6 +649,17 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateCategoryScrollB
         @click="filters = { ...filters, priceMin: null, priceMax: null }"
       >
         {{ priceLabel }}
+        <BaseIcon name="x" :size="14" />
+      </button>
+      <button
+        v-if="filters.includeQuote"
+        type="button"
+        data-testid="chip-quote"
+        class="inline-flex min-h-9 items-center gap-1 rounded-full bg-(--color-surface-subtle) ps-3 pe-2 text-(--color-text) transition-colors hover:bg-(--color-border-soft)"
+        aria-label="حذف فیلتر قیمت توافقی"
+        @click="filters = { ...filters, includeQuote: false }"
+      >
+        قیمت توافقی
         <BaseIcon name="x" :size="14" />
       </button>
       <button
