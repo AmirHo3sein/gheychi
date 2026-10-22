@@ -4,6 +4,10 @@ import Redis from 'ioredis'
 test('log in as an approved provider and mark a confirmed booking completed', async ({ page }) => {
   const phone = '09120000300' // seeded in global-setup.ts with an approved salon + confirmed booking
   const redis = new Redis({ host: process.env.REDIS_HOST ?? 'localhost', port: Number(process.env.REDIS_PORT ?? 6381) })
+  // Same reset as 05-referral-and-wallet: specs 02-05 all log in as this one seeded owner, and
+  // a CI retry (--retries=1) spends a 4th code inside the 3-per-hour limit, locking every later
+  // spec out. Resetting the counter keeps each spec independent; the limit itself is unchanged.
+  await redis.del(`otp:rl:${phone}`)
 
   await page.goto('/login')
   await page.waitForLoadState('networkidle')

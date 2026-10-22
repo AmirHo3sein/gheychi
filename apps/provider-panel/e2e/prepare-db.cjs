@@ -83,8 +83,15 @@ async function main() {
   const { rows: [{ id: bookingId }] } = await seed.query(
     // Starts in the PAST on purpose: the API refuses to mark a booking completed before its start time
     // (trust-and-launch-readiness rule), and this seeded booking exists to be completed by 02-bookings-status.
-    `INSERT INTO bookings (user_id, salon_id, service_id, starts_at, ends_at, price_snapshot, deposit_amount, status)
-     VALUES ($1, $2, $3, now() - interval '2 hours', now() - interval '90 minutes', 300000, 60000, 'confirmed')
+    // It must also fall on TODAY in Tehran, where that spec looks for it under «امروز»: a flat
+    // "2 hours ago" landed on yesterday for any run in the first two hours after Tehran midnight
+    // (CI at 00:07 Tehran failed exactly that way), so it is clamped to Tehran midnight.
+    `WITH t AS (
+       SELECT GREATEST(now() - interval '2 hours',
+                       date_trunc('day', now() AT TIME ZONE 'Asia/Tehran') AT TIME ZONE 'Asia/Tehran') AS starts_at
+     )
+     INSERT INTO bookings (user_id, salon_id, service_id, starts_at, ends_at, price_snapshot, deposit_amount, status)
+     SELECT $1, $2, $3, t.starts_at, t.starts_at + interval '30 minutes', 300000, 60000, 'confirmed' FROM t
      RETURNING id`,
     [customerId, salonId, serviceId],
   )
