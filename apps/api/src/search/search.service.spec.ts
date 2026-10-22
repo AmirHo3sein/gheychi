@@ -56,21 +56,21 @@ describe('SearchService', () => {
     await service.search(BASE_QUERY);
 
     const [sql, params] = query.mock.calls[0];
-    // q, priceMin, priceMax sit right before the trailing LIMIT param in the SQL's own
+    // q, priceMin, priceMax, includeQuote sit right before the trailing LIMIT param in the SQL's own
     // positional order (see search.service.ts) -- asserting by position, not just by
     // "somewhere in params", pins that the DTO's optional fields actually reach the
     // query rather than silently landing on the wrong placeholder.
-    expect(params.slice(-4, -1)).toEqual([null, null, null]);
+    expect(params.slice(-5, -1)).toEqual([null, null, null, false]);
     expect(sql).toContain('ILIKE');
   });
 
-  it('forwards q/priceMin/priceMax to the query in the same positional order the SQL expects', async () => {
+  it('forwards q/priceMin/priceMax/includeQuote to the query in the same positional order the SQL expects', async () => {
     query.mockResolvedValue([]);
 
-    await service.search({ ...BASE_QUERY, q: 'رنگ مو', priceMin: 100_000, priceMax: 500_000 });
+    await service.search({ ...BASE_QUERY, q: 'رنگ مو', priceMin: 100_000, priceMax: 500_000, includeQuote: true });
 
     const [, params] = query.mock.calls[0];
-    expect(params.slice(-4, -1)).toEqual(['رنگ مو', 100_000, 500_000]);
+    expect(params.slice(-5, -1)).toEqual(['رنگ مو', 100_000, 500_000, true]);
   });
 
   it('returns hasMore=false and nextCursor=null when fewer rows come back than requested', async () => {
@@ -146,6 +146,7 @@ describe('SearchService', () => {
         hasNameFilter: false,
         priceMin: null,
         priceMax: null,
+        includeQuote: false,
         sort: 'rating',
         radiusKm: 10,
         page: 1,

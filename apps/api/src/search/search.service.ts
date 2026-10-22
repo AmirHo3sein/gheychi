@@ -102,6 +102,7 @@ export class SearchService {
         hasNameFilter: !!q.q,
         priceMin: q.priceMin ?? null,
         priceMax: q.priceMax ?? null,
+        includeQuote: q.includeQuote ?? false,
         sort: q.sort ?? 'distance',
         radiusKm: q.radiusKm ?? 15,
         page,
@@ -209,8 +210,11 @@ export class SearchService {
         -- floor/ceiling prove priceMin/priceMax respectively -- both are real, known bounds.
         -- QUOTE has no number and never matches either (its pricing_type isn't 'fixed' or
         -- 'from'/'range', so both branches below are false for it).
+        -- includeQuote ($9) is the customer explicitly asking for «توافقی» salons too: the
+        -- band (if any) OR an active quote service in scope. Without it, nothing changes.
         AND (
-          ($7::bigint IS NULL AND $8::bigint IS NULL) OR EXISTS (
+          ($7::bigint IS NULL AND $8::bigint IS NULL AND NOT $9::boolean)
+          OR (($7::bigint IS NOT NULL OR $8::bigint IS NOT NULL) AND EXISTS (
             SELECT 1 FROM salon_services ss2
             WHERE ss2.salon_id = s.id AND ss2.is_active
               -- With a category picked, the service proving the band must be IN that category,
@@ -225,12 +229,17 @@ export class SearchService {
                 (ss2.pricing_type = 'fixed' AND round(ss2.price::numeric * (100 - COALESCE(ss2.discount_percent, 0)) / 100) <= $8)
                 OR (ss2.pricing_type = 'range' AND ss2.price_max <= $8)
               ))
-          )
+          ))
+          OR ($9::boolean AND EXISTS (
+            SELECT 1 FROM salon_services ss3
+            WHERE ss3.salon_id = s.id AND ss3.is_active AND ss3.pricing_type = 'quote'
+              AND ($5::int IS NULL OR ss3.category_id = $5)
+          ))
         )
       ORDER BY is_featured DESC, ${secondarySort}
-      LIMIT $9
+      LIMIT $10
       `,
-      [q.lng, q.lat, q.gender, radiusMeters, q.categoryId ?? null, nameFilterPattern(q.q), q.priceMin ?? null, q.priceMax ?? null, fetchLimit],
+      [q.lng, q.lat, q.gender, radiusMeters, q.categoryId ?? null, nameFilterPattern(q.q), q.priceMin ?? null, q.priceMax ?? null, q.includeQuote ?? false, fetchLimit],
     );
 
     const mapped = rows.map((r: Record<string, unknown>) => ({

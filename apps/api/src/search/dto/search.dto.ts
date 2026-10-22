@@ -1,5 +1,5 @@
-import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsLatitude, IsLongitude, IsOptional, IsString, Length, Max, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsBoolean, IsIn, IsInt, IsLatitude, IsLongitude, IsOptional, IsString, Length, Max, Min } from 'class-validator';
 import { MAX_PRICE_TOMAN } from '../../common/money-limits';
 
 export class SearchQueryDto {
@@ -54,6 +54,16 @@ export class SearchQueryDto {
   @Min(0)
   @Max(MAX_PRICE_TOMAN)
   priceMax?: number;
+
+  // Opt-in: also match a salon offering a «توافقی» (quote) service -- in the picked category
+  // when there is one. Combined with a band it widens the price filter (band OR quote); on
+  // its own it narrows the list to salons that have one. A quote service still never
+  // satisfies priceMin/priceMax themselves -- it has no number to compare.
+  // Query strings carry 'true'/'false'; anything else stays a string and fails @IsBoolean.
+  @IsOptional()
+  @Transform(({ value }) => (value === 'true' ? true : value === 'false' ? false : value))
+  @IsBoolean()
+  includeQuote?: boolean;
 
   @IsOptional()
   @IsIn(['distance', 'rating'])

@@ -438,6 +438,50 @@ describe('Search (e2e)', () => {
         .expect(200);
       expect(res.body.items.map((s: { slug: string }) => s.slug)).not.toContain('quote-only-salon');
     });
+
+    // Runs after the test above, which inserts quote-only-salon (one quote service only).
+    describe('includeQuote', () => {
+      const search = (q: Record<string, unknown>) =>
+        request(app.getHttpServer()).get('/api/search').query({ lat: ANCHOR.lat, lng: ANCHOR.lng, gender: 'women', ...q });
+      const slugsOf = (res: { body: { items: { slug: string }[] } }) => res.body.items.map((s) => s.slug);
+
+      it('on its own, narrows the list to salons that offer a quote service', async () => {
+        const all = slugsOf(await search({}).expect(200));
+        const res = slugsOf(await search({ includeQuote: 'true' }).expect(200));
+        expect(res).toEqual(expect.arrayContaining(['quote-only-salon', 'pricing-types-salon']));
+        // Every other seeded salon has no quote service and drops out.
+        expect(res.length).toBe(2);
+        expect(all.length).toBeGreaterThan(2);
+      });
+
+      it('with a band, widens it: band matches OR quote salons', async () => {
+        // [1.9M, 5M] is proven only by pricing-types-salon's RANGE; quote-only-salon joins via its quote service.
+        const withQuote = slugsOf(await search({ priceMin: 1900000, priceMax: 5000000, includeQuote: 'true' }).expect(200));
+        expect(withQuote).toEqual(expect.arrayContaining(['quote-only-salon', 'pricing-types-salon']));
+        const bandOnly = slugsOf(await search({ priceMin: 1900000, priceMax: 5000000 }).expect(200));
+        expect(bandOnly).not.toContain('quote-only-salon');
+      });
+
+      it('is scoped to the picked category, like the band', async () => {
+        // Tag quote-only-salon with both categories so only the service's own category decides;
+        // its one quote service is in the first.
+        await app.get(DataSource).query(
+          `INSERT INTO salon_categories (salon_id, category_id) VALUES ($1, $2), ($1, $3) ON CONFLICT DO NOTHING`,
+          ['30000000-0000-4000-8000-000000000002', firstCategoryId, secondCategoryId],
+        );
+        const first = slugsOf(await search({ categoryId: firstCategoryId, includeQuote: 'true' }).expect(200));
+        expect(first).toContain('quote-only-salon');
+        const second = slugsOf(await search({ categoryId: secondCategoryId, includeQuote: 'true' }).expect(200));
+        expect(second).not.toContain('quote-only-salon');
+      });
+
+      it('false is the same as absent, and a non-boolean is a 400', async () => {
+        const absent = slugsOf(await search({}).expect(200));
+        const off = slugsOf(await search({ includeQuote: 'false' }).expect(200));
+        expect(off).toEqual(absent);
+        await search({ includeQuote: 'yes' }).expect(400);
+      });
+    });
   });
 
   // --- cursor pagination -------------------------------------------------------------
