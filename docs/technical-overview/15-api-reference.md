@@ -188,7 +188,7 @@ A booking-conflict 409 from `POST /bookings`/`assign-worker` (createHold/createM
 
 | Route | Guard |
 |---|---|
-| `GET /search?lat=&lng=&gender=&q=&radiusKm=&categoryId=&priceMin=&priceMax=&sort=&cursor=&pageSize=` | Public — `gender` required; `radiusKm` 0.5–50; `priceMin`/`priceMax` integer toman, 0–`MAX_PRICE_TOMAN` (`common/money-limits.ts`, 1,000,000,000 — non-integers/`Infinity` are 400, not 500); `sort` `distance|rating`; cursor-paginated, `pageSize` 1–100. `q` matches the business name, folding Arabic ي/ك and treating `%`/`_` literally |
+| `GET /search?lat=&lng=&gender=&q=&radiusKm=&categoryId=&priceMin=&priceMax=&includeQuote=&sort=&cursor=&pageSize=` | Public — `gender` required; `radiusKm` 0.5–50; `priceMin`/`priceMax` integer toman, 0–`MAX_PRICE_TOMAN` (`common/money-limits.ts`, 1,000,000,000 — non-integers/`Infinity` are 400, not 500); `includeQuote` `true|false` (anything else 400) also matches salons with an active «توافقی» service — band OR quote, or quote-only without a band ([20](./20-business-rules.md)); `sort` `distance|rating`; cursor-paginated, `pageSize` 1–100. `q` matches the business name, folding Arabic ي/ك and treating `%`/`_` literally |
 | `GET /search/suggestions?q=&lat=&lng=&gender=&radiusKm=` | Public — the home page's type-ahead: up to 6 salons from the same query as `/search` (approved, gender, radius), `q` required (1–100). Not tracked as `search_performed` |
 
 ## Activity (`activity/activity.controller.ts`)
